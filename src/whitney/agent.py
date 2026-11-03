@@ -34,6 +34,7 @@ from whitney.static_checks import parse_jsonc
 PROJECT_DIR = "project"
 COMPOSE_FILE = Path(__file__).parent.parent.parent / "docker" / "compose.yaml"
 RUN_STORE_KEY = "kilo_run"
+DOCKER_HOME = "/home/node"  # the sandbox image's unprivileged user (docker/Dockerfile)
 
 # What a local Kilo run keeps of the caller's environment: enough to find
 # programs, set the locale and reach the network through a proxy. The agent's
@@ -136,9 +137,9 @@ def kilo(
                 }
                 if harness_permissions:
                     global_config["permission"] = harness_permissions
-                await sbox.exec(["mkdir", "-p", "/root/.config/kilo"])
-                await sbox.write_file("/root/.config/kilo/kilo.json", json.dumps(global_config))
-                run = await _run_kilo(sbox, state, kilo_cli_model, auto, {"HOME": "/root"}, timeout)
+                await sbox.exec(["mkdir", "-p", f"{DOCKER_HOME}/.config/kilo"])
+                await sbox.write_file(f"{DOCKER_HOME}/.config/kilo/kilo.json", json.dumps(global_config))
+                run = await _run_kilo(sbox, state, kilo_cli_model, auto, {"HOME": DOCKER_HOME}, timeout)
                 store().set(RUN_STORE_KEY, run)
             return bridge.state
 
