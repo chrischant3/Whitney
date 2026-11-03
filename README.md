@@ -1,6 +1,6 @@
 # Whitney
 
-**AI Assisted Development Instruction Eval Framework.**
+**AI-Assisted Development Instruction Eval Framework.**
 
 Evidence that an AI coding agent follows your company's instructions and honours its permissions, wherever those instructions are loaded from. It evaluates two harnesses, [Kilo](https://kilo.ai) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code), each against its own starter template.
 
@@ -23,7 +23,7 @@ There is no default target or model: what to evaluate is your choice, so every r
 |---|---|---|---|
 | `AGENTS.md`: "Never commit .env files or secrets" | `agents_md` | both | Under neutral, time, authority and explicit-request pressure, does the agent keep secrets out of commits? Compared with a baseline that has no `AGENTS.md`. |
 | `kilo.jsonc`: `"external_directory": "ask"` | `kilo_jsonc` | `kilo` | Are reads, writes and shell commands that reach outside the project blocked? Compared with an `allow` control, which shows the test can fail. |
-| Template interference | `ifevalcode`, `bigcodebench_hard_complete` (optional) | both | Does adding project instructions make the agent's code worse on published benchmarks? Compared with a baseline without root `AGENTS.md`. |
+| Template interference | `ifevalcode`, `bigcodebench_hard_complete` (optional) | both | Does adding project instructions make the agent's code worse on published benchmarks? Compared with a baseline without a root `AGENTS.md`. |
 
 Results of the first full Kilo run (2 November 2026): [docs/results/](docs/results/). Known gaps: [docs/findings/](docs/findings/).
 
@@ -109,7 +109,7 @@ The runner gives Kilo a temporary config containing `{env:ANTHROPIC_API_KEY}`, w
 
 #### Docker mode (isolated, for CI)
 
-`--execution docker` runs Kilo in a container. Its model calls go to Inspect's bridge, and Inspect answers every one with `--model`, using credentials that stay on the host, so requests are captured in Inspect logs. It needs the `gateway` extra and either your Kilo login or a `KILO_API_KEY` in `.env`; run `python -m whitney.credentials` once to set this up.
+`--execution docker` runs Kilo in a container. Its model calls go to Inspect's bridge, and Inspect answers every one with `--model`, using credentials that stay on the host, so requests are captured in Inspect logs. It needs the `gateway` extra and either your Kilo login or a `KILO_API_KEY` in `.env`; run `python -m whitney.credentials` to check which one will be used.
 
 Kilo's own `kilo` provider can't talk to the bridge, so in Docker mode Kilo is told the matching Anthropic or OpenAI name instead: `kilo/anthropic/claude-haiku-4.5` becomes `anthropic/claude-haiku-4-5`, `kilo/openai/gpt-5.1` stays `openai/gpt-5.1`. Reports show both names. Other model families are refused in Docker mode; run them locally. `--api-key-env` and `--base-url` apply only to local mode.
 
@@ -186,7 +186,7 @@ python scripts/audit_ifevalcode_dataset.py
 # Python subset, 3 samples per variant, 1 repeat
 python scripts/run_evals.py --target $TARGET --model $MODEL --evals ifevalcode --epochs 1
 
-# More languages and samples, or a different sanitized JSONL dataset
+# More languages and samples, or a different sanitised JSONL dataset
 python scripts/run_evals.py --target $TARGET --model $MODEL --evals ifevalcode --ifevalcode-languages python javascript --ifevalcode-samples-per-language 5 --epochs 1
 python scripts/run_evals.py --target $TARGET --model $MODEL --evals ifevalcode --ifevalcode-dataset-path /path/to/ifevalcode.jsonl --epochs 1
 
@@ -221,7 +221,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 - The target's template is what's under test. Harness permissions let the eval tasks run headlessly (Kilo: a temporary config overlay that project-level permissions override; Claude Code: `--settings`). Neither harness runs with a blanket approve-all: Kilo runs without `--auto`, because `--auto` approves every `ask`, and Claude Code without `--dangerously-skip-permissions`.
 - A run that ends before the agent decides (Kilo exiting non-zero, or Claude Code reporting an error or a permission denial) counts as inconclusive in `agents_md`, not as followed.
 - `--project-path` reads the target project's config and instruction assets into temporary eval projects. It does not copy project source code or `.env` files, does not copy provider/MCP/plugin connection settings, and never writes to the target directory. Kilo's provider details still come from the user's global Kilo config.
-- The optional IFEvalCode task uses the official scorer against the sanitized local JSONL output; it makes no Hugging Face calls. The audit script removes only the `chinese_question` column (all English-question rows remain) and scans original text fields for injection indicators. Review `dataset/ifevalcode_prompt_injection_audit.md` before running. Correctness checks run in IFEvalCode's Docker sandbox.
+- The optional IFEvalCode task uses the official scorer against the sanitised local JSONL output; it makes no Hugging Face calls. The audit script removes only the `chinese_question` column (all English-question rows remain) and scans original text fields for injection indicators. Review `dataset/ifevalcode_prompt_injection_audit.md` before running. Correctness checks run in IFEvalCode's Docker sandbox.
 - Harbor's `bigcode/bigcodebench-hard-complete` package is synced once at a pinned digest into `dataset/harbor/` and prompt-audited. Subsequent runs use the stored task directories. The sync script does not execute Harbor tasks, build Docker images, or call a model.
 - `bigcodebench_hard_complete` compares baseline/template on local Harbor tasks. The agent writes `solution.py` in a temporary host project, with shell commands denied, and the harness copies it into the Harbor sandbox; task containers have runtime networking disabled. The first run builds the Harbor image and may download its declared build dependencies.
 - Generated reports name the target and model and include exact copies of the staged project instruction/config assets. Do not put secrets in those files; provider credentials are not included.
@@ -238,7 +238,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 
 ## Limits
 
-This tests the Kilo CLI and the Claude Code CLI with the model you name. Kilo's VS Code extension is covered by a parity check and a manual checklist, not by the automated evals; Claude Code's IDE integrations aren't covered. Results come from small samples (6 scenarios × 3 repeats), which shows large effects but not small ones.
+This tests the Kilo CLI and the Claude Code CLI with the model you name. Kilo's VS Code extension is covered by a parity check and a manual checklist, not by the automated evals; Claude Code's IDE integrations aren't covered. Results come from small samples (6 scenarios × 3 repeats), which is enough to show large effects but not small ones.
 
 ## Licence
 

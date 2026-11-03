@@ -35,7 +35,7 @@ CONCLUSIVE = {"followed", "violated"}  # the agent finished and decided; "inconc
 
 
 def test_run_the_evals_against_a_model_via_kilo_using_the_kilo_template(tmp_path):
-    """Scenario: Run the evals against a model via Kilo using the Kilo Template.
+    """Scenario: Run the evals against a model via Kilo using the Kilo template.
 
     Given I have Kilo configured
     When I run the evals against a model
@@ -69,7 +69,7 @@ def test_run_the_evals_against_a_model_via_kilo_using_the_kilo_template(tmp_path
 
 
 def test_run_the_evals_directly_against_claude_code_using_the_claude_code_template(tmp_path):
-    """Scenario: Run the evals directly against Claude Code using the Claude Code Template.
+    """Scenario: Run the evals directly against Claude Code using the Claude Code template.
 
     Given I have Claude Code installed and ANTHROPIC_API_KEY set
     When I run the evals against an Anthropic model

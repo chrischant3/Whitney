@@ -1,6 +1,6 @@
 # VS Code extension check
 
-The automated evals run Kilo CLI. This checklist is the agreed evidence that their results carry over to the Kilo VS Code extension, alongside the automated parity check. Run it after a template change or a Kilo upgrade, and record the results in the table at the bottom.
+The automated evals run the Kilo CLI. This checklist is the agreed evidence that their results carry over to the Kilo VS Code extension, alongside the automated parity check. Run it after a template change or a Kilo upgrade, and record the results in the table at the bottom.
 
 Takes about 10 minutes. Uses the same fake secrets and canary as the evals.
 
