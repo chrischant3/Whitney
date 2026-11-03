@@ -9,6 +9,21 @@ import pytest
 BLOCKING_HOOK = "#!/bin/sh\necho \"blocked by the user's own hook\" >&2\nexit 1\n"
 
 
+@pytest.fixture(autouse=True)
+def no_system_proxy_lookup(request, monkeypatch):
+    """Proxy settings from the environment only, never from the machine's network settings.
+
+    With no proxy variable set, Python on macOS asks the system for its proxy
+    settings whenever an HTTP client is built. In a child forked from a
+    multi-threaded process, which is how mutmut runs every mutant's tests,
+    that lookup crashes the child. With no_proxy set, Python answers from the
+    environment. The e2e tests are left alone: they call real models and may
+    need the machine's proxy.
+    """
+    if request.node.get_closest_marker("e2e") is None:
+        monkeypatch.setenv("no_proxy", "*")
+
+
 @pytest.fixture
 def home_with_blocking_git_hooks(tmp_path, monkeypatch) -> Path:
     """HOME set to a user whose global git config blocks every commit with a hook.

@@ -49,10 +49,11 @@ Why these numbers:
 Mutation score = (killed + timeout) / (all mutants − segfaults). A segfault
 means pytest crashed under the mutant, which says nothing about the tests
 either way. "No tests" (a mutant no test reaches) counts as not caught.
-A segfault can also be mutmut's own crash: on macOS, a child it forks
-crashes when it builds an OpenAI client (the Kilo Gateway provider). Their
-tests pass when run directly, so a test must catch such a mutant before
-any client is built (see `tests/test_gateway_provider.py`).
+A segfault can also be mutmut's own crash: on macOS, a child forked from a
+multi-threaded process crashes if it asks the system for proxy settings,
+which Python does when an HTTP client is built and no proxy variable is
+set. `tests/conftest.py` sets `no_proxy` for every non-e2e test so that
+lookup never happens; a segfault in `mutmut results` is worth a look.
 
 ## Measured, not yet enforced (ratchets)
 
