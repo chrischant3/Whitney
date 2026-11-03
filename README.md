@@ -253,3 +253,5 @@ This tests the Kilo CLI and the Claude Code CLI with the model you name. Kilo's 
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
+
+<!-- floor-guard test PR, do not merge -->
