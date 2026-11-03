@@ -1,5 +1,6 @@
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -73,6 +74,7 @@ def fake_harbor(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "inspect_harbor._harbor.converters", converters)
     monkeypatch.setitem(sys.modules, "inspect_harbor._harbor.scorer", scorer_module)
     monkeypatch.setitem(sys.modules, "inspect_harbor._harbor.task", task_module)
+    return SimpleNamespace(compose=compose)
 
 
 def test_harbor_task_uses_kilo_local_artifact_and_networkless_sandbox(tmp_path, fake_harbor):
@@ -98,3 +100,56 @@ def test_claude_code_target_writes_the_solution_without_a_shell(tmp_path, fake_h
 
     assert set(task.metadata["evaluation_assets"]) == {"AGENTS.md"}
     assert task.metadata["harness_permissions"] == {"allow": ["Read", "Edit", "Write"], "deny": ["Bash"]}
+
+
+def _manifest(dataset: Path, **files: str) -> None:
+    import hashlib
+    import json
+
+    digests = {name: hashlib.sha256(text.encode()).hexdigest() for name, text in files.items()}
+    (dataset / "inspect-harbor-manifest.json").write_text(json.dumps({"files": digests}))
+
+
+def test_the_cache_is_checked_against_its_manifest_before_use(tmp_path, fake_harbor):
+    (tmp_path / "task.toml").write_text("[task]\n")
+    _manifest(tmp_path, **{"task.toml": "[task]\n"})
+
+    task = bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+    assert task.metadata["cache_integrity"] == "verified"
+
+    (tmp_path / "task.toml").write_text("[task]\nchanged = true\n")
+    with pytest.raises(ValueError, match="changed since it was synced: task.toml"):
+        bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+
+
+def test_a_cache_without_a_manifest_is_used_but_recorded_as_unverified(tmp_path, fake_harbor):
+    task = bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+    assert task.metadata["cache_integrity"] == "unverified: no manifest"
+
+
+def test_a_symlink_in_the_cache_is_refused(tmp_path, fake_harbor):
+    (tmp_path / "Dockerfile").symlink_to("/etc/hosts")
+    with pytest.raises(ValueError, match="Dockerfile is a symlink"):
+        bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "setting, value, named",
+    [
+        ("privileged", True, "privileged"),
+        ("cap_add", ["SYS_ADMIN"], "cap_add"),
+        ("devices", ["/dev/kvm"], "devices"),
+        ("volumes", ["/Users/someone/.ssh:/root/.ssh"], "bind mount /Users/someone/.ssh"),
+        ("volumes", ["./data:/data"], "bind mount ./data"),
+    ],
+)
+def test_a_task_whose_sandbox_reaches_the_host_is_refused(tmp_path, fake_harbor, setting, value, named):
+    setattr(fake_harbor.compose.services["default"], setting, value)
+    with pytest.raises(ValueError, match=f"asks for {named}"):
+        bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+
+
+def test_named_and_anonymous_volumes_are_allowed(tmp_path, fake_harbor):
+    fake_harbor.compose.services["default"].volumes = ["cache:/cache", "/scratch"]
+    [sample] = list(bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path)).dataset)
+    assert sample.sandbox.config.services["default"].volumes == ["cache:/cache", "/scratch"]
