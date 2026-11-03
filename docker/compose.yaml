@@ -2,7 +2,7 @@ services:
   default:
     build: .
     # Renamed when the image changes, so a cached build of an older Dockerfile isn't reused.
-    image: kilo-evals-sandbox:7.8.18-node
+    image: kilo-evals-sandbox:7.8.18-node.2
     init: true
     # Kilo reaches the model only through Inspect's bridge, which listens inside
     # the container, so the sandbox needs no network: no host services, cloud

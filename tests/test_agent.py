@@ -293,3 +293,14 @@ def test_the_docker_sandbox_runs_kilo_unprivileged_and_offline():
     dockerfile = (docker / "Dockerfile").read_text()
     assert re.search(r"^FROM \S+@sha256:[0-9a-f]{64}$", dockerfile, re.M)  # the base image is pinned by digest
     assert re.findall(r"^USER (\S+)$", dockerfile, re.M)[-1] == "node"
+
+
+def test_the_docker_image_runs_npm_install_scripts_as_the_unprivileged_user():
+    # Installing Kilo runs its packages' install scripts, third-party code that as root
+    # could change anything in the image, including the git the scorer trusts.
+    import re
+
+    dockerfile = (Path(__file__).parents[1] / "docker" / "Dockerfile").read_text()
+    [install] = [m.start() for m in re.finditer(r"\bnpm install\b", dockerfile)]
+    users_before = re.findall(r"^USER (\S+)$", dockerfile[:install], re.M)
+    assert users_before and users_before[-1] == "node"

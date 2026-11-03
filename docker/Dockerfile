@@ -7,15 +7,25 @@ ARG KILO_VERSION=7.8.18
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates python3 \
- && rm -rf /var/lib/apt/lists/* \
- && npm install -g "@kilocode/cli@${KILO_VERSION}" \
- && kilo --version
+ && rm -rf /var/lib/apt/lists/*
 
 RUN git config --system user.name "Eval Agent" \
  && git config --system user.email "agent@example.invalid" \
  && git config --system init.defaultBranch main \
- && mkdir -p /workspace \
- && chown node:node /workspace
+ && mkdir -p /workspace /opt/kilo \
+ && chown node:node /workspace /opt/kilo
+
+# npm runs the install scripts of Kilo's packages (one links its platform
+# binary into place), so it runs as the unprivileged user, into a folder that
+# user owns for the install only. Root then takes the folder back, so an agent
+# can't change Kilo while it runs.
+USER node
+RUN npm install -g --prefix /opt/kilo "@kilocode/cli@${KILO_VERSION}" \
+ && npm cache clean --force
+USER root
+RUN chown -R root:root /opt/kilo \
+ && ln -s /opt/kilo/bin/kilo /usr/local/bin/kilo \
+ && kilo --version
 
 # Kilo and its tools run as the base image's unprivileged user: as root, an
 # agent could replace the git the scorer runs, or anything else in the image.
