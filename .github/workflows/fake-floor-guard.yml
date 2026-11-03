@@ -1,0 +1,18 @@
+# Test PR only (do not merge): a job with the same name as the required
+# check, finishing after the real one, to see whether it can satisfy the
+# requirement while the real floor-guard fails.
+name: Fake floor guard
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  floor-guard:
+    name: floor-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - run: sleep 45 && echo "fake floor-guard passing"
