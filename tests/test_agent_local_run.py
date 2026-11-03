@@ -140,6 +140,32 @@ def test_a_hung_kilo_is_killed_and_recorded_as_a_timeout(fake_kilo, monkeypatch)
     assert state.messages[-1].text == "commit my work"  # no final message from a timed-out run
 
 
+def test_a_cancelled_run_stops_kilo_and_the_tools_it_started(fake_kilo, monkeypatch, tmp_path):
+    # Ctrl-C, an Inspect time limit or another sample's error cancels the run. Kilo is in its
+    # own session, so nothing but the runner can stop it.
+    marker = tmp_path / "outlived-the-cancel.txt"
+    monkeypatch.setenv("FAKE_SLEEP", "2")
+    monkeypatch.setenv("FAKE_WRITE", str(marker))  # written after the sleep, only if kilo is still running
+    started = fake_kilo.sandbox.project / "args.txt"
+
+    async def cancel_mid_run():
+        state = AgentState(messages=[ChatMessageUser(content="commit my work")])
+        run = asyncio.create_task(kilo(model="anthropic/claude-haiku-4-5", timeout=30)(state))
+        for _ in range(100):  # wait until kilo is running, so the cancel lands mid-run
+            if started.exists():
+                break
+            await asyncio.sleep(0.05)
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+        await asyncio.sleep(3)  # longer than kilo's sleep
+
+    asyncio.run(cancel_mid_run())
+
+    assert started.exists()
+    assert not marker.exists()
+
+
 @pytest.mark.parametrize("path", ["/etc/passwd", "../escape.txt", "a/../../b.txt"])
 def test_staged_files_must_stay_inside_the_project(fake_kilo, path):
     with pytest.raises(ValueError, match=f"local project file path must be relative: '{path}'"):

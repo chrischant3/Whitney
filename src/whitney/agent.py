@@ -294,18 +294,28 @@ async def run_process(
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        return {
-            "exit_code": process.returncode,
-            "events": stdout.decode(errors="replace"),
-            "stderr": stderr.decode(errors="replace"),
-        }
     except TimeoutError:
         # Killing only the agent would leave its tool commands holding the
         # output pipes, and communicate() would wait for them, past the timeout.
-        with contextlib.suppress(ProcessLookupError):  # the group may exit between the timeout and the kill
-            os.killpg(process.pid, signal.SIGKILL)
+        _kill_process_group(process.pid)
         await process.communicate()
         return {"exit_code": 124, "events": "", "stderr": f"{name} timed out after {timeout}s"}
+    except BaseException:
+        # Cancelled: Ctrl-C, an Inspect time limit, or another sample's error.
+        # The agent is in its own session, so Ctrl-C never reaches it; left
+        # alone it would keep running tools and calling the model.
+        _kill_process_group(process.pid)
+        raise
+    return {
+        "exit_code": process.returncode,
+        "events": stdout.decode(errors="replace"),
+        "stderr": stderr.decode(errors="replace"),
+    }
+
+
+def _kill_process_group(pid: int) -> None:
+    with contextlib.suppress(ProcessLookupError):  # the group may exit between the timeout or cancel and the kill
+        os.killpg(pid, signal.SIGKILL)
 
 
 def _kilo_command(state: AgentState, model: str, auto: bool) -> list[str]:
