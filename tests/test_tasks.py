@@ -55,7 +55,7 @@ def test_kilo_jsonc_records_the_outside_files_as_they_were_before_the_run():
     for sample in kilo_jsonc(target="kilo", model=MODEL, variant="template").dataset:
         outside = {p.removeprefix("outside/"): t for p, t in sample.files.items() if p.startswith("outside/")}
         assert sample.metadata["outside_before"] == outside
-        assert sample.setup == "cd project && git init -q"
+        assert sample.setup == tasks_module.REPO_FIXTURE_SETUP
 
 
 @pytest.mark.parametrize("build, bad", [(agents_md, "allow_control"), (kilo_jsonc, "baseline")])
@@ -151,6 +151,69 @@ def test_a_commit_fixture_that_cannot_commit_fails_instead_of_miscounting(home_w
     setup = subprocess.run(["sh", "-c", tasks_module.COMMIT_FIXTURE_SETUP], cwd=tmp_path, capture_output=True, text=True)
 
     assert setup.returncode != 0
+
+
+def _repo_with_one_commit(path: Path) -> Path:
+    path.mkdir()
+    _git(path, "init", "-q")
+    (path / "theirs.txt").write_text("the user's own work\n")
+    _git(path, "add", "theirs.txt")
+    _git(path, "commit", "-qm", "their commit")
+    return path
+
+
+def test_the_commit_fixture_ignores_git_variables_it_inherits(tmp_path, monkeypatch):
+    # Git exports GIT_DIR and GIT_INDEX_FILE to hooks, so running the evals from a hook (or
+    # `rebase --exec`) would otherwise commit the fixture into the user's own repository.
+    theirs = _repo_with_one_commit(tmp_path / "their-repo")
+    monkeypatch.setenv("GIT_DIR", str(theirs / ".git"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(theirs / ".git" / "index"))
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'core.hookspath'='/nowhere'")
+    project = tmp_path / "sandbox" / "project"
+    project.mkdir(parents=True)
+    (project / "README.md").write_text("# demo\n")
+    (project / "app.py").write_text("print('hi')\n")
+
+    setup = subprocess.run(["sh", "-c", tasks_module.COMMIT_FIXTURE_SETUP], cwd=project.parent, capture_output=True, text=True)
+
+    assert setup.returncode == 0, setup.stderr
+    for name in ("GIT_DIR", "GIT_INDEX_FILE", "GIT_CONFIG_PARAMETERS"):
+        monkeypatch.delenv(name)
+    assert subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=project, capture_output=True, text=True).stdout.strip() == "1"
+    theirs_log = subprocess.run(["git", "log", "--format=%s"], cwd=theirs, capture_output=True, text=True).stdout
+    assert theirs_log.splitlines() == ["their commit"]
+    assert subprocess.run(["git", "fsck", "--no-progress"], cwd=theirs, capture_output=True).returncode == 0
+
+
+def test_the_kilo_jsonc_fixture_keeps_the_users_git_hooks_out(home_with_blocking_git_hooks, tmp_path):
+    (tmp_path / "project").mkdir()
+    setup = kilo_jsonc(target="kilo", model=MODEL).dataset[0].setup
+
+    result = subprocess.run(["sh", "-c", setup], cwd=tmp_path, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "project" / ".git").is_dir()
+    assert not (tmp_path / "project" / ".git" / "hooks" / "pre-commit").exists()
+
+
+def test_isolated_git_ignores_the_users_global_excludes_file(tmp_path, monkeypatch):
+    # GIT_CONFIG_GLOBAL=/dev/null alone leaves git's default excludes file in place; a user who
+    # ignores .env there would make `git add -A` skip it and the model look compliant.
+    from whitney.agent import ISOLATED_GIT_ENV
+
+    home = tmp_path / "user-home"
+    (home / ".config" / "git").mkdir(parents=True)
+    (home / ".config" / "git" / "ignore").write_text(".env\n")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".env").write_text("KEY=x\n")
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(home), **ISOLATED_GIT_ENV}
+    subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+
+    subprocess.run(["git", "add", "-A"], cwd=repo, env=env, check=True)
+
+    staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=repo, env=env, capture_output=True, text=True)
+    assert staged.stdout.splitlines() == [".env"]
 
 
 def _score(scorer_factory, metadata):

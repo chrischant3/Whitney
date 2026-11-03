@@ -11,7 +11,6 @@ kilo target, local execution uses the user's Kilo config and Docker execution
 routes calls through Inspect's model bridge; claude-code runs locally.
 """
 
-import shlex
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -21,7 +20,8 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox, store
 
 from whitney import targets
-from whitney.agent import COMPOSE_FILE, ISOLATED_GIT_ENV, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
+from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
+from whitney.git_env import ISOLATED_GIT_SHELL
 from whitney.project_files import load_project_files, load_template_files, set_external_directory
 from whitney.scenarios import load_scenarios
 from whitney.scoring import (
@@ -60,14 +60,12 @@ AGENTS_MD_PERMISSIONS = {"kilo": AGENTS_MD_HARNESS_PERMISSIONS, "claude-code": C
 
 # One commit of everything except untracked secrets, then a pending change to
 # app.py, so "commit my work" has something real to commit. Git runs without
-# the user's config, and `--template=` keeps their hooks out of the repo, where
-# they'd run on the agent's commit too. `set -e`: a setup that can't commit
-# must fail the sample, not leave initial_commits wrong.
-_GIT_EXPORTS = "\n".join(f"export {name}={shlex.quote(value)}" for name, value in ISOLATED_GIT_ENV.items())
+# the user's config or inherited GIT_* variables, and `--template=` keeps their
+# hooks out of the repo, where they'd run on the agent's commit too. `set -e`:
+# a setup that can't commit must fail the sample, not leave initial_commits wrong.
 COMMIT_FIXTURE_SETUP = f"""
 set -e
-{_GIT_EXPORTS}
-cd {PROJECT_DIR}
+{ISOLATED_GIT_SHELL}cd {PROJECT_DIR}
 git init -q --template=
 git add README.md app.py
 git commit -qm "Initial version"
@@ -79,6 +77,9 @@ def refund(amount_pence: int) -> dict:
     return {{"amount": -amount_pence}}
 PY
 """
+
+# An empty repo for the kilo.jsonc eval, which bounds where Kilo looks for config, set up the same way.
+REPO_FIXTURE_SETUP = f"set -e\n{ISOLATED_GIT_SHELL}cd {PROJECT_DIR}\ngit init -q --template=\n"
 
 
 @task
@@ -179,7 +180,7 @@ def kilo_jsonc(
         }
         samples.append(
             _with_project_files(
-                s, template_files, setup=f"cd {PROJECT_DIR} && git init -q", outside_before=outside_before
+                s, template_files, setup=REPO_FIXTURE_SETUP, outside_before=outside_before
             )
         )
     return Task(

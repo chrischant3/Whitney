@@ -33,6 +33,7 @@ printf '%s\n' "$@" > "$PWD/args.txt"
   echo "USER_SECRET=$USER_SECRET"
   echo "GIT_AUTHOR_NAME=$GIT_AUTHOR_NAME"
   echo "GIT_COMMITTER_EMAIL=$GIT_COMMITTER_EMAIL"
+  echo "GIT_CEILING_DIRECTORIES=$GIT_CEILING_DIRECTORIES"
 } > "$PWD/env.txt"
 ls -A "$HOME" > "$PWD/home.txt"
 [ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
@@ -221,3 +222,9 @@ def test_the_api_key_is_redacted_from_what_the_eval_stores(fake_claude, monkeypa
     run = fake_claude.stored[RUN_STORE_KEY]
     assert key not in run["events"] and key not in run["stderr"]
     assert run["final_text"] == state.messages[-1].text == "The key is [redacted]"
+
+
+def test_claudes_git_cannot_climb_out_of_the_project(fake_claude):
+    _run(claude_code(model=MODEL))
+
+    assert _env(fake_claude.project)["GIT_CEILING_DIRECTORIES"] == str(fake_claude.project.parent)

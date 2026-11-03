@@ -433,3 +433,11 @@ def test_the_runs_own_key_and_base_url_win_over_global_provider_settings():
             "corp": {"name": "Corp", "options": {"baseURL": "https://run.example/v1", "timeout": 5, "apiKey": "{env:RUN_KEY}"}}
         }
     }
+
+
+def test_kilos_git_cannot_climb_out_of_the_project(fake_kilo, user_home):
+    # A staged project has no repo of its own; git must not find one in a folder above it.
+    _run(kilo(model=MODEL, timeout=30))
+
+    project = fake_kilo.sandbox.project
+    assert _env(project)["GIT_CEILING_DIRECTORIES"] == str(project.parent)

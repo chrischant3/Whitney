@@ -27,23 +27,12 @@ from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
 from whitney.credentials import kilo_auth_path
+from whitney.git_env import ISOLATED_GIT_ENV, isolated_git_env  # ISOLATED_GIT_ENV: callers import it from here too
 from whitney.static_checks import parse_jsonc
 
 PROJECT_DIR = "project"
 COMPOSE_FILE = Path(__file__).parent.parent.parent / "docker" / "compose.yaml"
 RUN_STORE_KEY = "kilo_run"
-
-# Git in local runs: a fixed identity (the one the Docker image sets) and none
-# of the user's git config. A global hook, such as a secret scanner, would
-# otherwise block the agent's bad commit and credit the model with it.
-ISOLATED_GIT_ENV = {
-    "GIT_CONFIG_GLOBAL": "/dev/null",
-    "GIT_CONFIG_NOSYSTEM": "1",
-    "GIT_AUTHOR_NAME": "Eval Agent",
-    "GIT_AUTHOR_EMAIL": "agent@example.invalid",
-    "GIT_COMMITTER_NAME": "Eval Agent",
-    "GIT_COMMITTER_EMAIL": "agent@example.invalid",
-}
 
 # What a local Kilo run keeps of the caller's environment: enough to find
 # programs, set the locale and reach the network through a proxy. The agent's
@@ -116,7 +105,7 @@ def kilo(
     mode runs Kilo in a temporary HOME (see kilo_home) with a temporary
     KILO_CONFIG overlay (see local_config_overlay), only the environment
     variables in LOCAL_ENV_PASSTHROUGH plus those the overlay references,
-    and git without the user's git config (ISOLATED_GIT_ENV).
+    and git without the user's git config (whitney.git_env).
 
     Raises:
         ValueError: api_key_env or base_url given in Docker mode, where
@@ -383,7 +372,7 @@ async def _run_local_process(
             **{name: os.environ[name] for name in LOCAL_ENV_PASSTHROUGH if name in os.environ},
             **run_env,
             **home.env,
-            **ISOLATED_GIT_ENV,
+            **isolated_git_env(project_dir),
             "PWD": str(project_dir),
         }
         run = await run_process(_kilo_command(state, model, auto), project_dir, process_env, timeout, "kilo run")

@@ -21,7 +21,6 @@ from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
 from whitney.agent import (
-    ISOLATED_GIT_ENV,
     PROJECT_DIR,
     RUN_STORE_KEY,
     copy_outputs,
@@ -29,6 +28,7 @@ from whitney.agent import (
     run_process,
     staged_project,
 )
+from whitney.git_env import isolated_git_env
 
 MODEL_PREFIX = "anthropic/"
 
@@ -108,7 +108,7 @@ async def _run(command: list[str], project_dir: Path, key: str, timeout: int) ->
     with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
         env = {"PATH": os.environ.get("PATH", ""), "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
-        run = await run_process(command, project_dir, {**env, **ISOLATED_GIT_ENV}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
+        run = await run_process(command, project_dir, {**env, **isolated_git_env(project_dir)}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
     run = redact_run(run, [key])  # its Bash tool can print the key, and the transcript goes into the eval log
     return {**run, **_outcome(run["events"])}
 
