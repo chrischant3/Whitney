@@ -25,7 +25,7 @@ the solution must:
 - Test scenarios will be written using json
   - each file (AGENTS.md, rules/instructions, agents aand skills) has it's own scenarios jsons file with the following naming convention.
     - `skill-name.json` - Name of the skill
-    - `agents-md.json` - name of the file with the file tyoe included.
+    - `agents-md.json` - name of the file with the file type included.
     - `kilo-jsonc.json` - name of a config file with the file tyoe included.
 - tests provide evidence that triggers and routing behave as desired.
   - see Inspiration link above "Positive prompts rank their skill top-k; negative prompts don't; no two descriptions near-collide"
@@ -35,7 +35,7 @@ the solution must:
 
 ### Propdosed Structure
 
-In order to make the reamwrork easy to read, extend and maintain I propose the following structure:
+In order to make the framewrork easy to read, extend and maintain I propose the following structure:
 
 - `docs/` - location for documents explaining the templates, heirarchy & load order, how to add tests when updating a template and how to add tests when adding to the template.
 - `evals/` - evals directory
