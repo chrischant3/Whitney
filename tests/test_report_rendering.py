@@ -418,3 +418,18 @@ def test_preambles_follow_their_users_not_their_text():
     logs = [_asset_log("a_task", {}, evaluation_preamble="zzz"), _asset_log("b_task", {}, evaluation_preamble="aaa")]
     report = render_asset_provenance_markdown(logs)
     assert report.index("```text\nzzz") < report.index("```text\naaa")
+
+
+def test_conclusive_runs_count_both_passes_and_failures():
+    # 4 of 8 conclusive (3 followed, 1 violated) is exactly the minimum share.
+    runs = _records("agents_md", "template", "a", ["followed"] * 3 + ["violated"] + ["inconclusive"] * 4)
+    assert check_thresholds(summarise(runs), min_adherence=0.5, min_held=0.9, min_conclusive=0.5) == []
+
+
+def test_logs_from_before_the_model_rename_still_show_the_model():
+    [row] = [
+        line
+        for line in render_asset_provenance_markdown([_asset_log("old", {"x.txt": "x"}, kilo_model="kilo/old-model")]).splitlines()
+        if line.startswith("| `")
+    ]
+    assert "kilo/old-model" in row

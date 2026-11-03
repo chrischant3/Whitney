@@ -94,3 +94,48 @@ def test_docker_runs_record_the_model_name_kilo_was_given():
 
     assert task.metadata["kilo_cli_model"] == "anthropic/claude-haiku-4-5"
     assert "kilo_cli_model" not in agents_md(target="kilo", model=KILO_MODEL).metadata
+
+
+def test_options_a_target_cant_use_are_refused_with_a_reason():
+    from whitney import targets
+
+    with pytest.raises(ValueError, match="^the claude-code target runs locally only$"):
+        targets.check_target("claude-code", execution="docker")
+    with pytest.raises(ValueError, match="^base_url applies to the kilo target only$"):
+        targets.check_target("claude-code", base_url="https://x.example")
+    with pytest.raises(ValueError, match="^base_url applies to the kilo target only$"):
+        targets.build_agent("claude-code", CLAUDE_MODEL, {"claude-code": {}}, base_url="https://x.example")
+    with pytest.raises(ValueError, match="^target must be one of kilo, claude-code; got 'KILO'$"):
+        targets.model_access("KILO", None, None)
+
+
+@pytest.mark.parametrize("target, model", [("kilo", KILO_MODEL), ("claude-code", CLAUDE_MODEL)])
+def test_build_agent_hands_every_option_to_the_targets_agent(monkeypatch, target, model):
+    from whitney import targets
+
+    built = {}
+    for name in ("kilo", "claude_code"):
+        monkeypatch.setattr(targets, name, lambda name=name, **kwargs: built.update(agent=name, **kwargs))
+    permissions = {"kilo": {"bash": "allow"}, "claude-code": {"allow": ["Read"]}}
+    files, outputs = {"AGENTS.md": "x"}, {"solution.py": "/workspace/solution.py"}
+
+    targets.build_agent(
+        target, model, permissions, local_project_files=files, local_output_targets=outputs, api_key_env="TEAM_KEY",
+        base_url="https://proxy.example/v1" if target == "kilo" else None,
+    )  # fmt: skip
+
+    common = {"model": model, "harness_permissions": permissions[target], "local_project_files": files,
+              "local_output_targets": outputs, "api_key_env": "TEAM_KEY"}  # fmt: skip
+    if target == "kilo":
+        assert built == {"agent": "kilo", **common, "execution": "local", "base_url": "https://proxy.example/v1"}
+    else:
+        assert built == {"agent": "claude_code", **common}
+
+
+def test_claude_code_defaults_to_the_anthropic_key_variable(monkeypatch):
+    from whitney import targets
+
+    built = {}
+    monkeypatch.setattr(targets, "claude_code", lambda **kwargs: built.update(kwargs))
+    targets.build_agent("claude-code", CLAUDE_MODEL, {"claude-code": {}})
+    assert built["api_key_env"] == "ANTHROPIC_API_KEY"

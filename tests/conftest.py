@@ -1,5 +1,7 @@
 """Fixtures shared across test files."""
 
+import locale
+import os
 from pathlib import Path
 
 import pytest
@@ -33,3 +35,32 @@ def home_with_blocking_git_hooks(tmp_path, monkeypatch) -> Path:
     for name in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TEMPLATE_DIR"):
         monkeypatch.delenv(name, raising=False)
     return home
+
+
+@pytest.fixture
+def stdin_is_a_pipe():
+    """The test process's stdin replaced by an open pipe, so a child that inherits it can tell.
+
+    Under pytest, stdin is often /dev/null already, which would hide a child
+    that inherits it instead of getting /dev/null on purpose.
+    """
+    read_end, write_end = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read_end, 0)
+    yield
+    os.dup2(saved, 0)
+    for fd in (saved, read_end, write_end):
+        os.close(fd)
+
+
+@pytest.fixture
+def ascii_locale():
+    """The C locale for the test, where Python's default text encoding is ASCII.
+
+    Code that leaves the encoding to the default, instead of naming UTF-8,
+    then fails on non-ASCII text, as it would for a user on a non-UTF-8 locale.
+    """
+    saved = locale.setlocale(locale.LC_CTYPE)
+    locale.setlocale(locale.LC_CTYPE, "C")
+    yield
+    locale.setlocale(locale.LC_CTYPE, saved)

@@ -211,14 +211,14 @@ def test_docker_mode_derives_the_model_kilo_is_told_to_use(model, kilo_cli_model
 def test_docker_mode_refuses_models_whose_format_the_bridge_cannot_serve(model):
     from whitney.agent import bridge_kilo_model
 
-    with pytest.raises(ValueError, match="Docker mode needs an Anthropic or OpenAI model"):
+    with pytest.raises(ValueError, match="^Docker mode needs an Anthropic or OpenAI model, e.g. kilo/anthropic/claude-haiku-4.5 or "):
         bridge_kilo_model(model)
 
 
 def test_docker_agent_refuses_an_unsupported_model_before_any_run():
     from whitney.agent import kilo
 
-    with pytest.raises(ValueError, match="Docker mode needs an Anthropic or OpenAI model"):
+    with pytest.raises(ValueError, match="^Docker mode needs an Anthropic or OpenAI model, e.g. kilo/anthropic/claude-haiku-4.5 or "):
         kilo(model="kilo/google/gemini-3-pro", execution="docker")
 
 

@@ -27,6 +27,9 @@ MODEL = "anthropic/claude-haiku-4-5"
 FAKE_CLAUDE = r"""#!/bin/sh
 . "$(dirname "$0")/control.sh"
 printf '%s\n' "$@" > "$PWD/args.txt"
+basename "$0" > "$PWD/argv0.txt"
+[ /dev/stdin -ef /dev/null ] && echo devnull > "$PWD/stdin.txt" || echo inherited > "$PWD/stdin.txt"
+env | cut -d= -f1 | sort > "$PWD/env_names.txt"
 {
   echo "HOME=$HOME"
   echo "KEY=$ANTHROPIC_API_KEY"
@@ -243,3 +246,23 @@ def test_a_prompt_that_looks_like_an_option_reaches_claude_as_the_message(fake_c
     _run(claude_code(model=MODEL), prompt="--version")
 
     assert (fake_claude.project / "args.txt").read_text().splitlines()[-2:] == ["--", "--version"]
+
+
+def test_claude_runs_as_claude_with_its_stdin_closed_and_a_named_temporary_home(fake_claude, stdin_is_a_pipe):
+    # With stdin open, `claude -p` waits for piped input before it starts.
+    _run(claude_code(model=MODEL))
+
+    project = fake_claude.project
+    assert (project / "argv0.txt").read_text().strip() == "claude"
+    assert (project / "stdin.txt").read_text().strip() == "devnull"
+    assert Path(_env(project)["HOME"]).name.startswith("claude-eval-home-")
+
+
+def test_claudes_environment_holds_nothing_but_what_the_runner_gives_it(fake_claude):
+    from whitney.git_env import ISOLATED_GIT_ENV
+
+    _run(claude_code(model=MODEL))
+
+    names = set((fake_claude.project / "env_names.txt").read_text().split())
+    expected = {"PATH", "HOME", "PWD", "ANTHROPIC_API_KEY", "GIT_CEILING_DIRECTORIES", *ISOLATED_GIT_ENV}
+    assert names - {"SHLVL", "_"} == expected

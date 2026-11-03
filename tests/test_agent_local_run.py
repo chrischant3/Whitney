@@ -10,6 +10,7 @@ the fake reads its controls from control.sh beside it.
 
 import asyncio
 import json
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -42,6 +43,7 @@ echo '{"type":"text","part":{"text":"first draft"}}'
 echo '{"type":"text","part":{"text":"final answer"}}'
 printf '\377\n'
 echo "stderr from kilo" >&2
+[ -n "$FAKE_BAD_STDERR" ] && printf 'bad \377 byte\n' >&2
 if [ -n "$FAKE_PRINT" ]; then  # an agent that echoes a variable, e.g. its API key
   eval "leaked=\$$FAKE_PRINT"
   printf '{"type":"text","part":{"text":"%s"}}\n' "$leaked"
@@ -532,3 +534,106 @@ def test_the_temporary_config_path_is_not_redacted(fake_kilo, user_home):
 
     run = fake_kilo.stored[RUN_STORE_KEY]
     assert "[redacted]" not in run["events"] and ".json" in run["stderr"]
+
+
+
+STDIN_PROBE = ["sh", "-c", "[ /dev/stdin -ef /dev/null ] && echo devnull || echo inherited"]
+
+
+def test_run_process_gives_the_child_the_stdin_it_was_asked_for(tmp_path, stdin_is_a_pipe):
+    from whitney.agent import run_process
+
+    closed = asyncio.run(run_process(STDIN_PROBE, tmp_path, {"PATH": "/usr/bin:/bin"}, 10, "probe", asyncio.subprocess.DEVNULL))
+    inherited = asyncio.run(run_process(STDIN_PROBE, tmp_path, {"PATH": "/usr/bin:/bin"}, 10, "probe"))
+
+    assert (closed["events"], inherited["events"]) == ("devnull\n", "inherited\n")
+
+
+def test_undecodable_stderr_is_replaced_not_fatal(fake_kilo, user_home):
+    fake_kilo.control(FAKE_BAD_STDERR="1")
+    _run(kilo(model=MODEL, timeout=30))
+
+    assert "bad � byte" in fake_kilo.stored[RUN_STORE_KEY]["stderr"]
+
+
+def test_killing_a_process_group_that_already_exited_is_not_an_error():
+    import subprocess
+
+    from whitney.agent import _kill_process_group
+
+    gone = subprocess.Popen(["true"], start_new_session=True)
+    gone.wait()
+    _kill_process_group(gone.pid)  # raises ProcessLookupError if it isn't handled
+
+
+def test_auto_reaches_kilo_in_the_sandbox_project_too(fake_kilo, user_home):
+    _run(kilo(model=MODEL, auto=True, timeout=30))
+
+    assert "--auto" in (fake_kilo.sandbox.project / "args.txt").read_text().splitlines()
+
+
+def test_kilos_environment_holds_nothing_but_what_the_runner_gives_it(fake_kilo, user_home, monkeypatch):
+    from whitney.agent import LOCAL_ENV_PASSTHROUGH
+    from whitney.git_env import ISOLATED_GIT_ENV
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-named-key-0123456789")
+    _run(kilo(model="anthropic/x", harness_permissions={"bash": "allow"}, api_key_env="ANTHROPIC_API_KEY", timeout=30))
+
+    expected = {name for name in LOCAL_ENV_PASSTHROUGH if name in os.environ} | set(ISOLATED_GIT_ENV) | {
+        "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
+        "GIT_CEILING_DIRECTORIES", "KILO_CONFIG", "ANTHROPIC_API_KEY", "PWD",
+    }  # fmt: skip
+    assert set(_env(fake_kilo.sandbox.project)) - {"SHLVL", "_"} == expected
+
+
+def test_without_home_or_xdg_the_global_config_comes_from_the_users_home_folder(tmp_path, monkeypatch):
+    from whitney.agent import global_provider_settings
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    (tmp_path / ".config" / "kilo").mkdir(parents=True)
+    (tmp_path / ".config" / "kilo" / "kilo.json").write_text('{"provider": {"d": {}}}')
+
+    assert global_provider_settings({}) == {"d": {}}
+
+
+def test_an_unreadable_global_config_is_named_by_its_full_path(tmp_path):
+    import re
+
+    from whitney.agent import global_provider_settings
+
+    config = tmp_path / ".config" / "kilo" / "kilo.json"
+    config.parent.mkdir(parents=True)
+    config.write_text("{not json")
+    with pytest.raises(ValueError, match=f"^{re.escape(str(config))}: not valid JSON"):
+        global_provider_settings({"HOME": str(tmp_path)})
+
+
+def test_redaction_goes_by_length_not_alphabetical_order():
+    from whitney.agent import redact
+
+    # "zzzzzzzz" sorts after the longer secret that contains it, so only length order redacts it whole
+    assert redact("aaaaaaaa-zzzzzzzz", ["zzzzzzzz", "aaaaaaaa-zzzzzzzz"]) == "[redacted]"
+
+
+def test_the_refusal_says_how_to_fix_it(fake_kilo, user_home):
+    planted = fake_kilo.sandbox.project.parent / "AGENTS.md"
+    planted.write_text("x")
+    with pytest.raises(RuntimeError) as raised:
+        _run(kilo(model=MODEL, timeout=30))
+    assert str(raised.value) == (
+        f"{planted.resolve()} is above the project, where the harness would read it as instructions or "
+        "config the eval never declared. Remove it, or set TMPDIR to a folder with none above it."
+    )
+
+
+def test_global_config_and_outputs_are_read_as_utf8_whatever_the_locale(tmp_path, ascii_locale):
+    from whitney.agent import copy_outputs, global_provider_settings
+
+    (tmp_path / "kilo").mkdir()
+    (tmp_path / "kilo" / "kilo.json").write_text('{"provider": {"café": {}}}', encoding="utf-8")
+    assert global_provider_settings({"XDG_CONFIG_HOME": str(tmp_path)}) == {"café": {}}
+
+    (tmp_path / "solution.py").write_text("print('déjà vu')\n", encoding="utf-8")
+    sbox = FakeSandbox(tmp_path)
+    asyncio.run(copy_outputs(sbox, tmp_path, {"solution.py": "/workspace/solution.py"}))
+    assert sbox.writes == [("/workspace/solution.py", "print('déjà vu')\n")]

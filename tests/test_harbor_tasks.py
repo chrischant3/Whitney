@@ -178,3 +178,27 @@ def test_a_manifest_from_before_digests_is_used_but_recorded_as_unverified(tmp_p
     (tmp_path / "inspect-harbor-manifest.json").write_text('{"package": "bigcode/bigcodebench-hard-complete"}')
     task = bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
     assert task.metadata["cache_integrity"] == "unverified: the manifest has no file digests; re-sync the cache to add them"
+
+
+def test_the_summary_of_changed_files_lists_five_then_counts_the_rest(tmp_path, fake_harbor):
+    import json
+
+    for count, more in ((5, ""), (6, " and 1 more")):
+        (tmp_path / "inspect-harbor-manifest.json").write_text(json.dumps({"files": {}}))
+        for n in range(count):
+            (tmp_path / f"added{n}.sh").write_text("x\n")
+        with pytest.raises(ValueError) as raised:
+            bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+        assert str(raised.value).endswith(f"added4.sh{more}")
+
+
+def test_a_manifest_is_read_as_utf8_whatever_the_locale(tmp_path, fake_harbor, ascii_locale):
+    import hashlib
+
+    (tmp_path / "données.txt").write_text("x\n")
+    digest = hashlib.sha256(b"x\n").hexdigest()
+    (tmp_path / "inspect-harbor-manifest.json").write_text(f'{{"files": {{"données.txt": "{digest}"}}}}', encoding="utf-8")
+
+    task = bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+
+    assert task.metadata["cache_integrity"] == "verified"
