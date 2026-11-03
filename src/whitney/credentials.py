@@ -18,9 +18,12 @@ import time
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 DEFAULT_GATEWAY_URL = "https://api.kilo.ai/api/gateway"
 GATEWAY_MODEL_PREFIX = "openai-api/kilo/"
+KILO_HOST = "kilo.ai"  # the Kilo login is only sent here or to a subdomain
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}  # plain http is allowed to a local proxy
 
 
 class CredentialsError(RuntimeError):
@@ -49,9 +52,12 @@ def resolve_gateway_credentials(
     """Return gateway credentials from KILO_API_KEY, else from the Kilo login.
 
     Raises:
-        CredentialsError: neither is available, or the login has expired.
+        CredentialsError: neither is available, the login has expired, or
+            KILO_BASE_URL isn't https (plain http is allowed only to a local
+            proxy), or points away from Kilo while the key is the Kilo login.
     """
     base_url = environ.get("KILO_BASE_URL") or DEFAULT_GATEWAY_URL
+    _check_base_url(base_url)
     if environ.get("KILO_API_KEY"):
         return GatewayCredentials(environ["KILO_API_KEY"], base_url, "KILO_API_KEY")
 
@@ -61,6 +67,12 @@ def resolve_gateway_credentials(
         raise CredentialsError(
             "No Kilo Gateway credentials. Either set KILO_API_KEY in .env (create a key at "
             "https://app.kilo.ai under API Keys), or log in to Kilo with `kilo auth login`."
+        )
+    host = urlsplit(base_url).hostname or ""
+    if host != KILO_HOST and not host.endswith(f".{KILO_HOST}"):
+        raise CredentialsError(
+            f"KILO_BASE_URL points at {host}, not Kilo, so your Kilo login won't be sent there. "
+            "Set KILO_API_KEY to a key for that gateway instead."
         )
     if entry.get("type") == "api" and entry.get("key"):
         return GatewayCredentials(entry["key"], base_url, f"kilo login ({auth_path})")
@@ -72,6 +84,14 @@ def resolve_gateway_credentials(
             )
         return GatewayCredentials(entry["access"], base_url, f"kilo login ({auth_path})")
     raise CredentialsError(f"Unrecognised Kilo login in {auth_path}; set KILO_API_KEY in .env instead.")
+
+
+def _check_base_url(base_url: str) -> None:
+    """The key goes to base_url as a bearer token, so it must travel over https, or stay on this machine."""
+    parts = urlsplit(base_url)
+    if parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS):
+        return
+    raise CredentialsError(f"KILO_BASE_URL must be an https URL (http only to localhost); got {base_url!r}")
 
 
 def _kilo_login(auth_path: Path) -> dict | None:
