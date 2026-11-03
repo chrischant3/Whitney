@@ -84,7 +84,7 @@ Use this for the Kilo Gateway, or when your company routes models through its ow
    python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3
    ```
 
-The repository never sees these credentials: the evals copy the project's `kilo.jsonc` and instruction files, not your global config, and reports say only that the global config was used.
+The repository never sees these credentials: the evals copy the project's `kilo.jsonc` and instruction files, not your global config, and reports say only that the global config was used. Each run gives Kilo a temporary HOME holding only a copy of your Kilo login, so your global `AGENTS.md`, instructions, MCP servers and permissions stay out of the results. Only the `provider` settings from your global config are carried over, together with the environment variables they name as `{env:...}`.
 
 #### With a provider API key you name
 
@@ -105,7 +105,7 @@ Use this to run the Kilo template against a provider directly, without touching 
 
    Add `--base-url https://your-proxy.example/v1` to send the provider's calls through a proxy. Other providers work the same way, e.g. `--model openai/gpt-5 --api-key-env OPENAI_API_KEY`.
 
-The runner gives Kilo a temporary config containing `{env:ANTHROPIC_API_KEY}`, which Kilo resolves itself, so the key never reaches disk or the eval logs. That config sits above your global config and below the project's `kilo.jsonc`, so the template under test still wins. If the variable isn't set, the run stops and names it.
+The runner gives Kilo a temporary config containing `{env:ANTHROPIC_API_KEY}`, which Kilo resolves itself, so the key is never written to disk. Kilo gets that variable and none of the rest of your environment. The agent's tools can still read it, so the key's value is redacted from the run's record before it reaches the eval log; use a spend-capped key kept for evals. The temporary config sits below the project's `kilo.jsonc`, so the template under test still wins. If the variable isn't set, the run stops and names it.
 
 #### Docker mode (isolated, for CI)
 
@@ -216,7 +216,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 ## How it works
 
 - Local mode runs the target's CLI on the host. The project files are staged in a temporary local sandbox, but the agent's shell and file tools are not OS-isolated; use Docker mode (kilo) when host isolation is required. Model API calls go directly to the provider and are not captured in Inspect's model transcript.
-- Kilo, locally, uses the user's global connection settings, or the key named with `--api-key-env`. In Docker mode it runs the CLI version pinned in `docker/Dockerfile` in an isolated sandbox, and Inspect's bridge answers its calls with `--model`, so requests are captured in Inspect logs.
+- Kilo, locally, uses the user's Kilo login and global provider settings, or the key named with `--api-key-env`, in a temporary HOME with only a short list of environment variables (`LOCAL_ENV_PASSTHROUGH` in `src/whitney/agent.py`). Keys a run is given are redacted from the stored run. In Docker mode it runs the CLI version pinned in `docker/Dockerfile` in an isolated sandbox, and Inspect's bridge answers its calls with `--model`, so requests are captured in Inspect logs.
 - Claude Code runs with an empty temporary home, `--setting-sources project` and no MCP servers, and only PATH, the API key and a fixed git identity in its environment, so nothing of the user's own Claude setup reaches the run.
 - The target's template is what's under test. Harness permissions let the eval tasks run headlessly (Kilo: a temporary config overlay that project-level permissions override; Claude Code: `--settings`). Neither harness runs with a blanket approve-all: Kilo runs without `--auto`, because `--auto` approves every `ask`, and Claude Code without `--dangerously-skip-permissions`.
 - A run that ends before the agent decides (Kilo exiting non-zero, or Claude Code reporting an error or a permission denial) counts as inconclusive in `agents_md`, not as followed.

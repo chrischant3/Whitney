@@ -41,6 +41,8 @@ echo '{"type":"system","subtype":"init","apiKeySource":"ANTHROPIC_API_KEY"}'
 echo '{"type":"system","subtype":"status"}'
 echo 'not json'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
+[ -n "$FAKE_LEAK" ] && printf '{"type":"assistant","message":{"content":[{"type":"text","text":"%s"}]}}\n' "$ANTHROPIC_API_KEY"
+[ -n "$FAKE_LEAK" ] && echo "$ANTHROPIC_API_KEY" >&2
 [ -n "$FAKE_RESULT" ] && printf '%s\n' "$FAKE_RESULT"
 echo "stderr from claude" >&2
 exit "${FAKE_EXIT:-0}"
@@ -205,3 +207,17 @@ def test_staged_project_outputs_are_copied_into_the_sandbox(fake_claude):
     run = fake_claude.stored[RUN_STORE_KEY]
     assert run["copied_outputs"] == ["/workspace/solution.py"] and run["missing_outputs"] == ["missing.py"]
     assert fake_claude.sandbox.writes == [("/workspace/solution.py", "def answer():\n    return 42\n")]
+
+
+def test_the_api_key_is_redacted_from_what_the_eval_stores(fake_claude, monkeypatch):
+    # Claude Code needs the key, so its Bash tool can print it; the transcript goes into the eval log.
+    key = "sk-ant-test-key-0123456789"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    leaked_result = json.dumps({**json.loads(SUCCESS), "result": f"The key is {key}"})
+    fake_claude.control(FAKE_LEAK="1", FAKE_RESULT=leaked_result)
+
+    state = _run(claude_code(model=MODEL))
+
+    run = fake_claude.stored[RUN_STORE_KEY]
+    assert key not in run["events"] and key not in run["stderr"]
+    assert run["final_text"] == state.messages[-1].text == "The key is [redacted]"

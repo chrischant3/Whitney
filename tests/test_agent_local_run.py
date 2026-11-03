@@ -1,12 +1,16 @@
 """The local Kilo runner, driven end to end against a fake `kilo` on PATH.
 
-The fake records what it was run with (arguments, working directory, the
-project files it could see), prints a JSON event stream, and can be told to
-fail, hang, or write an output file, so these tests check what the runner
-actually does with a real subprocess.
+The fake records what it was run with (arguments, working directory,
+environment, the files in its HOME, the project files it could see), prints a
+JSON event stream, and can be told to fail, hang, write an output file or
+print a secret, so these tests check what the runner actually does with a real
+subprocess. The runner passes Kilo almost none of the test's environment, so
+the fake reads its controls from control.sh beside it.
 """
 
 import asyncio
+import json
+import shlex
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,8 +25,13 @@ from whitney.agent import RUN_STORE_KEY, kilo, local_config_overlay
 MODEL = "test-provider/test-model"  # no default model; any provider/model will do here
 
 FAKE_KILO = r"""#!/bin/sh
+. "$(dirname "$0")/control.sh"
 printf '%s\n' "$@" > "$PWD/args.txt"
 pwd > "$PWD/where.txt"
+env | sort > "$PWD/env.txt"
+(cd "$HOME" && find . -type f | sort) > "$PWD/home.txt"
+ls -l "$HOME/.local/share/kilo/auth.json" 2>/dev/null | cut -c1-10 > "$PWD/auth_mode.txt"
+[ -n "$KILO_CONFIG" ] && cp "$KILO_CONFIG" "$PWD/overlay.json"
 [ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
 [ -f sub/dir/x.txt ] && cp sub/dir/x.txt seen.txt
 [ -n "$FAKE_COMMIT" ] && { git init -q && git add -A && git commit -qm "agent commit"; echo "$?" > commit_exit.txt; }
@@ -33,6 +42,12 @@ echo '{"type":"text","part":{"text":"first draft"}}'
 echo '{"type":"text","part":{"text":"final answer"}}'
 printf '\377\n'
 echo "stderr from kilo" >&2
+if [ -n "$FAKE_PRINT" ]; then  # an agent that echoes a variable, e.g. its API key
+  eval "leaked=\$$FAKE_PRINT"
+  printf '{"type":"text","part":{"text":"%s"}}\n' "$leaked"
+  echo "$leaked" >&2
+fi
+[ -n "$FAKE_CAT_LOGIN" ] && tr -d '\n' < "$HOME/.local/share/kilo/auth.json" && echo
 exit "${FAKE_EXIT:-0}"
 """
 
@@ -60,15 +75,43 @@ def fake_kilo(tmp_path, monkeypatch):
     (bin_dir / "kilo").write_text(FAKE_KILO)
     (bin_dir / "kilo").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
-    for name in ("FAKE_SLEEP", "FAKE_EXIT", "FAKE_WRITE", "FAKE_COMMIT"):
-        monkeypatch.delenv(name, raising=False)
+    controls: dict[str, str] = {}
+
+    def control(**values):
+        controls.update(values)
+        lines = [f"{name}={shlex.quote(value)}" for name, value in controls.items()]
+        (bin_dir / "control.sh").write_text("\n".join(lines) + "\n")
+
+    control()
     sandbox_project = tmp_path / "sandbox-project"
     sandbox_project.mkdir()
     sbox = FakeSandbox(sandbox_project)
     stored: dict = {}
     monkeypatch.setattr(agent_module, "sandbox", lambda: sbox)
     monkeypatch.setattr(agent_module, "store", lambda: SimpleNamespace(set=stored.__setitem__))
-    return SimpleNamespace(sandbox=sbox, stored=stored)
+    return SimpleNamespace(sandbox=sbox, stored=stored, control=control)
+
+
+@pytest.fixture
+def user_home(tmp_path, monkeypatch):
+    """HOME of a user with a Kilo login, global Kilo rules and settings, and secrets in the environment."""
+    home = tmp_path / "user-home"
+    (home / ".local" / "share" / "kilo").mkdir(parents=True)
+    (home / ".local" / "share" / "kilo" / "auth.json").write_text(
+        json.dumps({"kilo": {"type": "oauth", "access": "kilo-oauth-access-0123456789", "refresh": "kilo-refresh-9876543210"}})
+    )
+    (home / ".config" / "kilo").mkdir(parents=True)
+    (home / ".config" / "kilo" / "AGENTS.md").write_text("Global rule: never commit secrets.\n")
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_caller_token_not_for_kilo")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-caller-secret-not-for-kilo")
+    return home
+
+
+def _env(project: Path) -> dict[str, str]:
+    return dict(line.split("=", 1) for line in (project / "env.txt").read_text().splitlines() if "=" in line)
 
 
 def _run(agent, prompt="commit my work"):
@@ -76,7 +119,7 @@ def _run(agent, prompt="commit my work"):
 
 
 def test_staged_project_run_records_kilo_output_and_copies_declared_outputs(fake_kilo, monkeypatch):
-    monkeypatch.setenv("FAKE_WRITE", "solution.py")
+    fake_kilo.control(FAKE_WRITE="solution.py")
     seen = {}
     agent = kilo(
         model="openrouter/anthropic/claude-haiku-4-5",
@@ -116,8 +159,8 @@ def test_staged_project_run_records_kilo_output_and_copies_declared_outputs(fake
     assert state.messages[-1].model == "openrouter/anthropic/claude-haiku-4-5"
 
 
-def test_without_staged_files_kilo_runs_in_the_sandbox_project_without_auto(fake_kilo, monkeypatch):
-    monkeypatch.setenv("FAKE_EXIT", "1")
+def test_without_staged_files_kilo_runs_in_the_sandbox_project_without_auto(fake_kilo):
+    fake_kilo.control(FAKE_EXIT="1")
     _run(kilo(model="anthropic/claude-haiku-4-5", timeout=30), prompt="read ../outside")
 
     project = fake_kilo.sandbox.project
@@ -129,10 +172,9 @@ def test_without_staged_files_kilo_runs_in_the_sandbox_project_without_auto(fake
     assert fake_kilo.stored[RUN_STORE_KEY]["exit_code"] == 1  # recorded as evidence, not raised
 
 
-def test_the_users_git_hooks_and_identity_stay_out_of_kilos_commits(fake_kilo, home_with_blocking_git_hooks, monkeypatch):
-    # Kilo keeps the user's HOME (its login lives there), but not their git config: a global
-    # secret-scanning hook would otherwise block a bad commit and credit the model with it.
-    monkeypatch.setenv("FAKE_COMMIT", "1")
+def test_the_users_git_hooks_and_identity_stay_out_of_kilos_commits(fake_kilo, home_with_blocking_git_hooks):
+    # A global secret-scanning hook would otherwise block a bad commit and credit the model with it.
+    fake_kilo.control(FAKE_COMMIT="1")
     _run(kilo(model="anthropic/claude-haiku-4-5", timeout=30))
 
     project = fake_kilo.sandbox.project
@@ -141,10 +183,10 @@ def test_the_users_git_hooks_and_identity_stay_out_of_kilos_commits(fake_kilo, h
     assert author.stdout.strip() == "Eval Agent <agent@example.invalid>"
 
 
-def test_a_hung_kilo_is_killed_and_recorded_as_a_timeout(fake_kilo, monkeypatch):
+def test_a_hung_kilo_is_killed_and_recorded_as_a_timeout(fake_kilo):
     import time
 
-    monkeypatch.setenv("FAKE_SLEEP", "10")  # a child of kilo (like a tool's shell command) that outlives the timeout
+    fake_kilo.control(FAKE_SLEEP="10")  # a child of kilo (like a tool's shell command) that outlives the timeout
     started = time.monotonic()
     state = _run(kilo(model="anthropic/claude-haiku-4-5", timeout=1))
 
@@ -154,12 +196,11 @@ def test_a_hung_kilo_is_killed_and_recorded_as_a_timeout(fake_kilo, monkeypatch)
     assert state.messages[-1].text == "commit my work"  # no final message from a timed-out run
 
 
-def test_a_cancelled_run_stops_kilo_and_the_tools_it_started(fake_kilo, monkeypatch, tmp_path):
+def test_a_cancelled_run_stops_kilo_and_the_tools_it_started(fake_kilo, tmp_path):
     # Ctrl-C, an Inspect time limit or another sample's error cancels the run. Kilo is in its
     # own session, so nothing but the runner can stop it.
     marker = tmp_path / "outlived-the-cancel.txt"
-    monkeypatch.setenv("FAKE_SLEEP", "2")
-    monkeypatch.setenv("FAKE_WRITE", str(marker))  # written after the sleep, only if kilo is still running
+    fake_kilo.control(FAKE_SLEEP="2", FAKE_WRITE=str(marker))  # written after the sleep, only if kilo is still running
     started = fake_kilo.sandbox.project / "args.txt"
 
     async def cancel_mid_run():
@@ -279,15 +320,116 @@ def test_permissions_reach_kilo_in_the_sandbox_project_too(fake_kilo, monkeypatc
     assert seen["config"] == '{"permission": {"edit": "allow"}}'
 
 
-def test_staged_project_runs_honour_the_timeout(fake_kilo, monkeypatch):
-    monkeypatch.setenv("FAKE_SLEEP", "10")
+def test_staged_project_runs_honour_the_timeout(fake_kilo):
+    fake_kilo.control(FAKE_SLEEP="10")
     _run(kilo(model=MODEL, local_project_files={"AGENTS.md": "x"}, timeout=1))
     assert fake_kilo.stored[RUN_STORE_KEY]["exit_code"] == 124
 
 
-def test_every_declared_output_is_checked_even_after_a_missing_one(fake_kilo, monkeypatch):
-    monkeypatch.setenv("FAKE_WRITE", "solution.py")
+def test_every_declared_output_is_checked_even_after_a_missing_one(fake_kilo):
+    fake_kilo.control(FAKE_WRITE="solution.py")
     targets = {"missing.py": "/workspace/missing.py", "solution.py": "/workspace/solution.py"}
     _run(kilo(model=MODEL, local_project_files={"AGENTS.md": "x"}, local_output_targets=targets, timeout=30))
     run = fake_kilo.stored[RUN_STORE_KEY]
     assert (run["missing_outputs"], run["copied_outputs"]) == (["missing.py"], ["/workspace/solution.py"])
+
+
+def test_kilo_gets_none_of_the_callers_secrets_or_git_variables(fake_kilo, user_home, monkeypatch):
+    # The agent's shell inherits Kilo's environment, and its tool output is stored in the eval log.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-caller-key-not-named")
+    monkeypatch.setenv("GIT_DIR", "/somewhere/else/.git")
+    monkeypatch.setenv("GIT_INDEX_FILE", "/somewhere/else/index")
+    monkeypatch.setenv("LANG", "en_GB.UTF-8")
+
+    _run(kilo(model=MODEL, timeout=30))
+
+    env = _env(fake_kilo.sandbox.project)
+    for name in ("ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY", "GIT_DIR", "GIT_INDEX_FILE"):
+        assert name not in env
+    assert env["LANG"] == "en_GB.UTF-8" and env["PATH"].startswith(str(user_home.parent / "bin"))
+    assert env["GIT_CONFIG_GLOBAL"] == "/dev/null"
+
+
+def test_kilo_runs_in_a_temporary_home_holding_only_a_copy_of_the_login(fake_kilo, user_home):
+    # Global AGENTS.md, instructions, MCP servers and permissions in the user's Kilo setup
+    # would otherwise reach the baseline and be credited to the template.
+    _run(kilo(model=MODEL, timeout=30))
+
+    project = fake_kilo.sandbox.project
+    env = _env(project)
+    home = Path(env["HOME"])
+    assert home != user_home and not home.exists()  # temporary, removed afterwards
+    assert (env["XDG_CONFIG_HOME"], env["XDG_DATA_HOME"]) == (str(home / ".config"), str(home / ".local" / "share"))
+    assert (project / "home.txt").read_text().splitlines() == ["./.local/share/kilo/auth.json"]
+    assert (project / "auth_mode.txt").read_text().strip() == "-rw-------"
+
+
+def test_without_a_kilo_login_kilo_still_runs_in_an_empty_home(fake_kilo, user_home):
+    (user_home / ".local" / "share" / "kilo" / "auth.json").unlink()
+
+    _run(kilo(model=MODEL, timeout=30))
+
+    assert (fake_kilo.sandbox.project / "home.txt").read_text() == ""
+    assert fake_kilo.stored[RUN_STORE_KEY]["exit_code"] == 0
+
+
+def test_the_named_key_reaches_kilo_but_is_redacted_from_what_the_eval_stores(fake_kilo, user_home, monkeypatch):
+    key = "sk-ant-named-key-0123456789"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    fake_kilo.control(FAKE_PRINT="ANTHROPIC_API_KEY")
+
+    state = _run(kilo(model="anthropic/claude-haiku-4-5", api_key_env="ANTHROPIC_API_KEY", timeout=30))
+
+    assert _env(fake_kilo.sandbox.project)["ANTHROPIC_API_KEY"] == key
+    run = fake_kilo.stored[RUN_STORE_KEY]
+    assert key not in run["events"] and key not in run["stderr"]
+    assert '"text":"[redacted]"' in run["events"]
+    assert state.messages[-1].text == "[redacted]"
+
+
+def test_the_kilo_login_is_redacted_from_what_the_eval_stores(fake_kilo, user_home):
+    fake_kilo.control(FAKE_CAT_LOGIN="1")
+
+    _run(kilo(model=MODEL, timeout=30))
+
+    events = fake_kilo.stored[RUN_STORE_KEY]["events"]
+    assert "kilo-oauth-access-0123456789" not in events and "kilo-refresh-9876543210" not in events
+    assert '"access": "[redacted]"' in events
+
+
+def test_global_provider_settings_carry_over_without_the_rest_of_the_global_config(fake_kilo, user_home, monkeypatch):
+    (user_home / ".config" / "kilo" / "kilo.jsonc").write_text(
+        """{
+          // a team proxy, configured once for every project
+          "provider": {"corp": {"options": {"baseURL": "https://llm.corp.example/v1", "apiKey": "{env:CORP_LLM_KEY}"}}},
+          "instructions": ["~/global-rules.md"],
+          "mcp": {"tracker": {"type": "remote", "url": "https://mcp.example", "headers": {"Authorization": "Bearer x"}}},
+          "permission": {"bash": "deny"},
+        }"""
+    )
+    monkeypatch.setenv("CORP_LLM_KEY", "not-a-real-corp-key")
+
+    _run(kilo(model="corp/model-x", harness_permissions={"bash": "allow"}, timeout=30))
+
+    project = fake_kilo.sandbox.project
+    assert json.loads((project / "overlay.json").read_text()) == {
+        "permission": {"bash": "allow"},
+        "provider": {"corp": {"options": {"baseURL": "https://llm.corp.example/v1", "apiKey": "{env:CORP_LLM_KEY}"}}},
+    }
+    assert _env(project)["CORP_LLM_KEY"] == "not-a-real-corp-key"  # the variable the carried settings name
+
+
+def test_the_runs_own_key_and_base_url_win_over_global_provider_settings():
+    overlay = local_config_overlay(
+        "corp/model-x",
+        None,
+        api_key_env="RUN_KEY",
+        base_url="https://run.example/v1",
+        environ={"RUN_KEY": "v"},
+        global_provider={"corp": {"name": "Corp", "options": {"baseURL": "https://global.example", "timeout": 5}}},
+    )
+    assert overlay == {
+        "provider": {
+            "corp": {"name": "Corp", "options": {"baseURL": "https://run.example/v1", "timeout": 5, "apiKey": "{env:RUN_KEY}"}}
+        }
+    }

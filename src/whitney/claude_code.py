@@ -20,7 +20,15 @@ from inspect_ai.agent import Agent, AgentState, agent
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
-from whitney.agent import ISOLATED_GIT_ENV, PROJECT_DIR, RUN_STORE_KEY, copy_outputs, run_process, staged_project
+from whitney.agent import (
+    ISOLATED_GIT_ENV,
+    PROJECT_DIR,
+    RUN_STORE_KEY,
+    copy_outputs,
+    redact_run,
+    run_process,
+    staged_project,
+)
 
 MODEL_PREFIX = "anthropic/"
 
@@ -50,7 +58,8 @@ def claude_code(
             reaches Claude Code as ANTHROPIC_API_KEY.
 
     Side effects: stores exit_code, the stream-json events, stderr,
-    ended_early, permission_denials and api_key_source under RUN_STORE_KEY.
+    ended_early, permission_denials and api_key_source under RUN_STORE_KEY,
+    with the API key's value redacted.
 
     Raises:
         ValueError: model isn't anthropic/<model> (at construction), or
@@ -100,6 +109,7 @@ async def _run(command: list[str], project_dir: Path, key: str, timeout: int) ->
         env = {"PATH": os.environ.get("PATH", ""), "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
         run = await run_process(command, project_dir, {**env, **ISOLATED_GIT_ENV}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
+    run = redact_run(run, [key])  # its Bash tool can print the key, and the transcript goes into the eval log
     return {**run, **_outcome(run["events"])}
 
 
