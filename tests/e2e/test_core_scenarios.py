@@ -158,7 +158,12 @@ def _dotenv_names() -> set[str]:
 
 
 def _agent(log) -> str:
-    return log.plan.steps[0].solver
+    """The agent's registered name without its package namespace.
+
+    Inspect names it "whitney/kilo" when whitney is installed (the README's
+    editable install) and "kilo" when it isn't, so the bare name holds either way.
+    """
+    return log.plan.steps[0].solver.removeprefix("whitney/")
 
 
 def _answer(sample) -> str:
