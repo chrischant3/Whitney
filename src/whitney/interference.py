@@ -7,11 +7,16 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
 
 from whitney import targets
+from whitney.harbor_tasks import HARBOR_PERMISSIONS
 from whitney.project_files import load_project_files, load_template_files
-from whitney.tasks import AGENTS_MD_PERMISSIONS
+from whitney.prompt_injection import scan_record
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_DATASET = ROOT / "dataset/ifevalcode_cleaned.jsonl"
+# IFEvalCode is scored from the agent's final message, so it needs no shell,
+# and every prompt comes from a downloaded dataset: an injected row could
+# otherwise run commands on the host. The same grants as the Harbor eval.
+IFEVALCODE_PERMISSIONS = HARBOR_PERMISSIONS
 SUPPORTED_LANGUAGES = ("cpp", "csharp", "java", "javascript", "php", "python", "shell", "typescript")
 IFEVALCODE_SYSTEM_PROMPT = """You are an expert programmer. You will be given a task description with specific constraints and requirements. Write code in {language} that solves the problem while adhering to all the specified constraints.
 
@@ -35,9 +40,12 @@ def ifevalcode(
 
     The local audit script removes the Chinese question column and checks all
     text fields for prompt-injection indicators. This task reads only its
-    sanitised JSONL output and never contacts Hugging Face. target picks the
-    harness and template, and api_key_env and base_url the provider key, as
-    in whitney.tasks.agents_md.
+    sanitised JSONL output and never contacts Hugging Face. It scans every
+    row it loads with the same checks and leaves flagged rows out, recording
+    their ids as injection_scan_excluded, so data that skipped the audit
+    can't reach the agent either. The agent gets no shell
+    (IFEVALCODE_PERMISSIONS). target picks the harness and template, and
+    api_key_env and base_url the provider key, as in whitney.tasks.agents_md.
     """
     if variant not in {"baseline", "template"}:
         raise ValueError("variant must be 'baseline' or 'template'")
@@ -59,7 +67,7 @@ def ifevalcode(
     except ImportError as error:
         raise RuntimeError('Install the optional extra with `pip install -e ".[ifevalcode]"`.') from error
 
-    records = _load_records(dataset_file, selected_languages, samples_per_language)
+    records, excluded = _load_records(dataset_file, selected_languages, samples_per_language)
     if not records:
         raise ValueError("No local IFEvalCode samples match the selected languages")
 
@@ -92,7 +100,7 @@ def ifevalcode(
         solver=targets.build_agent(
             target,
             model,
-            AGENTS_MD_PERMISSIONS,
+            IFEVALCODE_PERMISSIONS,
             local_project_files=project_files,
             api_key_env=api_key_env,
             base_url=base_url,
@@ -107,11 +115,12 @@ def ifevalcode(
             "model_access": targets.model_access(target, api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": project_files,
-            "harness_permissions": AGENTS_MD_PERMISSIONS[target],
+            "harness_permissions": IFEVALCODE_PERMISSIONS[target],
             "evaluation_preamble": IFEVALCODE_SYSTEM_PROMPT,
             "dataset_source": "local sanitised IFEvalCode JSONL",
             "chinese_question_column_removed": True,
             "candidate_records": len(records),
+            "injection_scan_excluded": excluded,
         },
     )
 
@@ -129,8 +138,9 @@ def _normalise_languages(languages: str | list[str] | None) -> set[str]:
     return selected
 
 
-def _load_records(path: Path, languages: set[str], limit: int | None) -> list[dict]:
-    records = []
+def _load_records(path: Path, languages: set[str], limit: int | None) -> tuple[list[dict], list[str]]:
+    """Rows in `languages`, at most `limit` per language, and the ids of rows the injection scan left out."""
+    records, excluded = [], []
     with path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, 1):
             if not line.strip():
@@ -140,12 +150,16 @@ def _load_records(path: Path, languages: set[str], limit: int | None) -> list[di
                 raise ValueError(f"Chinese question column remains in {path}, row {line_number}")
             if "english_question" not in record or "programming_language" not in record:
                 raise ValueError(f"Required IFEvalCode fields missing from row {line_number}")
-            if str(record["programming_language"]).lower() in languages:
+            if str(record["programming_language"]).lower() not in languages:
+                continue
+            if scan_record(record):
+                excluded.append(str(record.get("id")))
+            else:
                 records.append(record)
 
     records.sort(key=lambda record: str(record["programming_language"]).lower())
     if limit is None:
-        return records
+        return records, excluded
 
     selected = []
     counts: dict[str, int] = {}
@@ -155,4 +169,4 @@ def _load_records(path: Path, languages: set[str], limit: int | None) -> list[di
             continue
         counts[language] = counts.get(language, 0) + 1
         selected.append(record)
-    return selected
+    return selected, excluded
