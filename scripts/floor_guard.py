@@ -118,7 +118,7 @@ def find_violations(
     def flag(rule: str, at: Line) -> None:
         findings.append(Finding(rule, at.file, at.line, at.text.strip()[:120]))
 
-    # Checked before any glob applies, so no glob can exempt an ignore file.
+    # (test PR) Checked before any glob applies, so no glob can exempt an ignore file.
     unapproved = [
         a
         for a in added
