@@ -1,4 +1,6 @@
 import json
+import os
+import threading
 import time
 
 import pytest
@@ -11,11 +13,7 @@ pytest.importorskip("openai", reason="install the optional gateway extra to test
 
 @pytest.fixture
 def provider_args(monkeypatch):
-    """What KiloGatewayAPI hands Inspect's OpenAI-compatible provider, without building a client.
-
-    Building one in a process forked from a multi-threaded parent crashes on
-    macOS, which is how mutmut runs these tests; these run first and fastest.
-    """
+    """What KiloGatewayAPI hands Inspect's OpenAI-compatible provider, without building a client."""
     from inspect_ai.model._providers.openai_compatible import OpenAICompatibleAPI
 
     from whitney import gateway
@@ -93,3 +91,33 @@ def test_kilo_provider_falls_back_to_kilo_login(no_kilo_env):
 def test_kilo_provider_without_credentials_explains_options(no_kilo_env):
     with pytest.raises(Exception, match="kilo auth login"):
         get_model("kilo/anthropic/claude-haiku-4.5", memoize=False)
+
+
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+def test_kilo_provider_can_be_built_in_a_child_forked_from_a_threaded_process(no_kilo_env, monkeypatch):
+    """mutmut runs each mutant's tests in a child forked from its multi-threaded main process.
+
+    The main process has run the same tests once already, so the parent here
+    builds the provider before forking too. On macOS the child used to crash
+    while building the client, and mutmut recorded a segfault, which the
+    mutation score leaves out, instead of whether the tests caught the mutant.
+    """
+    monkeypatch.setenv("KILO_API_KEY", "from-env")
+    get_model("kilo/anthropic/claude-haiku-4.5", memoize=False)
+    stop = threading.Event()
+    other_thread = threading.Thread(target=stop.wait)
+    other_thread.start()
+    try:
+        pid = os.fork()
+        if pid == 0:
+            try:
+                get_model("kilo/anthropic/claude-haiku-4.5", memoize=False)
+                code = 0
+            except BaseException:
+                code = 1
+            os._exit(code)
+        _, status = os.waitpid(pid, 0)
+    finally:
+        stop.set()
+        other_thread.join()
+    assert os.waitstatus_to_exitcode(status) == 0
