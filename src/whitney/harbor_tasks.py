@@ -1,5 +1,6 @@
 """Local Harbor BigCodeBench-Hard task with the Kilo template and verifier."""
 
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -28,6 +29,19 @@ HARBOR_PERMISSIONS = {
     "kilo": HARBOR_HARNESS_PERMISSIONS,
     "claude-code": {"allow": ["Read", "Edit", "Write"], "deny": ["Bash"]},
 }
+# The variables inspect-harbor fills in a task's docker-compose.yaml itself
+# (_expand_compose_vars), besides the task's own [environment].env. Any other
+# ${VAR} it fills from the host's environment, and Docker Compose fills every
+# $VAR or ${VAR} left in the config the same way.
+HARBOR_COMPOSE_VARIABLES = frozenset({
+    "CONTEXT_DIR", "MAIN_IMAGE_NAME", "CPUS", "MEMORY", "TEST_DIR",
+    "HOST_VERIFIER_LOGS_PATH", "HOST_AGENT_LOGS_PATH", "HOST_ARTIFACTS_PATH",
+    "ENV_VERIFIER_LOGS_PATH", "ENV_AGENT_LOGS_PATH", "ENV_ARTIFACTS_PATH",
+})  # fmt: skip
+VARIABLE = re.compile(r"(?<!\$)\$(?:\{([A-Za-z_]\w*)|([A-Za-z_]\w*))")  # ${NAME...} or $NAME; $$ is a literal $
+HARBOR_ENV_TEMPLATE = re.compile(r"\$\{([^}:]+)(?::-.*)?\}")  # inspect-harbor's resolve_env_vars, on a whole value
+SAFE_SECURITY_OPTS = {"no-new-privileges", "no-new-privileges:true", "no-new-privileges=true"}
+HOST_REACHING_VOLUME_KEYS = ("driver", "driver_opts", "external")  # a named volume with these can be a host folder
 
 
 @task
@@ -78,6 +92,7 @@ def bigcodebench_hard_complete(
     samples = []
     sample_ids = _disambiguate_sample_ids(harbor_tasks)
     for harbor_task, sample_id in zip(harbor_tasks, sample_ids, strict=True):
+        _refuse_host_variables(harbor_task.name, _host_variables(harbor_task))
         sample = harbor_task_to_sample(harbor_task, sample_id=sample_id)
         if HARBOR_OUTPUT_PATH not in sample.input:
             raise ValueError(
@@ -88,13 +103,17 @@ def bigcodebench_hard_complete(
         prompt += "\n\n" + HARBOR_OUTPUT_ADAPTATION
 
         task_sandbox = deepcopy(sample.sandbox)
+        _refuse_host_variables(harbor_task.name, _variables_in(task_sandbox.config.model_dump()))
+        task_dir = harbor_task.paths.task_dir.resolve()
+        host_access = _host_volumes(task_sandbox.config.volumes or {})
         for service in task_sandbox.config.services.values():
-            host_access = _host_access(service)
-            if host_access:
-                raise ValueError(
-                    f"Harbor task {harbor_task.name!r} asks for {', '.join(host_access)}, "
-                    "which would let its container reach the host; refusing to run it."
-                )
+            host_access += _host_access(service, task_dir)
+        if host_access:
+            raise ValueError(
+                f"Harbor task {harbor_task.name!r} asks for {', '.join(host_access)}, "
+                "which would let its container reach the host; refusing to run it."
+            )
+        for service in task_sandbox.config.services.values():
             service.network_mode = "none"
             service.networks = None
 
@@ -143,8 +162,11 @@ def bigcodebench_hard_complete(
     )
 
 
-def _host_access(service) -> list[str]:
-    """The compose settings in a task's service that would let its container reach the host."""
+def _host_access(service, task_dir: Path) -> list[str]:
+    """The compose settings in a task's service that would let its container reach the host.
+
+    `task_dir` is the task's own folder, the only place a build context may be.
+    """
     found = [name for name in ("privileged", "cap_add", "devices") if getattr(service, name)]
     for volume in service.volumes or []:
         if isinstance(volume, str):
@@ -154,4 +176,71 @@ def _host_access(service) -> list[str]:
             source, is_bind = volume.source, volume.type == "bind"
         if is_bind:
             found.append(f"bind mount {source}")
+    env_files = service.env_file or []
+    found += [f"env_file {path}" for path in ([env_files] if isinstance(env_files, str) else env_files)]
+    found += [f"security_opt {option}" for option in service.security_opt or [] if option not in SAFE_SECURITY_OPTS]
+    if service.cgroup == "host":
+        found.append("cgroup host")
+    if service.build is not None:
+        context = service.build if isinstance(service.build, str) else service.build.context
+        found += _outside_build_context(context, task_dir)
     return found
+
+
+def _outside_build_context(context: str, task_dir: Path) -> list[str]:
+    """A build context that would send the image build files from outside the task folder."""
+    if not Path(context).is_absolute():
+        # Inspect resolves it against the working folder, where the eval runs (its .env included).
+        return [f"build context {context}, which resolves against the folder the eval runs in"]
+    if not Path(context).resolve().is_relative_to(task_dir):
+        return [f"build context {context}, outside the task folder"]
+    return []
+
+
+def _host_volumes(volumes: dict) -> list[str]:
+    """Top-level named volumes whose options could make them a host folder or another project's volume."""
+    found = []
+    for name, options in volumes.items():
+        found += [f"volume {name} with {key}" for key in HOST_REACHING_VOLUME_KEYS if (options or {}).get(key)]
+    return found
+
+
+def _host_variables(harbor_task) -> set[str]:
+    """Host environment variables a task would read, before inspect-harbor fills them in.
+
+    Every variable in task.toml's [environment].env, which reaches the
+    container's config; every [verifier].env value that is a whole ${VAR}
+    template, which the verifier fills from the host when it scores (others it
+    passes on as text); and every variable in the task's docker-compose.yaml
+    except those inspect-harbor fills itself. [solution].env is read only by
+    inspect-harbor's oracle, which Whitney doesn't run.
+    """
+    config = harbor_task.config
+    names = _variables_in(list(config.environment.env.values()))
+    names |= {match.group(1) for value in config.verifier.env.values() if (match := HARBOR_ENV_TEMPLATE.fullmatch(value))}
+    compose = harbor_task.paths.environment_dir / "docker-compose.yaml"
+    if compose.is_file():
+        own = HARBOR_COMPOSE_VARIABLES | config.environment.env.keys()
+        for braced, bare in VARIABLE.findall(compose.read_text(encoding="utf-8")):
+            if bare or braced not in own:  # inspect-harbor fills only ${NAME}; Compose fills $NAME
+                names.add(braced or bare)
+    return names
+
+
+def _variables_in(node: object) -> set[str]:
+    """Names of the $VAR and ${VAR} references in every string of a parsed config, at any depth."""
+    if isinstance(node, str):
+        return {braced or bare for braced, bare in VARIABLE.findall(node)}
+    if isinstance(node, dict):
+        node = list(node.values())
+    if isinstance(node, list):
+        return {name for item in node for name in _variables_in(item)}
+    return set()
+
+
+def _refuse_host_variables(task_name: str, names: set[str]) -> None:
+    if names:
+        raise ValueError(
+            f"Harbor task {task_name!r} reads {', '.join(sorted(names))} from the host's environment, which would "
+            "copy host values such as API keys into its container; refusing to run it."
+        )

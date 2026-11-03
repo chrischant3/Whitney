@@ -1,0 +1,54 @@
+# Runs main's copy of the floor guard and the approval check on every pull
+# request into main. Make the `floor-guard` check required in the branch
+# ruleset; until then it only reports.
+#
+# pull_request_target runs this file as it is on main, so a pull request can't
+# edit the check that judges it. That event also has access to the base
+# repository, so the job never runs the pull request's code: it checks the
+# pull request out as data, takes the two scripts from the base commit, runs
+# them with `python -I`, and reads GitHub with a read-only token.
+name: Floor guard
+
+on:
+  pull_request_target:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  floor-guard:
+    name: floor-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_REPO: ${{ github.repository }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Check out the pull request as data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Take the guard scripts from the base commit
+        run: |
+          git -C pr fetch --no-tags --quiet "https://github.com/${BASE_REPO}.git" "${BASE_SHA}"
+          mkdir "${RUNNER_TEMP}/guard"
+          for script in floor_guard.py check_approvals.py; do
+            git -C pr show "${BASE_SHA}:scripts/${script}" > "${RUNNER_TEMP}/guard/${script}"
+          done
+
+      - name: Floor guard
+        working-directory: pr
+        run: python3 -I "$RUNNER_TEMP/guard/floor_guard.py" --repo . --base "$BASE_SHA"
+
+      - name: Approvals are signed by an approver
+        working-directory: pr
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          APPROVERS: ${{ vars.APPROVERS || github.repository_owner }}
+        run: python3 -I "$RUNNER_TEMP/guard/check_approvals.py" --repo . --base "$BASE_SHA" --github-repo "$BASE_REPO"

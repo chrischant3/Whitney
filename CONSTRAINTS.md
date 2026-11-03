@@ -19,7 +19,8 @@ and a human reviewer, never the same commit as the change that was failing.
 - This file does not get weakened to make a change pass
 
 Checked by `python scripts/floor_guard.py` (diff since the merge base with
-`origin/main`, including uncommitted and untracked files) and gitleaks.
+`origin/main`, including uncommitted and untracked files) and gitleaks, and
+again by CI on every pull request into main (below).
 
 Human decisions are recorded as commit-message trailers, so they show up in review:
 - `Skip-reason: <test file> <why>` allows the skips added in that test file.
@@ -27,6 +28,9 @@ Human decisions are recorded as commit-message trailers, so they show up in revi
 - The same trailer allows a new entry in `.constraintsignore` (citing its ID inline, `path  # E3`) or `.gitleaksignore` (citing it in the comment line above the entry). Without it the entry is flagged, and a new `.constraintsignore` glob doesn't take effect.
 - A `.constraintsignore` path is exempt from the pattern rules (suppressions, stubs, skips) only. A test there still can't lose assertions or be deleted.
 - Anyone who can commit can write a trailer, agents included. Branch protection with a required human review is what makes the approval a human's.
+- A maintainer can't approve their own pull requests, so on a repository with one, a signature does that job: an approval counts only when the commit carrying it is signed by an approver. On every pull request into main, CI (`.github/workflows/floor-guard.yml`, check `floor-guard`) runs main's copy of the floor guard and of `scripts/check_approvals.py`. GitHub must show two kinds of commit as verified, and committed by an approver: each commit with an `Exception-approved:` trailer, and each commit that changes the workflow, the floor guard or the approval check. Approvers are the repository variable `APPROVERS`, comma-separated logins, or the repository's owner.
+- Sign approvals with a key on your GitHub account that an agent can't use, such as one that asks for a passphrase or a touch each time: `git commit --amend -S --no-edit --trailer "Exception-approved: E3"`.
+- The check only blocks once `floor-guard` is a required status check in the branch ruleset. An agent holding a token with admin rights on the repository could change the ruleset itself, so give agents a token without them.
 
 ## Enforced with numbers
 
