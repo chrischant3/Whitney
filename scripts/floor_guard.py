@@ -6,17 +6,21 @@
 Looks at everything since the merge base: committed, staged, unstaged and
 untracked. Flags new suppression comments, stubs, skipped or deleted tests,
 removed assertions, new Exceptions rows and lowered thresholds in
-CONSTRAINTS.md, and new entries in .constraintsignore or .gitleaksignore.
-Tightening is silent; loosening is loud.
+CONSTRAINTS.md, lowered eval-gate thresholds, new `known_gap` scenarios, and
+new entries in .constraintsignore or .gitleaksignore. Tightening is silent;
+loosening is loud.
 
 Exit codes: 0 clean, 1 at least one violation (block), 2 the guard couldn't
 run (not a git repo, no merge base). Paths in .constraintsignore (one glob per
-line, each citing an Exceptions ID from CONSTRAINTS.md) are skipped. A skip
-is allowed when a commit since the merge base says why, with a trailer line
-`Skip-reason: <test file> <reason>`; a new Exceptions row, or a new ignore-file
-entry citing that ID, is allowed once a human approves it in a commit message,
-`Exception-approved: E1, E2`. Until then a new .constraintsignore glob doesn't
-take effect, so it can't hide what it covers.
+line, each citing an Exceptions ID from CONSTRAINTS.md) are exempt from the
+pattern rules (suppressions, stubs, skips), because such files contain the
+strings the patterns look for; a test there still can't lose assertions or be
+deleted. A skip is allowed when a commit since the merge base says why, with
+a trailer line `Skip-reason: <test file> <reason>`; a new Exceptions row, a
+new ignore-file entry or a new `known_gap` citing that ID, is allowed once a
+human approves it in a commit message, `Exception-approved: E1, E2`. Until
+then a new .constraintsignore glob doesn't take effect, so it can't hide what
+it covers.
 
 Python port of the agent-skills constraint-driven-development floor-guard
 reference; keep its contract if you change the patterns.
@@ -39,6 +43,7 @@ EXCEPTION_ID = re.compile(r"\bE\d+\b")
 SUPPRESSIONS = re.compile(
     r"#\s*noqa|#\s*type:\s*ignore|#\s*pragma:\s*no\s*(cover|mutate)|#\s*nosec|pylint:\s*disable|nosemgrep|gitleaks:allow"
 )
+GITLEAKS_ALLOW = re.compile(r"gitleaks:allow")  # gitleaks honours it in every file type, not just Python
 STUBS = re.compile(r"raise NotImplementedError|\bTODO\b|\bFIXME\b")
 APPROVAL = re.compile(r"^Exception-approved:(.*)$", re.M)
 SKIP_REASON = re.compile(r"^Skip-reason:\s*(\S+)", re.M)
@@ -46,6 +51,14 @@ SKIPS = re.compile(r"@pytest\.mark\.(skip|skipif|xfail)\b|pytest\.skip\(|importo
 ASSERTION = re.compile(r"\bassert\b|pytest\.raises\(")
 EXCEPTION_ROW = re.compile(r"^\|\s*E\d+\s*\|")
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# A scenario marked known_gap is left out of the eval gate's thresholds (src/whitney/report.py).
+KNOWN_GAP = re.compile(r'"known_gap"\s*:')
+# The eval gate's thresholds outside CONSTRAINTS.md; lowering one passes runs the gate should fail.
+EVAL_THRESHOLD_FILES = {"scripts/run_evals.py", "src/whitney/report.py"}
+EVAL_THRESHOLD = re.compile(
+    r"^\s*(?P<constant>MIN_[A-Z_]+)\s*=\s*(?P<value>\d+(?:\.\d+)?)\s*(?:#.*)?$"
+    r'|"(?P<option>--min-[a-z-]+)".*\bdefault=(?P<default>\d+(?:\.\d+)?)'
+)
 
 
 @dataclass(frozen=True)
@@ -89,9 +102,11 @@ def find_violations(
             its Exceptions ID in the comment line above it.
 
     Suppression, stub and skip patterns are code patterns, so they only apply
-    to Python files; CONSTRAINTS.md itself names them. A new ignore-file entry
-    whose cited ID isn't approved is flagged, and its glob is dropped from
-    `ignore`, so the change that adds it can't use it.
+    to Python files, except `gitleaks:allow`, which gitleaks honours anywhere;
+    CONSTRAINTS.md itself names them. `ignore` exempts paths from these
+    pattern rules only. A new ignore-file entry or known_gap whose cited ID
+    isn't approved is flagged, and a new glob is dropped from `ignore`, so the
+    change that adds it can't use it.
     """
     ignore = ignore or []
     skip_reasons = skip_reasons or set()
@@ -117,18 +132,20 @@ def find_violations(
     def skip(path: str) -> bool:
         return any(fnmatch.fnmatch(path, g) for g in ignore)
 
-    added = [a for a in added if not skip(a.file)]
-    removed = [r for r in removed if not skip(r.file)]
-
-    for i, a in enumerate(added):
+    checked = [a for a in added if not skip(a.file)]
+    for i, a in enumerate(checked):
         if a.file.endswith(".py"):
             if SUPPRESSIONS.search(a.text):
                 flag("silenced-checker", a)
-            if STUBS.search(a.text) or _empty_except(a, added[i + 1] if i + 1 < len(added) else None):
+            if STUBS.search(a.text) or _empty_except(a, checked[i + 1] if i + 1 < len(checked) else None):
                 flag("unfinished-work", a)
             if _is_test(a.file) and SKIPS.search(a.text) and a.file not in skip_reasons:
                 flag("test-made-easier", a)
+        elif a.file != CONSTRAINTS and GITLEAKS_ALLOW.search(a.text):
+            flag("silenced-checker", a)
         if a.file == CONSTRAINTS and EXCEPTION_ROW.search(a.text) and _row_key(a.text) not in approved_exceptions:
+            flag("new-exception", a)
+        if a.file.startswith("evals/") and KNOWN_GAP.search(a.text) and _first_id(a.text) not in approved_exceptions:
             flag("new-exception", a)
 
     for path in sorted({r.file for r in removed if _is_test(r.file)}):
@@ -137,8 +154,40 @@ def find_violations(
         if len(lost) > len(gained):
             flag("assertion-removed", lost[-1])
 
-    findings += [Finding("test-deleted", path, 0, "") for path in deleted if _is_test(path) and not skip(path)]
+    findings += [Finding("test-deleted", path, 0, "") for path in deleted if _is_test(path)]
     findings += _lowered_thresholds(added, removed)
+    findings += _lowered_eval_thresholds(added, removed)
+    return findings
+
+
+def _first_id(text: str) -> str | None:
+    found = EXCEPTION_ID.search(text)
+    return found.group(0) if found else None
+
+
+def _eval_threshold(line: Line) -> tuple[str, float] | None:
+    """(name, value) if `line` sets an eval-gate threshold: a MIN_* constant or a --min-* option default."""
+    if line.file not in EVAL_THRESHOLD_FILES:
+        return None
+    found = EVAL_THRESHOLD.search(line.text)
+    if not found:
+        return None
+    return found["constant"] or found["option"], float(found["value"] or found["default"])
+
+
+def _lowered_eval_thresholds(added: list[Line], removed: list[Line]) -> list[Finding]:
+    """An eval-gate threshold whose value went down, or whose line went with no replacement."""
+    after = dict(filter(None, map(_eval_threshold, added)))
+    findings = []
+    for r in removed:
+        threshold = _eval_threshold(r)
+        if threshold is None:
+            continue
+        name, old = threshold
+        new = after.get(name)
+        if new is None or new < old:
+            change = "removed" if new is None else f"{old:g} -> {new:g}"
+            findings.append(Finding("threshold-lowered", r.file, r.line, f"{name}: {change}"))
     return findings
 
 
