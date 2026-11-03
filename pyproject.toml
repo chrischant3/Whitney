@@ -1,0 +1,49 @@
+[project]
+name = "whitney"
+version = "0.1.0"
+description = "AI Assisted Development Instruction Eval Framework"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+# Pinned to the versions the Phase 0 spikes ran on; bump deliberately and re-run the spikes.
+dependencies = [
+    "inspect-ai==0.3.287",
+    "pydantic>=2,<3",  # scenario validation; already required by inspect-ai
+]
+
+[project.entry-points.inspect_ai]
+whitney = "whitney._registry"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.2.0",
+    # CONSTRAINTS.md checks (scripts/check.py)
+    "pytest-cov==7.1.0",
+    "diff-cover==11.0.0",
+    "mutmut==3.8.1",
+]
+ifevalcode = ["inspect-evals[ifevalcode]"]
+gateway = ["openai>=1"]
+harbor = ["inspect-harbor==1.0.0"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# End-to-end smoke tests call real models and cost money, so the default run
+# (and check.py and mutmut, which run it) leaves them out. Run them on purpose
+# with `pytest -m e2e tests/e2e`; see tests/e2e/test_core_scenarios.py.
+addopts = ["-m", "not e2e"]
+markers = ["e2e: end-to-end smoke test against a real harness and model (opt-in, costs money)"]
+
+# Mutation testing (CONSTRAINTS.md). mutmut copies the project into mutants/,
+# so anything the tests read from the repo root must be listed in also_copy.
+[tool.mutmut]
+source_paths = ["src/whitney/"]
+pytest_add_cli_args_test_selection = ["tests/"]
+also_copy = ["evals/", "template/", "docker/", "scripts/", "docs/"]

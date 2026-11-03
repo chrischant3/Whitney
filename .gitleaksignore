@@ -1,0 +1,2 @@
+# CONSTRAINTS.md E1: fake canary token in the scorer tests
+12f4511aac89c8c70bf50d7e34fd9d39a091f545:tests/test_scoring.py:generic-api-key:14

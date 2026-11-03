@@ -1,0 +1,22 @@
+.env
+.env.*
+!.env.example
+.venv/
+/logs/
+/results/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+# Fixture secrets are fake canary tokens and must be committed for the evals to work.
+!evals/fixtures/**/.env
+!evals/fixtures/**/.env.*
+.DS_Store
+# Third-party datasets: a local Hugging Face cache, the Harbor task cache and the
+# cleaned IFEvalCode JSONL derived from them. Regenerate with scripts/audit_ifevalcode_dataset.py
+# and scripts/cache_and_audit_bigcodebench_hard.py; the audit report is committed.
+/dataset/*
+!/dataset/ifevalcode_prompt_injection_audit.md
+/mutants/
+.coverage
+coverage.lcov
+coverage.xml

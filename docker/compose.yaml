@@ -1,0 +1,6 @@
+services:
+  default:
+    build: .
+    image: kilo-evals-sandbox:7.8.18
+    init: true
+    network_mode: bridge

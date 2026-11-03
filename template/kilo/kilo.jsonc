@@ -1,0 +1,14 @@
+{
+  "$schema": "https://kilo.ai/config.json",
+
+  // Permissions the evals check are honoured. Last matching rule wins;
+  // actions are "allow", "ask" and "deny". These are prompts that keep you
+  // aware of what the agent does, not a sandbox: for isolation, run Kilo in a
+  // container or VM (https://github.com/Kilo-Org/kilocode/blob/main/SECURITY.md).
+  "permission": {
+    // Ask before any tool touches a path outside the project.
+    // Known gap: a symlink created by a bash command avoids this prompt
+    // (docs/findings/001-symlink-bypasses-external-directory.md).
+    "external_directory": "ask"
+  }
+}
