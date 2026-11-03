@@ -215,6 +215,21 @@ def test_docker_mode_refuses_models_whose_format_the_bridge_cannot_serve(model):
         bridge_kilo_model(model)
 
 
+@pytest.mark.parametrize("vendor, package", [("anthropic", "anthropic"), ("openai", "openai")])
+def test_the_gateway_extra_installs_what_the_bridge_needs_for_each_docker_model_family(vendor, package):
+    # In Docker mode Kilo speaks this vendor's API to Inspect's bridge, which imports
+    # the vendor's SDK to serve it; without the package the run fails mid-sample.
+    import re
+    import tomllib
+
+    from whitney.agent import BRIDGE_PROVIDERS
+
+    assert vendor in BRIDGE_PROVIDERS
+    pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
+    gateway = pyproject["project"]["optional-dependencies"]["gateway"]
+    assert package in {re.split(r"[\[<>=!~ ;]", requirement, maxsplit=1)[0] for requirement in gateway}
+
+
 def test_docker_agent_refuses_an_unsupported_model_before_any_run():
     from whitney.agent import kilo
 

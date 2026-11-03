@@ -45,7 +45,7 @@ Optional extras, installed the same way (`pip install -e ".[dev,ifevalcode,harbo
 |---|---|
 | `ifevalcode` | the `ifevalcode` eval (inspect_evals' IFEvalCode scorer) |
 | `harbor` | the `bigcodebench_hard_complete` eval (Harbor tasks) |
-| `gateway` | `--execution docker` (Inspect's Kilo Gateway bridge) |
+| `gateway` | `--execution docker` (Inspect's Kilo Gateway provider, and its bridge's `openai` and `anthropic` formats) |
 
 For CI, or any run whose results you need to reproduce, install every dependency at the versions and hashes in `requirements.lock` instead, then Whitney itself:
 
