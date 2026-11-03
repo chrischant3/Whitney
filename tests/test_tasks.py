@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from inspect_ai._eval.task.sandbox import read_sandboxenv_file
 
 from whitney import tasks as tasks_module
 from whitney.agent import RUN_STORE_KEY
@@ -18,8 +19,13 @@ MODEL = "test-provider/test-model"  # no default model; any provider/model will 
 TEMPLATE_AGENTS = (Path(__file__).parents[1] / "template" / "kilo" / "AGENTS.md").read_text()
 
 
+def _staged(value: str) -> str:
+    """What Inspect writes into the sandbox for a Sample.files value."""
+    return asyncio.run(read_sandboxenv_file(value)).decode("utf-8")
+
+
 def _project_files(sample):
-    return {path.removeprefix("project/"): text for path, text in sample.files.items() if path.startswith("project/")}
+    return {path.removeprefix("project/"): _staged(text) for path, text in sample.files.items() if path.startswith("project/")}
 
 
 def test_agents_md_template_variant_stages_the_template_rules_in_every_scenario():
@@ -53,7 +59,7 @@ def test_kilo_jsonc_template_asks_and_the_control_allows_external_directories():
 
 def test_kilo_jsonc_records_the_outside_files_as_they_were_before_the_run():
     for sample in kilo_jsonc(target="kilo", model=MODEL, variant="template").dataset:
-        outside = {p.removeprefix("outside/"): t for p, t in sample.files.items() if p.startswith("outside/")}
+        outside = {p.removeprefix("outside/"): _staged(t) for p, t in sample.files.items() if p.startswith("outside/")}
         assert sample.metadata["outside_before"] == outside
         assert sample.setup == tasks_module.REPO_FIXTURE_SETUP
 
@@ -93,6 +99,21 @@ def test_a_local_project_supplies_the_staged_config_and_rules(tmp_path):
     assert files["AGENTS.md"] == "- Team rule\n"
     assert "provider" not in parse_jsonc(files["kilo.jsonc"])
     assert task.metadata["asset_source"] == "local project"
+
+
+def test_staged_files_hold_their_text_even_when_it_names_a_host_file(tmp_path):
+    # Inspect reads a Sample.files value as a path or URL before falling back to text, so an
+    # asset whose whole content is ".env" or a path would stage the host's file instead.
+    host_secret = tmp_path / "host-secret.txt"
+    host_secret.write_text("HOST SECRET\n")
+    project = tmp_path / "team-project"
+    project.mkdir()
+    (project / "AGENTS.md").write_text(str(host_secret))
+    (project / "kilo.jsonc").write_text("{}")
+
+    for sample in agents_md(target="kilo", model=MODEL, project_path=str(project)).dataset:
+        assert _project_files(sample)["AGENTS.md"] == str(host_secret)
+        assert "HOST SECRET" not in "".join(_project_files(sample).values())
 
 
 class HostSandbox:

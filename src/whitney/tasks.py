@@ -11,6 +11,7 @@ kilo target, local execution uses the user's Kilo config and Docker execution
 routes calls through Inspect's model bridge; claude-code runs locally.
 """
 
+import base64
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -262,7 +263,15 @@ def _run_summary() -> str:
 
 def _with_project_files(sample: Sample, extra: dict[str, str], setup: str, **metadata) -> Sample:
     files = {**sample.files, **{f"{PROJECT_DIR}/{name}": text for name, text in extra.items()}}
-    return sample.model_copy(update={"files": files, "setup": setup, "metadata": {**sample.metadata, **metadata}})
+    inlined = {path: _inline(text) for path, text in files.items()}
+    return sample.model_copy(update={"files": inlined, "setup": setup, "metadata": {**sample.metadata, **metadata}})
+
+
+def _inline(text: str) -> str:
+    """`text` as a data URI. Inspect reads any other Sample.files value as a host path or URL
+    first, so an asset whose whole content is ".env" or a URL would stage the host's file or
+    fetch the URL instead of the text."""
+    return "data:text/plain;base64," + base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
 def _docker_model_names(model: str, execution: str) -> dict[str, str]:

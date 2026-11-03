@@ -3,9 +3,11 @@
 Checked by building the tasks without running a model.
 """
 
+import asyncio
 from pathlib import Path
 
 import pytest
+from inspect_ai._eval.task.sandbox import read_sandboxenv_file
 from inspect_ai._util.registry import registry_info
 
 from whitney.tasks import agents_md, kilo_jsonc
@@ -16,7 +18,12 @@ CLAUDE_MODEL = "anthropic/claude-haiku-4-5"
 
 
 def _project_files(sample):
-    return {path.removeprefix("project/"): text for path, text in sample.files.items() if path.startswith("project/")}
+    """The project files Inspect writes into the sandbox for `sample`."""
+    return {
+        path.removeprefix("project/"): asyncio.run(read_sandboxenv_file(text)).decode("utf-8")
+        for path, text in sample.files.items()
+        if path.startswith("project/")
+    }
 
 
 def _agent_name(task) -> str:
