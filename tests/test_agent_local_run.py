@@ -479,3 +479,56 @@ def test_a_symlinked_output_is_not_copied_into_the_sandbox(fake_kilo, user_home,
     run = fake_kilo.stored[RUN_STORE_KEY]
     assert fake_kilo.sandbox.writes == []
     assert run["missing_outputs"] == ["solution.py"]
+
+
+def test_global_provider_settings_follow_xdg_config_home_and_kilos_file_order(tmp_path):
+    from whitney.agent import global_provider_settings
+
+    folder = tmp_path / "xdg" / "kilo"
+    folder.mkdir(parents=True)
+    (folder / "config.json").write_text('{"provider": {"a": {"options": {"x": 1}}, "b": {"options": {"y": 1}}}}')
+    (folder / "kilo.jsonc").write_text('{"provider": {"a": {"options": {"x": 2}}}}  // later file wins')
+
+    assert global_provider_settings({"XDG_CONFIG_HOME": str(tmp_path / "xdg"), "HOME": "/nowhere"}) == {
+        "a": {"options": {"x": 2}},
+        "b": {"options": {"y": 1}},
+    }
+    home = tmp_path / "home"
+    (home / ".config" / "kilo").mkdir(parents=True)
+    (home / ".config" / "kilo" / "kilo.json").write_text('{"provider": {"c": {}}}')
+    assert global_provider_settings({"HOME": str(home)}) == {"c": {}}
+
+
+def test_an_unreadable_global_config_is_named(tmp_path):
+    from whitney.agent import global_provider_settings
+
+    (tmp_path / "kilo").mkdir()
+    (tmp_path / "kilo" / "kilo.json").write_text("{not json")
+    with pytest.raises(ValueError, match=r"kilo\.json: not valid JSON"):
+        global_provider_settings({"XDG_CONFIG_HOME": str(tmp_path)})
+
+
+def test_redaction_replaces_longer_secrets_first_and_skips_short_values():
+    from whitney.agent import redact
+
+    assert redact("key=abcdefgh-and-more", ["abcdefgh", "abcdefgh-and-more"]) == "key=[redacted]"
+    assert redact("key=abcdefgh", ["abcdefgh"]) == "key=[redacted]"  # 8 characters is a secret
+    assert redact("key=abcdefg", ["abcdefg"]) == "key=abcdefg"  # 7 would redact ordinary words
+
+
+def test_every_string_in_the_login_counts_as_a_secret(tmp_path):
+    from whitney.agent import kilo_home
+
+    login = tmp_path / ".local" / "share" / "kilo" / "auth.json"
+    login.parent.mkdir(parents=True)
+    login.write_text(json.dumps({"kilo": {"type": "oauth", "tokens": ["token-in-a-list-0123"], "expires": 5}}))
+    with kilo_home({"HOME": str(tmp_path)}) as home:
+        assert "token-in-a-list-0123" in home.secrets
+
+
+def test_the_temporary_config_path_is_not_redacted(fake_kilo, user_home):
+    fake_kilo.control(FAKE_PRINT="KILO_CONFIG")
+    _run(kilo(model=MODEL, harness_permissions={"bash": "allow"}, timeout=30))
+
+    run = fake_kilo.stored[RUN_STORE_KEY]
+    assert "[redacted]" not in run["events"] and ".json" in run["stderr"]
