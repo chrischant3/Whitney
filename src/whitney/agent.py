@@ -26,6 +26,18 @@ PROJECT_DIR = "project"
 COMPOSE_FILE = Path(__file__).parent.parent.parent / "docker" / "compose.yaml"
 RUN_STORE_KEY = "kilo_run"
 
+# Git in local runs: a fixed identity (the one the Docker image sets) and none
+# of the user's git config. A global hook, such as a secret scanner, would
+# otherwise block the agent's bad commit and credit the model with it.
+ISOLATED_GIT_ENV = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_AUTHOR_NAME": "Eval Agent",
+    "GIT_AUTHOR_EMAIL": "agent@example.invalid",
+    "GIT_COMMITTER_NAME": "Eval Agent",
+    "GIT_COMMITTER_EMAIL": "agent@example.invalid",
+}
+
 # Kilo providers whose request format Inspect's bridge serves, each with how a
 # model id becomes the id in that provider's Kilo catalog: the Kilo Gateway
 # writes Anthropic versions with dots (claude-haiku-4.5), Kilo's Anthropic
@@ -75,7 +87,8 @@ def kilo(
     Side effects: stores the exit code, JSON event stream and stderr under
     RUN_STORE_KEY. Docker mode writes a temporary Kilo global config in the
     sandbox; local mode uses Kilo's normal user config plus a temporary
-    KILO_CONFIG overlay (see local_config_overlay).
+    KILO_CONFIG overlay (see local_config_overlay), and git without the
+    user's git config (ISOLATED_GIT_ENV).
 
     Raises:
         ValueError: api_key_env or base_url given in Docker mode, where
@@ -226,7 +239,7 @@ async def _run_local(
 async def _run_local_process(
     project_dir: Path, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int
 ) -> dict:
-    process_env = {**os.environ, **(env or {}), "PWD": str(project_dir)}
+    process_env = {**os.environ, **(env or {}), **ISOLATED_GIT_ENV, "PWD": str(project_dir)}
     return await run_process(_kilo_command(state, model, auto), project_dir, process_env, timeout, "kilo run")
 
 

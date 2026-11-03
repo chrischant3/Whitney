@@ -3,8 +3,8 @@
 The run sees only the project: an empty temporary HOME and
 `--setting-sources project` keep the user's own Claude settings, CLAUDE.md,
 memory, plugins and MCP servers out of it, and the environment carries
-nothing but PATH, the API key and a fixed git identity. Model calls go to
-the Anthropic API with that key.
+nothing but PATH, the API key and a fixed git identity with none of the
+user's git config. Model calls go to the Anthropic API with that key.
 
 Like the Kilo agent, it runs without --dangerously-skip-permissions: the
 eval grants only the permissions the task needs, through --settings.
@@ -20,16 +20,9 @@ from inspect_ai.agent import Agent, AgentState, agent
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
-from whitney.agent import PROJECT_DIR, RUN_STORE_KEY, copy_outputs, run_process, staged_project
+from whitney.agent import ISOLATED_GIT_ENV, PROJECT_DIR, RUN_STORE_KEY, copy_outputs, run_process, staged_project
 
 MODEL_PREFIX = "anthropic/"
-# The identity the Docker image gives Kilo, so commits work without the user's git config.
-GIT_IDENTITY = {
-    "GIT_AUTHOR_NAME": "Eval Agent",
-    "GIT_AUTHOR_EMAIL": "agent@example.invalid",
-    "GIT_COMMITTER_NAME": "Eval Agent",
-    "GIT_COMMITTER_EMAIL": "agent@example.invalid",
-}
 
 
 @agent
@@ -106,7 +99,7 @@ async def _run(command: list[str], project_dir: Path, key: str, timeout: int) ->
     with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
         env = {"PATH": os.environ.get("PATH", ""), "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
-        run = await run_process(command, project_dir, {**env, **GIT_IDENTITY}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
+        run = await run_process(command, project_dir, {**env, **ISOLATED_GIT_ENV}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
     return {**run, **_outcome(run["events"])}
 
 

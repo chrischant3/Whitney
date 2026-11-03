@@ -7,6 +7,7 @@ actually does with a real subprocess.
 """
 
 import asyncio
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,6 +25,7 @@ printf '%s\n' "$@" > "$PWD/args.txt"
 pwd > "$PWD/where.txt"
 [ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
 [ -f sub/dir/x.txt ] && cp sub/dir/x.txt seen.txt
+[ -n "$FAKE_COMMIT" ] && { git init -q && git add -A && git commit -qm "agent commit"; echo "$?" > commit_exit.txt; }
 [ -n "$FAKE_WRITE" ] && printf 'def answer():\n    return 42\n' > "$FAKE_WRITE"
 echo '{"type":"step_start"}'
 echo 'not json'
@@ -58,7 +60,7 @@ def fake_kilo(tmp_path, monkeypatch):
     (bin_dir / "kilo").write_text(FAKE_KILO)
     (bin_dir / "kilo").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
-    for name in ("FAKE_SLEEP", "FAKE_EXIT", "FAKE_WRITE"):
+    for name in ("FAKE_SLEEP", "FAKE_EXIT", "FAKE_WRITE", "FAKE_COMMIT"):
         monkeypatch.delenv(name, raising=False)
     sandbox_project = tmp_path / "sandbox-project"
     sandbox_project.mkdir()
@@ -125,6 +127,18 @@ def test_without_staged_files_kilo_runs_in_the_sandbox_project_without_auto(fake
         "run", "--pure", "--format", "json", "-m", "anthropic/claude-haiku-4-5", "read ../outside"
     ]
     assert fake_kilo.stored[RUN_STORE_KEY]["exit_code"] == 1  # recorded as evidence, not raised
+
+
+def test_the_users_git_hooks_and_identity_stay_out_of_kilos_commits(fake_kilo, home_with_blocking_git_hooks, monkeypatch):
+    # Kilo keeps the user's HOME (its login lives there), but not their git config: a global
+    # secret-scanning hook would otherwise block a bad commit and credit the model with it.
+    monkeypatch.setenv("FAKE_COMMIT", "1")
+    _run(kilo(model="anthropic/claude-haiku-4-5", timeout=30))
+
+    project = fake_kilo.sandbox.project
+    assert (project / "commit_exit.txt").read_text().strip() == "0"
+    author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>"], cwd=project, capture_output=True, text=True)
+    assert author.stdout.strip() == "Eval Agent <agent@example.invalid>"
 
 
 def test_a_hung_kilo_is_killed_and_recorded_as_a_timeout(fake_kilo, monkeypatch):
