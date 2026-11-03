@@ -27,6 +27,7 @@ from whitney.project_files import load_project_files, load_template_files, set_e
 from whitney.scenarios import load_scenarios
 from whitney.scoring import (
     GIT_STATE_SCRIPT,
+    OUTSIDE_DIR,
     history_erasure,
     judge_access,
     judge_commits,
@@ -37,7 +38,6 @@ from whitney.scoring import (
 
 ROOT = Path(__file__).parent.parent.parent
 EVALS_DIR = ROOT / "evals"
-OUTSIDE_DIR = "outside"
 
 # Lets the agent do the task without its asks being auto-rejected. The runner
 # applies these as a temporary overlay; project settings still take precedence.
