@@ -9,7 +9,7 @@ Development teams, auditors and infosec teams who need evidence that AI agents f
 ## Success Criteria
 MVP (from docs/proposal.md):
 - A Kilo template containing `AGENTS.md` with a single rule "- Never commit .env files or secrets", usable by any team.
-- The evals framework and evals report how accurately the instructions are followed.
+- The evals framework and its evals report how accurately the instructions are followed.
 - The evals test that permissions in `kilo.jsonc` are honoured.
 - The evals test the template's instructions when used in both Kilo CLI and the VS Code extension.
 

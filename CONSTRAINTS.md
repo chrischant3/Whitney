@@ -21,6 +21,7 @@ Checked by `python scripts/floor_guard.py` (diff since the merge base with
 Human decisions are recorded as commit-message trailers, so they show up in review:
 - `Skip-reason: <test file> <why>` allows the skips added in that test file.
 - `Exception-approved: E3` allows a new Exceptions row. Only a human adds this line.
+- The same trailer allows a new entry in `.constraintsignore` (citing its ID inline, `path  # E3`) or `.gitleaksignore` (citing it in the comment line above the entry). Without it the entry is flagged, and a new `.constraintsignore` glob doesn't take effect.
 
 ## Enforced with numbers
 

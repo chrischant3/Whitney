@@ -26,6 +26,18 @@ PROJECT_DIR = "project"
 COMPOSE_FILE = Path(__file__).parent.parent.parent / "docker" / "compose.yaml"
 RUN_STORE_KEY = "kilo_run"
 
+# Git in local runs: a fixed identity (the one the Docker image sets) and none
+# of the user's git config. A global hook, such as a secret scanner, would
+# otherwise block the agent's bad commit and credit the model with it.
+ISOLATED_GIT_ENV = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_AUTHOR_NAME": "Eval Agent",
+    "GIT_AUTHOR_EMAIL": "agent@example.invalid",
+    "GIT_COMMITTER_NAME": "Eval Agent",
+    "GIT_COMMITTER_EMAIL": "agent@example.invalid",
+}
+
 # Kilo providers whose request format Inspect's bridge serves, each with how a
 # model id becomes the id in that provider's Kilo catalog: the Kilo Gateway
 # writes Anthropic versions with dots (claude-haiku-4.5), Kilo's Anthropic
@@ -75,7 +87,8 @@ def kilo(
     Side effects: stores the exit code, JSON event stream and stderr under
     RUN_STORE_KEY. Docker mode writes a temporary Kilo global config in the
     sandbox; local mode uses Kilo's normal user config plus a temporary
-    KILO_CONFIG overlay (see local_config_overlay).
+    KILO_CONFIG overlay (see local_config_overlay), and git without the
+    user's git config (ISOLATED_GIT_ENV).
 
     Raises:
         ValueError: api_key_env or base_url given in Docker mode, where
@@ -226,7 +239,7 @@ async def _run_local(
 async def _run_local_process(
     project_dir: Path, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int
 ) -> dict:
-    process_env = {**os.environ, **(env or {}), "PWD": str(project_dir)}
+    process_env = {**os.environ, **(env or {}), **ISOLATED_GIT_ENV, "PWD": str(project_dir)}
     return await run_process(_kilo_command(state, model, auto), project_dir, process_env, timeout, "kilo run")
 
 
@@ -294,18 +307,28 @@ async def run_process(
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        return {
-            "exit_code": process.returncode,
-            "events": stdout.decode(errors="replace"),
-            "stderr": stderr.decode(errors="replace"),
-        }
     except TimeoutError:
         # Killing only the agent would leave its tool commands holding the
         # output pipes, and communicate() would wait for them, past the timeout.
-        with contextlib.suppress(ProcessLookupError):  # the group may exit between the timeout and the kill
-            os.killpg(process.pid, signal.SIGKILL)
+        _kill_process_group(process.pid)
         await process.communicate()
         return {"exit_code": 124, "events": "", "stderr": f"{name} timed out after {timeout}s"}
+    except BaseException:
+        # Cancelled: Ctrl-C, an Inspect time limit, or another sample's error.
+        # The agent is in its own session, so Ctrl-C never reaches it; left
+        # alone it would keep running tools and calling the model.
+        _kill_process_group(process.pid)
+        raise
+    return {
+        "exit_code": process.returncode,
+        "events": stdout.decode(errors="replace"),
+        "stderr": stderr.decode(errors="replace"),
+    }
+
+
+def _kill_process_group(pid: int) -> None:
+    with contextlib.suppress(ProcessLookupError):  # the group may exit between the timeout or cancel and the kill
+        os.killpg(pid, signal.SIGKILL)
 
 
 def _kilo_command(state: AgentState, model: str, auto: bool) -> list[str]:

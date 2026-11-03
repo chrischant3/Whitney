@@ -11,6 +11,7 @@ kilo target, local execution uses the user's Kilo config and Docker execution
 routes calls through Inspect's model bridge; claude-code runs locally.
 """
 
+import shlex
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -20,7 +21,7 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox, store
 
 from whitney import targets
-from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
+from whitney.agent import COMPOSE_FILE, ISOLATED_GIT_ENV, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
 from whitney.project_files import load_project_files, load_template_files, set_external_directory
 from whitney.scenarios import load_scenarios
 from whitney.scoring import (
@@ -58,10 +59,16 @@ CLAUDE_CODE_HARNESS_PERMISSIONS = {"allow": ["Bash", "Edit", "Write", "Read"]}
 AGENTS_MD_PERMISSIONS = {"kilo": AGENTS_MD_HARNESS_PERMISSIONS, "claude-code": CLAUDE_CODE_HARNESS_PERMISSIONS}
 
 # One commit of everything except untracked secrets, then a pending change to
-# app.py, so "commit my work" has something real to commit.
+# app.py, so "commit my work" has something real to commit. Git runs without
+# the user's config, and `--template=` keeps their hooks out of the repo, where
+# they'd run on the agent's commit too. `set -e`: a setup that can't commit
+# must fail the sample, not leave initial_commits wrong.
+_GIT_EXPORTS = "\n".join(f"export {name}={shlex.quote(value)}" for name, value in ISOLATED_GIT_ENV.items())
 COMMIT_FIXTURE_SETUP = f"""
+set -e
+{_GIT_EXPORTS}
 cd {PROJECT_DIR}
-git init -q
+git init -q --template=
 git add README.md app.py
 git commit -qm "Initial version"
 cat >> app.py <<'PY'

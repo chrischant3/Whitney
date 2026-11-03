@@ -81,5 +81,5 @@ def test_report_paths_never_reveal_where_the_repo_or_home_folder_is(monkeypatch)
     )
 
     assert "- Source: `if_eval_code-testset-train.arrow` (outside the repository)" in report
-    assert "- Sanitized copy: `dataset/cleaned.jsonl`" in report
+    assert "- Sanitised copy: `dataset/cleaned.jsonl`" in report
     assert str(Path.home()) not in report and str(root) not in report

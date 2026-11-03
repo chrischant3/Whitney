@@ -7,6 +7,7 @@ actually does with a real subprocess.
 """
 
 import asyncio
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,6 +25,7 @@ printf '%s\n' "$@" > "$PWD/args.txt"
 pwd > "$PWD/where.txt"
 [ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
 [ -f sub/dir/x.txt ] && cp sub/dir/x.txt seen.txt
+[ -n "$FAKE_COMMIT" ] && { git init -q && git add -A && git commit -qm "agent commit"; echo "$?" > commit_exit.txt; }
 [ -n "$FAKE_WRITE" ] && printf 'def answer():\n    return 42\n' > "$FAKE_WRITE"
 echo '{"type":"step_start"}'
 echo 'not json'
@@ -58,7 +60,7 @@ def fake_kilo(tmp_path, monkeypatch):
     (bin_dir / "kilo").write_text(FAKE_KILO)
     (bin_dir / "kilo").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
-    for name in ("FAKE_SLEEP", "FAKE_EXIT", "FAKE_WRITE"):
+    for name in ("FAKE_SLEEP", "FAKE_EXIT", "FAKE_WRITE", "FAKE_COMMIT"):
         monkeypatch.delenv(name, raising=False)
     sandbox_project = tmp_path / "sandbox-project"
     sandbox_project.mkdir()
@@ -127,6 +129,18 @@ def test_without_staged_files_kilo_runs_in_the_sandbox_project_without_auto(fake
     assert fake_kilo.stored[RUN_STORE_KEY]["exit_code"] == 1  # recorded as evidence, not raised
 
 
+def test_the_users_git_hooks_and_identity_stay_out_of_kilos_commits(fake_kilo, home_with_blocking_git_hooks, monkeypatch):
+    # Kilo keeps the user's HOME (its login lives there), but not their git config: a global
+    # secret-scanning hook would otherwise block a bad commit and credit the model with it.
+    monkeypatch.setenv("FAKE_COMMIT", "1")
+    _run(kilo(model="anthropic/claude-haiku-4-5", timeout=30))
+
+    project = fake_kilo.sandbox.project
+    assert (project / "commit_exit.txt").read_text().strip() == "0"
+    author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>"], cwd=project, capture_output=True, text=True)
+    assert author.stdout.strip() == "Eval Agent <agent@example.invalid>"
+
+
 def test_a_hung_kilo_is_killed_and_recorded_as_a_timeout(fake_kilo, monkeypatch):
     import time
 
@@ -138,6 +152,32 @@ def test_a_hung_kilo_is_killed_and_recorded_as_a_timeout(fake_kilo, monkeypatch)
 
     assert fake_kilo.stored[RUN_STORE_KEY] == {"exit_code": 124, "events": "", "stderr": "kilo run timed out after 1s"}
     assert state.messages[-1].text == "commit my work"  # no final message from a timed-out run
+
+
+def test_a_cancelled_run_stops_kilo_and_the_tools_it_started(fake_kilo, monkeypatch, tmp_path):
+    # Ctrl-C, an Inspect time limit or another sample's error cancels the run. Kilo is in its
+    # own session, so nothing but the runner can stop it.
+    marker = tmp_path / "outlived-the-cancel.txt"
+    monkeypatch.setenv("FAKE_SLEEP", "2")
+    monkeypatch.setenv("FAKE_WRITE", str(marker))  # written after the sleep, only if kilo is still running
+    started = fake_kilo.sandbox.project / "args.txt"
+
+    async def cancel_mid_run():
+        state = AgentState(messages=[ChatMessageUser(content="commit my work")])
+        run = asyncio.create_task(kilo(model="anthropic/claude-haiku-4-5", timeout=30)(state))
+        for _ in range(100):  # wait until kilo is running, so the cancel lands mid-run
+            if started.exists():
+                break
+            await asyncio.sleep(0.05)
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+        await asyncio.sleep(3)  # longer than kilo's sleep
+
+    asyncio.run(cancel_mid_run())
+
+    assert started.exists()
+    assert not marker.exists()
 
 
 @pytest.mark.parametrize("path", ["/etc/passwd", "../escape.txt", "a/../../b.txt"])

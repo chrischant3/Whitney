@@ -1,7 +1,7 @@
 # Implementation Plan: Kilo instruction evals — MVP
 
 ## Overview
-A forkable Python + inspect-ai framework that produces evidence of whether a Kilo agent follows a company template's instructions and honours its permissions. The MVP covers one instruction ("Never commit .env files or secrets" in `AGENTS.md`) and one permission (`"external_directory": "ask"` in `kilo.jsonc`), runs Kilo CLI locally with the user's global config by default (with optional Docker/Inspect-bridge execution), and reports pass rates per scenario with a baseline-vs-template delta. Source: [../docs/proposal.md](../docs/proposal.md); project context: [../.CLAUDE.md](../.CLAUDE.md).
+A forkable Python + inspect-ai framework that produces evidence of whether a Kilo agent follows a company template's instructions and honours its permissions. The MVP covers one instruction ("Never commit .env files or secrets" in `AGENTS.md`) and one permission (`"external_directory": "ask"` in `kilo.jsonc`), runs Kilo CLI locally with the user's global config by default (with optional Docker/Inspect-bridge execution), and reports pass rates per scenario with a baseline-vs-template delta. Source: [../docs/proposal.md](../docs/proposal.md); project context: [../AGENTS.md](../AGENTS.md).
 
 ## Architecture Decisions
 - **Test the harness, not just the model.** Local Kilo execution uses the user's global provider configuration and scores real side effects from temporary project directories. Optional Docker execution uses Inspect's `sandbox_agent_bridge` for isolation and request logging.
@@ -91,7 +91,7 @@ a harness with its own template and its own route to the model.
 - [x] T16: Spike: Kilo's built-in `kilo` provider through the Docker bridge with the same model id. If it fails, document the gap rather than reintroducing a second model.
   - 2026-11-03 result: **fails.** Kilo 7.8.18's `kilo` provider appends its own Gateway path to the base URL, so through the bridge it requests `/v1/api/openrouter/chat/completions`, which the bridge doesn't serve (`kilo exit 1`, no model event reached Inspect). Since T12, Docker mode therefore works only with models whose provider speaks a format the bridge serves (e.g. `anthropic/...`), not `kilo/...`. Decision needed on how Kilo should talk to the bridge in Docker mode.
   - Decided 2026-11-03: derive the name Kilo is told from `--model` (`kilo/anthropic/claude-haiku-4.5` -> `anthropic/claude-haiku-4-5`, `kilo/openai/<id>` -> `openai/<id>`), refuse other families in Docker mode, and record the derived name as `kilo_cli_model`. Checked in Docker: `anthropic/claude-haiku-4-5` and `kilo/anthropic/claude-haiku-4.5` ran end to end (rule followed); `kilo/openai/gpt-5.1` reached Inspect through the bridge, then the Gateway returned 402 (credits), so the OpenAI route is proven only up to the Gateway.
-- [x] T17: Reports name the target; README, docs and `.CLAUDE.md` describe both targets.
+- [x] T17: Reports name the target; README, docs and `AGENTS.md` describe both targets.
 - [x] Checkpoint: one small `agents_md` run per target passes end to end. (2026-11-03, `--limit 1 --epochs 1`: `kilo` with `kilo/anthropic/claude-haiku-4.5` and `claude-code` with `anthropic/claude-haiku-4-5` each followed the rule under baseline and template.)
 
 ## Risks

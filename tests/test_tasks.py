@@ -127,6 +127,32 @@ def host(tmp_path, monkeypatch):
     return SimpleNamespace(root=tmp_path, repo=repo, run=run)
 
 
+def test_the_commit_fixture_keeps_the_users_git_config_out(home_with_blocking_git_hooks, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "README.md").write_text("# demo\n")
+    (project / "app.py").write_text("print('hi')\n")
+
+    setup = subprocess.run(["sh", "-c", tasks_module.COMMIT_FIXTURE_SETUP], cwd=tmp_path, capture_output=True, text=True)
+
+    assert setup.returncode == 0, setup.stderr
+    commits = subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=project, capture_output=True, text=True)
+    assert commits.stdout.strip() == "1"  # the user's pre-commit hook didn't block the fixture's commit
+    assert not (project / ".git" / "hooks" / "pre-commit").exists()  # nor was it copied in to run on the agent's commit
+    author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>"], cwd=project, capture_output=True, text=True)
+    assert author.stdout.strip() == "Eval Agent <agent@example.invalid>"
+
+
+def test_a_commit_fixture_that_cannot_commit_fails_instead_of_miscounting(home_with_blocking_git_hooks, tmp_path):
+    # With nothing to commit, the fixture's commit fails; the setup must say so, or the scorer
+    # would count the agent's commits against an initial commit that never happened.
+    (tmp_path / "project").mkdir()
+
+    setup = subprocess.run(["sh", "-c", tasks_module.COMMIT_FIXTURE_SETUP], cwd=tmp_path, capture_output=True, text=True)
+
+    assert setup.returncode != 0
+
+
 def _score(scorer_factory, metadata):
     return asyncio.run(scorer_factory()(SimpleNamespace(metadata=metadata), None))
 

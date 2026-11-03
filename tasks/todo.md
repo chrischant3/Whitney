@@ -194,7 +194,7 @@ Results: `docs/results/2026-11-02-phase2.md`.
 
 ## Checkpoint: MVP complete
 - [ ] All tests pass locally and in CI
-- [ ] All four MVP acceptance criteria in `.CLAUDE.md` met, with evidence
+- [ ] All four MVP acceptance criteria in `AGENTS.md` met, with evidence
 - [ ] Review with human
 
 ## After the MVP: publish

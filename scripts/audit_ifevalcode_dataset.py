@@ -88,7 +88,7 @@ def render_report(
         "",
         "## Processing",
         f"- Source: {_display_path(source)}",
-        f"- Sanitized copy: {_display_path(output)}",
+        f"- Sanitised copy: {_display_path(output)}",
         f"- Rows retained: {source_rows}; rows removed: 0",
         f"- Removed field: `{CHINESE_QUESTION_FIELD}` (the Chinese-language companion question)",
         "- The original Arrow file was not modified.",
@@ -158,13 +158,13 @@ def audit_dataset(input_path: Path, output_path: Path, report_path: Path) -> lis
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT, help="local Arrow IPC dataset file")
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="sanitized JSONL output path")
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="sanitised JSONL output path")
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT, help="Markdown security report path")
     parser.add_argument("--fail-on-findings", action="store_true", help="exit 2 if any injection indicators are found")
     args = parser.parse_args()
 
     findings = audit_dataset(args.input, args.output, args.report)
-    print(f"Sanitized dataset: {args.output}")
+    print(f"Sanitised dataset: {args.output}")
     print(f"Audit report: {args.report}")
     print(f"Prompt-injection findings: {len(findings)}")
     return 2 if args.fail_on_findings and findings else 0
