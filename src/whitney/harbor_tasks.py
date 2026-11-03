@@ -145,13 +145,13 @@ def bigcodebench_hard_complete(
 
 def _host_access(service) -> list[str]:
     """The compose settings in a task's service that would let its container reach the host."""
-    found = [name for name in ("privileged", "cap_add", "devices") if getattr(service, name, None)]
-    for volume in getattr(service, "volumes", None) or []:
+    found = [name for name in ("privileged", "cap_add", "devices") if getattr(service, name)]
+    for volume in service.volumes or []:
         if isinstance(volume, str):
-            source = volume.split(":", 1)[0] if ":" in volume else ""  # no ':' is an anonymous volume
-            is_bind = source.startswith(("/", ".", "~"))
+            source, colon, _ = volume.partition(":")
+            is_bind = bool(colon) and source.startswith(("/", ".", "~"))  # no ':' is an anonymous volume
         else:
-            source, is_bind = volume.source or "", volume.type == "bind"
+            source, is_bind = volume.source, volume.type == "bind"
         if is_bind:
             found.append(f"bind mount {source}")
     return found

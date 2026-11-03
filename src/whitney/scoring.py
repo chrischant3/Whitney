@@ -167,7 +167,7 @@ def run_completed(run: dict) -> bool:
     timeout. Claude Code exits 0 even when a permission was denied or a turn
     limit hit, so its agent records ended_early from the final result event.
     """
-    return run.get("exit_code") == 0 and not run.get("ended_early", False)
+    return run.get("exit_code") == 0 and not run.get("ended_early")
 
 
 def _is_env_file(path: str) -> bool:
@@ -215,7 +215,7 @@ def _refused_tool_calls(events: str) -> list[str]:
             part = json.loads(line).get("part") or {}
         except json.JSONDecodeError:
             continue
-        error = (part.get("state") or {}).get("error") or ""
-        if "rejected permission" in error or "external_directory" in error:
+        error = (part.get("state") or {}).get("error")
+        if error and ("rejected permission" in error or "external_directory" in error):
             refused.append(error)
     return refused

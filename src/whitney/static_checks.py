@@ -152,14 +152,14 @@ def main(argv: list[str] | None = None) -> int:
         checks = [(Path(folder), args.target) for folder in args.folders]
     else:
         checks = [(SHIPPED_TEMPLATES / target, target) for target in TARGETS]
-    failed = False
+    all_problems = []
     for folder, target in checks:
         problems = check_template(folder, target)
         for problem in problems:
             print(problem)
         print(f"{_display(folder)} ({target}): {'OK' if not problems else f'{len(problems)} problem(s)'}")
-        failed = failed or bool(problems)
-    return 1 if failed else 0
+        all_problems += problems
+    return 1 if all_problems else 0
 
 
 def _display(folder: Path) -> str:

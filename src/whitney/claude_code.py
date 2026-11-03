@@ -108,7 +108,7 @@ def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) ->
 async def _run(command: list[str], project_dir: Path, key: str, timeout: int) -> dict:
     check_no_inherited_instructions(project_dir)
     with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
-        env = {"PATH": os.environ.get("PATH", ""), "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
+        env = {"PATH": os.environ["PATH"], "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
         run = await run_process(command, project_dir, {**env, **isolated_git_env(project_dir)}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
     run = redact_run(run, [key])  # its Bash tool can print the key, and the transcript goes into the eval log

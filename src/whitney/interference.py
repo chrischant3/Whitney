@@ -140,7 +140,8 @@ def _normalise_languages(languages: str | list[str] | None) -> set[str]:
 
 def _load_records(path: Path, languages: set[str], limit: int | None) -> tuple[list[dict], list[str]]:
     """Rows in `languages`, at most `limit` per language, and the ids of rows the injection scan left out."""
-    records, excluded = [], []
+    found: list[tuple[str, dict]] = []  # (language, record), the language lower-cased once
+    excluded = []
     with path.open(encoding="utf-8") as source:
         for line_number, line in enumerate(source, 1):
             if not line.strip():
@@ -150,22 +151,19 @@ def _load_records(path: Path, languages: set[str], limit: int | None) -> tuple[l
                 raise ValueError(f"Chinese question column remains in {path}, row {line_number}")
             if "english_question" not in record or "programming_language" not in record:
                 raise ValueError(f"Required IFEvalCode fields missing from row {line_number}")
-            if str(record["programming_language"]).lower() not in languages:
+            language = str(record["programming_language"]).lower()
+            if language not in languages:
                 continue
             if scan_record(record):
                 excluded.append(str(record.get("id")))
             else:
-                records.append(record)
+                found.append((language, record))
 
-    records.sort(key=lambda record: str(record["programming_language"]).lower())
-    if limit is None:
-        return records, excluded
-
-    selected = []
+    found.sort(key=lambda item: item[0])
     counts: dict[str, int] = {}
-    for record in records:
-        language = str(record["programming_language"]).lower()
-        if counts.get(language, 0) >= limit:
+    selected = []
+    for language, record in found:
+        if limit is not None and counts.get(language, 0) >= limit:
             continue
         counts[language] = counts.get(language, 0) + 1
         selected.append(record)

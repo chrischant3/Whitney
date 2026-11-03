@@ -121,10 +121,8 @@ def _location(loc: tuple) -> str:
 
 
 def _default_fixtures_dir(path: Path) -> Path:
-    for folder in (path.parent, path.parent.parent):
-        if (folder / "fixtures").is_dir():
-            return folder / "fixtures"
-    return path.parent / "fixtures"
+    candidates = [folder / "fixtures" for folder in (path.parent, path.parent.parent)]
+    return next((folder for folder in candidates if folder.is_dir()), candidates[0])
 
 
 def _fixture_files(path: Path, fixtures_dir: Path, name: str) -> dict[str, str]:

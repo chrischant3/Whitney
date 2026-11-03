@@ -237,7 +237,7 @@ def local_config_overlay(
         options["baseURL"] = base_url
     providers = {name: dict(settings) for name, settings in (global_provider or {}).items()}
     if options:
-        provider = model.split("/", 1)[0]
+        provider = model.partition("/")[0]
         settings = providers.get(provider, {})
         providers[provider] = {**settings, "options": {**settings.get("options", {}), **options}}
     if providers:

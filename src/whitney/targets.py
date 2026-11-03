@@ -79,7 +79,12 @@ def build_agent(
 
 
 def model_access(target: str, api_key_env: str | None, base_url: str | None) -> dict:
-    """How the harness reached the model, for the log: env var name and base URL, never the key."""
+    """How the harness reached the model, for the log: env var name and base URL, never the key.
+
+    Raises:
+        ValueError: unknown target.
+    """
+    check_target(target)
     if target == "claude-code":
         return {"api_key_env": api_key_env or "ANTHROPIC_API_KEY", "base_url": None}
     if api_key_env or base_url:

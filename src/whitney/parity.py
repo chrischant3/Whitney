@@ -1,6 +1,6 @@
 """Check that two Kilo runtimes (e.g. the CLI and the VS Code extension's bundled runtime) resolve the template the same way.
 
-    python -m whitney.parity --cli "$(which kilo)" --other /path/to/extension/kilo [--template template]
+    python -m whitney.parity --cli "$(which kilo)" --other /path/to/extension/kilo [--template template/kilo]
 
 The evals run against the CLI. This is the automated half of the evidence
 that their results carry over to the VS Code extension: same runtime version,
@@ -17,7 +17,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+from whitney import targets
+
 COMPARED_KEYS = ("permission", "instructions")
+# Seconds before a runtime that hangs is stopped, so the check fails instead of waiting forever.
+DEBUG_CONFIG_TIMEOUT = 120
+VERSION_TIMEOUT = 60
 
 
 def resolve_config(binary: str, template_dir: Path, scratch: Path) -> dict:
@@ -28,8 +33,8 @@ def resolve_config(binary: str, template_dir: Path, scratch: Path) -> dict:
     """
     project = scratch / "project"
     home = scratch / "home"
-    shutil.copytree(template_dir, project, dirs_exist_ok=True)
-    home.mkdir(exist_ok=True)
+    shutil.copytree(template_dir, project)
+    home.mkdir()
     env = {
         "HOME": str(home),
         "XDG_CONFIG_HOME": str(home / ".config"),
@@ -39,7 +44,7 @@ def resolve_config(binary: str, template_dir: Path, scratch: Path) -> dict:
         ),
     }
     result = subprocess.run(
-        [binary, "debug", "config", "--pure"], cwd=project, env=env, capture_output=True, text=True, timeout=120
+        [binary, "debug", "config", "--pure"], cwd=project, env=env, capture_output=True, text=True, timeout=DEBUG_CONFIG_TIMEOUT
     )
     if result.returncode != 0:
         raise RuntimeError(f"{binary} debug config failed: {result.stderr.strip()[-500:]}")
@@ -48,7 +53,7 @@ def resolve_config(binary: str, template_dir: Path, scratch: Path) -> dict:
 
 def runtime_version(binary: str) -> str:
     """`<binary> --version`, stripped."""
-    return subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=60).stdout.strip()
+    return subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=VERSION_TIMEOUT).stdout.strip()
 
 
 def compare_resolved(cli: dict, other: dict, keys: tuple[str, ...] = COMPARED_KEYS) -> list[str]:
@@ -65,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--cli", required=True, help="path to the Kilo CLI binary")
     p.add_argument("--other", required=True, help="path to the other runtime, e.g. the extension's bundled kilo")
-    p.add_argument("--template", default="template/kilo")
+    p.add_argument("--template", default=str(targets.template_dir("kilo")), help="the template to resolve (default: the shipped Kilo template)")
     args = p.parse_args(argv)
 
     problems = []
