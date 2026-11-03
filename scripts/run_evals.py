@@ -226,7 +226,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     )
     p.add_argument(
         "--ifevalcode-dataset-path",
-        help="local sanitized IFEvalCode JSONL file (default: dataset/ifevalcode_cleaned.jsonl)",
+        help="local sanitised IFEvalCode JSONL file (default: dataset/ifevalcode_cleaned.jsonl)",
     )
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--limit", type=int, help="maximum samples per task; applies to each baseline/template variant")

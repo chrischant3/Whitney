@@ -61,7 +61,7 @@ def fake_ifevalcode(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "inspect_evals.ifevalcode.scorer", scorer_module)
 
 
-def test_ifevalcode_uses_sanitized_local_data_and_official_scorer(tmp_path, fake_ifevalcode):
+def test_ifevalcode_uses_sanitised_local_data_and_official_scorer(tmp_path, fake_ifevalcode):
     task = ifevalcode(target="kilo", model=MODEL, variant="template", languages=["python"], samples_per_language=1)
     [sample] = list(task.dataset)
 

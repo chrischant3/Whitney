@@ -222,7 +222,7 @@ def render_ifevalcode_markdown(logs: list[EvalLog]) -> str:
     lines = [
         "## IFEvalCode: template interference check",
         "",
-        "Dataset: local sanitized IFEvalCode JSONL.",
+        "Dataset: local sanitised IFEvalCode JSONL.",
         f"Chinese question column removed: {'yes' if True in column_removed else 'unknown'}.",
         f"Candidate records before Inspect limits: {max(candidate_counts) if candidate_counts else 'unknown'}.",
         f"Scored samples per variant (total): {max(scored_counts) if scored_counts else 'unknown'}.",

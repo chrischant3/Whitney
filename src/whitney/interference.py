@@ -1,4 +1,4 @@
-"""IFEvalCode as an instruction-interference check using sanitized local data."""
+"""IFEvalCode as an instruction-interference check using sanitised local data."""
 
 import json
 from pathlib import Path
@@ -35,7 +35,7 @@ def ifevalcode(
 
     The local audit script removes the Chinese question column and checks all
     text fields for prompt-injection indicators. This task reads only its
-    sanitized JSONL output and never contacts Hugging Face. target picks the
+    sanitised JSONL output and never contacts Hugging Face. target picks the
     harness and template, and api_key_env and base_url the provider key, as
     in whitney.tasks.agents_md.
     """
@@ -49,7 +49,7 @@ def ifevalcode(
     dataset_file = Path(dataset_path).expanduser() if dataset_path else LOCAL_DATASET
     if not dataset_file.is_file():
         raise FileNotFoundError(
-            f"Sanitized local IFEvalCode data not found: {dataset_file}. "
+            f"Sanitised local IFEvalCode data not found: {dataset_file}. "
             "Run `python scripts/audit_ifevalcode_dataset.py` first."
         )
 
@@ -109,7 +109,7 @@ def ifevalcode(
             "evaluation_assets": project_files,
             "harness_permissions": AGENTS_MD_PERMISSIONS[target],
             "evaluation_preamble": IFEVALCODE_SYSTEM_PROMPT,
-            "dataset_source": "local sanitized IFEvalCode JSONL",
+            "dataset_source": "local sanitised IFEvalCode JSONL",
             "chinese_question_column_removed": True,
             "candidate_records": len(records),
         },

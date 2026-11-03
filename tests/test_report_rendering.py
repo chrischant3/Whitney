@@ -128,7 +128,7 @@ def test_ifevalcode_report():
     assert render_ifevalcode_markdown(logs) == (
         "## IFEvalCode: template interference check\n"
         "\n"
-        "Dataset: local sanitized IFEvalCode JSONL.\n"
+        "Dataset: local sanitised IFEvalCode JSONL.\n"
         "Chinese question column removed: yes.\n"
         "Candidate records before Inspect limits: 7.\n"
         "Scored samples per variant (total): 2.\n"
