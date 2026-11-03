@@ -431,7 +431,9 @@ async def copy_outputs(sbox, project_dir: Path, targets: dict[str, str]) -> tupl
 
     Returns:
         (sandbox paths written, source files that weren't there). Every
-        mapping is checked, even after a missing one.
+        mapping is checked, even after a missing one. A symlink counts as
+        missing: copying it would put whatever host file it points to in
+        the sandbox.
 
     Raises:
         ValueError: a source isn't relative to the project or a target isn't absolute.
@@ -442,7 +444,7 @@ async def copy_outputs(sbox, project_dir: Path, targets: dict[str, str]) -> tupl
         if source.is_absolute() or ".." in source.parts or not target.is_absolute():
             raise ValueError("local output mapping must use a relative source and absolute sandbox target")
         source_path = project_dir / source
-        if not source_path.is_file():
+        if source_path.is_symlink() or not source_path.is_file():
             missing.append(source_relative)
             continue
         await sbox.write_file(sandbox_path, source_path.read_text(encoding="utf-8"))
@@ -498,8 +500,8 @@ def _kilo_command(state: AgentState, model: str, auto: bool) -> list[str]:
     command = ["kilo", "run", "--pure", "--format", "json", "-m", model]
     if auto:
         command.append("--auto")
-    command.append(state.messages[-1].text)
-    return command
+    # "--" ends the options: without it, a prompt such as "--version" is read as one.
+    return [*command, "--", state.messages[-1].text]
 
 
 def _append_final_message(state: AgentState, run: dict, model: str) -> None:

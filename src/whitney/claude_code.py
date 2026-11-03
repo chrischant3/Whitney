@@ -75,7 +75,7 @@ def claude_code(
         if not key:
             raise ValueError(f"{api_key_env} is not set; put it in .env or the environment")
         sbox = sandbox()
-        prompt = [*command, state.messages[-1].text]
+        prompt = [*command, "--", state.messages[-1].text]  # "--": a prompt such as "--version" stays the prompt
         if local_project_files is None:
             project_dir = Path((await sbox.exec(["pwd"], cwd=PROJECT_DIR)).stdout.strip())
             run = await _run(prompt, project_dir, key, timeout)

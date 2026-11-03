@@ -143,7 +143,7 @@ def test_staged_project_run_records_kilo_output_and_copies_declared_outputs(fake
 
     run = fake_kilo.stored[RUN_STORE_KEY]
     assert seen["args"] == [
-        "run", "--pure", "--format", "json", "-m", "openrouter/anthropic/claude-haiku-4-5", "--auto", "commit my work"
+        "run", "--pure", "--format", "json", "-m", "openrouter/anthropic/claude-haiku-4-5", "--auto", "--", "commit my work"
     ]
     assert seen["project"].name == "project" and seen["project"].parent.name.startswith("kilo-eval-")
     assert not seen["project"].exists()  # the staged project is temporary
@@ -167,7 +167,7 @@ def test_without_staged_files_kilo_runs_in_the_sandbox_project_without_auto(fake
     assert fake_kilo.sandbox.execs[0] == (["pwd"], {"cwd": "project"})
     assert Path((project / "where.txt").read_text().strip()).resolve() == project.resolve()
     assert (project / "args.txt").read_text().splitlines() == [
-        "run", "--pure", "--format", "json", "-m", "anthropic/claude-haiku-4-5", "read ../outside"
+        "run", "--pure", "--format", "json", "-m", "anthropic/claude-haiku-4-5", "--", "read ../outside"
     ]
     assert fake_kilo.stored[RUN_STORE_KEY]["exit_code"] == 1  # recorded as evidence, not raised
 
@@ -278,7 +278,7 @@ def test_docker_run_executes_kilo_in_the_sandbox_project_and_records_the_result(
     assert sbox.calls == [
         (["pwd"], {"cwd": "project"}),
         (
-            ["kilo", "run", "--pure", "--format", "json", "-m", "anthropic/claude", "--auto", "do it"],
+            ["kilo", "run", "--pure", "--format", "json", "-m", "anthropic/claude", "--auto", "--", "do it"],
             {"cwd": "project", "env": {"HOME": "/root", "PWD": "/workspace/project"}, "timeout": 42},
         ),
     ]
@@ -453,3 +453,29 @@ def test_instruction_files_in_a_folder_above_the_project_stop_the_run(fake_kilo,
     with pytest.raises(RuntimeError, match=f"{planted}.*above the project"):
         _run(kilo(model=MODEL, timeout=30))
     assert not (fake_kilo.sandbox.project / "args.txt").exists()  # kilo never ran
+
+
+def test_a_prompt_that_looks_like_an_option_reaches_kilo_as_the_message(fake_kilo, user_home):
+    # Without "--", Kilo reads a prompt such as "--version" as its own option (checked with Kilo 7.8.18).
+    _run(kilo(model=MODEL, timeout=30), prompt="--version")
+
+    assert (fake_kilo.sandbox.project / "args.txt").read_text().splitlines()[-2:] == ["--", "--version"]
+
+
+def test_a_symlinked_output_is_not_copied_into_the_sandbox(fake_kilo, user_home, tmp_path, monkeypatch):
+    # It would copy whatever host file it points to into the verifier's container.
+    host_secret = tmp_path / "host-secret.txt"
+    host_secret.write_text("HOST SECRET\n")
+    original = agent_module._run_local_process
+
+    async def plant_symlink(project_dir, *args):
+        result = await original(project_dir, *args)
+        (project_dir / "solution.py").symlink_to(host_secret)
+        return result
+
+    monkeypatch.setattr(agent_module, "_run_local_process", plant_symlink)
+    _run(kilo(model=MODEL, local_project_files={"AGENTS.md": "x"}, local_output_targets={"solution.py": "/workspace/solution.py"}))
+
+    run = fake_kilo.stored[RUN_STORE_KEY]
+    assert fake_kilo.sandbox.writes == []
+    assert run["missing_outputs"] == ["solution.py"]

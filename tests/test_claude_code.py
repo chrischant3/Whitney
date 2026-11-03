@@ -110,7 +110,7 @@ def test_runs_claude_headless_with_only_project_settings_and_no_mcp_servers(fake
     assert args[args.index("--output-format") + 1] == "stream-json" and "--verbose" in args
     assert json.loads(args[args.index("--settings") + 1]) == {"permissions": {"allow": ["Edit"], "deny": ["Bash"]}}
     assert "--dangerously-skip-permissions" not in args
-    assert args[-1] == "commit my work"
+    assert args[-2:] == ["--", "commit my work"]
 
 
 def test_without_harness_permissions_nothing_extra_is_allowed(fake_claude):
@@ -236,3 +236,10 @@ def test_a_claude_md_in_a_folder_above_the_project_stops_the_run(fake_claude):
     with pytest.raises(RuntimeError, match="CLAUDE.md.*above the project"):
         _run(claude_code(model=MODEL))
     assert not (fake_claude.project / "args.txt").exists()
+
+
+def test_a_prompt_that_looks_like_an_option_reaches_claude_as_the_message(fake_claude):
+    # Without "--", Claude Code reads a prompt such as "--version" as its own option (checked with 2.1.285).
+    _run(claude_code(model=MODEL), prompt="--version")
+
+    assert (fake_claude.project / "args.txt").read_text().splitlines()[-2:] == ["--", "--version"]
