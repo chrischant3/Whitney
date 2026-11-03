@@ -6,14 +6,17 @@
 Looks at everything since the merge base: committed, staged, unstaged and
 untracked. Flags new suppression comments, stubs, skipped or deleted tests,
 removed assertions, new Exceptions rows and lowered thresholds in
-CONSTRAINTS.md. Tightening is silent; loosening is loud.
+CONSTRAINTS.md, and new entries in .constraintsignore or .gitleaksignore.
+Tightening is silent; loosening is loud.
 
 Exit codes: 0 clean, 1 at least one violation (block), 2 the guard couldn't
 run (not a git repo, no merge base). Paths in .constraintsignore (one glob per
 line, each citing an Exceptions ID from CONSTRAINTS.md) are skipped. A skip
 is allowed when a commit since the merge base says why, with a trailer line
-`Skip-reason: <test file> <reason>`; a new Exceptions row is allowed once a
-human approves it in a commit message, `Exception-approved: E1, E2`.
+`Skip-reason: <test file> <reason>`; a new Exceptions row, or a new ignore-file
+entry citing that ID, is allowed once a human approves it in a commit message,
+`Exception-approved: E1, E2`. Until then a new .constraintsignore glob doesn't
+take effect, so it can't hide what it covers.
 
 Python port of the agent-skills constraint-driven-development floor-guard
 reference; keep its contract if you change the patterns.
@@ -30,6 +33,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONSTRAINTS = "CONSTRAINTS.md"
 IGNORE_FILE = ".constraintsignore"
+GITLEAKS_IGNORE_FILE = ".gitleaksignore"
+EXCEPTION_ID = re.compile(r"\bE\d+\b")
 
 SUPPRESSIONS = re.compile(
     r"#\s*noqa|#\s*type:\s*ignore|#\s*pragma:\s*no\s*(cover|mutate)|#\s*nosec|pylint:\s*disable|nosemgrep|gitleaks:allow"
@@ -69,6 +74,7 @@ def find_violations(
     ignore: list[str] | None = None,
     skip_reasons: set[str] | None = None,
     approved_exceptions: set[str] | None = None,
+    gitleaksignore_text: str | None = None,
 ) -> list[Finding]:
     """Return every move in the diff that lowers the bar.
 
@@ -76,26 +82,43 @@ def find_violations(
         added: lines added since the merge base (untracked files count as added).
         removed: lines removed since the merge base.
         deleted: paths of files deleted since the merge base.
-        ignore: path globs to skip (from .constraintsignore).
+        ignore: path globs to skip (from .constraintsignore in the working tree).
         skip_reasons: test files whose added skips a commit message explains.
         approved_exceptions: Exceptions IDs a commit message approves.
+        gitleaksignore_text: the current .gitleaksignore, where an entry cites
+            its Exceptions ID in the comment line above it.
 
     Suppression, stub and skip patterns are code patterns, so they only apply
-    to Python files; CONSTRAINTS.md itself names them.
+    to Python files; CONSTRAINTS.md itself names them. A new ignore-file entry
+    whose cited ID isn't approved is flagged, and its glob is dropped from
+    `ignore`, so the change that adds it can't use it.
     """
     ignore = ignore or []
     skip_reasons = skip_reasons or set()
     approved_exceptions = approved_exceptions or set()
+    findings: list[Finding] = []
+
+    def flag(rule: str, at: Line) -> None:
+        findings.append(Finding(rule, at.file, at.line, at.text.strip()[:120]))
+
+    # Checked before any glob applies, so no glob can exempt an ignore file.
+    unapproved = [
+        a
+        for a in added
+        if a.file in (IGNORE_FILE, GITLEAKS_IGNORE_FILE)
+        and _is_entry(a.text)
+        and _cited_exception(a, gitleaksignore_text) not in approved_exceptions
+    ]
+    for a in unapproved:
+        flag("new-exception", a)
+    unapproved_globs = {_glob(a.text) for a in unapproved if a.file == IGNORE_FILE}
+    ignore = [g for g in ignore if g not in unapproved_globs]
 
     def skip(path: str) -> bool:
         return any(fnmatch.fnmatch(path, g) for g in ignore)
 
     added = [a for a in added if not skip(a.file)]
     removed = [r for r in removed if not skip(r.file)]
-    findings: list[Finding] = []
-
-    def flag(rule: str, at: Line) -> None:
-        findings.append(Finding(rule, at.file, at.line, at.text.strip()[:120]))
 
     for i, a in enumerate(added):
         if a.file.endswith(".py"):
@@ -117,6 +140,33 @@ def find_violations(
     findings += [Finding("test-deleted", path, 0, "") for path in deleted if _is_test(path) and not skip(path)]
     findings += _lowered_thresholds(added, removed)
     return findings
+
+
+def _is_entry(text: str) -> bool:
+    """An ignore-file line that ignores something: not blank, not a comment."""
+    stripped = text.strip()
+    return bool(stripped) and not stripped.startswith("#")
+
+
+def _glob(text: str) -> str:
+    """The glob in a .constraintsignore line; text after '#' is the Exceptions ID it cites."""
+    return text.split("#", 1)[0].strip()
+
+
+def _cited_exception(entry: Line, gitleaksignore_text: str | None) -> str | None:
+    """The Exceptions ID an ignore-file entry cites, or None.
+
+    A .constraintsignore entry cites it inline after '#'. gitleaks reads no
+    inline comments, so a .gitleaksignore entry cites the ID in the nearest
+    comment line above it.
+    """
+    if entry.file == IGNORE_FILE:
+        comments = [entry.text.partition("#")[2]]
+    else:
+        above = (gitleaksignore_text or "").splitlines()[: entry.line - 1]
+        comments = [line for line in reversed(above) if line.lstrip().startswith("#")][:1]
+    ids = [found for comment in comments for found in EXCEPTION_ID.findall(comment)]
+    return ids[0] if ids else None
 
 
 def _is_test(path: str) -> bool:
@@ -220,7 +270,7 @@ def load_ignore(root: Path = ROOT) -> list[str]:
     path = root / IGNORE_FILE
     if not path.is_file():
         return []
-    return [g for g in (line.split("#", 1)[0].strip() for line in path.read_text().splitlines()) if g]
+    return [g for g in (_glob(line) for line in path.read_text().splitlines()) if g]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -233,11 +283,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"floor-guard: no merge base against {args.base}", file=sys.stderr)
         return 2
     messages = _git("log", "--format=%B", f"{args.base}..HEAD") or ""
+    gitleaks_ignore = ROOT / GITLEAKS_IGNORE_FILE
     findings = find_violations(
         *diff,
         ignore=load_ignore(),
         skip_reasons=skip_reasons_from(messages),
         approved_exceptions=approvals_from(messages),
+        gitleaksignore_text=gitleaks_ignore.read_text() if gitleaks_ignore.is_file() else None,
     )
     if not findings:
         print("floor-guard: clean")

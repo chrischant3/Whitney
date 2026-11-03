@@ -127,6 +127,58 @@ def test_exception_row_approved_in_a_commit_message_is_allowed():
     assert [f.rule for f in find_violations([row], [], [], approved_exceptions={"E2"})] == ["new-exception"]
 
 
+def test_new_constraintsignore_entry_is_a_new_exception_until_its_id_is_approved():
+    entry = Line(".constraintsignore", 4, "src/whitney/generated.py  # E3")
+    assert _rules(added=[entry]) == ["new-exception"]
+    assert find_violations([entry], [], [], approved_exceptions={"E3"}) == []
+    assert [f.rule for f in find_violations([entry], [], [], approved_exceptions={"E2"})] == ["new-exception"]
+
+
+def test_constraintsignore_entry_without_an_id_cannot_be_approved():
+    entry = Line(".constraintsignore", 4, "src/**")
+    assert [f.rule for f in find_violations([entry], [], [], approved_exceptions={"E1", "E2"})] == ["new-exception"]
+
+
+def test_unapproved_constraintsignore_entry_does_not_hide_what_it_covers():
+    # load_ignore reads the working tree, so the new glob arrives in `ignore` too.
+    added = [Line(".constraintsignore", 4, "src/**  # E9"), Line("src/whitney/x.py", 1, "x = 1  # noqa")]
+    findings = find_violations(added, [], [], ignore=["scripts/floor_guard.py", "src/**"])
+    assert sorted(f.rule for f in findings) == ["new-exception", "silenced-checker"]
+    assert find_violations(added, [], [], ignore=["scripts/floor_guard.py", "src/**"], approved_exceptions={"E9"}) == []
+
+
+def test_an_ignore_glob_cannot_exempt_the_ignore_files_themselves():
+    added = [Line(".constraintsignore", 4, ".constraintsignore  # E9"), Line(".constraintsignore", 5, "src/**  # E9")]
+    findings = find_violations(added, [], [], ignore=[".constraintsignore", "src/**"])
+    assert [f.rule for f in findings] == ["new-exception", "new-exception"]
+
+
+def test_comments_and_blank_lines_in_ignore_files_are_not_exceptions():
+    added = [Line(".constraintsignore", 1, "# One glob per line"), Line(".gitleaksignore", 2, "   ")]
+    assert _rules(added=added) == []
+
+
+GITLEAKSIGNORE = """# CONSTRAINTS.md E1: fake canary token in the scorer tests
+255c0152:tests/test_scoring.py:generic-api-key:15
+# CONSTRAINTS.md E3: fake token in the parity tests
+9f1e2d3c:tests/test_parity.py:generic-api-key:8
+"""
+
+
+def test_new_gitleaksignore_entry_needs_the_id_in_the_comment_above_it_approved():
+    # gitleaks has no inline comments, so the entry cites the ID in the comment line above it.
+    entry = Line(".gitleaksignore", 4, "9f1e2d3c:tests/test_parity.py:generic-api-key:8")
+    findings = find_violations([entry], [], [], approved_exceptions={"E1"}, gitleaksignore_text=GITLEAKSIGNORE)
+    assert [f.rule for f in findings] == ["new-exception"]
+    assert find_violations([entry], [], [], approved_exceptions={"E3"}, gitleaksignore_text=GITLEAKSIGNORE) == []
+
+
+def test_gitleaksignore_entry_with_no_comment_to_cite_cannot_be_approved():
+    entry = Line(".gitleaksignore", 1, "9f1e2d3c:tests/test_parity.py:generic-api-key:8")
+    findings = find_violations([entry], [], [], approved_exceptions={"E1"}, gitleaksignore_text=entry.text + "\n")
+    assert [f.rule for f in findings] == ["new-exception"]
+
+
 def test_exception_approvals_are_read_from_commit_message_trailers():
     approvals_from = _guard["approvals_from"]
     assert approvals_from("Add constraints\n\nException-approved: E1, E2 (Christopher Chant)\n") == {"E1", "E2"}
