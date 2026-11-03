@@ -47,6 +47,15 @@ Optional extras, installed the same way (`pip install -e ".[dev,ifevalcode,harbo
 | `harbor` | the `bigcodebench_hard_complete` eval (Harbor tasks) |
 | `gateway` | `--execution docker` (Inspect's Kilo Gateway bridge) |
 
+For CI, or any run whose results you need to reproduce, install every dependency at the versions and hashes in `requirements.lock` instead, then Whitney itself:
+
+```bash
+pip install --require-hashes -r requirements.lock
+pip install --no-deps -e .
+```
+
+After changing a dependency in `pyproject.toml`, regenerate the lock with the command at the top of `requirements.lock` (it needs [uv](https://docs.astral.sh/uv/)); a test fails if the two disagree.
+
 ### 2a. The `kilo` target
 
 Kilo runs on your machine and reaches the model in one of two ways. Both work for every Kilo eval.

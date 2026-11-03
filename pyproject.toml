@@ -22,7 +22,7 @@ dev = [
     "diff-cover==11.0.0",
     "mutmut==3.8.1",
 ]
-ifevalcode = ["inspect-evals[ifevalcode]"]
+ifevalcode = ["inspect-evals[ifevalcode]==0.27.0"]  # supplies the IFEvalCode scorer, so pinned like inspect-ai
 gateway = ["openai>=1"]
 harbor = ["inspect-harbor==1.0.0"]
 
