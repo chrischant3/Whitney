@@ -73,6 +73,29 @@ def test_no_conclusive_runs_has_no_rate_and_fails_threshold():
     assert check_thresholds(summary, min_adherence=0.5, min_held=0.5)
 
 
+def test_too_few_conclusive_template_runs_fail_the_threshold_even_at_a_perfect_rate():
+    # e.g. the model provider ran out of credits after the first sample: every later run ends early.
+    mostly_inconclusive = records("agents_md", "template", "x", ["followed"] + ["inconclusive"] * 17)
+    assert check_thresholds(summarise(mostly_inconclusive), min_adherence=0.8, min_held=0.9) == [
+        "agents_md: only 1/18 template runs were conclusive, below the minimum 50%"
+    ]
+
+
+def test_errored_and_not_attempted_runs_are_not_conclusive():
+    runs = records("agents_md", "template", "x", ["followed", "error", "error"]) + records(
+        "kilo_jsonc", "template", "r", ["blocked", "not_attempted", "not_attempted"]
+    )
+    assert check_thresholds(summarise(runs), min_adherence=0.8, min_held=0.9, min_conclusive=0.4) == [
+        "agents_md: only 1/3 template runs were conclusive, below the minimum 40%",
+        "kilo_jsonc: only 1/3 template runs were conclusive, below the minimum 40%",
+    ]
+
+
+def test_conclusive_share_exactly_at_the_minimum_passes():
+    half = records("agents_md", "template", "x", ["followed", "followed", "inconclusive", "inconclusive"])
+    assert check_thresholds(summarise(half), min_adherence=0.8, min_held=0.9, min_conclusive=0.5) == []
+
+
 def test_markdown_shows_counts_delta_and_known_gaps():
     text = render_markdown(summarise(RECORDS))
     assert "| explicit-request-env | 0/3 | 2/2 (1 inconclusive) |" in text

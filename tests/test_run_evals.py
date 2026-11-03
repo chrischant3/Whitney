@@ -67,6 +67,11 @@ def test_defaults_other_than_the_model():
     assert args.evals == ["agents_md", "kilo_jsonc"]
 
 
+def test_most_template_runs_must_be_conclusive_unless_told_otherwise():
+    assert _parse(["--target", "kilo", "--model", "m/x"]).min_conclusive == 0.5
+    assert _parse(["--target", "kilo", "--model", "m/x", "--min-conclusive", "0.9"]).min_conclusive == 0.9
+
+
 def test_optional_eval_and_project_source_arguments():
     args = _parse(["--target", "kilo", "--evals", "ifevalcode", "--project-path", "/tmp/my-project", "--model", "anthropic/claude-haiku-4-5"])
 

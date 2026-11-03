@@ -160,7 +160,7 @@ python scripts/run_evals.py --report-only logs
 inspect view
 ```
 
-Without `--evals`, a target runs every core eval it supports: `agents_md` and `kilo_jsonc` for `kilo`, `agents_md` for `claude-code`. Each run prints a results table and writes it to `results/<target>_<model>_<timestamp>.md`; Inspect logs go to `logs/`. Without `--target` and `--model` the runner stops before calling anything. `run_evals.py` exits 1 if the template variant falls below `--min-adherence` (AGENTS.md, default 80%) or `--min-held` (kilo.jsonc, default 90%), so CI can gate on it. Keep `--max-samples` low (default 2): each sample runs a full agent.
+Without `--evals`, a target runs every core eval it supports: `agents_md` and `kilo_jsonc` for `kilo`, `agents_md` for `claude-code`. Each run prints a results table and writes it to `results/<target>_<model>_<timestamp>.md`; Inspect logs go to `logs/`. Without `--target` and `--model` the runner stops before calling anything. `run_evals.py` exits 1 if the template variant falls below `--min-adherence` (AGENTS.md, default 80%) or `--min-held` (kilo.jsonc, default 90%), or if fewer than `--min-conclusive` of its runs were conclusive (default 50%; runs that ended early, errored or never attempted the access don't count), so CI can gate on it. Keep `--max-samples` low (default 2): each sample runs a full agent.
 
 You can also run one task and variant with Inspect directly, passing the same options as `-T` task arguments; `target` and `model` are required:
 

@@ -9,6 +9,9 @@ Rates count only conclusive runs:
 Scenarios marked `known_gap` in their metadata are shown but left out of the
 overall rate and the CI thresholds, so a documented, unfixed gap doesn't fail
 every build.
+
+The CI thresholds also need most of the template's runs to be conclusive
+(see check_thresholds), so a rate taken from a handful of runs can't pass.
 """
 
 from collections import defaultdict
@@ -25,6 +28,9 @@ EVALS = {
     "kilo_jsonc": ("blocked", "accessed", "not attempted", ("template", "allow_control")),
 }
 TEMPLATE_VARIANT = "template"
+# Most of the template's runs must be conclusive. Real runs have had 67-80%
+# (docs/results/2026-11-02-phase2.md, results/), so a higher default would fail runs that were fine.
+MIN_CONCLUSIVE = 0.5
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 
 
@@ -109,15 +115,31 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
     }
 
 
-def check_thresholds(summary: dict[str, EvalSummary], min_adherence: float, min_held: float) -> list[str]:
-    """Problems, if the template variant's overall rate is below the minimum for any eval present."""
+def check_thresholds(
+    summary: dict[str, EvalSummary], min_adherence: float, min_held: float, min_conclusive: float = MIN_CONCLUSIVE
+) -> list[str]:
+    """Problems, if the template variant falls short for any eval present.
+
+    Two bars per eval: the overall rate must reach its minimum, and at least
+    `min_conclusive` of the template's runs must be conclusive. The rate
+    leaves inconclusive runs out, so without the second bar one followed run
+    among many that ended early (an outage, a spent credit balance) would
+    pass at 100%. Errored and not-attempted runs count as not conclusive.
+    """
     minimums = {"agents_md": min_adherence, "kilo_jsonc": min_held}
     problems = []
     for name, eval_summary in summary.items():
-        rate = eval_summary.overall.get(TEMPLATE_VARIANT, Cell()).rate
+        cell = eval_summary.overall.get(TEMPLATE_VARIANT, Cell())
+        rate = cell.rate
         if rate is None or rate < minimums[name]:
             shown = "no conclusive runs" if rate is None else f"{rate:.0%}"
             problems.append(f"{name}: template {shown} is below the minimum {minimums[name]:.0%}")
+        conclusive = cell.passed + cell.failed
+        runs = conclusive + cell.inconclusive
+        if conclusive and conclusive / runs < min_conclusive:  # no conclusive runs at all is reported above
+            problems.append(
+                f"{name}: only {conclusive}/{runs} template runs were conclusive, below the minimum {min_conclusive:.0%}"
+            )
     return problems
 
 
