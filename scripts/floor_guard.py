@@ -2,6 +2,7 @@
 
     python scripts/floor_guard.py                 # against origin/main
     python scripts/floor_guard.py --base main
+    python -I base/scripts/floor_guard.py --repo pr --base <sha>   # CI: main's copy, the PR's files
 
 Looks at everything since the merge base: committed, staged, unstaged and
 untracked. Flags new suppression comments, stubs, skipped or deleted tests,
@@ -18,7 +19,8 @@ strings the patterns look for; a test there still can't lose assertions or be
 deleted. A skip is allowed when a commit since the merge base says why, with
 a trailer line `Skip-reason: <test file> <reason>`; a new Exceptions row, a
 new ignore-file entry or a new `known_gap` citing that ID, is allowed once a
-human approves it in a commit message, `Exception-approved: E1, E2`. Until
+human approves it in a commit message, `Exception-approved: E1, E2` (CI also
+requires that commit to be signed by an approver: scripts/check_approvals.py). Until
 then a new .constraintsignore glob doesn't take effect, so it can't hide what
 it covers.
 
@@ -292,25 +294,25 @@ def approvals_from(messages: str) -> set[str]:
     return {i for line in APPROVAL.findall(messages) for i in re.findall(r"\bE\d+\b", line)}
 
 
-def _git(*args: str) -> str | None:
-    result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+def _git(root: Path, *args: str) -> str | None:
+    result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
     return result.stdout if result.returncode == 0 else None
 
 
-def collect(base: str) -> tuple[list[Line], list[Line], list[str]] | None:
-    """Added lines, removed lines and deleted files since the merge base with `base`; None if git can't say."""
-    merge_base = _git("merge-base", base, "HEAD")
+def collect(base: str, root: Path = ROOT) -> tuple[list[Line], list[Line], list[str]] | None:
+    """Added lines, removed lines and deleted files in `root` since the merge base with `base`; None if git can't say."""
+    merge_base = _git(root, "merge-base", base, "HEAD")
     if not merge_base:
         return None
     merge_base = merge_base.strip()
-    added, removed = parse_diff(_git("diff", "--unified=0", merge_base, "--") or "")
-    for path in filter(None, (_git("ls-files", "--others", "--exclude-standard") or "").splitlines()):
+    added, removed = parse_diff(_git(root, "diff", "--unified=0", merge_base, "--") or "")
+    for path in filter(None, (_git(root, "ls-files", "--others", "--exclude-standard") or "").splitlines()):
         try:
-            text = (ROOT / path).read_text(encoding="utf-8")
+            text = (root / path).read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
         added += [Line(path, i, t) for i, t in enumerate(text.splitlines(), 1)]
-    deleted = (_git("diff", "--name-only", "--diff-filter=D", merge_base, "--") or "").split()
+    deleted = (_git(root, "diff", "--name-only", "--diff-filter=D", merge_base, "--") or "").split()
     return added, removed, deleted
 
 
@@ -326,16 +328,20 @@ def main(argv: list[str] | None = None) -> int:
     """Print findings and return the exit code (0 clean, 1 violations, 2 couldn't run)."""
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--base", default="origin/main", help="branch the change will merge into")
+    p.add_argument(
+        "--repo", type=Path, default=ROOT, help="repository to check (default: this script's); CI checks a PR with main's copy"
+    )
     args = p.parse_args(argv)
-    diff = collect(args.base)
+    root = args.repo.resolve()
+    diff = collect(args.base, root)
     if diff is None:
         print(f"floor-guard: no merge base against {args.base}", file=sys.stderr)
         return 2
-    messages = _git("log", "--format=%B", f"{args.base}..HEAD") or ""
-    gitleaks_ignore = ROOT / GITLEAKS_IGNORE_FILE
+    messages = _git(root, "log", "--format=%B", f"{args.base}..HEAD") or ""
+    gitleaks_ignore = root / GITLEAKS_IGNORE_FILE
     findings = find_violations(
         *diff,
-        ignore=load_ignore(),
+        ignore=load_ignore(root),
         skip_reasons=skip_reasons_from(messages),
         approved_exceptions=approvals_from(messages),
         gitleaksignore_text=gitleaks_ignore.read_text() if gitleaks_ignore.is_file() else None,

@@ -226,3 +226,35 @@ def test_lowering_an_eval_gate_threshold_is_flagged():
         removed=[Line("src/whitney/report.py", 33, "MIN_CONCLUSIVE = 0.5")], added=[Line("src/whitney/report.py", 33, "MIN_CONCLUSIVE = 0.3")]
     ) == ["threshold-lowered"]
     assert _rules(removed=[Line("scripts/run_evals.py", 242, arg(0.9).replace("adherence", "held"))]) == ["threshold-lowered"]
+
+
+def test_the_guard_checks_the_repository_it_is_pointed_at(tmp_path):
+    # CI runs main's copy of the guard on the pull request's checkout, so a pull request
+    # can't weaken the guard that checks it.
+    import subprocess
+    import sys
+
+    def git(*args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    def guard():
+        script = Path(__file__).resolve().parents[1] / "scripts/floor_guard.py"
+        return subprocess.run([sys.executable, "-I", str(script), "--repo", str(tmp_path), "--base", "main"], capture_output=True, text=True)
+
+    git("init", "-q", "-b", "main")
+    (tmp_path / "app.py").write_text("x = 1\n")
+    git("add", "app.py")
+    git("commit", "-qm", "base")
+    git("checkout", "-q", "-b", "change")
+    (tmp_path / "app.py").write_text("x = 1  # noqa\n")
+    git("commit", "-qam", "silence a check")
+
+    flagged = guard()
+
+    assert flagged.returncode == 1
+    assert "[silenced-checker] app.py:1: x = 1  # noqa" in flagged.stderr
+
+    (tmp_path / "app.py").write_text("x = 2\n")
+    git("commit", "-q", "--amend", "-am", "the same change without the suppression")
+
+    assert (guard().returncode, guard().stdout) == (0, "floor-guard: clean\n")
