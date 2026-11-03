@@ -44,6 +44,10 @@ Why these numbers:
 Mutation score = (killed + timeout) / (all mutants − segfaults). A segfault
 means pytest crashed under the mutant, which says nothing about the tests
 either way. "No tests" (a mutant no test reaches) counts as not caught.
+A segfault can also be mutmut's own crash: on macOS, a child it forks
+crashes when it builds an OpenAI client (the Kilo Gateway provider). Their
+tests pass when run directly, so a test must catch such a mutant before
+any client is built (see `tests/test_gateway_provider.py`).
 
 ## Measured, not yet enforced (ratchets)
 
@@ -53,14 +57,17 @@ commit; when it drops, that's the finding.
 
 | Metric | Today | Direction | Checked by |
 |--------|-------|-----------|------------|
-| Project coverage | 92.6% | must not fall | `pytest --cov=whitney` |
-| Mutation score (project) | 88.4% | must not fall | `mutmut run` |
+| Project coverage | 98.7% | must not fall | `pytest --cov=whitney` |
+| Mutation score (project) | 99.6% | must not fall | `mutmut run` |
 
-Measured 2026-11-02: 2,191 mutants, 1,900 killed,
-10 timeout, 203 survived, 48 not reached by any test, 30 segfault. First
-baseline the same day was 77.4% coverage and 57.7% mutation score. Most
-remaining survivors are equivalent mutants (an encoding name's case, a
-timeout that never fires, `exist_ok` on folders that never pre-exist).
+Measured 2026-11-03, with every extra installed from `requirements.lock`:
+2,854 mutants, 2,822 killed, 20 timeout, 12 survived, none unreached, no
+segfaults. The 12 survivors are equivalent mutants that no test can tell
+apart: a codec name's case (`"utf-8"` and `"UTF-8"`), `bytes.decode()`'s
+default, two no-op defaults in `agent._append_final_message`, and
+`PWD=str(None)` for Claude Code, which the shell replaces with the real
+folder. Earlier baselines: 77.4% coverage and 57.7% mutation score, then
+92.6% and 88.4% (2026-11-02).
 
 ## Not covered, on purpose
 
@@ -71,11 +78,14 @@ timeout that never fires, `exist_ok` on folders that never pre-exist).
 ## How to run
 
 ```bash
-pip install -e ".[dev]"            # pytest-cov, diff-cover, mutmut; gitleaks and osv-scanner via brew
+pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
 python scripts/check.py task       # before handing work back, about 90 s (mutmut is incremental)
 python scripts/check.py full       # CI: adds the dependency scan
 ```
+
+Install every extra, as above: without `openai` the gateway tests skip, its
+mutants go untested, and the mutation score falls below its ratchet.
 
 Exit 0 pass (warnings allowed), 1 blocked, 2 a tool couldn't run. A 2 is never a pass.
 
