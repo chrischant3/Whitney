@@ -28,6 +28,7 @@ from inspect_ai.util import sandbox, store
 
 from whitney.credentials import kilo_auth_path
 from whitney.git_env import ISOLATED_GIT_ENV, isolated_git_env  # ISOLATED_GIT_ENV: callers import it from here too
+from whitney.project_files import KILO_CONFIG_DIRS, ROOT_INSTRUCTIONS
 from whitney.static_checks import parse_jsonc
 
 PROJECT_DIR = "project"
@@ -51,6 +52,11 @@ LOCAL_ENV_PASSTHROUGH = (
 GLOBAL_CONFIG_FILES = ("config.json", "kilo.json", "kilo.jsonc")
 ENV_REFERENCE = re.compile(r"\{env:([A-Za-z_][A-Za-z0-9_]*)\}")
 REDACTED = "[redacted]"
+
+# Files the harnesses read from folders above the project: Claude Code loads
+# CLAUDE.md from every parent folder, and Kilo looks for AGENTS.md and config
+# up to the repository root, which a staged project doesn't have.
+INHERITED_INSTRUCTION_NAMES = (*ROOT_INSTRUCTIONS, "CLAUDE.local.md", "kilo.jsonc", "kilo.json", *KILO_CONFIG_DIRS)
 MIN_SECRET_LENGTH = 8  # shorter values would redact ordinary words
 
 # Kilo providers whose request format Inspect's bridge serves, each with how a
@@ -366,6 +372,7 @@ async def _run_local(
 async def _run_local_process(
     project_dir: Path, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int
 ) -> dict:
+    check_no_inherited_instructions(project_dir)
     run_env = env or {}
     with kilo_home() as home:
         process_env = {
@@ -378,6 +385,25 @@ async def _run_local_process(
         run = await run_process(_kilo_command(state, model, auto), project_dir, process_env, timeout, "kilo run")
     secrets = [value for name, value in run_env.items() if name != "KILO_CONFIG"] + home.secrets
     return redact_run(run, secrets)
+
+
+def check_no_inherited_instructions(project_dir: Path) -> None:
+    """Refuse to run if a folder above `project_dir` holds a file the harness would read.
+
+    Workspaces live in the temporary folder, which anyone can write to on a
+    shared runner; a planted CLAUDE.md or AGENTS.md there would add
+    instructions the eval never declared.
+
+    Raises:
+        RuntimeError: names the first such file found.
+    """
+    for folder in Path(project_dir).resolve().parents:
+        for name in INHERITED_INSTRUCTION_NAMES:
+            if (folder / name).exists():
+                raise RuntimeError(
+                    f"{folder / name} is above the project, where the harness would read it as instructions or "
+                    "config the eval never declared. Remove it, or set TMPDIR to a folder with none above it."
+                )
 
 
 @contextlib.contextmanager

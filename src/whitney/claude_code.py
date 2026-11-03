@@ -23,6 +23,7 @@ from inspect_ai.util import sandbox, store
 from whitney.agent import (
     PROJECT_DIR,
     RUN_STORE_KEY,
+    check_no_inherited_instructions,
     copy_outputs,
     redact_run,
     run_process,
@@ -105,6 +106,7 @@ def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) ->
 
 
 async def _run(command: list[str], project_dir: Path, key: str, timeout: int) -> dict:
+    check_no_inherited_instructions(project_dir)
     with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
         env = {"PATH": os.environ.get("PATH", ""), "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
