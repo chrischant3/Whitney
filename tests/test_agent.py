@@ -211,14 +211,14 @@ def test_docker_mode_derives_the_model_kilo_is_told_to_use(model, kilo_cli_model
 def test_docker_mode_refuses_models_whose_format_the_bridge_cannot_serve(model):
     from whitney.agent import bridge_kilo_model
 
-    with pytest.raises(ValueError, match="Docker mode needs an Anthropic or OpenAI model"):
+    with pytest.raises(ValueError, match="^Docker mode needs an Anthropic or OpenAI model, e.g. kilo/anthropic/claude-haiku-4.5 or "):
         bridge_kilo_model(model)
 
 
 def test_docker_agent_refuses_an_unsupported_model_before_any_run():
     from whitney.agent import kilo
 
-    with pytest.raises(ValueError, match="Docker mode needs an Anthropic or OpenAI model"):
+    with pytest.raises(ValueError, match="^Docker mode needs an Anthropic or OpenAI model, e.g. kilo/anthropic/claude-haiku-4.5 or "):
         kilo(model="kilo/google/gemini-3-pro", execution="docker")
 
 
@@ -233,7 +233,7 @@ def test_docker_run_tells_kilo_the_derived_model_and_points_its_provider_at_the_
     class Sandbox:
         async def exec(self, command, **kwargs):
             if command[0] == "kilo":
-                ran["command"] = command
+                ran["command"], ran["env"] = command, kwargs.get("env", {})
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
             return SimpleNamespace(returncode=0, stdout="/root/project\n", stderr="")
 
@@ -255,8 +255,26 @@ def test_docker_run_tells_kilo_the_derived_model_and_points_its_provider_at_the_
         kilo(model="kilo/anthropic/claude-haiku-4.5", execution="docker")(AgentState(messages=[ChatMessageUser(content="hi")]))
     )
 
-    config = json.loads(written["/root/.config/kilo/kilo.json"])
+    config = json.loads(written[f"{agent_module.DOCKER_HOME}/.config/kilo/kilo.json"])
+    assert ran["env"]["HOME"] == agent_module.DOCKER_HOME == "/home/node"  # the image's unprivileged user
     assert config["provider"] == {"anthropic": {"options": {"baseURL": "http://localhost:13131/v1", "apiKey": "sk-none"}}}
     assert ran["command"][ran["command"].index("-m") + 1] == "anthropic/claude-haiku-4-5"
     assert ran["bridge_model"] == "inspect"  # every request is answered with the eval's --model
     assert state is bridge_state  # in Docker the bridge records the model's replies itself
+
+
+def test_the_docker_sandbox_runs_kilo_unprivileged_and_offline():
+    # Kilo reaches the model only through Inspect's bridge, inside the container. As root, with
+    # a network, an agent could replace the git the scorer trusts or reach host services.
+    import re
+
+    import yaml
+
+    docker = Path(__file__).parents[1] / "docker"
+    service = yaml.safe_load((docker / "compose.yaml").read_text())["services"]["default"]
+    assert service["network_mode"] == "none"
+    assert service["cap_drop"] == ["ALL"]
+    assert "no-new-privileges:true" in service["security_opt"]
+    dockerfile = (docker / "Dockerfile").read_text()
+    assert re.search(r"^FROM \S+@sha256:[0-9a-f]{64}$", dockerfile, re.M)  # the base image is pinned by digest
+    assert re.findall(r"^USER (\S+)$", dockerfile, re.M)[-1] == "node"

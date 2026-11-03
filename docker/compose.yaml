@@ -1,6 +1,12 @@
 services:
   default:
     build: .
-    image: kilo-evals-sandbox:7.8.18
+    # Renamed when the image changes, so a cached build of an older Dockerfile isn't reused.
+    image: kilo-evals-sandbox:7.8.18-node
     init: true
-    network_mode: bridge
+    # Kilo reaches the model only through Inspect's bridge, which listens inside
+    # the container, so the sandbox needs no network: no host services, cloud
+    # metadata or exfiltration.
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

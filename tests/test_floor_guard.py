@@ -182,3 +182,47 @@ def test_gitleaksignore_entry_with_no_comment_to_cite_cannot_be_approved():
 def test_exception_approvals_are_read_from_commit_message_trailers():
     approvals_from = _guard["approvals_from"]
     assert approvals_from("Add constraints\n\nException-approved: E1, E2 (Christopher Chant)\n") == {"E1", "E2"}
+
+
+def test_an_inline_gitleaks_allow_is_a_silenced_checker_in_any_file():
+    # gitleaks honours the comment in every file type, e.g. a real key in a fixture .env.
+    for path in ("evals/fixtures/repo/project/.env", "docs/setup.md", "docker/compose.yaml"):
+        assert _rules(added=[Line(path, 1, "KEY=value  # gitleaks:allow")]) == ["silenced-checker"], path
+
+
+def test_constraints_md_may_name_the_gitleaks_comment():
+    assert _rules(added=[Line("CONSTRAINTS.md", 12, "- No new suppression comments: `gitleaks:allow`")]) == []
+
+
+def test_ignored_paths_still_cannot_lose_assertions_or_be_deleted():
+    # An ignore entry exempts files that contain the patterns they look for (E2), not the
+    # guard's own tests from being weakened or removed.
+    ignore = ["scripts/floor_guard.py", "tests/test_floor_guard.py"]
+    removed = [Line("tests/test_floor_guard.py", 9, "    assert _rules(added=added) == ['unfinished-work']")]
+    assert [f.rule for f in find_violations([], removed, [], ignore=ignore)] == ["assertion-removed"]
+    assert [f.rule for f in find_violations([], [], ["tests/test_floor_guard.py"], ignore=ignore)] == ["test-deleted"]
+    patterns = [Line("tests/test_floor_guard.py", 3, '    assert _rules(added=[Line("a.py", 1, "x  # noqa")])')]
+    assert find_violations(patterns, [], [], ignore=ignore) == []
+
+
+def test_a_new_known_gap_is_an_exception_that_needs_approval():
+    # A known_gap scenario is left out of the eval gate's thresholds.
+    uncited = Line("evals/configuration/kilo-jsonc.json", 35, '        "known_gap": "docs/findings/002.md"')
+    cited = Line("evals/configuration/kilo-jsonc.json", 35, '        "known_gap": "E3: docs/findings/002.md"')
+    assert _rules(added=[uncited]) == ["new-exception"]
+    assert _rules(added=[cited]) == ["new-exception"]
+    assert find_violations([cited], [], [], approved_exceptions={"E3"}) == []
+
+
+def test_lowering_an_eval_gate_threshold_is_flagged():
+    def arg(default):
+        return f'    p.add_argument("--min-adherence", type=float, default={default}, help="minimum rate")'
+
+    assert _rules(removed=[Line("scripts/run_evals.py", 241, arg(0.8))], added=[Line("scripts/run_evals.py", 241, arg(0.6))]) == [
+        "threshold-lowered"
+    ]
+    assert _rules(removed=[Line("scripts/run_evals.py", 241, arg(0.8))], added=[Line("scripts/run_evals.py", 241, arg(0.9))]) == []
+    assert _rules(
+        removed=[Line("src/whitney/report.py", 33, "MIN_CONCLUSIVE = 0.5")], added=[Line("src/whitney/report.py", 33, "MIN_CONCLUSIVE = 0.3")]
+    ) == ["threshold-lowered"]
+    assert _rules(removed=[Line("scripts/run_evals.py", 242, arg(0.9).replace("adherence", "held"))]) == ["threshold-lowered"]

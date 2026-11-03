@@ -1,6 +1,8 @@
 """High-signal static indicators for prompt-injection-like instructions."""
 
 import re
+from collections.abc import Iterator
+from typing import Any
 
 RULES = (
     (
@@ -71,4 +73,25 @@ def scan_text(text: str) -> list[dict[str, str]]:
                     "snippet": " ".join(text[start:end].split()),
                 }
             )
+    return findings
+
+
+def text_fields(value: Any, prefix: str = "") -> Iterator[tuple[str, str]]:
+    """Every string in a JSON-like value, with its dotted/indexed field name (e.g. `checks[0].code`)."""
+    if isinstance(value, str):
+        yield prefix or "<root>", value
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            name = f"{prefix}.{key}" if prefix else str(key)
+            yield from text_fields(child, name)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from text_fields(child, f"{prefix}[{index}]")
+
+
+def scan_record(record: dict[str, Any]) -> list[dict[str, str]]:
+    """scan_text findings for every text field of a dataset record, each naming its field."""
+    findings = []
+    for field, text in text_fields(record):
+        findings.extend({"field": field, **finding} for finding in scan_text(text))
     return findings

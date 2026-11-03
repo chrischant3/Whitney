@@ -122,3 +122,64 @@ def test_shipped_scenarios_load_and_their_canaries_exist_in_fixtures(path):
         assert tokens, f"{sample.id}: no secret_tokens or canary to score against"
         for token in tokens:
             assert token in fixture_text, f"{sample.id}: {token} not in fixture {sample.metadata['fixture']}"
+
+
+@pytest.mark.parametrize("fixture", ["../../outside-evals", "/etc", "repo-with-env/../../..", ".hidden", ""])
+def test_a_fixture_must_name_a_folder_in_the_fixtures_folder(evals_dir, fixture):
+    # An absolute or climbing fixture name would stage arbitrary host files into the agent's workspace.
+    with pytest.raises(ScenarioError, match=r"scenarios\[0\]\.fixture"):
+        load_scenarios(write(evals_dir, {"source": "AGENTS.md", "scenarios": [scenario(fixture=fixture)]}))
+
+
+def test_a_symlink_in_a_fixture_is_rejected(evals_dir, tmp_path):
+    host_secret = tmp_path / "host-secret.txt"
+    host_secret.write_text("HOST SECRET\n")
+    (evals_dir / "fixtures" / "repo-with-env" / "project" / "notes.txt").symlink_to(host_secret)
+
+    with pytest.raises(ScenarioError, match="symlink.*notes.txt"):
+        load_scenarios(write(evals_dir, {"source": "AGENTS.md", "scenarios": [scenario()]}))
+
+
+def test_a_symlinked_fixture_folder_that_leaves_the_fixtures_folder_is_rejected(evals_dir, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "project").mkdir(parents=True)
+    (elsewhere / "project" / "app.py").write_text("print('x')\n")
+    (evals_dir / "fixtures" / "linked").symlink_to(elsewhere, target_is_directory=True)
+
+    with pytest.raises(ScenarioError, match="outside"):
+        load_scenarios(write(evals_dir, {"source": "AGENTS.md", "scenarios": [scenario(fixture="linked")]}))
+
+
+def test_fixtures_can_come_from_a_folder_given_explicitly(evals_dir, tmp_path):
+    elsewhere = tmp_path / "other-fixtures"
+    (elsewhere / "custom" / "project").mkdir(parents=True)
+    (elsewhere / "custom" / "project" / "x.txt").write_text("x\n")
+    path = write(evals_dir, {"source": "AGENTS.md", "scenarios": [scenario(fixture="custom")]})
+
+    [sample] = load_scenarios(path, fixtures_dir=elsewhere)
+
+    assert sample.files == {"project/x.txt": "x\n"}
+
+
+def test_every_problem_is_listed_by_where_it_is(evals_dir):
+    path = write(evals_dir, {"source": "AGENTS.md", "scenarios": [scenario(), scenario(id="b", prompt=" ", fixture=None)]})
+    with pytest.raises(ScenarioError) as raised:
+        load_scenarios(path)
+    assert str(raised.value) == (
+        f"{path}: scenarios[1].prompt: Value error, must not be blank; scenarios[1].fixture: Input should be a valid string"
+    )
+
+
+def test_without_a_fixtures_folder_the_missing_fixture_is_looked_for_beside_the_file(tmp_path):
+    path = tmp_path / "evals" / "agents-md.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"source": "AGENTS.md", "scenarios": [scenario()]}))
+    with pytest.raises(ScenarioError, match=f"^{path}: fixture 'repo-with-env' not found in {tmp_path / 'evals' / 'fixtures'}$"):
+        load_scenarios(path)
+
+
+def test_a_file_in_a_subfolder_finds_the_fixtures_folder_above_it(evals_dir):
+    (evals_dir / "configuration").mkdir()
+    path = write(evals_dir, {"source": "kilo.jsonc", "scenarios": [scenario(fixture="nowhere")]}, name="configuration/k.json")
+    with pytest.raises(ScenarioError, match=f"not found in {evals_dir / 'fixtures'}$"):
+        load_scenarios(path)

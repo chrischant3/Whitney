@@ -40,8 +40,8 @@ if [ "$1" = "--version" ]; then echo "  {version}  "; exit 0; fi
 if [ "$*" = "debug config --pure" ]; then
   [ -f AGENTS.md ] && agents=true || agents=false
   echo "INFO resolving config"
-  printf '{{"permission": {permission}, "instructions": ["AGENTS.md"], "home": "%s", "config_home": "%s", "data_home": "%s", "path": "%s", "has_agents": %s}}' \\
-    "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$PATH" "$agents"
+  printf '{{"permission": {permission}, "instructions": ["AGENTS.md"], "home": "%s", "config_home": "%s", "data_home": "%s", "path": "%s", "cwd": "%s", "has_agents": %s}}' \\
+    "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$PATH" "$PWD" "$agents"
   exit 0
 fi
 echo "unexpected arguments: $*" >&2
@@ -73,6 +73,7 @@ def test_resolve_config_runs_in_a_copy_of_the_template_with_an_empty_home(tmp_pa
     resolved = resolve_config(binary, template, scratch)
 
     assert resolved["has_agents"] is True
+    assert resolved["cwd"] == str(scratch / "project")
     assert resolved["home"] == str(scratch / "home")
     assert resolved["config_home"] == str(scratch / "home" / ".config")
     assert resolved["data_home"] == str(scratch / "home" / ".local/share")
@@ -173,3 +174,55 @@ def test_help_describes_the_check_and_both_runtimes(capsys):
     assert "path to the Kilo CLI binary" in text
     assert "manual check" not in text  # only the docstring's first line, not the whole module docs
     assert "path to the other runtime, e.g. the extension's bundled kilo" in text
+
+
+def test_a_runtime_that_hangs_is_stopped(tmp_path, template, monkeypatch):
+    import subprocess
+
+    from whitney import parity
+
+    binary = tmp_path / "hangs"
+    binary.write_text("#!/bin/sh\nsleep 5\n")
+    binary.chmod(0o755)
+    monkeypatch.setattr(parity, "DEBUG_CONFIG_TIMEOUT", 0.5)
+    monkeypatch.setattr(parity, "VERSION_TIMEOUT", 0.5)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        parity.resolve_config(str(binary), template, tmp_path)
+    with pytest.raises(subprocess.TimeoutExpired):
+        parity.runtime_version(str(binary))
+
+
+def test_a_failure_quotes_the_last_500_characters_of_stderr(tmp_path, template):
+    from whitney import parity
+
+    binary = tmp_path / "broken"
+    binary.write_text("#!/bin/sh\nprintf '%0100d' 0 >&2\nprintf 'y%.0s' $(seq 500) >&2\nexit 2\n")
+    binary.chmod(0o755)
+    with pytest.raises(RuntimeError) as raised:
+        parity.resolve_config(str(binary), template, tmp_path)
+    assert str(raised.value) == f"{binary} debug config failed: {'y' * 500}"
+
+
+def test_the_default_template_is_the_shipped_one_wherever_it_runs(tmp_path, monkeypatch, capsys):
+    from whitney.parity import main
+
+    cli = _fake_kilo(tmp_path / "cli")
+    monkeypatch.chdir(tmp_path)  # "template/kilo" relative to here doesn't exist
+
+    assert main(["--cli", cli, "--other", cli]) == 0
+
+
+def test_help_describes_each_option(capsys, monkeypatch):
+    import re
+
+    from whitney.parity import main
+
+    monkeypatch.setenv("COLUMNS", "200")  # one line per option
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    assert "\nCheck that two Kilo runtimes" in out
+    assert re.search(r"--cli CLI +path to the Kilo CLI binary\n", out)
+    assert re.search(r"--other OTHER +path to the other runtime, e.g. the extension's bundled kilo\n", out)
+    assert re.search(r"--template TEMPLATE +the template to resolve \(default: the shipped Kilo template\)\n", out)

@@ -7,6 +7,7 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset
 
 from whitney import targets
+from whitney.harbor_cache import check_cache
 from whitney.project_files import load_project_files, load_template_files
 
 DEFAULT_HARBOR_DATASET = Path(__file__).resolve().parents[2] / "dataset/harbor/bigcodebench-hard-complete"
@@ -45,6 +46,9 @@ def bigcodebench_hard_complete(
     Hub resolution is not used. Kilo runs on the host against a temporary project
     with shell execution denied; only ``solution.py`` is copied into Harbor's
     Docker sandbox. The Harbor verifier runs there with runtime networking off.
+    The cache is checked against its manifest's digests first (see
+    whitney.harbor_cache), and a task whose sandbox asks for privileged
+    mode, added capabilities, devices or a bind mount is refused.
     target picks the harness and template, and api_key_env and base_url the
     provider key, as in whitney.tasks.agents_md.
     """
@@ -54,6 +58,7 @@ def bigcodebench_hard_complete(
     local_dataset = Path(dataset_path).expanduser() if dataset_path else DEFAULT_HARBOR_DATASET
     if not local_dataset.is_dir():
         raise FileNotFoundError(f"Local Harbor dataset directory not found: {local_dataset}")
+    cache_integrity = check_cache(local_dataset)
 
     try:
         from inspect_harbor._harbor.converters import harbor_task_to_sample
@@ -84,6 +89,12 @@ def bigcodebench_hard_complete(
 
         task_sandbox = deepcopy(sample.sandbox)
         for service in task_sandbox.config.services.values():
+            host_access = _host_access(service)
+            if host_access:
+                raise ValueError(
+                    f"Harbor task {harbor_task.name!r} asks for {', '.join(host_access)}, "
+                    "which would let its container reach the host; refusing to run it."
+                )
             service.network_mode = "none"
             service.networks = None
 
@@ -127,5 +138,20 @@ def bigcodebench_hard_complete(
             "harbor_task_count": len(samples),
             "solution_output_path": HARBOR_OUTPUT_PATH,
             "runtime_network": "none",
+            "cache_integrity": cache_integrity,
         },
     )
+
+
+def _host_access(service) -> list[str]:
+    """The compose settings in a task's service that would let its container reach the host."""
+    found = [name for name in ("privileged", "cap_add", "devices") if getattr(service, name)]
+    for volume in service.volumes or []:
+        if isinstance(volume, str):
+            source, colon, _ = volume.partition(":")
+            is_bind = bool(colon) and source.startswith(("/", ".", "~"))  # no ':' is an anonymous volume
+        else:
+            source, is_bind = volume.source, volume.type == "bind"
+        if is_bind:
+            found.append(f"bind mount {source}")
+    return found

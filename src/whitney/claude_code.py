@@ -20,7 +20,16 @@ from inspect_ai.agent import Agent, AgentState, agent
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
-from whitney.agent import ISOLATED_GIT_ENV, PROJECT_DIR, RUN_STORE_KEY, copy_outputs, run_process, staged_project
+from whitney.agent import (
+    PROJECT_DIR,
+    RUN_STORE_KEY,
+    check_no_inherited_instructions,
+    copy_outputs,
+    redact_run,
+    run_process,
+    staged_project,
+)
+from whitney.git_env import isolated_git_env
 
 MODEL_PREFIX = "anthropic/"
 
@@ -50,7 +59,8 @@ def claude_code(
             reaches Claude Code as ANTHROPIC_API_KEY.
 
     Side effects: stores exit_code, the stream-json events, stderr,
-    ended_early, permission_denials and api_key_source under RUN_STORE_KEY.
+    ended_early, permission_denials and api_key_source under RUN_STORE_KEY,
+    with the API key's value redacted.
 
     Raises:
         ValueError: model isn't anthropic/<model> (at construction), or
@@ -65,7 +75,7 @@ def claude_code(
         if not key:
             raise ValueError(f"{api_key_env} is not set; put it in .env or the environment")
         sbox = sandbox()
-        prompt = [*command, state.messages[-1].text]
+        prompt = [*command, "--", state.messages[-1].text]  # "--": a prompt such as "--version" stays the prompt
         if local_project_files is None:
             project_dir = Path((await sbox.exec(["pwd"], cwd=PROJECT_DIR)).stdout.strip())
             run = await _run(prompt, project_dir, key, timeout)
@@ -96,10 +106,12 @@ def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) ->
 
 
 async def _run(command: list[str], project_dir: Path, key: str, timeout: int) -> dict:
+    check_no_inherited_instructions(project_dir)
     with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
-        env = {"PATH": os.environ.get("PATH", ""), "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
+        env = {"PATH": os.environ["PATH"], "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
-        run = await run_process(command, project_dir, {**env, **ISOLATED_GIT_ENV}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
+        run = await run_process(command, project_dir, {**env, **isolated_git_env(project_dir)}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
+    run = redact_run(run, [key])  # its Bash tool can print the key, and the transcript goes into the eval log
     return {**run, **_outcome(run["events"])}
 
 

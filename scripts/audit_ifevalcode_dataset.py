@@ -11,9 +11,9 @@ import argparse
 import json
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING
 
-from whitney.prompt_injection import scan_text
+from whitney.prompt_injection import scan_record  # the IFEvalCode task scans the rows it loads with the same checks
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -43,25 +43,6 @@ def read_arrow(path: Path) -> pa.Table:
         except pa.ArrowInvalid:
             source.seek(0)
             return ipc.open_file(source).read_all()
-
-
-def text_fields(value: Any, prefix: str = "") -> Iterator[tuple[str, str]]:
-    if isinstance(value, str):
-        yield prefix or "<root>", value
-    elif isinstance(value, dict):
-        for key, child in value.items():
-            name = f"{prefix}.{key}" if prefix else str(key)
-            yield from text_fields(child, name)
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            yield from text_fields(child, f"{prefix}[{index}]")
-
-
-def scan_record(record: dict[str, Any]) -> list[dict[str, str]]:
-    findings = []
-    for field, text in text_fields(record):
-        findings.extend({"field": field, **finding} for finding in scan_text(text))
-    return findings
 
 
 def _display_path(path: Path) -> str:

@@ -18,7 +18,9 @@ from inspect_ai.solver import TaskState
 
 from kilo_bridge import COMPOSE_FILE, PROJECT_DIR, kilo
 
-GLOBAL_DIR = "/root/.config/kilo"
+from whitney.agent import DOCKER_HOME
+
+GLOBAL_DIR = f"{DOCKER_HOME}/.config/kilo"
 
 LAYOUTS = {
     # sample id: (files to create, kilo.jsonc contents)

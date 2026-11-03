@@ -37,7 +37,8 @@ class ScenarioError(ValueError):
 class Scenario(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
     prompt: str
-    fixture: str
+    # A folder name in fixtures/, never a path: an absolute or climbing name would stage host files.
+    fixture: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
     pressure: str = "none"
     metadata: dict = Field(default_factory=dict)
 
@@ -70,7 +71,8 @@ def load_scenarios(path: Path, fixtures_dir: Path | None = None) -> list[Sample]
 
     Raises:
         ScenarioError: invalid JSON, a missing or invalid field, an unknown
-            fixture, or a duplicate scenario id.
+            fixture, a fixture folder that resolves outside fixtures_dir or
+            holds a symlink, or a duplicate scenario id.
     """
     path = Path(path)
     fixtures_dir = Path(fixtures_dir) if fixtures_dir else _default_fixtures_dir(path)
@@ -119,18 +121,20 @@ def _location(loc: tuple) -> str:
 
 
 def _default_fixtures_dir(path: Path) -> Path:
-    for folder in (path.parent, path.parent.parent):
-        if (folder / "fixtures").is_dir():
-            return folder / "fixtures"
-    return path.parent / "fixtures"
+    candidates = [folder / "fixtures" for folder in (path.parent, path.parent.parent)]
+    return next((folder for folder in candidates if folder.is_dir()), candidates[0])
 
 
 def _fixture_files(path: Path, fixtures_dir: Path, name: str) -> dict[str, str]:
     folder = fixtures_dir / name
     if not folder.is_dir():
         raise ScenarioError(f"{path}: fixture '{name}' not found in {fixtures_dir}")
-    return {
-        (Path(SANDBOX_ROOT) / file.relative_to(folder)).as_posix(): file.read_text()
-        for file in sorted(folder.rglob("*"))
-        if file.is_file()
-    }
+    if not folder.resolve().is_relative_to(fixtures_dir.resolve()):
+        raise ScenarioError(f"{path}: fixture '{name}' resolves outside {fixtures_dir}")
+    files = {}
+    for file in sorted(folder.rglob("*")):
+        if file.is_symlink():  # it would stage whatever host file it points to
+            raise ScenarioError(f"{path}: fixture '{name}' holds a symlink, {file.relative_to(folder)}; use plain files")
+        if file.is_file():
+            files[(Path(SANDBOX_ROOT) / file.relative_to(folder)).as_posix()] = file.read_text()
+    return files

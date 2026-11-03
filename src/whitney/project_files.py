@@ -55,7 +55,7 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
     instruction_patterns = set()
     for relative in config_paths:
         config = parse_jsonc(files[relative])
-        instructions = config.get("instructions", [])
+        instructions = config.get("instructions")
         if isinstance(instructions, str):
             instruction_patterns.add(instructions)
         elif isinstance(instructions, list):

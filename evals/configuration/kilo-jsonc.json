@@ -32,7 +32,7 @@
       "metadata": {
         "route": "bash-symlink",
         "canary": "CANARY-OUTSIDE-e91c4d2a7b",
-        "known_gap": "docs/findings/001-symlink-bypasses-external-directory.md; expected to fail until fixed"
+        "known_gap": "E3: docs/findings/001-symlink-bypasses-external-directory.md; expected to fail until fixed"
       }
     },
     {

@@ -47,6 +47,15 @@ Optional extras, installed the same way (`pip install -e ".[dev,ifevalcode,harbo
 | `harbor` | the `bigcodebench_hard_complete` eval (Harbor tasks) |
 | `gateway` | `--execution docker` (Inspect's Kilo Gateway bridge) |
 
+For CI, or any run whose results you need to reproduce, install every dependency at the versions and hashes in `requirements.lock` instead, then Whitney itself:
+
+```bash
+pip install --require-hashes -r requirements.lock
+pip install --no-deps -e .
+```
+
+After changing a dependency in `pyproject.toml`, regenerate the lock with the command at the top of `requirements.lock` (it needs [uv](https://docs.astral.sh/uv/)); a test fails if the two disagree.
+
 ### 2a. The `kilo` target
 
 Kilo runs on your machine and reaches the model in one of two ways. Both work for every Kilo eval.
@@ -84,7 +93,7 @@ Use this for the Kilo Gateway, or when your company routes models through its ow
    python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3
    ```
 
-The repository never sees these credentials: the evals copy the project's `kilo.jsonc` and instruction files, not your global config, and reports say only that the global config was used.
+The repository never sees these credentials: the evals copy the project's `kilo.jsonc` and instruction files, not your global config, and reports say only that the global config was used. Each run gives Kilo a temporary HOME holding only a copy of your Kilo login, so your global `AGENTS.md`, instructions, MCP servers and permissions stay out of the results. Only the `provider` settings from your global config are carried over, together with the environment variables they name as `{env:...}`.
 
 #### With a provider API key you name
 
@@ -105,7 +114,7 @@ Use this to run the Kilo template against a provider directly, without touching 
 
    Add `--base-url https://your-proxy.example/v1` to send the provider's calls through a proxy. Other providers work the same way, e.g. `--model openai/gpt-5 --api-key-env OPENAI_API_KEY`.
 
-The runner gives Kilo a temporary config containing `{env:ANTHROPIC_API_KEY}`, which Kilo resolves itself, so the key never reaches disk or the eval logs. That config sits above your global config and below the project's `kilo.jsonc`, so the template under test still wins. If the variable isn't set, the run stops and names it.
+The runner gives Kilo a temporary config containing `{env:ANTHROPIC_API_KEY}`, which Kilo resolves itself, so the key is never written to disk. Kilo gets that variable and none of the rest of your environment. The agent's tools can still read it, so the key's value is redacted from the run's record before it reaches the eval log; use a spend-capped key kept for evals. The temporary config sits below the project's `kilo.jsonc`, so the template under test still wins. If the variable isn't set, the run stops and names it.
 
 #### Docker mode (isolated, for CI)
 
@@ -216,12 +225,12 @@ Both datasets are read from local files after the one-time setup, so runs make n
 ## How it works
 
 - Local mode runs the target's CLI on the host. The project files are staged in a temporary local sandbox, but the agent's shell and file tools are not OS-isolated; use Docker mode (kilo) when host isolation is required. Model API calls go directly to the provider and are not captured in Inspect's model transcript.
-- Kilo, locally, uses the user's global connection settings, or the key named with `--api-key-env`. In Docker mode it runs the CLI version pinned in `docker/Dockerfile` in an isolated sandbox, and Inspect's bridge answers its calls with `--model`, so requests are captured in Inspect logs.
+- Kilo, locally, uses the user's Kilo login and global provider settings, or the key named with `--api-key-env`, in a temporary HOME with only a short list of environment variables (`LOCAL_ENV_PASSTHROUGH` in `src/whitney/agent.py`). Keys a run is given are redacted from the stored run. In Docker mode it runs the CLI version pinned in `docker/Dockerfile` in an isolated sandbox, as an unprivileged user with no network and no added capabilities, and Inspect's bridge answers its calls with `--model`, so requests are captured in Inspect logs.
 - Claude Code runs with an empty temporary home, `--setting-sources project` and no MCP servers, and only PATH, the API key and a fixed git identity in its environment, so nothing of the user's own Claude setup reaches the run.
 - The target's template is what's under test. Harness permissions let the eval tasks run headlessly (Kilo: a temporary config overlay that project-level permissions override; Claude Code: `--settings`). Neither harness runs with a blanket approve-all: Kilo runs without `--auto`, because `--auto` approves every `ask`, and Claude Code without `--dangerously-skip-permissions`.
 - A run that ends before the agent decides (Kilo exiting non-zero, or Claude Code reporting an error or a permission denial) counts as inconclusive in `agents_md`, not as followed.
 - `--project-path` reads the target project's config and instruction assets into temporary eval projects. It does not copy project source code or `.env` files, does not copy provider/MCP/plugin connection settings, and never writes to the target directory. Kilo's provider details still come from the user's global Kilo config.
-- The optional IFEvalCode task uses the official scorer against the sanitised local JSONL output; it makes no Hugging Face calls. The audit script removes only the `chinese_question` column (all English-question rows remain) and scans original text fields for injection indicators. Review `dataset/ifevalcode_prompt_injection_audit.md` before running. Correctness checks run in IFEvalCode's Docker sandbox.
+- The optional IFEvalCode task uses the official scorer against the sanitised local JSONL output; it makes no Hugging Face calls. The audit script removes only the `chinese_question` column (all English-question rows remain) and scans original text fields for injection indicators. Review `dataset/ifevalcode_prompt_injection_audit.md` before running. The task also scans every row it loads with the same checks and leaves flagged rows out, listing their ids as `injection_scan_excluded` in the log, and the agent gets no shell (as in the Harbor eval). Correctness checks run in IFEvalCode's Docker sandbox.
 - Harbor's `bigcode/bigcodebench-hard-complete` package is synced once at a pinned digest into `dataset/harbor/` and prompt-audited. Subsequent runs use the stored task directories. The sync script does not execute Harbor tasks, build Docker images, or call a model.
 - `bigcodebench_hard_complete` compares baseline/template on local Harbor tasks. The agent writes `solution.py` in a temporary host project, with shell commands denied, and the harness copies it into the Harbor sandbox; task containers have runtime networking disabled. The first run builds the Harbor image and may download its declared build dependencies.
 - Generated reports name the target and model and include exact copies of the staged project instruction/config assets. Do not put secrets in those files; provider credentials are not included.

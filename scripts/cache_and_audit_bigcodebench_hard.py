@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+from whitney.harbor_cache import MANIFEST_NAME, check_cache, file_digests
 from whitney.prompt_injection import scan_text
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +26,6 @@ PACKAGE_NAME = "bigcode/bigcodebench-hard-complete"
 PACKAGE_REF = "sha256:4c881f46251c98f6af182ec8eedbacc2c144db0761fcbbd789a60d7e69c30f69"
 DEFAULT_DATASET_DIR = ROOT / "dataset/harbor/bigcodebench-hard-complete"
 DEFAULT_REPORT = ROOT / "results/bigcodebench-hard-complete-security-audit.md"
-MANIFEST_NAME = "inspect-harbor-manifest.json"
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache"}
 MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024
 SECRET_ASSIGNMENT = re.compile(
@@ -56,7 +56,15 @@ async def _fetch_package() -> tuple[object, list[Path]]:
 
 
 def ensure_local_dataset(dataset_dir: Path) -> dict:
-    """Use a local manifest if present; otherwise perform one pinned Hub sync."""
+    """Use a local manifest if present; otherwise perform one pinned Hub sync.
+
+    A sync refuses a download holding a symlink and records every file's
+    SHA-256 in the manifest; reuse checks the files still match (a manifest
+    from before digests were recorded is used as it is).
+
+    Raises:
+        CacheIntegrityError (a ValueError): a symlink, or files changed since the sync.
+    """
     manifest_path = dataset_dir / MANIFEST_NAME
     if dataset_dir.exists():
         if not manifest_path.is_file():
@@ -67,6 +75,7 @@ def ensure_local_dataset(dataset_dir: Path) -> dict:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("package") != PACKAGE_NAME or manifest.get("requested_ref") != PACKAGE_REF:
             raise ValueError(f"Local Harbor cache manifest does not match the requested package: {manifest_path}")
+        print(f"Local Harbor cache integrity: {check_cache(dataset_dir)}")
         return manifest
 
     dataset_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +85,7 @@ def ensure_local_dataset(dataset_dir: Path) -> dict:
         if not task_paths:
             raise ValueError("Harbor Hub returned no tasks for BigCodeBench-Hard Complete")
         for index, task_path in enumerate(task_paths):
+            file_digests(task_path)  # refuses a symlink before anything is copied
             destination = staging / f"{index:05d}_{_safe_name(task_path.name)}"
             shutil.copytree(task_path, destination, symlinks=True)
 
@@ -86,6 +96,7 @@ def ensure_local_dataset(dataset_dir: Path) -> dict:
             "task_count": len(task_paths),
             "cached_at_utc": datetime.now(timezone.utc).isoformat(),
             "task_directories": [path.name for path in task_paths],
+            "files": file_digests(staging),
         }
         (staging / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         os.replace(staging, dataset_dir)
