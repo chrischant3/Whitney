@@ -211,7 +211,8 @@ def test_a_check_whose_parameters_would_take_unknown_fields_is_refused():
     class Loose(BaseModel):
         token: str = ""
 
-    with pytest.raises(CheckError, match=r"^check 'demo_check': its parameters must forbid unknown fields"):
+    problem = 'its parameters must forbid unknown fields: model_config = ConfigDict(extra="forbid")'
+    with pytest.raises(CheckError, match=f"^check 'demo_check': {re.escape(problem)}$"):
         declare(params=Loose)
 
 
