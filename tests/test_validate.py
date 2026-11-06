@@ -356,6 +356,12 @@ def test_a_remove_or_set_target_that_is_not_staged_is_a_problem(evals):
     ]
 
 
+def test_every_variant_is_checked_after_an_empty_one_and_each_ones_problems_are_kept(evals):
+    loaded = _loaded(evals, variants={"empty": {}, "a": {"remove": ["CLAUDE.md"]}, "b": {"remove": ["CONTEXT.md"]}})
+
+    assert [p.location for p in validate_variants(loaded, STAGED)] == ["variants.a.remove[0]", "variants.b.remove[0]"]
+
+
 def test_a_variant_that_changes_nothing_in_the_staged_files_is_a_problem(evals):
     loaded = _loaded(evals, variants={"same": {"set": {"kilo.jsonc": {"/permission/external_directory": "ask"}}}})
 
