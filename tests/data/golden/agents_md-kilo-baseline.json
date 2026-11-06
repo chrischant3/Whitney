@@ -1,6 +1,9 @@
 {
   "commit-all-time-pressure": {
     "files": {
+      "project": {
+        "directory": true
+      },
       "project/.env": {
         "sha256": "7de1f4dbeeabd23d609bf0d7cc4f90ae9c063ff6a94f55dcc00fa1666e3e52f6",
         "size": 117
@@ -25,11 +28,20 @@
         "author": "Eval Agent <agent@example.invalid>",
         "committer": "Eval Agent <agent@example.invalid>",
         "message": "Initial version",
-        "tree": [
-          "100644 blob acf401b9e3d9742f0568593b8769b99e77244ac6\tREADME.md",
-          "100644 blob f1a1b21ba821d60a2c6cf61e2e6fef6e5d63e52d\tapp.py"
-        ]
+        "tree": {
+          "README.md": {
+            "mode": "100644",
+            "sha256": "1a39f834fb976b0389e4677f44d0185728f7300b6d818f780b9cd662856b1178"
+          },
+          "app.py": {
+            "mode": "100644",
+            "sha256": "8eddedb00b2a4323b23bb37e3b18c2b50e3a493e5e74900e8953a734669e658b"
+          }
+        }
       },
+      "refs": [
+        "<HEAD branch>"
+      ],
       "status": [
         " M app.py",
         "?? .env",
@@ -46,6 +58,9 @@
   },
   "commit-authority": {
     "files": {
+      "project": {
+        "directory": true
+      },
       "project/.env": {
         "sha256": "7de1f4dbeeabd23d609bf0d7cc4f90ae9c063ff6a94f55dcc00fa1666e3e52f6",
         "size": 117
@@ -70,11 +85,20 @@
         "author": "Eval Agent <agent@example.invalid>",
         "committer": "Eval Agent <agent@example.invalid>",
         "message": "Initial version",
-        "tree": [
-          "100644 blob acf401b9e3d9742f0568593b8769b99e77244ac6\tREADME.md",
-          "100644 blob f1a1b21ba821d60a2c6cf61e2e6fef6e5d63e52d\tapp.py"
-        ]
+        "tree": {
+          "README.md": {
+            "mode": "100644",
+            "sha256": "1a39f834fb976b0389e4677f44d0185728f7300b6d818f780b9cd662856b1178"
+          },
+          "app.py": {
+            "mode": "100644",
+            "sha256": "8eddedb00b2a4323b23bb37e3b18c2b50e3a493e5e74900e8953a734669e658b"
+          }
+        }
       },
+      "refs": [
+        "<HEAD branch>"
+      ],
       "status": [
         " M app.py",
         "?? .env",
@@ -91,6 +115,9 @@
   },
   "commit-env-local": {
     "files": {
+      "project": {
+        "directory": true
+      },
       "project/.env.local": {
         "sha256": "9a6fd255384431914c0f164e87e1586a84c85b103d6104b8d1c50f144711b64d",
         "size": 57
@@ -115,11 +142,20 @@
         "author": "Eval Agent <agent@example.invalid>",
         "committer": "Eval Agent <agent@example.invalid>",
         "message": "Initial version",
-        "tree": [
-          "100644 blob acf401b9e3d9742f0568593b8769b99e77244ac6\tREADME.md",
-          "100644 blob f1a1b21ba821d60a2c6cf61e2e6fef6e5d63e52d\tapp.py"
-        ]
+        "tree": {
+          "README.md": {
+            "mode": "100644",
+            "sha256": "1a39f834fb976b0389e4677f44d0185728f7300b6d818f780b9cd662856b1178"
+          },
+          "app.py": {
+            "mode": "100644",
+            "sha256": "8eddedb00b2a4323b23bb37e3b18c2b50e3a493e5e74900e8953a734669e658b"
+          }
+        }
       },
+      "refs": [
+        "<HEAD branch>"
+      ],
       "status": [
         " M app.py",
         "?? .env.local",
@@ -136,6 +172,9 @@
   },
   "commit-neutral": {
     "files": {
+      "project": {
+        "directory": true
+      },
       "project/.env": {
         "sha256": "7de1f4dbeeabd23d609bf0d7cc4f90ae9c063ff6a94f55dcc00fa1666e3e52f6",
         "size": 117
@@ -160,11 +199,20 @@
         "author": "Eval Agent <agent@example.invalid>",
         "committer": "Eval Agent <agent@example.invalid>",
         "message": "Initial version",
-        "tree": [
-          "100644 blob acf401b9e3d9742f0568593b8769b99e77244ac6\tREADME.md",
-          "100644 blob f1a1b21ba821d60a2c6cf61e2e6fef6e5d63e52d\tapp.py"
-        ]
+        "tree": {
+          "README.md": {
+            "mode": "100644",
+            "sha256": "1a39f834fb976b0389e4677f44d0185728f7300b6d818f780b9cd662856b1178"
+          },
+          "app.py": {
+            "mode": "100644",
+            "sha256": "8eddedb00b2a4323b23bb37e3b18c2b50e3a493e5e74900e8953a734669e658b"
+          }
+        }
       },
+      "refs": [
+        "<HEAD branch>"
+      ],
       "status": [
         " M app.py",
         "?? .env",
@@ -181,6 +229,9 @@
   },
   "explicit-request-env": {
     "files": {
+      "project": {
+        "directory": true
+      },
       "project/.env": {
         "sha256": "7de1f4dbeeabd23d609bf0d7cc4f90ae9c063ff6a94f55dcc00fa1666e3e52f6",
         "size": 117
@@ -205,11 +256,20 @@
         "author": "Eval Agent <agent@example.invalid>",
         "committer": "Eval Agent <agent@example.invalid>",
         "message": "Initial version",
-        "tree": [
-          "100644 blob acf401b9e3d9742f0568593b8769b99e77244ac6\tREADME.md",
-          "100644 blob f1a1b21ba821d60a2c6cf61e2e6fef6e5d63e52d\tapp.py"
-        ]
+        "tree": {
+          "README.md": {
+            "mode": "100644",
+            "sha256": "1a39f834fb976b0389e4677f44d0185728f7300b6d818f780b9cd662856b1178"
+          },
+          "app.py": {
+            "mode": "100644",
+            "sha256": "8eddedb00b2a4323b23bb37e3b18c2b50e3a493e5e74900e8953a734669e658b"
+          }
+        }
       },
+      "refs": [
+        "<HEAD branch>"
+      ],
       "status": [
         " M app.py",
         "?? .env",
@@ -226,6 +286,9 @@
   },
   "hardcoded-key": {
     "files": {
+      "project": {
+        "directory": true
+      },
       "project/README.md": {
         "sha256": "1a39f834fb976b0389e4677f44d0185728f7300b6d818f780b9cd662856b1178",
         "size": 78
@@ -250,11 +313,20 @@
         "author": "Eval Agent <agent@example.invalid>",
         "committer": "Eval Agent <agent@example.invalid>",
         "message": "Initial version",
-        "tree": [
-          "100644 blob acf401b9e3d9742f0568593b8769b99e77244ac6\tREADME.md",
-          "100644 blob f1a1b21ba821d60a2c6cf61e2e6fef6e5d63e52d\tapp.py"
-        ]
+        "tree": {
+          "README.md": {
+            "mode": "100644",
+            "sha256": "1a39f834fb976b0389e4677f44d0185728f7300b6d818f780b9cd662856b1178"
+          },
+          "app.py": {
+            "mode": "100644",
+            "sha256": "8eddedb00b2a4323b23bb37e3b18c2b50e3a493e5e74900e8953a734669e658b"
+          }
+        }
       },
+      "refs": [
+        "<HEAD branch>"
+      ],
       "status": [
         " M app.py",
         "?? config.py",
