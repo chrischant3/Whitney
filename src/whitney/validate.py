@@ -5,8 +5,11 @@ Rules, numbered as in docs/specs/package-and-expected-results.md ("Validation"):
 1. The evals path is a folder (the project half waits for the project loader).
 2. Every eval file matches the schema (version 1 files are upgraded first),
    and eval names and `source` values are unique.
-3. Every check and setup step is known, and its parameters are valid.
+3. Every check and setup step is known, and its parameters are valid; no
+   git_commit comes before a git_init.
 4. Every fixture is a folder in `fixtures/`, holds no symlinks and is UTF-8 text.
+   Its pending/ files stay inside the project, hold nothing under .git/ and
+   no NUL; in version 2, apply_pending needs at least one.
 5. Every token parameter is findable where its check says, so the check can fail.
    "fixture" means the project the agent starts in (see _searched).
 7. A `known_gap` starts with an Exceptions ID (`E3: why`); with a constraints
@@ -27,7 +30,6 @@ from pydantic import BaseModel, ValidationError
 from whitney.checks import CheckSpec, registry
 from whitney.evalfile import (
     FIXTURES_FOLDER,
-    SETUP_STEPS,
     V1_PARAMETER_KEYS,
     VERSION_1_DEPRECATED,
     EvalFile,
@@ -40,9 +42,10 @@ from whitney.evalfile import (
     load,
     location,
 )
+from whitney.setup_steps import NOTHING_PENDING, PENDING_DIR, PROJECT_DIR, SETUP_STEPS, order_problems, pending_problem
 
 # The fixture folders the agent's project starts from: project/ is staged as it is, pending/ by apply_pending.
-PROJECT, PENDING = "project", "pending"
+PROJECT, PENDING = PROJECT_DIR, PENDING_DIR
 KNOWN_GAP = re.compile(r"E\d+: .+")
 EXCEPTION_ROW = re.compile(r"^\|\s*(E\d+)\s*\|", re.MULTILINE)
 # The Exceptions section runs from its heading to the next level-2 heading.
@@ -161,14 +164,20 @@ def _check_and_step_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec
                     (_parameter_at(eval_file, at, index, expectation.check, loc), message)
                     for loc, message in _errors(spec.params, expectation.params)
                 ]
+        # Only steps whose parameters were accepted count for the order rule, so one mistake is named once.
+        accepted = []
         for index, step in enumerate(block.setup or []):
             model = SETUP_STEPS.get(step.step)
             if model is None:
                 found.append((f"{at}.setup[{index}].step", (
                     f"unknown setup step '{step.step}'; setup steps: {', '.join(SETUP_STEPS)}"
                 )))
+                accepted.append(None)
             else:
-                found += [(location(loc, f"{at}.setup[{index}]"), message) for loc, message in _errors(model, step.params)]
+                errors = _errors(model, step.params)
+                found += [(location(loc, f"{at}.setup[{index}]"), message) for loc, message in errors]
+                accepted.append(None if errors else step.step)
+        found += [(f"{at}.setup[{index}].step", message) for index, message in order_problems(accepted)]
     return found
 
 
@@ -207,7 +216,30 @@ def _fixture_and_token_problems(eval_file: EvalFile, checks: Mapping[str, CheckS
         if isinstance(files, str):
             found.append((scenario.fixture_at, files))
         else:
+            found += _pending_problems(eval_file, scenario, files)
             found += _token_problems(eval_file, scenario, files, checks)
+    return found
+
+
+def _pending_problems(eval_file: EvalFile, scenario: ResolvedScenario, files: dict[str, str]) -> list[Found]:
+    """A pending/ file apply_pending couldn't write, and, in version 2, apply_pending with nothing to apply.
+
+    A version 1 commit fixture needs no pending/: the tasks supply the
+    change version 1 always made (evalfile.version_1_pending).
+    """
+    prefix = f"{PENDING_DIR}/"
+    pending = {path.removeprefix(prefix): text for path, text in files.items() if path.startswith(prefix)}
+    found = []
+    for path, text in pending.items():
+        problem = pending_problem(path, text)
+        if problem:
+            found.append((scenario.fixture_at, f"fixture '{scenario.fixture}': {prefix}{path}: {problem}"))
+    steps = [step.step for step in scenario.setup]
+    if eval_file.version_read == 2 and not pending and "apply_pending" in steps:
+        own = eval_file.scenarios[scenario.index].setup is not None
+        setup_at = f"scenarios[{scenario.index}].setup" if own else "defaults.setup"
+        inherited = "" if own else f" (scenario '{scenario.id}')"
+        found.append((f"{setup_at}[{steps.index('apply_pending')}]", NOTHING_PENDING + inherited))
     return found
 
 

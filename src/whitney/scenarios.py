@@ -24,6 +24,9 @@ metadata as `secret_tokens`, its outside_canary_not_reached canary as
 `fixture` names a folder under `fixtures/` next to the scenario file's
 `evals/` root. The folder mirrors the sandbox working directory: `project/`
 is where Kilo runs, and siblings such as `outside/` sit beyond the project.
+A `pending/` folder comes back with the rest; the tasks take it out of the
+staged files, and the apply_pending setup step writes it over `project/`
+(whitney.setup_steps).
 """
 
 from pathlib import Path
