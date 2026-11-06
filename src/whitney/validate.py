@@ -2,7 +2,7 @@
 
 Rules, numbered as in docs/specs/package-and-expected-results.md ("Validation"):
 
-1. The evals path is a folder (the project half waits for the project loader).
+1. The evals path is a folder; the project loads with the target's loader (validate_project).
 2. Every eval file matches the schema (version 1 files are upgraded first),
    and eval names and `source` values are unique.
 3. Every check and setup step is known, and its parameters are valid; no
@@ -16,7 +16,9 @@ Rules, numbered as in docs/specs/package-and-expected-results.md ("Validation"):
    each one declares a change, and its pointers are well formed. With the
    staged files (validate_variants): its `remove` and `set` targets are
    staged, it changes them, and no other staged Kilo config could shadow
-   its `set`. That `source` is staged waits for the project loader.
+   its `set`. With the project (validate_project): `source` is staged, or
+   the problem says which rule left it out, and the variants are checked
+   against what the target's loader staged.
 7. A `known_gap` starts with an Exceptions ID (`E3: why`); with a constraints
    file, that ID is a row in its Exceptions table.
 9. A file's `min_pass_rate` isn't below the default minimum of any check it uses.
@@ -48,6 +50,7 @@ from whitney.evalfile import (
     load,
     location,
 )
+from whitney.project_files import load_project_files_for, not_staged_reason
 from whitney.setup_steps import NOTHING_PENDING, PENDING_DIR, PROJECT_DIR, SETUP_STEPS, order_problems, pending_problem
 from whitney.variants import (
     TEMPLATE,
@@ -379,6 +382,44 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
                 )), *problems]
         found += [_variant_at(written, name, eval_file, at, message) for at, message in problems]
     return [Problem(eval_file.path, at, message) for at, message in dict.fromkeys(found)]
+
+
+def validate_project(
+    eval_files: list[EvalFile], project_path: Path, target: str, *, evals_path: Path | None = None
+) -> list[Problem]:
+    """Rules 1 and 6, the halves that need the project: stage it as a run would, then check each eval file against it.
+
+    The project is loaded with `target`'s loader, leaving out evals_path.
+    Each eval file that applies to the target must have its `source` staged
+    (for claude-code, staged as AGENTS.md counts); if it isn't, the problem
+    says which rule left it out (project_files.not_staged_reason). Then its
+    variants are checked against the staged files (validate_variants), so a
+    `remove` of a file that isn't staged is reported, though a run of the
+    agents_md task drops such a remove and goes on.
+
+    Args:
+        eval_files: loaded eval files, such as ValidationResult.files.
+        project_path: the project folder. It is read, never written.
+        target: "kilo" or "claude-code".
+        evals_path: the evals root, whose files are never staged.
+
+    Returns:
+        One Problem per finding: one at the project if it can't be loaded,
+        else each eval file's at `source` or at its variants.
+    """
+    try:
+        staged = load_project_files_for(target, project_path, evals_path=evals_path)
+    except (OSError, ValueError) as e:
+        return [Problem(Path(project_path), "", f"the {target} loader can't stage this project: {e}")]
+    problems = []
+    for eval_file in eval_files:
+        if eval_file.targets is not None and target not in eval_file.targets:
+            continue
+        reason = not_staged_reason(target, project_path, eval_file.source, staged, evals_path=evals_path)
+        if reason is not None:
+            problems.append(Problem(eval_file.path, "source", f"'{eval_file.source}' isn't staged: {reason}"))
+        problems += validate_variants(eval_file, staged)
+    return problems
 
 
 def _spread_by_the_wrapper(eval_file: EvalFile) -> bool:

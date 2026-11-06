@@ -14,6 +14,7 @@ from whitney.project_files import (
     load_project_files,
     load_project_files_for,
     load_template_files,
+    not_staged_reason,
     set_external_directory,
 )
 from whitney.static_checks import parse_jsonc
@@ -840,3 +841,73 @@ def test_a_kilo_config_under_the_evals_path_is_neither_staged_nor_read(tmp_path)
     (tmp_path / "kilo.jsonc").unlink()
     with pytest.raises(ValueError, match="^project has no Kilo config"):
         load_project_files(tmp_path, evals_path=tmp_path / ".kilo")
+
+
+# Why a file isn't staged, for validation rule 6: an eval file's `source` must be staged, and if the
+# safety rules left it out, validation says which rule.
+
+
+@pytest.fixture
+def unsafe_project(tmp_path):
+    (tmp_path / "project").mkdir()
+    root = _kilo_project(tmp_path / "project", {
+        "AGENTS.md": "rule\n", ".env": "SECRET=x\n", "app.py": "source\n", "node_modules/pkg/README.md": "dependency\n",
+        "evals/README.md": "evals\n", "real/rules.md": "rule\n",
+    })
+    (tmp_path / "outside.md").write_text("outside\n")
+    (root / "linked.md").symlink_to(tmp_path / "outside.md")
+    (root / "linked").symlink_to(root / "real")
+    (root / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", "**/README.md"]}))
+    return root
+
+
+@pytest.mark.parametrize("source, reason", [
+    ("../outside.md", "it isn't a path inside the project"),
+    ("/etc/hosts", "it isn't a path inside the project"),
+    ("~/notes.md", "it isn't a path inside the project"),
+    ("missing.md", "the project has no such file"),
+    ("evals/README.md", "it is under the evals path, whose files are never staged"),
+    ("linked.md", "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"),
+    ("linked/rules.md", "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"),
+    ("real", "it is a folder, not a file"),
+    ("node_modules/pkg/README.md", "it is inside node_modules/, which is never staged"),
+    (".env", ".env files are never staged, except .env.example, .env.sample and .env.template"),
+    ("app.py", (
+        "the kilo loader stages only Kilo config, root AGENTS.md, CLAUDE.md and CONTEXT.md, the .kilo and "
+        ".kilocode asset and rules folders, .claude/skills/, .agents/skills/, the legacy .kilocoderules files, "
+        "and files an instructions pattern matches"
+    )),
+])
+def test_the_reason_a_file_is_not_staged_names_the_rule(unsafe_project, source, reason):
+    staged = load_project_files(unsafe_project, evals_path=unsafe_project / "evals")
+    assert source not in staged
+
+    assert not_staged_reason("kilo", unsafe_project, source, staged, evals_path=unsafe_project / "evals") == reason
+
+
+def test_a_staged_file_has_no_reason(unsafe_project):
+    staged = load_project_files(unsafe_project)
+    assert not_staged_reason("kilo", unsafe_project, "AGENTS.md", staged) is None
+    assert not_staged_reason("kilo", unsafe_project, "evals/README.md", staged) is None  # no evals path given
+
+
+@pytest.mark.parametrize("present, source, reason", [
+    (["AGENTS.md", "CLAUDE.md"], "CLAUDE.md", "the claude-code loader stages one instruction file, and this one is beside AGENTS.md"),
+    (["AGENTS.md", ".claude/settings.json"], ".claude/settings.json", "the claude-code loader stages one instruction file, and this one is rest of .claude/"),
+    (["AGENTS.md", "notes.md"], "notes.md", "the claude-code loader stages only one of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md, as AGENTS.md"),
+])
+def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reason):
+    for name in present:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x\n")
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert not_staged_reason("claude-code", tmp_path, source, staged) == reason
+
+
+def test_a_claude_code_file_staged_under_another_name_has_no_reason(tmp_path):
+    (tmp_path / "CLAUDE.md").write_text("rule\n")
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert not_staged_reason("claude-code", tmp_path, "CLAUDE.md", staged) is None
+    assert not_staged_reason("claude-code", tmp_path, "AGENTS.md", staged) is None

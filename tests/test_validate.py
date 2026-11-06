@@ -20,7 +20,7 @@ from whitney import tasks
 from whitney import validate as validate_module
 from whitney.checks import Registry, Verdict, check, registry
 from whitney.evalfile import Problem
-from whitney.validate import exception_ids, validate_evals, validate_variants
+from whitney.validate import exception_ids, validate_evals, validate_project, validate_variants
 
 ROOT = Path(__file__).parent.parent
 TOKEN, CANARY = "CANARY-TOKEN-1", "CANARY-OUTSIDE-2"
@@ -720,3 +720,100 @@ def test_validation_names_the_shipped_kilo_jsonc_file_without_loading_inspect():
     )
     assert loaded.stdout.strip() == "[]"
     assert validate_module.KILO_JSONC_WRAPPER_FILE == ROOT.resolve() / "evals" / "configuration" / "kilo-jsonc.json"
+
+
+
+# Rule 6's project half, and rule 1's: the project loads with the target's loader, each eval file's
+# `source` is staged (or validation says which rule left it out), and its variants are checked
+# against what was staged.
+
+
+def _project(root, files):
+    root.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text)
+    return root
+
+
+@pytest.mark.parametrize("target", ["kilo", "claude-code"])
+def test_whitneys_template_and_shipped_evals_are_valid_together(target):
+    shipped = validate_evals(ROOT / "evals").files
+
+    assert validate_project(shipped, ROOT / "template" / target, target, evals_path=ROOT / "evals") == []
+
+
+def test_a_source_the_safety_rules_left_out_fails_with_the_rule(evals, tmp_path):
+    path = write(evals, eval_file(source="docs/rules.md", variants={}))
+    project = _project(tmp_path / "project", {"kilo.jsonc": json.dumps({"instructions": ["docs/*.md"]}), "real.md": "rule\n"})
+    (project / "docs").mkdir()
+    (project / "docs" / "rules.md").symlink_to(project / "real.md")
+
+    problems = validate_project(validate_evals(evals).files, project, "kilo", evals_path=evals)
+
+    assert [str(problem) for problem in problems] == [
+        f"{path}: source: 'docs/rules.md' isn't staged: it is a symlink, or inside a symlinked folder, "
+        "and nothing is staged through a link"
+    ]
+
+
+def test_a_staged_source_is_valid_and_one_under_the_evals_path_is_not(tmp_path):
+    project = _project(tmp_path / "project", {"kilo.jsonc": json.dumps({"instructions": ["**/*.md"]}), "AGENTS.md": "- rule\n"})
+    evals = project / "evals"
+    _project(evals / "fixtures" / "repo" / "project", {".env": f"KEY={TOKEN}\n"})
+    write(evals, eval_file())
+    path = write(evals, eval_file(source="evals/notes.md", name="notes", variants={}), name="notes-md.json")
+    (evals / "notes.md").write_text("notes\n")
+
+    problems = validate_project(validate_evals(evals).files, project, "kilo", evals_path=evals)
+
+    assert [str(problem) for problem in problems] == [
+        f"{path}: source: 'evals/notes.md' isn't staged: it is under the evals path, whose files are never staged"
+    ]
+
+
+def test_an_unstaged_remove_is_reported_though_a_run_would_skip_it(evals, tmp_path):
+    # The agents_md task drops a baseline's removes of files that aren't staged (tasks._staged_removes_only); validation names them.
+    path = write(evals, eval_file())
+    project = _project(tmp_path / "project", {"kilo.jsonc": "{}"})
+
+    problems = validate_project(validate_evals(evals).files, project, "kilo", evals_path=evals)
+
+    assert [(problem.file, problem.location) for problem in problems] == [(path, "source"), (path, "source")]
+    assert problems[0].message == "'AGENTS.md' isn't staged: the project has no such file"
+    assert problems[1].message.startswith("the default baseline removes the source: 'AGENTS.md' isn't staged")
+
+
+def test_an_eval_file_for_other_targets_is_not_checked_against_this_project(evals, tmp_path):
+    write(evals, eval_file(source="kilo.jsonc", targets=["kilo"], variants={}))
+    project = _project(tmp_path / "project", {"AGENTS.md": "- rule\n"})
+
+    assert validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals) == []
+
+
+def test_a_claude_code_source_staged_as_agents_md_is_valid(evals, tmp_path):
+    write(evals, eval_file(source="CLAUDE.md", variants={}))
+    project = _project(tmp_path / "project", {"CLAUDE.md": "- rule\n"})
+
+    assert validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals) == []
+
+
+@pytest.mark.parametrize("target, files, message", [
+    ("kilo", {"AGENTS.md": "- rule\n"}, "the kilo loader can't stage this project: project has no Kilo config"),
+    ("claude-code", {"kilo.jsonc": "{}"}, "the claude-code loader can't stage this project: project has no Claude Code instructions"),
+])
+def test_a_project_the_targets_loader_cannot_load_is_one_problem(evals, tmp_path, target, files, message):
+    write(evals, eval_file())
+    project = _project(tmp_path / "project", files)
+
+    [problem] = validate_project(validate_evals(evals).files, project, target, evals_path=evals)
+
+    assert (problem.file, problem.location) == (project, "")
+    assert problem.message.startswith(message)
+
+
+def test_a_missing_project_is_one_problem(evals, tmp_path):
+    [problem] = validate_project([], tmp_path / "missing", "kilo")
+
+    assert (problem.file, problem.location) == (tmp_path / "missing", "")
+    assert problem.message.startswith("the kilo loader can't stage this project: ")

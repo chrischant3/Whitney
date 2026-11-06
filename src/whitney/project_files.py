@@ -271,6 +271,58 @@ def files_not_staged_reasons(target: str, project_dir: Path) -> dict[str, str]:
     return _not_staged(target, project_dir)[1]
 
 
+def not_staged_reason(
+    target: str, project_dir: Path, relative: str, staged: dict[str, str], *, evals_path: Path | None = None
+) -> str | None:
+    """Say which rule leaves a project file out of what `target`'s loader staged, for validation.
+
+    Args:
+        target: "kilo" or "claude-code".
+        project_dir: the project folder, as given to the loader.
+        relative: the file, relative to the project, with "/" separators.
+        staged: what the loader staged from project_dir.
+        evals_path: the evals path the loader was given.
+
+    Returns:
+        None if the file was staged (for claude-code, also under the name
+        AGENTS.md); otherwise the first rule that leaves it out, as a clause
+        such as "it is a symlink, ...".
+
+    Raises:
+        FileNotFoundError, ValueError: project_dir is missing or isn't a folder.
+    """
+    root = _project_root(project_dir)
+    if relative in staged or files_renamed(target, root, staged).get(relative) in staged:
+        return None
+    path = PurePosixPath(relative)
+    if relative.startswith("~") or path.is_absolute() or ".." in path.parts:
+        return "it isn't a path inside the project"
+    full = root / relative
+    if not _is_present(full):
+        return "the project has no such file"
+    if evals_path is not None and _under(full, Path(evals_path).expanduser().resolve()):
+        return "it is under the evals path, whose files are never staged"
+    if _linked_below(root, full):
+        return "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"
+    if not full.is_file():
+        return "it is a folder, not a file"
+    excluded = next((part for part in path.parts if part in EXCLUDED_DIRS), None)
+    if excluded:
+        return f"it is inside {excluded}/, which is never staged"
+    if not _is_safe_file(full):
+        return f".env files are never staged, except {', '.join(sorted(SAFE_ENV_FILES)[:-1])} and {sorted(SAFE_ENV_FILES)[-1]}"
+    if target == "claude-code":
+        reasons = files_not_staged_reasons(target, root)
+        if relative in reasons:
+            return f"the claude-code loader stages one instruction file, and this one is {reasons[relative]}"
+        return f"the claude-code loader stages only one of {', '.join(CLAUDE_CODE_INSTRUCTIONS[:-1])} and {DOT_CLAUDE_MD}, as {AGENTS_MD}"
+    return (
+        "the kilo loader stages only Kilo config, root AGENTS.md, CLAUDE.md and CONTEXT.md, the .kilo and .kilocode "
+        "asset and rules folders, .claude/skills/, .agents/skills/, the legacy .kilocoderules files, "
+        "and files an instructions pattern matches"
+    )
+
+
 def set_external_directory(files: dict[str, str], action: str) -> dict[str, str]:
     """Return a copy of project files with each Kilo config's test policy set."""
     updated = dict(files)
