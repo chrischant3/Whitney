@@ -200,14 +200,14 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Add `scenario_eval`: one Inspect task per eval file and variant, built from the eval file, running the agent through `targets.build_agent`. It collects the evidence its checks declare. Snapshots of the watched fixture folders are taken before and after the run: a SHA-256, size and text for each file up to 1 MiB, and at most 10,000 files. It also collects git state when a check asks for it, and `initial_commits`. Everything a check stores passes through `agent.redact`. `agents_md` and `kilo_jsonc` become wrappers with today's names.
 
 **Acceptance criteria:**
-- [ ] With the fake `kilo` from `tests/test_agent_local_run.py`, the wrappers give today's score answers on the same runs.
-- [ ] A fake agent that prints its API key and writes it to a file leaves no trace of the key in the log (criterion 15).
-- [ ] A file over the size cap, or a folder over the file cap, makes a check that needs it inconclusive.
-- [ ] (Added 2026-11-06, Task 5 review.) `Sample.setup` holds the text of the fixture's `pending/` files, and Inspect logs it. Either run `Sample.setup` through `agent.redact` before it's logged, or stage `pending/` so the setup holds paths, not text.
+- [x] With the fake `kilo` from `tests/test_agent_local_run.py`, the wrappers give today's score answers on the same runs.
+- [x] A fake agent that prints its API key and writes it to a file leaves no trace of the key in the log (criterion 15).
+- [x] A file over the size cap, or a folder over the file cap, makes a check that needs it inconclusive.
+- [x] (Added 2026-11-06, Task 5 review.) `Sample.setup` holds the text of the fixture's `pending/` files, and Inspect logs it. Either run `Sample.setup` through `agent.redact` before it's logged, or stage `pending/` so the setup holds paths, not text.
 
 **Verification:**
-- [ ] `pytest -q tests/test_tasks.py tests/test_evidence.py tests/test_agent_local_run.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_tasks.py tests/test_evidence.py tests/test_agent_local_run.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 8.
 
