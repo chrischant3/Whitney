@@ -154,6 +154,16 @@ def test_the_allow_control_wrapper_leaves_a_non_object_parent_for_set_to_refuse(
         apply_variant({"kilo.jsonc": '{"permission": "ask"}'}, spread)
 
 
+def test_the_allow_control_wrapper_creates_every_missing_parent_as_today_s_setdefault_did():
+    control = variant(role="control", set={"kilo.jsonc": {"/a/b/c": 1, "/x/y": 2}})
+    files = {"kilo.jsonc": '{"x": {"z": 0}}'}
+
+    spread = tasks_module._on_every_kilo_config(control, files)
+
+    assert spread.set_pointers == {"kilo.jsonc": {"/a": {"b": {"c": 1}}, "/x/y": 2}}
+    assert json.loads(apply_variant(files, spread)["kilo.jsonc"]) == {"x": {"z": 0, "y": 2}, "a": {"b": {"c": 1}}}
+
+
 def test_the_agents_md_baseline_still_runs_when_the_project_has_no_agents_md(tmp_path):
     project = _project(tmp_path, {"CLAUDE.md": "- rule\n"})
 
