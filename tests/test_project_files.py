@@ -767,3 +767,76 @@ def test_a_file_matched_by_two_patterns_is_staged_once_as_spelled_on_disk(tmp_pa
     (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["rules/*.md", "rules/a.md", "**/a.md"]}))
 
     assert set(load_project_files(tmp_path)) == {"kilo.jsonc", "rules/a.md"}
+
+
+# Nothing under the evals path is staged, even when an instructions pattern matches it, so the
+# agent never sees the scenarios, their expected results or their tokens (spec, "The two paths").
+
+
+def test_nothing_under_the_evals_path_is_staged_even_when_an_instructions_pattern_matches_it(tmp_path):
+    _kilo_project(tmp_path, {
+        "AGENTS.md": "rule\n",
+        "evals/agents-md.json": '{"secret": "CANARY-1"}',
+        "evals/README.md": "how the evals work\n",
+        "evals/fixtures/repo/project/AGENTS.md": "fixture rule\n",
+        "evals/.kilo/skills/x/SKILL.md": "a skill under the evals path\n",
+        "evals/bad.md": "",
+    })
+    (tmp_path / "evals/bad.md").write_bytes(b"\xff not UTF-8, and never read")
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", "evals/*.json"]}))
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / "evals")) == {"kilo.jsonc", "AGENTS.md"}
+
+
+def test_the_evals_path_is_compared_after_resolving_it(tmp_path, monkeypatch):
+    _kilo_project(tmp_path, {"checks/README.md": "how the evals work\n", "rules/a.md": "a\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+    monkeypatch.chdir(tmp_path / "rules")
+
+    assert set(load_project_files(tmp_path, evals_path=Path("../checks"))) == {"kilo.jsonc", "rules/a.md"}
+
+
+@pytest.mark.parametrize("load", [load_project_files, load_claude_code_project_files])
+def test_a_project_inside_the_evals_path_is_refused(tmp_path, load):
+    project = tmp_path / "evals" / "project"
+    project.mkdir(parents=True)
+    _kilo_project(project, {"AGENTS.md": "rule\n"})
+
+    for evals in (tmp_path / "evals", project):
+        with pytest.raises(ValueError) as raised:
+            load(project, evals_path=evals)
+        assert str(raised.value) == (
+            f"project path {project.resolve()} is inside the evals path {evals.resolve()}, whose files are never staged"
+        )
+
+
+def test_a_claude_code_instruction_file_under_the_evals_path_is_refused_by_name(tmp_path):
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/CLAUDE.md").write_text("rule\n")
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(tmp_path, evals_path=tmp_path / ".claude")
+
+    assert str(raised.value) == (
+        f"{tmp_path.resolve() / '.claude/CLAUDE.md'} is the instruction file to stage, but it is under the evals path "
+        f"{(tmp_path / '.claude').resolve()}, whose files are never staged"
+    )
+
+
+def test_the_loader_for_a_target_passes_the_evals_path_on(tmp_path):
+    _kilo_project(tmp_path, {"AGENTS.md": "rule\n", "evals/x.md": "x\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["evals/*.md"]}))
+
+    assert "evals/x.md" in load_project_files_for("kilo", tmp_path)
+    assert "evals/x.md" not in load_project_files_for("kilo", tmp_path, evals_path=tmp_path / "evals")
+    with pytest.raises(ValueError, match="inside the evals path"):
+        load_project_files_for("claude-code", tmp_path, evals_path=tmp_path)
+
+
+def test_a_kilo_config_under_the_evals_path_is_neither_staged_nor_read(tmp_path):
+    _kilo_project(tmp_path, {".kilo/kilo.jsonc": '{"instructions": ["rules/*.md"]}', "rules/a.md": "a\n"})
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".kilo")) == {"kilo.jsonc"}
+    (tmp_path / "kilo.jsonc").unlink()
+    with pytest.raises(ValueError, match="^project has no Kilo config"):
+        load_project_files(tmp_path, evals_path=tmp_path / ".kilo")

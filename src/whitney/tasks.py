@@ -98,6 +98,7 @@ def agents_md(
         execution: kilo only: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
         project_path: optional local project supplying config and instruction
             assets, read by the target's loader (whitney.project_files).
+            Nothing under EVALS_DIR is staged, even if it is inside the project.
         api_key_env: local mode only; env var holding the API key for model's
             provider (e.g. ANTHROPIC_API_KEY). For kilo, unset means the global
             Kilo config; claude-code defaults to ANTHROPIC_API_KEY.
@@ -157,7 +158,8 @@ def kilo_jsonc(
         target: must be "kilo": this eval tests kilo.jsonc, which only Kilo reads.
         model: the model under evaluation, as provider/model.
         execution: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
-        project_path: optional local project supplying Kilo config and instruction assets.
+        project_path: optional local project supplying Kilo config and instruction
+            assets. Nothing under EVALS_DIR is staged, even if it is inside the project.
         api_key_env: local mode only; env var holding the API key for model's
             provider (e.g. ANTHROPIC_API_KEY). Unset, the global Kilo config is used.
         base_url: local mode only; overrides the provider's base URL.
@@ -324,8 +326,9 @@ def _docker_model_names(model: str, execution: str) -> dict[str, str]:
 
 
 def _source_files(project_path: str | None, target: str) -> dict[str, str]:
+    """The files the target's loader stages from `project_path`, leaving out EVALS_DIR, or else Whitney's template."""
     if project_path:
-        return load_project_files_for(target, Path(project_path))
+        return load_project_files_for(target, Path(project_path), evals_path=EVALS_DIR)
     return load_template_files(targets.template_dir(target))
 
 

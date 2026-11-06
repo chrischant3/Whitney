@@ -77,14 +77,28 @@ def load_template_files(template_dir: Path) -> dict[str, str]:
     return {relative: _read_text(path) for relative, path in _walk_files(root, root)}
 
 
-def load_project_files(project_dir: Path) -> dict[str, str]:
+def load_project_files(project_dir: Path, *, evals_path: Path | None = None) -> dict[str, str]:
     """Load a project's Kilo config and instruction assets, never its source tree.
 
     Provider connections and runtime integrations remain sourced from the user's
     global Kilo config. Project assets are copied into a temporary eval project.
+
+    Args:
+        project_dir: the project folder. It is read, never written.
+        evals_path: the evals root; nothing under it is staged or read, even
+            when an `instructions` pattern matches it.
+
+    Raises:
+        FileNotFoundError: project_dir doesn't exist.
+        ValueError: project_dir isn't a folder or is inside evals_path, has no
+            Kilo config, an `instructions` pattern reaches outside it or can't
+            be expanded as Kilo expands it, or a staged file isn't UTF-8.
     """
     root = _project_root(project_dir)
-    config_paths = [relative for relative in CONFIG_PATHS if _is_project_file(root, relative)]
+    evals = _evals_root(root, evals_path)
+    config_paths = [
+        relative for relative in CONFIG_PATHS if _is_project_file(root, relative) and not _under(root / relative, evals)
+    ]
     if not config_paths:
         raise ValueError(f"project has no Kilo config ({', '.join(CONFIG_PATHS)}): {root}")
 
@@ -96,7 +110,7 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
     for folder in KILO_RULE_DIRS:
         paths.update(_rule_files(root, folder))
 
-    files = {relative: _read_text(root / relative) for relative in sorted(paths)}
+    files = {relative: _read_text(root / relative) for relative in sorted(paths) if not _under(root / relative, evals)}
     instruction_patterns = set()
     for relative in config_paths:
         config = parse_jsonc(files[relative])
@@ -112,13 +126,15 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
     for pattern in sorted(instruction_patterns):
         for match in _instruction_matches(root, pattern):
             relative = match.relative_to(root).as_posix()
-            if _is_project_file(root, relative) and not _linked_below(root, match) and _is_safe_file(match):
+            if _under(match, evals) or not _is_project_file(root, relative) or _linked_below(root, match):
+                continue
+            if _is_safe_file(match):
                 files[relative] = _read_text(match)
 
     return files
 
 
-def load_claude_code_project_files(project_dir: Path) -> dict[str, str]:
+def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None = None) -> dict[str, str]:
     """Load one instruction file for Claude Code, always as AGENTS.md, and nothing else.
 
     The file is root AGENTS.md, else root CLAUDE.md, else .claude/CLAUDE.md
@@ -130,32 +146,41 @@ def load_claude_code_project_files(project_dir: Path) -> dict[str, str]:
 
     Args:
         project_dir: the project folder. It is read, never written.
+        evals_path: the evals root, whose files are never staged.
 
     Returns:
         {"AGENTS.md": the chosen file's text}.
 
     Raises:
         FileNotFoundError: project_dir doesn't exist.
-        ValueError: project_dir isn't a folder, holds none of the files
-            (the message names them and says what is skipped), or the
-            chosen file isn't UTF-8.
+        ValueError: project_dir isn't a folder or is inside evals_path, holds
+            none of the files (the message names them and says what is
+            skipped), the chosen file is under evals_path, or it isn't UTF-8.
     """
     root = _project_root(project_dir)
+    evals = _evals_root(root, evals_path)
     source = _claude_code_source(root)
     if source is None:
         raise ValueError(
             f"project has no Claude Code instructions ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}; "
             f"symlinks and files outside the project are skipped): {root}"
         )
+    if _under(root / source, evals):
+        # Falling back to the next file would make the report's not-staged reasons wrong, so the run stops instead.
+        raise ValueError(
+            f"{root / source} is the instruction file to stage, but it is under the evals path {evals}, "
+            "whose files are never staged"
+        )
     return {AGENTS_MD: _read_text(root / source)}
 
 
-def load_project_files_for(target: str, project_dir: Path) -> dict[str, str]:
+def load_project_files_for(target: str, project_dir: Path, *, evals_path: Path | None = None) -> dict[str, str]:
     """Load a project with the loader for `target`'s harness.
 
     Args:
         target: "kilo" or "claude-code", as whitney.targets names them.
         project_dir: the project folder. It is read, never written.
+        evals_path: the evals root, whose files are never staged.
 
     Returns:
         What load_project_files (kilo) or load_claude_code_project_files
@@ -166,7 +191,7 @@ def load_project_files_for(target: str, project_dir: Path) -> dict[str, str]:
         FileNotFoundError, ValueError: as the chosen loader raises them.
     """
     loaders = {"kilo": load_project_files, "claude-code": load_claude_code_project_files}
-    return loaders[target](project_dir)
+    return loaders[target](project_dir, evals_path=evals_path)
 
 
 def files_renamed(target: str, project_dir: Path, staged: dict[str, str]) -> dict[str, str]:
@@ -440,6 +465,25 @@ def _on_disk_name(names: list[str], wanted: str) -> str:
     # Called only for a name the filesystem found, so one of `names` matches it, ignoring case.
     matches = [name for name in names if name.casefold() == wanted.casefold()]
     return wanted if wanted in matches else matches[0]
+
+
+def _evals_root(root: Path, evals_path: Path | None) -> Path | None:
+    """`evals_path` resolved, or None.
+
+    Raises:
+        ValueError: the project is inside it, so every file would be left out.
+    """
+    if evals_path is None:
+        return None
+    evals = Path(evals_path).expanduser().resolve()
+    if root.is_relative_to(evals):
+        raise ValueError(f"project path {root} is inside the evals path {evals}, whose files are never staged")
+    return evals
+
+
+def _under(path: Path, evals: Path | None) -> bool:
+    # Staged paths are never symlinks, so the path as found is where the file is.
+    return evals is not None and path.is_relative_to(evals)
 
 
 def _project_root(project_dir: Path) -> Path:
