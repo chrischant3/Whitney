@@ -131,7 +131,7 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Acceptance criteria:**
 - [ ] Each variant's staged files differ from the template's by exactly its declared changes, generalising `test_agents_md_baseline_differs_from_the_template_only_by_agents_md`.
 - [ ] Tests cover a variant that changes nothing, and a shadowed `set` in a project holding both `kilo.jsonc` and `.kilo/kilo.jsonc`.
-- [ ] The equivalence test still passes.
+- [ ] The equivalence test still passes. The `allow_control` golden hash of `kilo.jsonc` pins `set`'s output to today's `json.dumps(config, indent=2)`, with no trailing newline.
 
 **Verification:**
 - [ ] `pytest -q tests/test_variants.py tests/test_equivalence.py`
