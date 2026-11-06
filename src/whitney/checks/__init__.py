@@ -230,13 +230,12 @@ class CheckSpec:
         if isinstance(rate, bool) or not isinstance(rate, int | float) or not 0 <= rate <= 1:
             return f"min_pass_rate must be a number from 0 to 1, got {rate!r}"
         # The floor guard watches the MIN_* constants in thresholds.py, not a number written here.
-        # The message still says report.py, which re-exports them, because tests/test_checks.py pins it.
         guarded = sorted({getattr(thresholds, name) for name in PASS_RATE_CONSTANTS})
         if rate not in guarded:
             return (
-                f"min_pass_rate {rate!r} isn't one of report.py's pass-rate constants "
+                f"min_pass_rate {rate!r} isn't one of whitney.thresholds' pass-rate constants "
                 f"{', '.join(PASS_RATE_CONSTANTS)} ({', '.join(map(str, guarded))}); "
-                "add a constant there, where the floor guard sees it lowered"
+                "add a constant in src/whitney/thresholds.py and to PASS_RATE_CONSTANTS, where the floor guard sees it lowered"
             )
         if not self.targets:
             return "it must support at least one target"
