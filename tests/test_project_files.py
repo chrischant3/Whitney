@@ -937,3 +937,25 @@ def test_nothing_in_a_staged_folder_under_the_evals_path_is_staged(tmp_path):
     (tmp_path / ".agents/skills/x/bad.md").write_bytes(b"\xff not UTF-8, and never read")
 
     assert set(load_project_files(tmp_path, evals_path=tmp_path / ".agents")) == {"kilo.jsonc", ".claude/skills/y/SKILL.md"}
+
+
+# Review of Task 8 (2026-11-06): fixes and the decisions that came with it.
+
+
+@pytest.mark.parametrize("linked", [".kilo", ".kilocode"])
+def test_a_kilo_config_in_a_symlinked_folder_is_not_staged_even_into_the_evals_path(tmp_path, linked):
+    _kilo_project(tmp_path, {"real/kilo.jsonc": '{"permission": {"bash": "deny"}}', "evals/kilo.jsonc": '{"secret": "CANARY-1"}'})
+    (tmp_path / linked).symlink_to(tmp_path / "real")
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+    (tmp_path / linked).unlink()
+    (tmp_path / linked).symlink_to(tmp_path / "evals")
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / "evals")) == {"kilo.jsonc"}
+
+
+def test_a_root_instruction_file_in_a_symlinked_project_part_is_not_staged(tmp_path):
+    # .kilocodemodes and the legacy rules files sit at the root, so only the file itself can be a link; a linked
+    # .kilo/ is the folder case above. This pins that the root files keep the same rule as the folders.
+    _kilo_project(tmp_path, {"real.md": "rule\n"})
+    (tmp_path / "AGENTS.md").symlink_to(tmp_path / "real.md")
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}

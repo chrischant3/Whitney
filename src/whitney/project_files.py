@@ -96,14 +96,12 @@ def load_project_files(project_dir: Path, *, evals_path: Path | None = None) -> 
     """
     root = _project_root(project_dir)
     evals = _evals_root(root, evals_path)
-    config_paths = [
-        relative for relative in CONFIG_PATHS if _is_project_file(root, relative) and not _under(root / relative, evals)
-    ]
+    config_paths = [relative for relative in CONFIG_PATHS if _is_kilo_file(root, relative, evals)]
     if not config_paths:
         raise ValueError(f"project has no Kilo config ({', '.join(CONFIG_PATHS)}): {root}")
 
     files_at_root = (*ROOT_INSTRUCTIONS, *config_paths, *KILO_LEGACY_RULE_FILES)
-    paths = {relative for relative in files_at_root if _is_project_file(root, relative)}
+    paths = {relative for relative in files_at_root if _is_kilo_file(root, relative, evals)}
     folders = [f"{config_dir}/{directory}" for config_dir in KILO_CONFIG_DIRS for directory in KILO_ASSET_DIRS]
     for folder in (*folders, *KILO_SKILL_DIRS):
         paths.update(f"{folder}/{relative}" for relative, _ in _walk_files(root / folder, root))
@@ -427,6 +425,12 @@ def _linked_below(root: Path, path: Path) -> bool:
             return True
         path = path.parent
     return False
+
+
+def _is_kilo_file(root: Path, relative: str, evals) -> bool:
+    """True if the Kilo loader may stage `relative`: a regular file in the project, reached through no symlink, not under the evals path."""
+    path = root / relative
+    return _is_project_file(root, relative) and not _linked_below(root, path) and not _under(path, evals)
 
 
 def _is_present(path: Path) -> bool:
