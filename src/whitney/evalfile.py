@@ -15,8 +15,8 @@ naming the checks that must pass in `expect`:
 
 A scenario's own `fixture`, `pressure`, `setup` or `expect` replaces the
 default; nothing is merged. Unknown fields are errors at every level, so a
-misspelt field fails loudly. A file without `version` is version 1, today's
-format, and is upgraded in memory with a FutureWarning, which Python shows by default.
+misspelt field fails loudly. A file without `version` is version 1, the
+earlier format, and is upgraded in memory with a FutureWarning, which Python shows by default.
 
 This module checks the shape of a file. Whether its checks are registered,
 its fixtures exist and its tokens can be found is whitney.validate's job.
