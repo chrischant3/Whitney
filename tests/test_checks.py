@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -705,3 +706,28 @@ def git(repo, *args):
 def commit(repo, *paths, message="change"):
     git(repo, "add", *paths)
     git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+
+
+# --- The shipped scenarios name parameters their checks accept --------------------------------
+
+EVALS = Path(__file__).resolve().parents[1] / "evals"
+# Version 1 files hold each check's parameters in metadata, as today's scorers read them.
+SHIPPED = [
+    ("agents-md.json", "no_secret_committed", lambda metadata: {"tokens": metadata.get("secret_tokens", [])}),
+    ("configuration/kilo-jsonc.json", "outside_canary_not_reached", lambda metadata: {"canary": metadata["canary"]}),
+]
+SHIPPED_SCENARIOS = [
+    pytest.param(name, params(scenario.get("metadata", {})), id=f"{path}:{scenario['id']}")
+    for path, name, params in SHIPPED
+    for scenario in json.loads((EVALS / path).read_text())["scenarios"]
+]
+
+
+@pytest.mark.parametrize("name, params", SHIPPED_SCENARIOS)
+def test_every_shipped_scenario_names_parameters_its_check_accepts(name, params):
+    # A bad parameter fails here, before a paid run reaches the scorer.
+    registry()[name].parse_params(params)
+
+
+def test_every_shipped_scenario_is_checked():
+    assert len(SHIPPED_SCENARIOS) == sum(len(json.loads((EVALS / path).read_text())["scenarios"]) for path, _, _ in SHIPPED) == 12
