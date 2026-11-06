@@ -877,8 +877,8 @@ def unsafe_project(tmp_path):
     (".env", ".env files are never staged, except .env.example, .env.sample and .env.template"),
     ("app.py", (
         "the kilo loader stages only Kilo config, root AGENTS.md, CLAUDE.md and CONTEXT.md, the .kilo and "
-        ".kilocode asset and rules folders, .claude/skills/, .agents/skills/, the legacy .kilocoderules files, "
-        "and files an instructions pattern matches"
+        ".kilocode asset, rules and workflows folders, .claude/skills/, .agents/skills/, .kilocodemodes, the legacy "
+        ".kilocoderules files, and files an instructions pattern matches"
     )),
 ])
 def test_the_reason_a_file_is_not_staged_names_the_rule(unsafe_project, source, reason):
@@ -1107,3 +1107,28 @@ def test_repeated_double_stars_match_what_one_does(tmp_path):
 
 def test_a_path_outside_the_root_is_walked_up_to_the_top_and_found_unlinked(tmp_path):
     assert project_files._linked_below(tmp_path / "root", tmp_path / "elsewhere" / "file.md") is False
+
+
+@pytest.mark.parametrize("source", [
+    ".kilocode/rules/nested/deep.md", ".kilo/rules/notes.txt", ".kilo/workflows/nested/w.md", ".kilocode/rules-code/UP.MD",
+])
+def test_a_file_in_a_rules_or_workflows_folder_that_kilo_does_not_read_is_told_which_ones_it_does(tmp_path, source):
+    _kilo_project(tmp_path, {source: "x\n"})
+    staged = load_project_files(tmp_path)
+
+    assert not_staged_reason("kilo", tmp_path, source, staged) == (
+        "Kilo reads only the .md files directly in the rules and workflows folders"
+    )
+
+
+@pytest.mark.parametrize("source", ["./AGENTS.md", "AGENTS.md", ".//AGENTS.md"])
+def test_a_source_spelled_with_dots_or_double_slashes_is_the_same_file(tmp_path, source):
+    _kilo_project(tmp_path, {"AGENTS.md": "rule\n"})
+    assert not_staged_reason("kilo", tmp_path, source, load_project_files(tmp_path)) is None
+
+
+def test_a_skill_file_left_out_as_not_utf8_says_so(tmp_path):
+    _kilo_project(tmp_path, {".agents/skills/y/SKILL.md": "skill\n"})
+    (tmp_path / ".agents/skills/y/logo.png").write_bytes(b"\x89PNG\xff")
+
+    assert not_staged_reason("kilo", tmp_path, ".agents/skills/y/logo.png", load_project_files(tmp_path)) == "it is not UTF-8 text"

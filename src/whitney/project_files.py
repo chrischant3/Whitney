@@ -331,9 +331,10 @@ def not_staged_reason(
         FileNotFoundError, ValueError: project_dir is missing or isn't a folder.
     """
     root = _project_root(project_dir)
+    path = PurePosixPath(relative)
+    relative = path.as_posix()  # ./AGENTS.md and .//AGENTS.md name AGENTS.md
     if relative in staged or files_renamed(target, root, staged).get(relative) in staged:
         return None
-    path = PurePosixPath(relative)
     if relative.startswith("~") or path.is_absolute() or ".." in path.parts:
         return "it isn't a path inside the project"
     full = root / relative
@@ -355,10 +356,15 @@ def not_staged_reason(
         if relative in reasons:
             return f"the claude-code loader stages one instruction file, and this one is {reasons[relative]}"
         return f"the claude-code loader stages only one of {', '.join(CLAUDE_CODE_INSTRUCTIONS[:-1])} and {DOT_CLAUDE_MD}, as {AGENTS_MD}"
+    left_out = _not_staged(target, root, evals_path)[1]
+    if relative in left_out:
+        return f"it is {left_out[relative]}"
+    if any(path.is_relative_to(folder) for folder in (*KILO_RULE_DIRS, *KILO_WORKFLOW_DIRS)):
+        return "Kilo reads only the .md files directly in the rules and workflows folders"
     return (
         "the kilo loader stages only Kilo config, root AGENTS.md, CLAUDE.md and CONTEXT.md, the .kilo and .kilocode "
-        "asset and rules folders, .claude/skills/, .agents/skills/, the legacy .kilocoderules files, "
-        "and files an instructions pattern matches"
+        "asset, rules and workflows folders, .claude/skills/, .agents/skills/, .kilocodemodes, the legacy "
+        ".kilocoderules files, and files an instructions pattern matches"
     )
 
 
