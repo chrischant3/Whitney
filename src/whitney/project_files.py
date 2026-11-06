@@ -685,8 +685,12 @@ def _is_project_file(root: Path, relative: str) -> bool:
 
 
 def _is_safe_file(path: Path) -> bool:
-    if any(part in EXCLUDED_DIRS for part in path.parts):
-        return False
+    """False for a .env file, except SAFE_ENV_FILES.
+
+    The excluded folders are kept out where the project is walked (_folder_entries) and in
+    not_staged_reason, by their names inside the project only: the folders above it, which may
+    be called node_modules or .venv, say nothing about its files.
+    """
     name = path.name.lower()
     return not (name == ".env" or name.startswith(".env.")) or name in SAFE_ENV_FILES
 

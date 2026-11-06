@@ -155,6 +155,8 @@ Spec open questions that block a task here, so they need an answer before that t
 
 Not planned in detail:
 
+- **Security, found in the Task 9 review (2026-11-06), do before a release:** a literal `apiKey` in the user's global Kilo `provider` settings is copied into the `KILO_CONFIG` overlay, which the agent can read, and neither the agent nor `evidence.run_secrets` redacts it; the same goes for proxy credentials passed through `LOCAL_ENV_PASSTHROUGH` (for example `HTTP_PROXY=user:pass@...`). Refuse literal keys in the overlay (use `{env:NAME}`), or redact them, with a test.
+
 - `no_test_newly_skipped`, with presets for each test framework (spec slice 12).
 - Claude Code skills and agents: its own capture of `--output-format stream-json`, and staging `.claude/skills/` and `.claude/agents/` without `.claude/settings.json`, whose hooks run commands.
 - `--junit` output; model-graded checks (spec open question 13); check plugins (spec open question 9).
