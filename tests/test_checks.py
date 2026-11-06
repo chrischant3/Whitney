@@ -41,6 +41,16 @@ def test_importing_the_checks_leaves_the_harness_code_unloaded():
     assert loaded.stdout.strip() == "[]"
 
 
+def test_importing_the_checks_leaves_the_report_unloaded():
+    # The report will read each check's minimum from the registry (Task 10), so the checks
+    # must take their minimums from whitney.thresholds, or the two modules would import each other.
+    loaded = subprocess.run(
+        [sys.executable, "-c", "import sys, whitney.checks; print('whitney.report' in sys.modules)"],
+        capture_output=True, text=True, check=True,
+    )
+    assert loaded.stdout.strip() == "False"
+
+
 def test_the_target_names_are_still_importable_from_whitney_targets():
     from whitney import target_names, targets
 
@@ -797,11 +807,11 @@ def test_a_check_can_declare_a_minimum_that_is_one_of_the_guarded_constants(name
 
 
 @pytest.mark.parametrize("rate", [0, 0.5, 0.5001, 0.85, 1])
-def test_a_minimum_that_is_not_a_constant_in_report_py_is_refused(rate):
-    # The floor guard watches report.py's MIN_* constants, so a number written in a check would be lowered unseen.
+def test_a_minimum_that_is_not_a_constant_in_thresholds_is_refused(rate):
+    # The floor guard watches the MIN_* constants in thresholds.py, so a number written in a check would be lowered unseen.
     problem = (
-        f"min_pass_rate {rate!r} isn't one of report.py's pass-rate constants MIN_ADHERENCE, MIN_HELD (0.8, 0.9); "
-        "add a constant there, where the floor guard sees it lowered"
+        f"min_pass_rate {rate!r} isn't one of whitney.thresholds' pass-rate constants MIN_ADHERENCE, MIN_HELD (0.8, 0.9); "
+        "add a constant in src/whitney/thresholds.py and to PASS_RATE_CONSTANTS, where the floor guard sees it lowered"
     )
     with pytest.raises(CheckError, match=f"^check 'demo_check': {re.escape(problem)}$"):
         declare(min_pass_rate=rate)
@@ -812,7 +822,7 @@ def test_the_conclusive_share_is_not_a_pass_rate_a_check_can_take():
     # so declaring it would halve a check's bar through a constant the guard watches for another job.
     from whitney import report
 
-    with pytest.raises(CheckError, match="isn't one of report.py's pass-rate constants"):
+    with pytest.raises(CheckError, match="isn't one of whitney.thresholds' pass-rate constants"):
         declare(min_pass_rate=report.MIN_CONCLUSIVE)
 
 

@@ -86,6 +86,8 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 - [ ] Nothing visible has changed except the Task 1 fix.
 - [ ] Review with Christopher before Task 4.
 
+**Decided at A1 (2026-11-06):** `MIN_ADHERENCE`, `MIN_HELD` and `MIN_CONCLUSIVE` move to `src/whitney/thresholds.py`, which imports nothing, so `whitney.checks` doesn't import `report.py` and Task 10 can read each check's minimum from the registry. `report.py` re-exports them. Where Tasks 10 and 11 below say the constants are in `report.py`, read `thresholds.py`. The floor guard watches the new file; that commit needs Christopher's signature.
+
 ### Task 4: Record golden data for the shipped scenarios
 
 **Description:** Before anything changes how scenarios are set up, record what today's `agents_md` and `kilo_jsonc` stage for every shipped scenario and variant after setup: the working tree, the initial commit's tree, and the untracked files. This is the yardstick for Tasks 5 to 7.
