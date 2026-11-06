@@ -1222,17 +1222,19 @@ def test_a_broken_symlink_is_named_as_a_symlink_when_an_evals_path_is_given(tmp_
 
 
 def test_many_repeated_double_stars_are_expanded_as_one_without_walking_each(tmp_path):
-    # Walked one by one, 40 "**" in a row try every way of sharing 7 folders between them (hundreds of
-    # millions); folded into one, the walk is a single pass. A first segment pair keeps the fold honest
-    # about where the run of "**" starts.
-    _kilo_project(tmp_path, {"docs/rules/a/b/c/d/e/x.md": "x\n", "docs/rules/top.md": "top\n"})
+    # Walked one by one, 40 "**" in a row try every way of sharing the 7 folders above x.md between
+    # them (tens of millions of splits, which takes hours); folded into one, the walk is a single pass
+    # (a few milliseconds). The 60-second bound sits orders of magnitude from both, so a slow runner
+    # can't fail it and an unfolded walk can't pass it; counting directory listings instead would
+    # assert on a call count. A first segment pair keeps the fold honest about where the run of "**" starts.
+    _kilo_project(tmp_path, {"docs/rules/a/b/c/d/e/f/g/x.md": "x\n", "docs/rules/top.md": "top\n"})
     (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["docs/rules/" + "**/" * 40 + "*.md"]}))
 
     started = time.monotonic()
     staged = set(load_project_files(tmp_path))
 
-    assert staged == {"kilo.jsonc", "docs/rules/a/b/c/d/e/x.md", "docs/rules/top.md"}
-    assert time.monotonic() - started < 5
+    assert staged == {"kilo.jsonc", "docs/rules/a/b/c/d/e/f/g/x.md", "docs/rules/top.md"}
+    assert time.monotonic() - started < 60
 
 
 def test_on_a_case_sensitive_disk_the_exact_spelling_is_named_over_another_case(tmp_path):
