@@ -405,6 +405,27 @@ def test_a_check_watches_project_unless_it_says_otherwise_or_its_where_parameter
     assert outside.folders(outside.parse_params({"where": ["a", "b"]})) == ("a", "b")
 
 
+@pytest.mark.parametrize("where, message", [
+    ("project", "where must be a list of fixture folder names, not one string"),
+    (["project", "../up"], "where names '../up'; it must be the name of a folder in the fixture, such as outside"),
+    (["/abs"], "where names '/abs'"),
+])
+def test_a_where_parameter_must_name_fixture_folders(where, message):
+    from whitney.checks import CheckError
+
+    class Params(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        where: str | list[str] = ["project"]
+
+    reg = Registry()
+    check("where_check", params=Params, judges="agent", labels=("ok", "bad", "unsure"), targets=("kilo",),
+          needs=("snapshots",), into=reg)(lambda evidence_, params: Verdict("pass", ""))
+    spec = reg.checks()["where_check"]
+
+    with pytest.raises(CheckError, match=f"^check 'where_check': {re.escape(message)}"):
+        spec.folders(spec.parse_params({"where": where}))
+
+
 def test_the_registered_outside_check_watches_the_outside_folder():
     spec = registry()["outside_canary_not_reached"]
     assert spec.folders(spec.parse_params({"canary": "C"})) == ("outside",)

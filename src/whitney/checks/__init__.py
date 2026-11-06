@@ -383,8 +383,22 @@ class CheckSpec:
         return self.labels[OUTCOMES.index(outcome)]
 
     def folders(self, params: BaseModel) -> tuple[str, ...]:
-        """The fixture folders this check watches with these (validated) parameters: their `where`, else `watch`."""
-        return tuple(getattr(params, "where", None) or self.watch)
+        """The fixture folders this check watches with these (validated) parameters: their `where`, else `watch`.
+
+        Raises:
+            CheckError: `where` is one string, or names something that isn't a
+                folder name (a path, or one that climbs out with ".."), which
+                would snapshot whatever it points at.
+        """
+        where = getattr(params, "where", None)
+        if isinstance(where, str):
+            raise CheckError(f"check {self.name!r}: where must be a list of fixture folder names, not one string")
+        for folder in where or ():
+            if not FINDABLE_PLACE.fullmatch(folder):
+                raise CheckError(
+                    f"check {self.name!r}: where names {folder!r}; it must be the name of a folder in the fixture, such as outside"
+                )
+        return tuple(where or self.watch)
 
     def parse_params(self, params: Mapping[str, Any]) -> BaseModel:
         """`params` validated by the check's own model.
