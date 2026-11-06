@@ -418,7 +418,9 @@ def check_no_inherited_instructions(project_dir: Path) -> None:
             folder the user can't read), so the run never starts unchecked.
     """
     for folder in Path(project_dir).resolve().parents:
-        for name in INHERITED_INSTRUCTION_NAMES:
+        # Kilo reads skill folders only up to a git worktree root, so without one here they aren't looked for.
+        names = [name for name in INHERITED_INSTRUCTION_NAMES if name not in KILO_SKILL_DIRS or _in_a_repository(folder)]
+        for name in names:
             path = folder / name
             try:
                 found = path.exists()
@@ -427,8 +429,6 @@ def check_no_inherited_instructions(project_dir: Path) -> None:
                     f"can't check {path}, which the harness would read if it were there ({error.strerror or error}). "
                     "Set TMPDIR to a folder you can read, with none of these files above it."
                 ) from error
-            if found and name in KILO_SKILL_DIRS and not _in_a_repository(folder):
-                continue  # Kilo reads skill folders only up to a git worktree root, and there is none here
             if found:
                 advice = (
                     f"Set TMPDIR to a folder with none above it, or remove {USERS_OWN[name]}."

@@ -679,3 +679,21 @@ def test_a_skills_folder_is_refused_when_the_repository_starts_further_up(tmp_pa
         check_no_inherited_instructions(tmp_path / "repo" / "mid" / "project")
     (tmp_path / "repo" / ".git").rmdir()
     check_no_inherited_instructions(tmp_path / "repo" / "mid" / "project")  # no repository: nothing Kilo would read
+
+
+def test_a_folder_whose_repository_can_not_be_checked_counts_as_one(tmp_path, monkeypatch):
+    # Python 3.11 and 3.12 raise inside an unreadable folder; refusing is the safe answer.
+    from whitney.agent import check_no_inherited_instructions
+
+    (tmp_path / ".claude" / "skills").mkdir(parents=True)
+    (tmp_path / "project").mkdir()
+    real_exists = Path.exists
+
+    def exists(path, *args, **kwargs):
+        if path.name == ".git":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_exists(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
+    with pytest.raises(RuntimeError, match=r"\.claude/skills is above the project"):
+        check_no_inherited_instructions(tmp_path / "project")

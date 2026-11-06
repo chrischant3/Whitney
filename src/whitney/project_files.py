@@ -157,11 +157,10 @@ def _load_kilo(root: Path, evals_path: Path | None) -> tuple[dict[str, str], lis
         files[relative] = json.dumps(config, indent=2)
 
     for pattern in sorted(instruction_patterns):
+        # _instruction_matches never looks in the evals folder or through a symlinked one.
         for match in _instruction_matches(root, pattern, evals):
             relative = match.relative_to(root).as_posix()
-            if _under(match, evals) or not _is_project_file(root, relative) or _linked_below(root, match):
-                continue
-            if _is_safe_file(match):
+            if _is_project_file(root, relative) and _is_safe_file(match):
                 files[relative] = _read_text(match)
 
     return files, sorted(left_out)
@@ -356,7 +355,7 @@ def not_staged_reason(
         if relative in reasons:
             return f"the claude-code loader stages one instruction file, and this one is {reasons[relative]}"
         return f"the claude-code loader stages only one of {', '.join(CLAUDE_CODE_INSTRUCTIONS[:-1])} and {DOT_CLAUDE_MD}, as {AGENTS_MD}"
-    left_out = _not_staged(target, root, evals_path)[1]
+    left_out = dict(_load_kilo(root, evals_path)[1])
     if relative in left_out:
         return f"it is {left_out[relative]}"
     if any(path.is_relative_to(folder) for folder in (*KILO_RULE_DIRS, *KILO_WORKFLOW_DIRS)):

@@ -1132,3 +1132,59 @@ def test_a_skill_file_left_out_as_not_utf8_says_so(tmp_path):
     (tmp_path / ".agents/skills/y/logo.png").write_bytes(b"\x89PNG\xff")
 
     assert not_staged_reason("kilo", tmp_path, ".agents/skills/y/logo.png", load_project_files(tmp_path)) == "it is not UTF-8 text"
+
+
+def test_rules_and_workflows_under_the_evals_path_are_not_staged(tmp_path):
+    _kilo_project(tmp_path, {".kilocode/rules/r.md": "rule\n", ".kilocode/workflows/w.md": "workflow\n", ".kilo/rules/k.md": "k\n"})
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".kilocode")) == {"kilo.jsonc", ".kilo/rules/k.md"}
+
+
+def test_a_file_that_is_not_utf8_outside_the_skill_folders_still_stops_the_run(tmp_path):
+    _kilo_project(tmp_path, {})
+    (tmp_path / ".kilo/agents").mkdir(parents=True)
+    (tmp_path / ".kilo/agents/helper.md").write_bytes(b"\xff agent")
+    with pytest.raises(ValueError, match="must be UTF-8 text"):
+        load_project_files(tmp_path)
+
+
+def test_skill_files_are_read_as_utf8_whatever_the_locale(tmp_path, ascii_locale):
+    _kilo_project(tmp_path, {})
+    (tmp_path / ".agents/skills/x").mkdir(parents=True)
+    (tmp_path / ".agents/skills/x/SKILL.md").write_text("- Règle\n", encoding="utf-8")
+    assert load_project_files(tmp_path)[".agents/skills/x/SKILL.md"] == "- Règle\n"
+
+
+def test_a_symlink_in_a_skill_folder_is_skipped_and_the_files_after_it_are_staged(tmp_path):
+    _kilo_project(tmp_path, {"real.md": "x\n", ".claude/skills/x/SKILL.md": "skill\n", ".claude/skills/x/z.md": "z\n"})
+    (tmp_path / ".claude/skills/x/A-link.md").symlink_to(tmp_path / "real.md")
+    assert {name for name in load_project_files(tmp_path) if name.startswith(".claude/")} == {
+        ".claude/skills/x/SKILL.md", ".claude/skills/x/z.md",
+    }
+
+
+@pytest.mark.parametrize("evals, pattern", [
+    (".claude/skills/x/deep/evals", None),
+    ("docs/a/evals", "**/*.md"),
+    ("docs/evals", "docs/**/evals/*.md"),
+    ("docs/a/evals", "docs/*/*/*.md"),
+])
+def test_an_evals_path_deep_in_a_walked_folder_is_never_looked_in(tmp_path, unreadable, evals, pattern):
+    _kilo_project(tmp_path, {".claude/skills/x/SKILL.md": "x\n", "docs/a/d.md": "d\n"})
+    unreadable(tmp_path / evals)
+    if pattern:
+        (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": [pattern]}))
+
+    assert ".claude/skills/x/SKILL.md" in load_project_files(tmp_path, evals_path=tmp_path / evals)
+
+
+def test_a_binary_skill_file_under_the_evals_path_is_not_named(tmp_path):
+    _kilo_project(tmp_path, {".claude/skills/x/SKILL.md": "x\n"})
+    (tmp_path / ".claude/skills/x/logo.png").write_bytes(b"\x89PNG\xff")
+    evals = tmp_path / ".claude/skills/x"
+
+    assert files_not_staged("kilo", tmp_path, evals_path=evals) == []
+    assert files_not_staged_reasons("kilo", tmp_path, evals_path=evals) == {}
+    assert not_staged_reason("kilo", tmp_path, ".claude/skills/x/logo.png", {}, evals_path=evals) == (
+        "it is under the evals path, whose files are never staged"
+    )
+    assert files_not_staged("kilo", tmp_path) == [".claude/skills/x/logo.png"]
