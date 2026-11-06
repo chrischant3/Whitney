@@ -245,6 +245,15 @@ def test_the_agents_md_baseline_of_a_claude_md_only_project_runs_with_nothing_st
     assert task.metadata["evaluation_assets"] == {}
 
 
+
+def test_the_agents_md_baseline_still_runs_when_a_kilo_project_has_no_agents_md(tmp_path):
+    # Today's baseline removes AGENTS.md whether or not it was staged, so a project without one still runs.
+    project = _project(tmp_path, {"kilo.jsonc": "{}"})
+
+    task = agents_md(target="kilo", model=MODEL, variant="baseline", project_path=str(project))
+
+    assert set(task.metadata["evaluation_assets"]) == {"kilo.jsonc"}
+
 # --- remove ----------------------------------------------------------------------------------
 
 
