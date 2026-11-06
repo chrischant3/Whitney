@@ -28,32 +28,49 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from whitney.agent import ENV_REFERENCE, PROJECT_DIR, global_provider_settings, login_secrets
+from inspect_ai.util import OutputLimitExceededError
+from inspect_ai.util._sandbox.events import SandboxEnvironmentProxy
+
+from whitney.agent import ENV_REFERENCE, PROJECT_DIR, global_provider_settings, login_secrets, redact
 from whitney.checks import CheckSpec, Evidence, FileSnapshot, FolderSnapshot
 from whitney.scoring import GIT_STATE_SCRIPT, GitState, parse_git_state
 
 MAX_SNAPSHOT_FILE_BYTES = 1024 * 1024
 MAX_SNAPSHOT_FILES = 10_000
+# A file larger than this isn't hashed, which would take minutes, but listed as unreadable.
+MAX_HASHED_BYTES = 1024**3
+# Seconds before a snapshot or git command is stopped, so an agent's hanging file can't stall the scorer.
+COMMAND_TIMEOUT = 300
 # Inspect refuses a command whose output passes 10 MiB; base64 makes 4 MiB about 5.4 MiB.
 READ_BATCH_BYTES = 4 * 1024 * 1024
 
-# Run as: python -I -c SNAPSHOT_SCRIPT list <max files> <folder>...
-#     or: python -I -c SNAPSHOT_SCRIPT read, with a JSON list of paths on stdin.
+# Run as: python -I -c SNAPSHOT_SCRIPT list <max files> <max hashed bytes> <folder>...
+#     or: python -I -c SNAPSHOT_SCRIPT read <max file bytes>, with a JSON list of paths on stdin.
 # `list` prints, per folder, each entry's size and SHA-256 (a symlink's of its
-# target, never followed) and whether the folder held more than <max files>.
-# `read` prints each path's bytes as base64; a path it can't read is left out.
+# target's bytes, never followed), and whether the folder was listed in full:
+# not if it held more than <max files>, part of it couldn't be listed, or it is
+# a symlink or a file. A file over <max hashed bytes>, anything that isn't a
+# regular file or symlink, and an entry whose name isn't UTF-8 are listed as
+# unreadable; a name that isn't UTF-8 is shown with backslash escapes, so
+# nothing printed holds bytes JSON or a score can't carry.
+# `read` prints each path's bytes as base64, leaving out a path it can't read
+# or that is over <max file bytes> (it may have grown since it was listed).
 # -I keeps the sandbox's own files, which the agent may have written, off the
 # module path.
 SNAPSHOT_SCRIPT = r"""
 import base64, hashlib, json, os, stat, sys
 
 
-def entry(path):
+def shown(raw):
+    return raw.decode("utf-8", "backslashreplace")
+
+
+def entry(path, max_hashed):
     info = os.lstat(path)
     if stat.S_ISLNK(info.st_mode):
         target = os.readlink(path)
-        return {"size": len(target.encode()), "sha256": hashlib.sha256(target.encode()).hexdigest(), "symlink": target}
-    if not stat.S_ISREG(info.st_mode):
+        return {"size": len(target), "sha256": hashlib.sha256(target).hexdigest(), "symlink": shown(target)}
+    if not stat.S_ISREG(info.st_mode) or info.st_size > max_hashed:
         return {"size": info.st_size, "unreadable": True}
     digest = hashlib.sha256()
     with open(path, "rb") as f:
@@ -62,36 +79,57 @@ def entry(path):
     return {"size": info.st_size, "sha256": digest.hexdigest()}
 
 
-def walk(folder, max_files):
-    files = {}
-    for root, dirs, names in os.walk(folder):
+def name(relative, found):
+    try:
+        return relative.decode("utf-8"), found
+    except UnicodeDecodeError:
+        return shown(relative), {"size": found["size"], "unreadable": True}
+
+
+def walk(folder, max_files, max_hashed):
+    top = os.fsencode(folder)
+    if not os.path.lexists(top):
+        return {"files": {}, "complete": True}
+    if os.path.islink(top) or not os.path.isdir(top):
+        return {"files": {}, "complete": False}
+    files, errors = {}, []
+    for root, dirs, names in os.walk(top, onerror=errors.append):
         links = [d for d in dirs if os.path.islink(os.path.join(root, d))]
-        dirs[:] = sorted(d for d in dirs if d != ".git" and d not in links)
-        for name in sorted(names + links):
+        dirs[:] = sorted(d for d in dirs if d != b".git" and d not in links)
+        for entry_name in sorted(names + links):
             if len(files) == max_files:
                 return {"files": files, "complete": False}
-            path = os.path.join(root, name)
+            path = os.path.join(root, entry_name)
             try:
-                found = entry(path)
-            except OSError:
+                found = entry(path, max_hashed)
+            except (OSError, ValueError):
                 found = {"size": 0, "unreadable": True}
-            files[os.path.relpath(path, folder).replace(os.sep, "/")] = found
-    return {"files": files, "complete": True}
+            key, found = name(os.path.relpath(path, top).replace(os.sep.encode(), b"/"), found)
+            files[key] = found
+    return {"files": files, "complete": not errors}
 
 
-if sys.argv[1] == "list":
-    print(json.dumps({folder: walk(folder, int(sys.argv[2])) for folder in sys.argv[3:]}))
-elif sys.argv[1] == "read":
+def read(limit, paths):
     out = {}
-    for path in json.load(sys.stdin):
+    for path in paths:
         try:
             with open(path, "rb") as f:
-                out[path] = base64.b64encode(f.read()).decode("ascii")
+                content = f.read(limit + 1)
         except OSError:
             continue  # left out, so the reader marks it unreadable
-    print(json.dumps(out))
-else:
-    sys.exit("usage: list <max files> <folder>... | read")
+        if len(content) <= limit:
+            out[path] = base64.b64encode(content).decode("ascii")
+    return out
+
+
+if __name__ == "__main__":
+    if sys.argv[1] == "list":
+        max_files, max_hashed = int(sys.argv[2]), int(sys.argv[3])
+        print(json.dumps({folder: walk(folder, max_files, max_hashed) for folder in sys.argv[4:]}))
+    elif sys.argv[1] == "read":
+        print(json.dumps(read(int(sys.argv[2]), json.load(sys.stdin))))
+    else:
+        sys.exit("usage: list <max files> <max hashed bytes> <folder>... | read <max file bytes>")
 """
 
 
@@ -168,58 +206,71 @@ async def git_state(sbox, tokens: Iterable[str]) -> GitState:
     """The project's git history in `sbox` (GIT_STATE_SCRIPT), searched for `tokens`, which it records as searched."""
     tokens = list(tokens)
     with _quietly(sbox):
-        result = await sbox.exec(["sh", "-c", GIT_STATE_SCRIPT, "sh", PROJECT_DIR, *tokens])
+        result = await sbox.exec(["sh", "-c", GIT_STATE_SCRIPT, "sh", PROJECT_DIR, *tokens], timeout=COMMAND_TIMEOUT)
     return replace(parse_git_state(result.stdout), searched=set(tokens))
 
 
 async def snapshot(
     sbox, folders: Iterable[str], python: str, *, max_file_bytes: int = MAX_SNAPSHOT_FILE_BYTES,
-    max_files: int = MAX_SNAPSHOT_FILES, read_batch_bytes: int = READ_BATCH_BYTES,
+    max_files: int = MAX_SNAPSHOT_FILES, max_hashed_bytes: int = MAX_HASHED_BYTES,
+    read_batch_bytes: int = READ_BATCH_BYTES, timeout: int = COMMAND_TIMEOUT, secrets: Iterable[str] = (),
 ) -> dict[str, FolderSnapshot]:
     """Snapshots of `folders` (relative to the sandbox root) in `sbox`; a missing folder is empty.
 
     Every file is listed with its hash and size; then the text of each regular
     file up to `max_file_bytes` is read, in batches of at most
-    `read_batch_bytes`, so no one command's output passes Inspect's limit.
+    `read_batch_bytes` (paths included), so no one command's output passes
+    Inspect's limit. A listing too large for that limit leaves every folder
+    empty and incomplete.
 
     Args:
         python: the sandbox's Python: the running interpreter in local
             execution, python3 in the Docker image.
+        timeout: seconds each command may take.
+        secrets: values to redact from an error's stderr.
 
     Raises:
         RuntimeError: a snapshot command failed, as when `python` isn't there.
+        TimeoutError: a command took longer than `timeout`.
     """
     folders = list(folders)
     if not folders:
         return {}
     script = [python, "-I", "-c", SNAPSHOT_SCRIPT]
     with _quietly(sbox):
-        listing = await _json_output(sbox, [*script, "list", str(max_files), *folders])
+        try:
+            listing = await _json_output(
+                sbox, [*script, "list", str(max_files), str(max_hashed_bytes), *folders], timeout=timeout, secrets=secrets
+            )
+        except OutputLimitExceededError:
+            return {folder: FolderSnapshot({}, complete=False) for folder in folders}
         wanted = [
             (f"{folder}/{path}", found["size"])
             for folder, listed in listing.items()
             for path, found in listed["files"].items()
-            if _worth_reading(found, max_file_bytes)
+            if _worth_reading(path, found, max_file_bytes)
         ]
         contents: dict[str, str] = {}
         for batch in _batches(wanted, read_batch_bytes):
-            contents.update(await _json_output(sbox, [*script, "read"], input=json.dumps(batch)))
+            command = [*script, "read", str(max_file_bytes)]
+            contents.update(await _json_output(sbox, command, input=json.dumps(batch), timeout=timeout, secrets=secrets))
     return parse_snapshot(listing, contents, max_file_bytes=max_file_bytes)
 
 
 def parse_snapshot(listing: Mapping[str, Any], contents: Mapping[str, str], *, max_file_bytes: int) -> dict[str, FolderSnapshot]:
     """FolderSnapshots from SNAPSHOT_SCRIPT's `list` output and the base64 `contents` read for it, by sandbox path.
 
-    A file that should have been read but wasn't (it went between the listing
-    and the read) is unreadable.
+    A file that should have been read but wasn't (it went, or grew, between
+    the listing and the read) is unreadable. So is a name holding lone
+    surrogates, which no score could carry; it is kept with them escaped.
     """
     snapshots = {}
     for folder, listed in listing.items():
         files = {}
         for path, found in listed["files"].items():
             content = contents.get(f"{folder}/{path}")
-            readable = _worth_reading(found, max_file_bytes) and content is not None
-            files[path] = FileSnapshot(
+            readable = _worth_reading(path, found, max_file_bytes) and content is not None
+            files[_safe(path)] = FileSnapshot(
                 sha256=found.get("sha256", ""),
                 size=found["size"],
                 text=_text(content) if readable else None,
@@ -230,12 +281,17 @@ def parse_snapshot(listing: Mapping[str, Any], contents: Mapping[str, str], *, m
     return snapshots
 
 
+def _safe(path: str) -> str:
+    """`path` with any lone surrogate written as a backslash escape."""
+    return path.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def _is_regular(found: Mapping[str, Any]) -> bool:
     return "symlink" not in found and not found.get("unreadable")
 
 
-def _worth_reading(found: Mapping[str, Any], max_file_bytes: int) -> bool:
-    return _is_regular(found) and found["size"] <= max_file_bytes
+def _worth_reading(path: str, found: Mapping[str, Any], max_file_bytes: int) -> bool:
+    return _is_regular(found) and found["size"] <= max_file_bytes and _safe(path) == path
 
 
 def _text(content: str) -> str | None:
@@ -247,23 +303,25 @@ def _text(content: str) -> str | None:
 
 
 def _batches(sized: list[tuple[str, int]], limit: int) -> list[list[str]]:
-    """The paths in order, grouped so each group's sizes add up to at most `limit` (or one file, if it alone is larger)."""
+    """The paths in order, grouped so each group's sizes and path lengths add up to at most `limit` (or one file, if it alone is larger)."""
     batches: list[list[str]] = []
     totals: list[int] = []
     for path, size in sized:
-        if batches and totals[-1] + size <= limit:
+        weight = size + len(path)
+        if batches and totals[-1] + weight <= limit:
             batches[-1].append(path)
-            totals[-1] += size
+            totals[-1] += weight
         else:
             batches.append([path])
-            totals.append(size)
+            totals.append(weight)
     return batches
 
 
-async def _json_output(sbox, command: list[str], input: str | None = None) -> Any:
-    result = await sbox.exec(command, input=input)
+async def _json_output(sbox, command: list[str], *, timeout: int, secrets: Iterable[str], input: str | None = None) -> Any:
+    result = await sbox.exec(command, input=input, timeout=timeout)
     if result.returncode != 0:
-        raise RuntimeError(f"the snapshot of the sandbox's files failed: {result.stderr.strip()[-300:]}")
+        # Its stderr can quote a file the agent wrote, and the error reaches the log.
+        raise RuntimeError(f"the snapshot of the sandbox's files failed: {redact(result.stderr, list(secrets)).strip()[-300:]}")
     return json.loads(result.stdout)
 
 

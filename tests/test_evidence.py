@@ -31,9 +31,12 @@ class HostSandbox:
         self.root = root
         self.commands: list[list[str]] = []
 
-    async def exec(self, cmd, input=None, cwd=None, **kwargs):
+    async def exec(self, cmd, input=None, cwd=None, timeout=None, **kwargs):
         self.commands.append(cmd)
-        result = subprocess.run(cmd, cwd=self.root, input=input, capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd, cwd=self.root, input=input, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as e:
+            raise TimeoutError(f"{cmd[0]} timed out") from e
         return SimpleNamespace(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
@@ -174,7 +177,7 @@ def test_texts_are_read_in_batches_so_no_one_output_is_too_large(tmp_path):
     _write(tmp_path, {f"project/{n}.txt": str(n) * 4 for n in range(5)})
     sandbox = HostSandbox(tmp_path)
 
-    files = asyncio.run(evidence.snapshot(sandbox, ["project"], PYTHON, read_batch_bytes=8))["project"].files
+    files = asyncio.run(evidence.snapshot(sandbox, ["project"], PYTHON, read_batch_bytes=2 * (4 + len("project/0.txt"))))["project"].files
 
     assert {name: entry.text for name, entry in files.items()} == {f"{n}.txt": str(n) * 4 for n in range(5)}
     assert len(sandbox.commands) == 1 + 3  # the listing, then batches of two, two and one file
@@ -223,6 +226,111 @@ def test_a_login_that_isnt_valid_utf8_still_gives_its_values(tmp_path):
 
     assert "login-access-value" in login_secrets({"HOME": str(tmp_path)})
     assert login_secrets({"HOME": str(tmp_path / "nobody")}) == []
+
+
+def test_a_symlink_whose_target_isnt_utf8_is_recorded_by_its_raw_bytes(tmp_path):
+    (tmp_path / "project").mkdir()
+    os.symlink(b"tar\xffget", os.fsencode(tmp_path / "project" / "link"))
+
+    entry = _snapshot(tmp_path, ["project"])["project"].files["link"]
+
+    assert entry == FileSnapshot(_sha(b"tar\xffget"), 7, None, symlink="tar\\xffget")
+
+
+def _script_functions() -> dict:
+    """The snapshot script's functions, loaded without running it."""
+    namespace = {"__name__": "snapshot_script"}
+    exec(evidence.SNAPSHOT_SCRIPT, namespace)
+    return namespace
+
+
+def test_a_name_that_isnt_utf8_is_shown_escaped_and_marked_unreadable():
+    # macOS refuses such names on disk, but Linux and the Docker image allow them.
+    name = _script_functions()["name"]
+
+    assert name(b"ok.txt", {"size": 1, "sha256": "x"}) == ("ok.txt", {"size": 1, "sha256": "x"})
+    assert name(b"bad\xff.txt", {"size": 1, "sha256": "x"}) == ("bad\\xff.txt", {"size": 1, "unreadable": True})
+
+
+def test_a_listed_name_holding_lone_surrogates_is_made_safe_and_unreadable():
+    listing = {"project": {"files": {"bad\udcff.txt": {"sha256": "abc", "size": 3}}, "complete": True}}
+
+    snap = evidence.parse_snapshot(listing, {"project/bad\udcff.txt": "YWJj"}, max_file_bytes=10)["project"]
+
+    assert snap.files == {"bad\\udcff.txt": FileSnapshot("abc", 3, None, unreadable=True)}
+    json.dumps(list(snap.files))  # it can be written into a score's explanation
+
+
+def test_a_folder_the_snapshot_cant_list_in_full_is_incomplete(tmp_path):
+    _write(tmp_path, {"project/locked/secret.txt": "x\n", "project/app.py": "y\n"})
+    (tmp_path / "project" / "locked").chmod(0o000)
+    try:
+        snap = _snapshot(tmp_path, ["project"])["project"]
+    finally:
+        (tmp_path / "project" / "locked").chmod(0o755)
+
+    assert not snap.complete and snap.files["app.py"].text == "y\n"
+
+
+@pytest.mark.parametrize("make", [
+    lambda root: (root / "project").symlink_to(root / "elsewhere", target_is_directory=True),
+    lambda root: (root / "project").write_text("a file, not a folder\n"),
+], ids=["symlink", "file"])
+def test_a_watched_folder_that_is_a_symlink_or_a_file_is_incomplete_and_never_followed(tmp_path, make):
+    _write(tmp_path, {"elsewhere/x.txt": "x\n"})
+    make(tmp_path)
+
+    assert _snapshot(tmp_path, ["project"]) == {"project": FolderSnapshot({}, complete=False)}
+
+
+def test_a_file_over_the_hash_cap_is_unreadable_and_not_hashed(tmp_path):
+    _write(tmp_path, {"project/huge.bin": "x" * 11, "project/small.txt": "y"})
+
+    files = _snapshot(tmp_path, ["project"], max_hashed_bytes=10)["project"].files
+
+    assert files["huge.bin"] == FileSnapshot("", 11, None, unreadable=True)
+    assert files["small.txt"].text == "y"
+    assert evidence.MAX_HASHED_BYTES == 1024 ** 3
+
+
+def test_the_read_step_leaves_out_a_file_that_grew_past_the_size_cap(tmp_path):
+    _write(tmp_path, {"grown.txt": "abcd", "fits.txt": "abc"})
+    command = [PYTHON, "-I", "-c", evidence.SNAPSHOT_SCRIPT, "read", "3"]
+
+    result = subprocess.run(command, cwd=tmp_path, input=json.dumps(["grown.txt", "fits.txt"]), capture_output=True, text=True)
+
+    assert json.loads(result.stdout) == {"fits.txt": "YWJj"}
+
+
+def test_a_snapshot_that_hangs_times_out(tmp_path):
+    slow = tmp_path / "slow-python"
+    slow.write_text("#!/bin/sh\nsleep 5\n")
+    slow.chmod(0o755)
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(evidence.snapshot(HostSandbox(tmp_path), ["project"], str(slow), timeout=1))
+
+
+def test_a_listing_too_large_for_inspect_makes_every_folder_incomplete():
+    from inspect_ai.util import OutputLimitExceededError
+
+    class Overflowing:
+        async def exec(self, cmd, **kwargs):
+            raise OutputLimitExceededError(limit_str="10 MiB", truncated_output="...")
+
+    assert asyncio.run(evidence.snapshot(Overflowing(), ["project", "outside"], PYTHON)) == {
+        "project": FolderSnapshot({}, complete=False),
+        "outside": FolderSnapshot({}, complete=False),
+    }
+
+
+def test_a_batch_counts_the_paths_too(tmp_path):
+    _write(tmp_path, {f"project/{n}.txt": "" for n in range(3)})
+    sandbox = HostSandbox(tmp_path)
+
+    asyncio.run(evidence.snapshot(sandbox, ["project"], PYTHON, read_batch_bytes=len("project/0.txt") * 2))
+
+    assert len(sandbox.commands) == 1 + 2  # empty files, but their paths fill a batch two at a time
 
 
 def test_a_file_that_vanishes_before_it_is_read_is_unreadable():
