@@ -32,6 +32,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
+from whitney import shipped_evals
 from whitney.checks import CheckSpec, registry
 from whitney.evalfile import (
     FIXTURES_FOLDER,
@@ -73,7 +74,7 @@ Found = tuple[str, str]  # (location, message) within one file
 # The eval file the kilo_jsonc task (whitney.tasks) runs: Whitney's own configuration/kilo-jsonc.json. That
 # wrapper puts its control in every staged Kilo config, as set_external_directory did, so validation spreads
 # it the same way and checks what runs, not a shadowing that the wrapper never lets happen.
-KILO_JSONC_WRAPPER_FILE = Path(__file__).resolve().parents[2] / "evals" / "configuration" / "kilo-jsonc.json"
+KILO_JSONC_WRAPPER_FILE = shipped_evals.KILO_JSONC_FILE
 
 
 @dataclass

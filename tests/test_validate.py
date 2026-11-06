@@ -9,6 +9,8 @@ isn't in its fixture fails for any evals path (spec criterion 6).
 """
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -708,3 +710,13 @@ def test_apply_pending_in_a_scenarios_own_setup_is_named_there(evals):
 
     assert found(validate_evals(evals)) == [f"{path}: scenarios[0].setup[1]: apply_pending has nothing to apply: add "
                                             "pending/<file> holding the change to apply after the commit, or remove apply_pending from setup"]
+
+
+def test_validation_names_the_shipped_kilo_jsonc_file_without_loading_inspect():
+    # whitney.validate and whitney.tasks share the path through whitney.shipped_evals; importing tasks would load inspect_ai.
+    loaded = subprocess.run(
+        [sys.executable, "-c", "import sys, whitney.validate; print(sorted(m for m in sys.modules if m.split('.')[0] == 'inspect_ai'))"],
+        capture_output=True, text=True, check=True,
+    )
+    assert loaded.stdout.strip() == "[]"
+    assert validate_module.KILO_JSONC_WRAPPER_FILE == ROOT.resolve() / "evals" / "configuration" / "kilo-jsonc.json"

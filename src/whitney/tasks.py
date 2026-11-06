@@ -21,7 +21,7 @@ from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox, store
 
-from whitney import evalfile, setup_steps, targets
+from whitney import evalfile, setup_steps, shipped_evals, targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
 from whitney.checks import Evidence, registry
 from whitney.evalfile import DEFAULT_SETUP, V1_COMMIT_SETUP, Variant
@@ -39,10 +39,10 @@ from whitney.setup_steps import SetupError, SetupStep
 from whitney.variants import TEMPLATE, apply_variant, declared_variants, spread_over_kilo_configs, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
-EVALS_DIR = ROOT / "evals"
-# Relative to EVALS_DIR, read when a task is built, so a test can point EVALS_DIR at its own evals.
-AGENTS_MD_EVALS = "agents-md.json"
-KILO_JSONC_EVALS = "configuration/kilo-jsonc.json"
+# Read when a task is built, so a test can point EVALS_DIR at its own evals. The files are relative to it.
+EVALS_DIR = shipped_evals.EVALS_DIR
+AGENTS_MD_EVALS = shipped_evals.AGENTS_MD_EVALS
+KILO_JSONC_EVALS = shipped_evals.KILO_JSONC_EVALS
 
 # Lets the agent do the task without its asks being auto-rejected. The runner
 # applies these as a temporary overlay; project settings still take precedence.
