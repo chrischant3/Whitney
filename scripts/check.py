@@ -31,6 +31,7 @@ WARN_UNTIL = date(2026, 11, 16)  # numbered checks block from this date (CONSTRA
 CHANGED_LINE_COVERAGE = 80.0
 TOUCHED_MUTATION_SCORE = 60.0
 RATCHET_TOLERANCE = 0.5  # percentage points
+NO_MATCHING_MUTANTS = "Filtered for specific mutants, but nothing matches"  # mutmut 3.8's message
 
 PASS, WARN, FAIL, ERROR = "pass", "warn", "FAIL", "ERROR"
 
@@ -65,6 +66,15 @@ def touched_function_prefixes(path: Path, lines: set[int], src_root: Path = SRC)
     return prefixes
 
 
+def mutmut_patterns(prefixes: Iterable[str]) -> list[str]:
+    """`mutmut run` arguments that select every mutant of the functions with these name prefixes.
+
+    mutmut matches each argument against mutant names with fnmatch, whole name only, so a
+    prefix plus `*` selects that function's mutants and nothing in another module.
+    """
+    return sorted(f"{prefix}*" for prefix in prefixes)
+
+
 def _spans(node: ast.AST, lines: set[int]) -> bool:
     start = min([node.lineno, *(d.lineno for d in getattr(node, "decorator_list", []))])
     return any(start <= n <= node.end_lineno for n in lines)
@@ -93,8 +103,10 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 class Checks:
     """Runs checks, records outcomes, and prints a summary."""
 
-    def __init__(self, base: str, today: date) -> None:
+    def __init__(self, base: str, today: date, run=None) -> None:
+        """`run` runs a command in the repo root, as `_run` does; tests pass a stand-in."""
         self.base = base
+        self.run = run or _run
         self.numbered_outcome = WARN if today < WARN_UNTIL else FAIL
         self.results: list[tuple[str, str, str]] = []
 
@@ -157,35 +169,58 @@ class Checks:
         else:
             self.numbered(f"changed-line coverage ≥ {CHANGED_LINE_COVERAGE:.0f}%", result.returncode == 0, summary)
 
-    def mutation(self, ratchets: dict[str, float]) -> None:
-        run = _run([PYTHON, "-m", "mutmut", "run"])
-        if run.returncode != 0:
-            self.record("mutation testing", ERROR, run.stderr.strip()[-300:])
-            return
+    def mutation(self, ratchets: dict[str, float], prefixes: set[str], stage: str) -> None:
+        """Run mutmut for `stage`, then judge the touched functions and the project ratchet.
+
+        `full` runs every mutant. `task` runs only the mutants of the functions named by
+        `prefixes`, so its project score comes from mutmut's cache: the touched functions'
+        fresh results plus every other function's last result.
+        """
+        selection = mutmut_patterns(prefixes) if stage == "task" else []
+        no_mutants_touched = False
+        if stage == "full" or selection:
+            run = self.run([PYTHON, "-m", "mutmut", "run", *selection])
+            output = run.stdout + run.stderr
+            # mutmut stops with an AssertionError when no mutant matches the selection, as when the
+            # touched functions have no mutants. There is nothing to judge then; the tool is fine.
+            no_mutants_touched = run.returncode != 0 and bool(selection) and NO_MATCHING_MUTANTS in output
+            if run.returncode != 0 and not no_mutants_touched:
+                self.record("mutation testing", ERROR, output.strip()[-300:])
+                return
         statuses = dict(
             line.strip().rsplit(": ", 1)
-            for line in _run([PYTHON, "-m", "mutmut", "results", "--all", "true"]).stdout.splitlines()
+            for line in self.run([PYTHON, "-m", "mutmut", "results", "--all", "true"]).stdout.splitlines()
             if ": " in line
         )
-        project = mutation_score(statuses.values())
-        recorded = ratchets.get("Mutation score (project)")
-        if project is not None and recorded is not None:
-            self.numbered(
-                "mutation score (project) must not fall",
-                ratchet_holds(project, recorded),
-                f"{project:.1f}% (recorded {recorded:.1f}%)",
-            )
-        prefixes = self._touched_prefixes()
+        self._project_mutation_ratchet(statuses, ratchets, cached=stage == "task")
         touched = [s for name, s in statuses.items() if any(name.startswith(p) for p in prefixes)]
         score = mutation_score(touched)
         if score is None:
-            self.record(f"mutation score (touched functions) ≥ {TOUCHED_MUTATION_SCORE:.0f}%", PASS, "no touched functions")
+            reason = "no mutants in the touched functions" if prefixes else "no touched functions"
+            self.record(f"mutation score (touched functions) ≥ {TOUCHED_MUTATION_SCORE:.0f}%", PASS, reason)
             return
         survivors = sorted(n for n, s in statuses.items() if s in ("survived", "no tests") and any(n.startswith(p) for p in prefixes))
         detail = f"{score:.1f}% of {len(touched)} mutants" + (
             f"; survivors include {', '.join(survivors[:5])} (see `mutmut show <name>`)" if survivors else ""
         )
         self.numbered(f"mutation score (touched functions) ≥ {TOUCHED_MUTATION_SCORE:.0f}%", score >= TOUCHED_MUTATION_SCORE, detail)
+
+    def _project_mutation_ratchet(self, statuses: dict[str, str], ratchets: dict[str, float], cached: bool) -> None:
+        """Judge the project mutation score against its ratchet.
+
+        A cached score is still enforced, not just reported: every result in it is one mutmut
+        measured, so a fall in it is a finding until `full` measures otherwise. Mutants mutmut
+        has not checked since their function changed have no result yet, so they are left out
+        of a cached score and counted, rather than counted as survivors.
+        """
+        recorded = ratchets.get("Mutation score (project)")
+        not_checked = sum(s == "not checked" for s in statuses.values()) if cached else 0
+        project = mutation_score(s for s in statuses.values() if not (cached and s == "not checked"))
+        if project is None or recorded is None:
+            return
+        name = "mutation score (project, cached; run `check.py full` to refresh)" if cached else "mutation score (project)"
+        detail = f"{project:.1f}% (recorded {recorded:.1f}%)" + (f"; {not_checked} not checked, left out" if not_checked else "")
+        self.numbered(f"{name} must not fall", ratchet_holds(project, recorded), detail)
 
     def _touched_prefixes(self) -> set[str]:
         sys.path.insert(0, str(ROOT / "scripts"))
@@ -240,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         total = checks.tests_and_coverage()
         checks.changed_line_coverage()
         checks.coverage_ratchet(total, ratchets)
-        checks.mutation(ratchets)
+        checks.mutation(ratchets, checks._touched_prefixes(), args.stage)
     if args.stage == "full":
         checks.dependencies()
 
