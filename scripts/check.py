@@ -18,6 +18,8 @@ couldn't run.
 
 import argparse
 import ast
+import importlib.metadata
+import json
 import re
 import subprocess
 import sys
@@ -35,6 +37,7 @@ WARN_UNTIL = date(2026, 11, 16)  # numbered checks block from this date (CONSTRA
 CHANGED_LINE_COVERAGE = 80.0
 TOUCHED_MUTATION_SCORE = 60.0
 RATCHET_TOLERANCE = 0.5  # percentage points
+CACHED_SHARE_NOT_CHECKED = 0.05  # above this share of mutants left out, a cached score only warns
 NO_MATCHING_MUTANTS = "Filtered for specific mutants, but nothing matches"  # mutmut 3.8's message
 
 PASS, WARN, FAIL, ERROR = "pass", "warn", "FAIL", "ERROR"
@@ -84,6 +87,27 @@ def mutmut_patterns(prefixes: Iterable[str]) -> list[str]:
     return sorted({f"{prefix}*" for prefix in prefixes} | {f"*{function}" for function in functions})
 
 
+def installed_requirements(distributions: Iterable) -> list[str]:
+    """`name==version` for each installed distribution, once each, leaving out editable installs.
+
+    An editable install is this repo's own source, not a published package to look up. Every
+    copy of its name is left out, since an editable install can also leave an egg-info folder
+    in src/ that records no direct_url.json.
+    """
+    distributions = list(distributions)
+    editable = set()
+    for dist in distributions:
+        direct_url = dist.read_text("direct_url.json")
+        if direct_url and json.loads(direct_url).get("dir_info", {}).get("editable"):
+            editable.add(dist.metadata["Name"].lower())
+    pins = {}
+    for dist in distributions:
+        name = dist.metadata["Name"].lower()
+        if name not in editable:
+            pins.setdefault(name, f"{name}=={dist.version}")
+    return sorted(pins.values())
+
+
 def _spans(node: ast.AST, lines: set[int]) -> bool:
     start = min([node.lineno, *(d.lineno for d in getattr(node, "decorator_list", []))])
     return any(start <= n <= node.end_lineno for n in lines)
@@ -112,10 +136,12 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 class Checks:
     """Runs checks, records outcomes, and prints a summary."""
 
-    def __init__(self, base: str, today: date, run=None) -> None:
-        """`run` runs a command in the repo root, as `_run` does; tests pass a stand-in."""
+    def __init__(self, base: str, today: date, run=None, mutants: Path | None = None) -> None:
+        """`run` runs a command in the repo root, as `_run` does, and `mutants` is mutmut's
+        folder; tests pass stand-ins for both."""
         self.base = base
         self.run = run or _run
+        self.mutants = mutants or ROOT / "mutants"
         self.numbered_outcome = WARN if today < WARN_UNTIL else FAIL
         self.results: list[tuple[str, str, str]] = []
 
@@ -181,38 +207,73 @@ class Checks:
     def mutation(self, ratchets: dict[str, float], prefixes: set[str], stage: str) -> None:
         """Run mutmut for `stage`, then judge the touched functions and the project ratchet.
 
-        `full` runs every mutant. `task` runs only the mutants of the functions named by
-        `prefixes`, so its project score comes from mutmut's cache: the touched functions'
-        fresh results plus every other function's last result.
+        `full` reruns every mutant against the current tests. `task` reruns only the mutants of
+        the functions named by `prefixes`, so its project score comes from mutmut's cache: the
+        touched functions' fresh results plus every other function's last result.
         """
-        selection = mutmut_patterns(prefixes) if stage == "task" else []
-        no_mutants_touched = False
-        if stage == "full" or selection:
+        # With any name given, mutmut reruns every mutant it selects; with none it keeps every
+        # cached verdict, so a weaker test would never be measured. "*" selects every mutant
+        # and, for mutmut's clean run, every test.
+        selection = mutmut_patterns(prefixes) if stage == "task" else ["*"]
+        if selection:
             run = self.run([PYTHON, "-m", "mutmut", "run", *selection])
             output = run.stdout + run.stderr
             # mutmut stops with an AssertionError when no mutant matches the selection, as when the
-            # touched functions have no mutants. There is nothing to judge then; the tool is fine.
-            no_mutants_touched = run.returncode != 0 and bool(selection) and NO_MATCHING_MUTANTS in output
+            # touched functions have no mutants. In task there is nothing to judge then; in full,
+            # no mutants at all means mutmut found nothing to mutate, which is a broken setup.
+            no_mutants_touched = run.returncode != 0 and stage == "task" and NO_MATCHING_MUTANTS in output
             if run.returncode != 0 and not no_mutants_touched:
                 self.record("mutation testing", ERROR, output.strip()[-300:])
                 return
-        statuses = dict(
-            line.strip().rsplit(": ", 1)
-            for line in self.run([PYTHON, "-m", "mutmut", "results", "--all", "true"]).stdout.splitlines()
-            if ": " in line
-        )
+        results = self.run([PYTHON, "-m", "mutmut", "results", "--all", "true"])
+        if results.returncode != 0:
+            self.record("mutation results", ERROR, (results.stdout + results.stderr).strip()[-300:])
+            return
+        statuses = dict(line.strip().rsplit(": ", 1) for line in results.stdout.splitlines() if ": " in line)
         self._project_mutation_ratchet(statuses, ratchets, cached=stage == "task")
-        touched = [s for name, s in statuses.items() if any(name.startswith(p) for p in prefixes)]
+        self._touched_mutation_score(statuses, prefixes)
+
+    def _touched_mutation_score(self, statuses: dict[str, str], prefixes: set[str]) -> None:
+        """Judge the touched functions' mutants against TOUCHED_MUTATION_SCORE.
+
+        A touched function with no mutants is named, not judged. mutmut hashes in its .meta
+        only the functions it made mutants of, so a hashed function with no mutant under its
+        prefix means the prefix is wrong, and that is an error rather than a pass.
+        """
+        name = f"mutation score (touched functions) ≥ {TOUCHED_MUTATION_SCORE:.0f}%"
+        without_mutants = []
+        for prefix in sorted(prefixes):
+            function = prefix.removesuffix("__mutmut_")
+            module, _, key = function.rpartition(".")
+            hashed = self._mutated_functions(module)
+            if hashed is None:
+                self.record("mutation testing", ERROR, f"mutmut has no record of {module}, so the prefix for {function} is wrong")
+                return
+            has_mutants = any(n.startswith(prefix) for n in statuses)
+            if key in hashed and not has_mutants:
+                self.record("mutation testing", ERROR, f"mutmut made mutants of {function} but none match {prefix}*")
+                return
+            if not has_mutants:
+                without_mutants.append(function)
+        touched = [s for n, s in statuses.items() if any(n.startswith(p) for p in prefixes)]
         score = mutation_score(touched)
         if score is None:
-            reason = "no mutants in the touched functions" if prefixes else "no touched functions"
-            self.record(f"mutation score (touched functions) ≥ {TOUCHED_MUTATION_SCORE:.0f}%", PASS, reason)
+            reason = f"no mutants in the touched functions: {', '.join(without_mutants)}" if prefixes else "no touched functions"
+            self.record(name, PASS, reason)
             return
         survivors = sorted(n for n, s in statuses.items() if s in ("survived", "no tests") and any(n.startswith(p) for p in prefixes))
         detail = f"{score:.1f}% of {len(touched)} mutants" + (
             f"; survivors include {', '.join(survivors[:5])} (see `mutmut show <name>`)" if survivors else ""
-        )
-        self.numbered(f"mutation score (touched functions) ≥ {TOUCHED_MUTATION_SCORE:.0f}%", score >= TOUCHED_MUTATION_SCORE, detail)
+        ) + (f"; no mutants in {', '.join(without_mutants)}" if without_mutants else "")
+        self.numbered(name, score >= TOUCHED_MUTATION_SCORE, detail)
+
+    def _mutated_functions(self, module: str) -> set[str] | None:
+        """The functions mutmut made mutants of in `module`, from its .meta; None if it has none."""
+        path = self.mutants / "src" / Path(*module.split("."))
+        for meta in (path.with_name(path.name + ".py.meta"), path / "__init__.py.meta"):
+            if meta.is_file():
+                return set(json.loads(meta.read_text(encoding="utf-8")).get("hash_by_function_name", {}))
+        return None
 
     def _project_mutation_ratchet(self, statuses: dict[str, str], ratchets: dict[str, float], cached: bool) -> None:
         """Judge the project mutation score against its ratchet.
@@ -220,18 +281,32 @@ class Checks:
         A cached score is still enforced, not just reported: every result in it is one mutmut
         measured, so a fall in it is a finding until `full` measures otherwise. Mutants mutmut
         has not checked since their function changed have no result yet, so they are left out
-        of a cached score and counted, rather than counted as survivors.
+        of a cached score and counted. When more than CACHED_SHARE_NOT_CHECKED of them are left
+        out, or there are no results at all, a score that holds is only a warning.
         """
         recorded = ratchets.get("Mutation score (project)")
-        not_checked = sum(s == "not checked" for s in statuses.values()) if cached else 0
-        project = mutation_score(s for s in statuses.values() if not (cached and s == "not checked"))
-        if project is None or recorded is None:
+        if recorded is None:
             return
         name = "mutation score (project, cached; run `check.py full` to refresh)" if cached else "mutation score (project)"
+        not_checked = sum(s == "not checked" for s in statuses.values()) if cached else 0
+        project = mutation_score(s for s in statuses.values() if not (cached and s == "not checked"))
+        if project is None:
+            if cached:
+                self.record(f"{name} must not fall", WARN, "no cached mutation results; run `check.py full`")
+            else:
+                self.record(f"{name} must not fall", ERROR, "mutmut reported no results")
+            return
         detail = f"{project:.1f}% (recorded {recorded:.1f}%)" + (f"; {not_checked} not checked, left out" if not_checked else "")
-        self.numbered(f"{name} must not fall", ratchet_holds(project, recorded), detail)
+        holds = ratchet_holds(project, recorded)
+        if holds and not_checked > CACHED_SHARE_NOT_CHECKED * len(statuses):
+            covered = len(statuses) - not_checked
+            self.record(f"{name} must not fall", WARN,
+                        f"{detail}; cached score covers {covered} of {len(statuses)} mutants; run `check.py full`")
+            return
+        self.numbered(f"{name} must not fall", holds, detail)
 
-    def _touched_prefixes(self) -> set[str]:
+    def touched_prefixes(self) -> set[str]:
+        """mutmut mutant-name prefixes of the src/ functions the diff since the merge base touches."""
         sys.path.insert(0, str(ROOT / "scripts"))
         from floor_guard import collect
 
@@ -255,12 +330,21 @@ class Checks:
 
     # full ---------------------------------------------------------------
 
-    def dependencies(self) -> None:
+    def dependencies(self, distributions: Iterable | None = None) -> None:
+        """Scan the installed distributions for advisories at high or above.
+
+        The list is built in-process rather than from `pip freeze`, which a uv venv may not have.
+        An empty list is an error: osv-scanner would otherwise fail on it, or a later version pass it.
+        """
+        requirements_list = installed_requirements(importlib.metadata.distributions() if distributions is None else distributions)
+        if not requirements_list:
+            self.record("dependency vulnerabilities", ERROR, "found no installed distributions to scan")
+            return
         with tempfile.TemporaryDirectory() as tmp:
             requirements = Path(tmp) / "requirements.txt"
-            requirements.write_text(_run([PYTHON, "-m", "pip", "freeze", "--exclude-editable"]).stdout)
-            # --no-resolve: a frozen environment is already the full transitive set.
-            result = _run(["osv-scanner", "scan", "--no-resolve", "-L", f"requirements.txt:{requirements}"])
+            requirements.write_text("\n".join(requirements_list) + "\n")
+            # --no-resolve: an installed environment is already the full transitive set.
+            result = self.run(["osv-scanner", "scan", "--no-resolve", "-L", f"requirements.txt:{requirements}"])
         if result.returncode not in (0, 1):
             self.record("dependency vulnerabilities", ERROR, result.stderr.strip()[-300:])
             return
@@ -284,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         total = checks.tests_and_coverage()
         checks.changed_line_coverage()
         checks.coverage_ratchet(total, ratchets)
-        checks.mutation(ratchets, checks._touched_prefixes(), args.stage)
+        checks.mutation(ratchets, checks.touched_prefixes(), args.stage)
     if args.stage == "full":
         checks.dependencies()
 
