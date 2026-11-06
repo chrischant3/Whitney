@@ -259,3 +259,5 @@ A token refused even read access to Administration can't change the ruleset.
 - **Agents can still push to every repository you own, using your SSH login key.** That includes branches with workflow changes, and they can open pull requests. What they can't do is get an unsigned approval or an unsigned change to the guard merged into `main`, or change the rules that stop them.
 - **Running agents as a separate OS user, or in a container or VM, is the stronger fix.** It keeps them away from your SSH key, Keychain and browser altogether. It isn't covered here.
 - **Some routes are untested here.** The FIDO2 key and 1Password routes haven't been tried on this repository, and the same-name check result (part 3, row 5) comes from a single run.
+
+To stop agents pushing at all, across an organisation, see [agent-push-controls.md](agent-push-controls.md).

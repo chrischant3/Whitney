@@ -300,6 +300,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 - [docs/template.md](docs/template.md): what's in each target's template and how to change it
 - [CONSTRAINTS.md](CONSTRAINTS.md): the bar a change must meet (floor, coverage, mutation testing, secrets, dependencies) and `scripts/check.py`, which runs it
 - [docs/signed-approvals.md](docs/signed-approvals.md): making approvals something only a human can give: a signing key an agent can't use, `floor-guard` as a required check, and an agent token without admin rights
+- [docs/agent-push-controls.md](docs/agent-push-controls.md): the credentials, GitHub organisation settings, agent configuration and review process that keep AI coding agents from pushing to GitHub or acting through `gh`
 - [docs/adding-tests.md](docs/adding-tests.md): adding files/scenarios, evaluating a local project, and interpreting results
 - [docs/load-order.md](docs/load-order.md): where Kilo loads instructions from
 - [docs/vscode-manual-check.md](docs/vscode-manual-check.md): checking the results carry over to the VS Code extension
