@@ -263,7 +263,7 @@ def _scenario_samples(path: Path) -> list[Sample]:
     for sample in load_scenarios(path):
         files, pending = setup_steps.split_pending(sample.files)
         steps = setups[str(sample.id)]
-        if version_1 and not pending and any(step.step == "apply_pending" for step in steps):
+        if version_1 and not pending and "apply_pending" in [step.step for step in steps]:
             pending = evalfile.version_1_pending(files)
         try:
             setup = setup_steps.build(steps, pending)

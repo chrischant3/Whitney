@@ -164,8 +164,14 @@ def version_1_pending(files: dict[str, Any]) -> dict[str, Any]:
 
     Args:
         files: the fixture's files, keyed by their path in the fixture (project/app.py).
+
+    Returns:
+        {"app.py": ...}, or nothing when the fixture has no project/app.py,
+        so apply_pending says it has nothing to apply.
     """
-    return {"app.py": files.get("project/app.py", "") + V1_APPENDED_REFUND}
+    if "project/app.py" not in files:
+        return {}
+    return {"app.py": files["project/app.py"] + V1_APPENDED_REFUND}
 
 
 class Variant(BaseModel):

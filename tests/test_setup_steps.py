@@ -421,3 +421,23 @@ def test_a_version_1_scenario_with_neither_token_key_still_builds(tmp_path, monk
         [sample] = agents_md(target="kilo", model=MODEL).dataset
 
     assert sample.id == "commit"
+
+
+def test_a_version_1_commit_fixture_without_app_py_says_it_has_nothing_to_apply(tmp_path, monkeypatch):
+    evals = version_1_evals(tmp_path, {"secret_tokens": ["CANARY-1"]})
+    (evals / "fixtures" / "repo" / "project" / "app.py").unlink()
+    monkeypatch.setattr(tasks, "EVALS_DIR", evals)
+
+    with pytest.raises(SetupError, match=r"scenario 'commit' \(fixture 'repo'\): setup\[2\]: apply_pending has nothing to apply"):
+        with pytest.warns(FutureWarning):
+            agents_md(target="kilo", model=MODEL)
+
+
+def test_a_version_1_canary_scenario_keeps_its_single_git_init(tmp_path, monkeypatch):
+    monkeypatch.setattr(tasks, "EVALS_DIR", version_1_evals(tmp_path, {"canary": "CANARY-1"}))
+
+    with pytest.warns(FutureWarning):
+        [sample] = agents_md(target="kilo", model=MODEL).dataset
+
+    assert sample.metadata["initial_commits"] == 0
+    assert sample.setup == tasks.REPO_FIXTURE_SETUP

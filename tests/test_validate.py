@@ -547,3 +547,10 @@ def test_a_pending_file_that_cannot_be_applied_is_named(evals, name, text, messa
     [problem] = found(validate_evals(evals))
 
     assert problem.startswith(f"{path}: defaults.fixture: fixture 'repo': {message}")
+
+
+def test_apply_pending_in_a_scenarios_own_setup_is_named_there(evals):
+    path = write(evals, eval_file({"id": "a", "prompt": "p", "setup": [{"step": "git_init"}, {"step": "apply_pending"}]}))
+
+    assert found(validate_evals(evals)) == [f"{path}: scenarios[0].setup[1]: apply_pending has nothing to apply: add "
+                                            "pending/<file> holding the change to apply after the commit, or remove apply_pending from setup"]
