@@ -74,7 +74,7 @@ The skill listing also holds Kilo's built-in skill `kilo-config`. To check a sin
 - **Precedence when several sources conflict.** Kilo's docs rank: agent prompt > project `instructions` > root `AGENTS.md` > global `instructions`. That ordering is out of MVP scope (it's "test hierarchy" in the proposal's future work), but the same token method extends to it.
 - Per-directory `AGENTS.md` files, which the docs say load lazily when the agent reads files in that folder.
 - Whether the VS Code extension resolves the same files. That's T9.
-- Skills, agents and commands in folders above a staged project that isn't a git repository. Kilo's built-in `kilo-config` skill says project folders are found by walking up from the working folder to the git worktree root; `check_no_inherited_instructions` refuses a run with `.kilo/` or `.kilocode/` above the project, but doesn't look for `.claude/skills/` or `.agents/skills/`.
+- Skills, agents and commands in folders above a staged project that isn't a git repository. Kilo's built-in `kilo-config` skill (its content in `kilo debug skill`, checked by hand, not in a fixture) says project folders are found by walking up from the working folder to the git worktree root; `check_no_inherited_instructions` refuses a run with `.kilo/` or `.kilocode/` above the project, but doesn't look for `.claude/skills/` or `.agents/skills/`.
 
 ## Practical notes
 
