@@ -392,20 +392,17 @@ def _glob_parts(directory: Path, parts: list[str]):
         return
     head, rest = parts[0], parts[1:]
     if head == "**":
-        yield from _glob_parts(directory, rest)
+        yield from _glob_parts(directory, rest)  # no segments
     flags = re.IGNORECASE if GLOB_CASE_BLIND else 0
     for child in _folder_entries(directory):
         if head == "**":
-            if child.is_dir() and not child.is_symlink():
-                yield from _glob_parts(child, parts)
-            elif not rest:
-                yield child
+            yield from _glob_parts(child, parts)  # one segment more; a file yields itself only when nothing follows
         elif re.fullmatch(fnmatch.translate(head), child.name, flags):
             yield from _glob_parts(child, rest)
 
 
 def _folder_entries(directory: Path) -> list[Path]:
-    # Only a real folder is looked in, never one reached through a symlink.
+    # A symlinked folder is never looked in: a link to / or to a parent would have ** walk the disk, or loop.
     if directory.is_symlink() or not directory.is_dir():
         return []
     return sorted(directory.iterdir())
@@ -425,8 +422,11 @@ def _rule_files(root: Path, folder: str) -> list[str]:
 
 def _linked_below(root: Path, path: Path) -> bool:
     """True if `path`, or a folder between `root` and it, is a symlink, so nothing staged is reached through a link."""
-    relative = path.relative_to(root)
-    return any((root / PurePosixPath(*relative.parts[:depth])).is_symlink() for depth in range(1, len(relative.parts) + 1))
+    while path != root:
+        if path.is_symlink():
+            return True
+        path = path.parent
+    return False
 
 
 def _is_present(path: Path) -> bool:

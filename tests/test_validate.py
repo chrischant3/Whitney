@@ -817,3 +817,13 @@ def test_a_missing_project_is_one_problem(evals, tmp_path):
 
     assert (problem.file, problem.location) == (tmp_path / "missing", "")
     assert problem.message.startswith("the kilo loader can't stage this project: ")
+
+
+def test_every_eval_file_is_checked_after_one_for_another_target(evals, tmp_path):
+    write(evals, eval_file(source="kilo.jsonc", targets=["kilo"], variants={}), name="configuration/kilo-jsonc.json")
+    path = write(evals, eval_file(source="missing.md", variants={}), name="missing-md.json")
+    project = _project(tmp_path / "project", {"AGENTS.md": "- rule\n"})
+
+    problems = validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals)
+
+    assert [(problem.file, problem.location) for problem in problems] == [(path, "source")]

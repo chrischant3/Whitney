@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from whitney import project_files
 from whitney.project_files import (
     files_not_staged,
     files_not_staged_reasons,
@@ -728,6 +729,8 @@ def _glob_project(root, pattern):
     ("{top,rules/{a,sub/b}}.md", {"top.md", "rules/a.md", "rules/sub/b.md"}),
     ("rules/{,sub/}*.md", {"rules/a.md", "rules/.dot.md", "rules/sub/b.md"}),
     ("rules/{a,b.md", set()),
+    ("rules/a}.md", set()),
+    ("rules/a}{.md,.txt}", set()),
     ("missing/*.md", set()),
     ("RULES/*.MD", {"rules/a.md", "rules/.dot.md"} if CASE_BLIND else set()),
     ("Top.md", {"top.md"} if CASE_BLIND else set()),
@@ -911,3 +914,26 @@ def test_a_claude_code_file_staged_under_another_name_has_no_reason(tmp_path):
 
     assert not_staged_reason("claude-code", tmp_path, "CLAUDE.md", staged) is None
     assert not_staged_reason("claude-code", tmp_path, "AGENTS.md", staged) is None
+
+
+@pytest.mark.parametrize("case_blind, expected", [(True, {"rules/a.md", "rules/.dot.md"}), (False, set())])
+def test_names_match_whatever_their_case_only_where_kilos_glob_does(tmp_path, monkeypatch, case_blind, expected):
+    # Kilo's node-glob is case-blind on macOS and Windows and case-sensitive elsewhere, whatever the disk.
+    monkeypatch.setattr(project_files, "GLOB_CASE_BLIND", case_blind)
+    assert _glob_project(tmp_path, "RULES/*.MD") == expected
+    assert _glob_project(tmp_path, "rules/*.md") == {"rules/a.md", "rules/.dot.md"}
+
+
+def test_a_symlink_loop_does_not_stop_the_expansion(tmp_path):
+    _kilo_project(tmp_path, {"rules/a.md": "a\n"})
+    (tmp_path / "rules" / "loop").symlink_to(tmp_path)
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", "rules/loop/rules/*.md"]}))
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc", "rules/a.md"}
+
+
+def test_nothing_in_a_staged_folder_under_the_evals_path_is_staged(tmp_path):
+    _kilo_project(tmp_path, {".agents/skills/x/SKILL.md": "skill\n", ".claude/skills/y/SKILL.md": "skill\n"})
+    (tmp_path / ".agents/skills/x/bad.md").write_bytes(b"\xff not UTF-8, and never read")
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".agents")) == {"kilo.jsonc", ".claude/skills/y/SKILL.md"}
