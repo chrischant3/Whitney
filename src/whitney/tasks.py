@@ -23,6 +23,8 @@ import sys
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -381,7 +383,8 @@ def _scenario_task(
         sample_metadata: extra metadata for each sample, from the sample as loaded.
 
     The metadata holds, besides the run's settings and staged files:
-    eval_file (relative to the evals root), eval_name, title, variant_role
+    eval_file (relative to the evals root), evals_path (the root, resolved),
+    whitney_version, eval_name, title, source, variant_role
     ("template", "baseline" or "control"), labels (the score's words for
     pass, fail and inconclusive), checks (each check's labels, what it
     judges and its default minimum pass rate) and min_pass_rate (the file's
@@ -443,8 +446,11 @@ def _scenario_task(
             "harness_permissions": plan.harness_permissions[target],
             **_docker_model_names(model, execution),
             "eval_file": plan.path.relative_to(plan.evals_dir).as_posix(),
+            "evals_path": str(plan.evals_dir.resolve()),
+            "whitney_version": _whitney_version(),
             "eval_name": plan.eval_name,
             "title": plan.title,
+            "source": plan.source,
             "variant_role": TEMPLATE if variant == TEMPLATE else plan.variants[variant].role,
             "labels": labels,
             "checks": {
@@ -454,6 +460,14 @@ def _scenario_task(
             "min_pass_rate": plan.min_pass_rate,
         },
     )
+
+
+def _whitney_version() -> str | None:
+    """The installed Whitney's version, or None when it runs from a checkout that isn't installed."""
+    try:
+        return package_version("whitney")
+    except PackageNotFoundError:
+        return None
 
 
 def _named_checks(plan: _EvalPlan) -> dict[str, CheckSpec]:

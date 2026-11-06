@@ -940,3 +940,24 @@ def test_the_not_staged_list_leaves_out_the_evals_path_wherever_it_is(tmp_path):
     task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), project_path=str(project))
 
     assert task.metadata["not_staged"] == [] and task.metadata["not_staged_reasons"] == {}
+
+
+def test_the_task_metadata_names_the_source_the_evals_path_and_the_whitney_version_for_the_reports_header(tmp_path):
+    from importlib.metadata import version
+
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+    generic = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals)).metadata
+    wrapper = kilo_jsonc(target="kilo", model=MODEL).metadata
+
+    assert (generic["source"], generic["evals_path"], generic["whitney_version"]) == ("AGENTS.md", str(evals.resolve()), version("whitney"))
+    assert (wrapper["source"], wrapper["evals_path"]) == ("kilo.jsonc", str(EVALS.resolve()))
+
+
+def test_a_whitney_that_is_not_installed_records_no_version(monkeypatch):
+    from importlib.metadata import PackageNotFoundError
+
+    def not_installed(name):
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(tasks_module, "package_version", not_installed)
+    assert agents_md(target="kilo", model=MODEL).metadata["whitney_version"] is None
