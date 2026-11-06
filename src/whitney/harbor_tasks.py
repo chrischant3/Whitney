@@ -9,7 +9,7 @@ from inspect_ai.dataset import MemoryDataset
 
 from whitney import targets
 from whitney.harbor_cache import check_cache
-from whitney.project_files import files_not_staged, load_project_files_for, load_template_files
+from whitney.project_files import files_not_staged, files_renamed, load_project_files_for, load_template_files
 
 DEFAULT_HARBOR_DATASET = Path(__file__).resolve().parents[2] / "dataset/harbor/bigcodebench-hard-complete"
 HARBOR_OUTPUT_PATH = "/workspace/solution.py"
@@ -154,6 +154,7 @@ def bigcodebench_hard_complete(
             "execution": "local",
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": project_files,
+            "renamed": files_renamed(target, project_path, project_files) if project_path else {},
             "not_staged": files_not_staged(target, project_path) if project_path else [],
             "harness_permissions": HARBOR_PERMISSIONS[target],
             "evaluation_preamble": HARBOR_OUTPUT_ADAPTATION,

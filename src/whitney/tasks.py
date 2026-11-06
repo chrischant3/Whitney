@@ -25,7 +25,13 @@ from whitney import targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
 from whitney.checks import Evidence, registry
 from whitney.git_env import ISOLATED_GIT_SHELL
-from whitney.project_files import files_not_staged, load_project_files_for, load_template_files, set_external_directory
+from whitney.project_files import (
+    files_not_staged,
+    files_renamed,
+    load_project_files_for,
+    load_template_files,
+    set_external_directory,
+)
 from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
 
@@ -129,6 +135,7 @@ def agents_md(
             "model_access": targets.model_access(target, api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": template_files,
+            "renamed": files_renamed(target, project_path, template_files) if project_path else {},
             "not_staged": files_not_staged(target, project_path) if project_path else [],
             "harness_permissions": AGENTS_MD_PERMISSIONS[target],
             **_docker_model_names(model, execution),

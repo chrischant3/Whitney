@@ -8,7 +8,7 @@ from inspect_ai.dataset import MemoryDataset, Sample
 
 from whitney import targets
 from whitney.harbor_tasks import HARBOR_PERMISSIONS
-from whitney.project_files import files_not_staged, load_project_files_for, load_template_files
+from whitney.project_files import files_not_staged, files_renamed, load_project_files_for, load_template_files
 from whitney.prompt_injection import scan_record
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,6 +118,7 @@ def ifevalcode(
             "model_access": targets.model_access(target, api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": project_files,
+            "renamed": files_renamed(target, project_path, project_files) if project_path else {},
             "not_staged": files_not_staged(target, project_path) if project_path else [],
             "harness_permissions": IFEVALCODE_PERMISSIONS[target],
             "evaluation_preamble": IFEVALCODE_SYSTEM_PROMPT,
