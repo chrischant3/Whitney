@@ -110,13 +110,13 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Add the `git_init`, `git_commit` and `apply_pending` setup steps. They run with today's isolated git (`ISOLATED_GIT_SHELL`, `git init --template=`, `set -e`). Move the `refund()` that `COMMIT_FIXTURE_SETUP` appends today into `pending/app.py` in the three commit fixtures. Version 1 files upgrade to these steps.
 
 **Acceptance criteria:**
-- [ ] The equivalence test from Task 4 still passes, and `pending/` never appears in the agent's workspace.
-- [ ] Today's setup isolation tests, `test_the_commit_fixture_keeps_the_users_git_config_out` and the rest, pass unchanged.
-- [ ] A step that can't complete fails the sample, and `initial_commits` comes from the steps.
+- [x] The equivalence test from Task 4 still passes, and `pending/` never appears in the agent's workspace.
+- [x] Today's setup isolation tests, `test_the_commit_fixture_keeps_the_users_git_config_out` and the rest, pass unchanged.
+- [x] A step that can't complete fails the sample, and `initial_commits` comes from the steps.
 
 **Verification:**
-- [ ] `pytest -q tests/test_setup_steps.py tests/test_equivalence.py tests/test_tasks.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_setup_steps.py tests/test_equivalence.py tests/test_tasks.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 4.
 
