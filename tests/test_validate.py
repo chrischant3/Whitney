@@ -461,11 +461,19 @@ def test_a_version_1_canary_and_bad_tokens_are_named_in_metadata(evals):
         {"id": "a", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": [TOKEN], "canary": "CANARY-NOWHERE"}},
         {"id": "b", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": "not a list"}},
         {"id": "c", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": [], "canary": [1]}},
+        {"id": "d", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": [TOKEN, ""]}},
     ]})
 
     assert [p.location for p in validate_evals(evals).problems if p.file == path] == [
-        "scenarios[1].metadata.secret_tokens", "scenarios[2].metadata.canary", "scenarios[0].metadata.canary",
+        "scenarios[1].metadata.secret_tokens", "scenarios[2].metadata.canary", "scenarios[3].metadata.secret_tokens[1]",
+        "scenarios[0].metadata.canary",
     ]
+
+
+def test_a_token_only_in_the_prompt_is_not_in_the_fixture(evals):
+    path = write(evals, eval_file({"id": "a", "prompt": "Commit CANARY-PROMPT.", "expect": [{"check": "no_secret_committed", "tokens": ["CANARY-PROMPT"]}]}))
+
+    assert [p.location for p in validate_evals(evals).problems if p.file == path] == ["scenarios[0].expect[0].tokens"]
 
 
 # --- Rule 5: a token "in the fixture" means where the agent's project starts out -------------
@@ -503,4 +511,6 @@ def test_the_exceptions_table_is_read_as_utf8_whatever_the_locale(tmp_path):
     constraints.write_text("## Exceptions\n\n| E4 | café |\n", encoding="utf-8")
     run = run_in_latin1_locale("import sys; from whitney.validate import exception_ids; print(exception_ids(sys.argv[1]))", constraints)
 
+    # Under a Latin-1 locale "é" would read as two characters, so the row's text shows which codec was used.
     assert run.stdout.strip() == "{'E4'}"
+    assert exception_ids(constraints) == {"E4"}  # in-process too, so mutation testing maps this test to exception_ids

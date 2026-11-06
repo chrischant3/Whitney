@@ -587,6 +587,9 @@ def test_a_fixture_file_that_is_not_utf8_is_refused_whatever_the_locale(tmp_path
         "except FixtureError as e: print(e)"
     )
     run = run_in_latin1_locale(code, tmp_path / "fixtures")
+    # Also called here, so mutation testing, which maps tests to the functions they call in-process, runs this test.
+    with pytest.raises(FixtureError):
+        fixture_files(tmp_path / "fixtures", "repo")
 
     assert run.stdout.strip() == "fixture 'repo' holds project/x.txt, which isn't UTF-8 text; fixtures are text files", run.stderr
 

@@ -187,9 +187,9 @@ def _parameter_at(eval_file: EvalFile, block_at: str, index: int, check: str, lo
     A version 1 file has no expect: its tokens are in metadata (secret_tokens,
     canary), so a problem with one is named there.
     """
-    keys = V1_PARAMETER_KEYS.get(check, {})
-    if eval_file.version_read == 1 and loc and loc[0] in keys:
-        return location((keys[loc[0]], *loc[1:]), f"{block_at}.metadata")
+    # A version 1 file names only the checks it was upgraded to, which V1_PARAMETER_KEYS all list.
+    if eval_file.version_read == 1 and loc and loc[0] in V1_PARAMETER_KEYS[check]:
+        return location((V1_PARAMETER_KEYS[check][loc[0]], *loc[1:]), f"{block_at}.metadata")
     return location(loc, f"{block_at}.expect[{index}]")
 
 
