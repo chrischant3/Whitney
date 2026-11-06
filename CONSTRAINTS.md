@@ -81,15 +81,17 @@ folder. Earlier baselines: 77.4% coverage and 57.7% mutation score, then
 
 Equivalent mutants found since, on 2026-11-06 (the same kinds, in code added
 later): more codec-name cases (`project_files._load_kilo`, `_read_text`,
-`evalfile.fixture_files`, `validate.exception_ids`); `exception_ids` reading
-with the locale's encoding, which is UTF-8 on macOS and in UTF-8 mode;
+`evalfile.fixture_files`, `validate.exception_ids`);
 `_linked_below(None, ...)` in `not_staged_reason`, `_walk_files`,
 `_direct_md_files` and `_is_kilo_file`, which walks on past the project root
-to `/` but finds no symlink there, since the root is already resolved;
-`re` flag `1` in place of `0` in `_glob_parts`, a bit Python 3.14 gives no
-meaning; and `allow_nan=None` in `variants.apply_variant`, which `json` reads
-as `False`. `harbor_tasks._host_variables` opening `DOCKER-COMPOSE.YAML`
-survives only on a case-insensitive disk, where it finds the same file.
+to `/` but finds no symlink there, since the root is already resolved; and
+`allow_nan=None` in `variants.apply_variant`, which `json` reads as `False`.
+Two more survive here but are not equivalent: `re` flag `1` in place of `0`
+in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
+and 3.12 it is `re.TEMPLATE`, matching raises `re.error`, and
+`test_names_match_whatever_their_case_only_where_kilos_glob_does` kills it; and `harbor_tasks._host_variables` opening
+`DOCKER-COMPOSE.YAML` finds the same file on a case-insensitive disk such as
+macOS's, but is killed on a case-sensitive one (Linux).
 
 ## Not covered, on purpose
 
