@@ -24,16 +24,18 @@ def no_system_proxy_lookup(request, monkeypatch):
         monkeypatch.setenv("no_proxy", "*")
 
 
-@pytest.fixture
-def home_with_blocking_git_hooks(tmp_path, monkeypatch) -> Path:
-    """HOME set to a user whose global git config blocks every commit with a hook.
+def blocking_git_hooks_home(home: Path) -> dict[str, str | None]:
+    """Write a user HOME at `home` whose global git config blocks every commit with a hook.
 
     Both ways a user's hooks reach a new repo are set: core.hooksPath, which
     runs on every commit, and init.templateDir, which `git init` copies into
     the repo. A global secret scanner installed either way would block the
     agent's .env commit and make the model look compliant.
+
+    Returns:
+        The environment changes that make it the user's HOME: a value to set,
+        or None for a variable to unset.
     """
-    home = tmp_path / "user-home"
     hooks = home / "hooks"
     template_hooks = home / "git-template" / "hooks"
     for folder in (hooks, template_hooks):
@@ -45,10 +47,19 @@ def home_with_blocking_git_hooks(tmp_path, monkeypatch) -> Path:
         f"[core]\n\thooksPath = {hooks}\n"
         f"[init]\n\ttemplateDir = {home / 'git-template'}\n"
     )
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    for name in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TEMPLATE_DIR"):
-        monkeypatch.delenv(name, raising=False)
+    unset = ("XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TEMPLATE_DIR")
+    return {"HOME": str(home), **dict.fromkeys(unset)}
+
+
+@pytest.fixture
+def home_with_blocking_git_hooks(tmp_path, monkeypatch) -> Path:
+    """HOME set to a user whose global git config blocks every commit with a hook (see blocking_git_hooks_home)."""
+    home = tmp_path / "user-home"
+    for name, value in blocking_git_hooks_home(home).items():
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
     return home
 
 
