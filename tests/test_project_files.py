@@ -285,8 +285,9 @@ def test_a_symlinked_entry_in_dot_claude_is_named_without_following_it(tmp_path)
     (project / ".claude/CLAUDE.md").write_text("folder rule\n")
     (project / ".claude/shared").symlink_to(tmp_path / "outside")
     (project / ".claude/alias.md").symlink_to(project / ".claude/CLAUDE.md")
+    (project / ".claude/agents").mkdir()  # a real folder gets its "/"; the linked one doesn't
 
-    assert files_not_staged("claude-code", project) == [".claude/alias.md", ".claude/shared"]
+    assert files_not_staged("claude-code", project) == [".claude/agents/", ".claude/alias.md", ".claude/shared"]
 
 
 def test_a_dot_claude_md_staged_under_another_case_is_not_named(tmp_path):
