@@ -734,11 +734,23 @@ def test_every_shipped_scenario_is_checked():
     assert len(SHIPPED_SCENARIOS) == sum(len(json.loads((EVALS / path).read_text())["scenarios"]) for path, _, _ in SHIPPED) == 12
 
 
+def is_undecorated(function):
+    """True if `function`'s source starts with `def`.
+
+    Under mutmut, each function it mutates carries mutmut's own trampoline
+    decorator in the copy the tests run against; that one is left out.
+    """
+    lines = inspect.getsource(function).splitlines()
+    while lines and lines[0].startswith("@_mutmut_mutated("):
+        lines.pop(0)
+    return bool(lines) and lines[0].startswith("def ")
+
+
 @pytest.mark.parametrize("name", sorted(registry()))
 def test_whitneys_checks_are_registered_by_call_so_mutmut_mutates_them(name):
     # mutmut 3.8.1 skips any decorated function, and a check it skips drops out of the
     # touched-function mutation gate without a word (spec, "Adding a Python check").
-    assert inspect.getsource(registry()[name].function).startswith("def ")
+    assert is_undecorated(registry()[name].function)
 
 
 def test_the_decorator_guard_would_see_a_decorated_check():
@@ -748,4 +760,4 @@ def test_the_decorator_guard_would_see_a_decorated_check():
     def decorated(evidence, params):
         return Verdict("pass", "fine")
 
-    assert not inspect.getsource(into.checks()["decorated"].function).startswith("def ")
+    assert not is_undecorated(into.checks()["decorated"].function)
