@@ -1,6 +1,6 @@
 # Where Kilo loads instructions from
 
-**Draft from the T2 spike.** Kilo CLI 7.8.18 in Docker, 2026-11-02, one run per location. Re-run [`spikes/load_order.py`](../spikes/load_order.py) after any Kilo upgrade.
+**Draft from the T2 spike.** Kilo CLI 7.8.18 in Docker, 2026-11-02, one run per location. Re-run [`spikes/load_order.py`](../spikes/load_order.py) after any Kilo upgrade. The skill, agent and command folders were added on 2026-11-06 from Phase 5 Task 16 ([below](#skills-agents-and-commands)); re-run [`spikes/skill_agent_shapes.py`](../spikes/skill_agent_shapes.py) for those.
 
 ## How this was tested
 
@@ -32,11 +32,49 @@ The proposal puts the rules at `template/.kilo/AGENTS.md`. On its own, **that fi
 
 The static check in T5 should guard whichever layout is chosen. With option 2, it should fail if `.kilo/AGENTS.md` exists but isn't listed in `instructions`.
 
+## Skills, agents and commands
+
+**From Phase 5 Task 16.** Kilo CLI 7.8.18 on the host, 2026-11-06, under Whitney's local isolation (temporary HOME, `--pure`, the `KILO_CONFIG` overlay). Full write-up in [spike-findings.md](spike-findings.md#phase-5-task-16-skills-subagents---agent-and---command-2026-11-06).
+
+### How this was tested
+
+The same token method, without the bridge. Each candidate folder holds one skill, agent or command with its own name and a marker made from that name. Kilo's own listing, run in the same isolated environment as a Whitney run, says which it found: `kilo debug skill --pure` for skills, and the `agent` and `command` keys of `kilo debug config --pure` for agents and commands. None of these calls a model. A model run then asked for four of the skills by name, and each `skill` call returned its marker. The home folders are inside the temporary HOME, never the user's own.
+
+```sh
+.venv/bin/python spikes/skill_agent_shapes.py --out /tmp/whitney-captures --case skill-folders-listing --case agent-command-folders-listing
+```
+
+### Results
+
+| Folder | Skills (`<name>/SKILL.md`) | Agents (`<name>.md`) | Commands (`<name>.md`) |
+|---|---|---|---|
+| `.kilo/skills/`, `.kilo/agents/`, `.kilo/commands/` | **yes** | **yes** | **yes** |
+| `.kilo/skill/`, `.kilo/agent/`, `.kilo/command/` (singular) | **yes** | **yes** | **yes** |
+| `.kilocode/skills/`, `.kilocode/agents/`, `.kilocode/commands/` | **yes** | **yes** | **yes** |
+| `.kilocode/skill/`, `.kilocode/agent/` (singular) | **yes** | **yes** | not tested |
+| `.claude/skills/`, `.claude/agents/`, `.claude/commands/` | **yes** | no | no |
+| `.agents/skills/` | **yes** | not tested | not tested |
+| `.opencode/skills/`, `.opencode/agents/`, `.opencode/commands/` | no | no | no |
+| `~/.config/kilo/skills/`, `~/.config/kilo/agents/`, `~/.config/kilo/commands/` | **yes** | **yes** | **yes** |
+| `~/.kilo/skills/`, `~/.kilo/agents/` | **yes** | **yes** | not tested |
+| `~/.kilocode/skills/` | **yes** | not tested | not tested |
+| `~/.claude/skills/`, `~/.claude/agents/`, `~/.claude/commands/` | **yes** | no | no |
+| `~/.agents/skills/` | **yes** | not tested | not tested |
+
+The skill listing also holds Kilo's built-in skill `kilo-config`. To check a single agent, `kilo debug agent <name> --pure` prints its resolved settings, including `mode`.
+
+### What this means for Whitney
+
+- Skills, agents and commands load under Whitney's isolation, so milestone B can go ahead.
+- The temporary HOME keeps the user's own skill, agent and command folders out of a run, including `~/.claude/skills/`, which Kilo would otherwise read.
+- Whitney stages the asset folders of `.kilo/` and `.kilocode/` only (`project_files.KILO_CONFIG_DIRS`). Kilo also loads skills from `.claude/skills/` and `.agents/skills/`, so a staged project with skills there loads fewer skills than the real project. Staging them is a decision for Task 8 or a follow-up (plan, risk "Kilo loads skills or agents from more folders than Whitney stages").
+
 ## Not yet tested
 
 - **Precedence when several sources conflict.** Kilo's docs rank: agent prompt > project `instructions` > root `AGENTS.md` > global `instructions`. That ordering is out of MVP scope (it's "test hierarchy" in the proposal's future work), but the same token method extends to it.
 - Per-directory `AGENTS.md` files, which the docs say load lazily when the agent reads files in that folder.
 - Whether the VS Code extension resolves the same files. That's T9.
+- Skills, agents and commands in folders above a staged project that isn't a git repository. Kilo's built-in `kilo-config` skill says project folders are found by walking up from the working folder to the git worktree root; `check_no_inherited_instructions` refuses a run with `.kilo/` or `.kilocode/` above the project, but doesn't look for `.claude/skills/` or `.agents/skills/`.
 
 ## Practical notes
 
