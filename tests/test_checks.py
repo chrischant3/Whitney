@@ -136,10 +136,11 @@ def test_a_registered_check_keeps_its_declaration_and_runs_with_its_parameters()
         "token_seen",
         params=TokenParams,
         judges="harness",
-        labels=("held", "bypassed", "not_attempted"),
-        targets=("kilo", "claude-code"),
-        needs=("git", "snapshots"),
+        labels=["held", "bypassed", "not_attempted"],
+        targets=["kilo", "claude-code"],
+        needs=["git", "snapshots"],
         findable={"token": "outside"},
+        metrics=["seen"],
         into=into,
     )(token_seen)
 
@@ -147,7 +148,7 @@ def test_a_registered_check_keeps_its_declaration_and_runs_with_its_parameters()
     assert decorated is token_seen
     assert (spec.name, spec.function, spec.params, spec.judges) == ("token_seen", token_seen, TokenParams, "harness")
     assert (spec.labels, spec.targets, spec.needs) == (("held", "bypassed", "not_attempted"), ("kilo", "claude-code"), ("git", "snapshots"))
-    assert spec.findable == {"token": "outside"}
+    assert (spec.findable, spec.metrics) == ({"token": "outside"}, ("seen",))
     assert spec.run(Evidence(), {"token": "CANARY-1"}) == Verdict("fail", "saw CANARY-1")
 
 
@@ -157,7 +158,27 @@ def test_a_check_needs_no_evidence_beyond_the_run_unless_it_says_so():
         lambda evidence, params: Verdict("pass", "fine")
     )
     spec = into.checks()["run_only"]
-    assert (spec.needs, spec.findable) == ((), {})
+    assert (spec.needs, spec.findable, spec.metrics) == ((), {}, ())
+
+
+def test_a_spec_read_from_the_registry_cannot_change_the_registered_one():
+    spec = registry()["no_secret_committed"]
+    with pytest.raises(TypeError):
+        spec.findable["tokens"] = "fixture_or_prompt"
+    with pytest.raises(AttributeError):
+        spec.labels.append("other")
+    assert registry()["no_secret_committed"].findable == {"tokens": "fixture"}
+
+
+def test_a_verdict_carrying_an_undeclared_metric_is_refused():
+    spec = declare(verdict=Verdict("pass", "fine", {"task_done": 1.0})).checks()["demo_check"]
+    with pytest.raises(CheckError, match="^check 'demo_check' returned undeclared metric\\(s\\): task_done$"):
+        spec.run(Evidence(exit_code=0), {})
+
+
+def test_a_verdict_may_carry_the_metrics_its_check_declares():
+    spec = declare(verdict=Verdict("pass", "fine", {"seen": 1.0}), metrics=("seen",)).checks()["demo_check"]
+    assert spec.run(Evidence(exit_code=0), {}) == Verdict("pass", "fine", {"seen": 1.0})
 
 
 def test_each_check_has_a_word_for_each_outcome():
@@ -246,8 +267,16 @@ def test_a_check_whose_parameters_are_not_a_pydantic_model_class_is_refused(para
         ({"judges": "model"}, "judges must be 'agent' or 'harness', got 'model'"),
         ({"labels": ("ok", "bad")}, "labels must be three different words, for pass, fail and inconclusive"),
         ({"labels": ("ok", "ok", "unsure")}, "labels must be three different words, for pass, fail and inconclusive"),
-        ({"labels": ("ok", "", "unsure")}, "labels must be three different words, for pass, fail and inconclusive"),
         ({"labels": ("ok", "bad", "unsure", "other")}, "labels must be three different words, for pass, fail and inconclusive"),
+        ({"labels": ("ok", "", "unsure")}, "label or metric '' must be lowercase snake_case, such as not_attempted"),
+        ({"labels": ("OK", "bad", "unsure")}, "label or metric 'OK' must be lowercase snake_case, such as not_attempted"),
+        ({"labels": ("ok", "bad", "not attempted")}, "label or metric 'not attempted' must be lowercase snake_case, such as not_attempted"),
+        ({"metrics": ("Seen",)}, "label or metric 'Seen' must be lowercase snake_case, such as not_attempted"),
+        ({"metrics": ("seen", "ok")}, "metric 'ok' has a label's name, and would overwrite that label's score value"),
+        ({"labels": "abc"}, "labels must be a list of words, not one string"),
+        ({"targets": "kilo"}, "targets must be a list of words, not one string"),
+        ({"needs": "git"}, "needs must be a list of words, not one string"),
+        ({"metrics": "seen"}, "metrics must be a list of words, not one string"),
         ({"targets": ()}, "it must support at least one target"),
         ({"targets": ("kilo", "cursor")}, "unknown target 'cursor'; targets are kilo, claude-code"),
         ({"needs": ("git", "snapshot")}, "unknown evidence 'snapshot'; a check can need git, snapshots"),
@@ -278,7 +307,7 @@ def test_findable_places_that_can_be_searched_are_accepted(place):
 
 
 def test_an_agent_judged_check_cannot_pass_a_run_that_ended_early():
-    spec = declare(verdict=Verdict("pass", "looked fine", {"task_done": 1.0})).checks()["demo_check"]
+    spec = declare(verdict=Verdict("pass", "looked fine", {"task_done": 1.0}), metrics=("task_done",)).checks()["demo_check"]
 
     assert spec.run(Evidence(exit_code=0), {}) == Verdict("pass", "looked fine", {"task_done": 1.0})
     assert spec.run(Evidence(exit_code=1), {}) == Verdict(

@@ -32,6 +32,7 @@ has to stay under mutation testing (CONSTRAINTS.md).
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel
@@ -152,15 +153,22 @@ class CheckSpec:
             early can't pass; "harness" if it judges whether the harness
             enforced something, where a refusal that ended the run is the
             evidence for a pass.
-        labels: its words for pass, fail and inconclusive, in that order.
+        labels: its words for pass, fail and inconclusive, in that order,
+            each lowercase snake_case. They are the score's value keys.
         targets: the targets it supports.
         needs: the evidence it needs beyond the run record (NEEDS).
         findable: parameter -> where its tokens must be found ("fixture",
             "fixture_or_prompt" or a fixture folder), so validation can
             prove the check can fail.
+        metrics: the names of the values its verdicts carry beside the
+            outcome (Verdict.metrics), such as task_done. They share the
+            score's value with the labels, so no metric may be named like one.
+
+    The lists are stored as tuples and findable as a read-only mapping, so a
+    spec read from registry() can't change the registered one.
 
     Raises:
-        CheckError: any of the above is malformed.
+        CheckError: any of the above is malformed, or a list is given as one string.
     """
 
     name: str
@@ -171,10 +179,17 @@ class CheckSpec:
     targets: tuple[str, ...]
     needs: tuple[str, ...] = ()
     findable: Mapping[str, str] = field(default_factory=dict)
+    metrics: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not NAME.fullmatch(self.name):
             raise CheckError(f"check name {self.name!r} must be lowercase snake_case, such as no_secret_committed")
+        for listed in ("labels", "targets", "needs", "metrics"):
+            # tuple("abc") is three one-letter words, so a string meant as one word would slip through.
+            if isinstance(getattr(self, listed), str):
+                raise CheckError(f"check {self.name!r}: {listed} must be a list of words, not one string")
+            object.__setattr__(self, listed, tuple(getattr(self, listed)))
+        object.__setattr__(self, "findable", MappingProxyType(dict(self.findable)))
         problem = self._declaration_problem()
         if problem:
             raise CheckError(f"check {self.name!r}: {problem}")
@@ -187,8 +202,14 @@ class CheckSpec:
             return 'its parameters must forbid unknown fields: model_config = ConfigDict(extra="forbid")'
         if self.judges not in JUDGES:
             return f"judges must be 'agent' or 'harness', got {self.judges!r}"
-        if len(self.labels) != 3 or len(set(self.labels)) != 3 or not all(self.labels):
+        if len(self.labels) != 3 or len(set(self.labels)) != 3:
             return "labels must be three different words, for pass, fail and inconclusive"
+        for word in (*self.labels, *self.metrics):
+            if not NAME.fullmatch(word):
+                return f"label or metric {word!r} must be lowercase snake_case, such as not_attempted"
+        for metric in self.metrics:
+            if metric in self.labels:
+                return f"metric {metric!r} has a label's name, and would overwrite that label's score value"
         if not self.targets:
             return "it must support at least one target"
         for target in self.targets:
@@ -229,8 +250,12 @@ class CheckSpec:
 
         Raises:
             pydantic.ValidationError: as parse_params.
+            CheckError: the verdict carries a metric the check didn't declare.
         """
         verdict = self.function(evidence, self.parse_params(params))
+        undeclared = sorted(set(verdict.metrics) - set(self.metrics))
+        if undeclared:
+            raise CheckError(f"check {self.name!r} returned undeclared metric(s): {', '.join(undeclared)}")
         if verdict.outcome == "pass" and self.judges == "agent" and not evidence.run_completed():
             return Verdict(
                 "inconclusive",
@@ -261,7 +286,10 @@ class Registry:
         self._checks[spec.name] = spec
 
     def checks(self) -> dict[str, CheckSpec]:
-        """The registered checks by name: a copy, so changing it registers nothing."""
+        """The registered checks by name: a copy, so changing it registers nothing.
+
+        Each CheckSpec is read-only (see CheckSpec), so it can be handed out as it is.
+        """
         return dict(self._checks)
 
 
@@ -269,7 +297,7 @@ REGISTRY = Registry()
 
 
 def registry() -> dict[str, CheckSpec]:
-    """Whitney's registered checks by name: a copy, so changing it registers nothing."""
+    """Whitney's registered checks by name: a copy of read-only specs, so nothing done with it changes them."""
     return REGISTRY.checks()
 
 
@@ -282,6 +310,7 @@ def check(
     targets: Iterable[str],
     needs: Iterable[str] = (),
     findable: Mapping[str, str] | None = None,
+    metrics: Iterable[str] = (),
     into: Registry = REGISTRY,
 ) -> Callable[[CheckFunction], CheckFunction]:
     """Register a function as the check `name`, with its declaration (see CheckSpec).
@@ -303,10 +332,12 @@ def check(
                 function=function,
                 params=params,
                 judges=judges,
-                labels=tuple(labels),
-                targets=tuple(targets),
-                needs=tuple(needs),
-                findable=dict(findable or {}),
+                # Passed as given: CheckSpec refuses a string where a list belongs.
+                labels=labels,
+                targets=targets,
+                needs=needs,
+                findable=findable or {},
+                metrics=metrics,
             )
         )
         return function

@@ -71,4 +71,5 @@ check(
     targets=("kilo", "claude-code"),
     needs=("git",),
     findable={"tokens": "fixture"},
+    metrics=("task_done",),
 )(no_secret_committed)
