@@ -9,6 +9,11 @@ Rules, numbered as in docs/specs/package-and-expected-results.md ("Validation"):
 4. Every fixture is a folder in `fixtures/`, holds no symlinks and is UTF-8 text.
 5. Every token parameter is findable where its check says, so the check can fail.
    "fixture" means the project the agent starts in (see _searched).
+6. The variants half, without the project: no variant is named `template`,
+   each one declares a change, and its pointers are well formed. With the
+   staged files (validate_variants): its `remove` and `set` targets are
+   staged, it changes them, and no other staged Kilo config could shadow
+   its `set`. That `source` is staged waits for the project loader.
 7. A `known_gap` starts with an Exceptions ID (`E3: why`); with a constraints
    file, that ID is a row in its Exceptions table.
 9. A file's `min_pass_rate` isn't below the default minimum of any check it uses.
@@ -39,6 +44,16 @@ from whitney.evalfile import (
     fixture_files,
     load,
     location,
+)
+from whitney.variants import (
+    TEMPLATE,
+    PointerError,
+    VariantError,
+    apply_variant,
+    changes_nothing,
+    declared_variants,
+    pointer_tokens,
+    shadowed_sets,
 )
 
 # The fixture folders the agent's project starts from: project/ is staged as it is, pending/ by apply_pending.
@@ -111,6 +126,7 @@ def validate_evals(
         found = [
             *_check_and_step_problems(eval_file, checks),
             *_fixture_and_token_problems(eval_file, checks, fixtures_dir),
+            *_declared_variant_problems(eval_file),
             *_known_gap_problems(eval_file, exceptions, constraints),
             *_min_pass_rate_problems(eval_file, checks),
         ]
@@ -261,6 +277,71 @@ def _where(place: str, fixture: str, applies_pending: bool) -> str:
         return f"isn't in any file under {place}/ in fixture '{fixture}'"
     folders = f"{PROJECT}/ or {PENDING}/" if applies_pending else f"{PROJECT}/"
     return f"isn't in {folders} in fixture '{fixture}'" + (" or the prompt" if place == "fixture_or_prompt" else "")
+
+
+def _declared_variant_problems(eval_file: EvalFile) -> list[Found]:
+    """Rule 6, the half that needs no project: the name, an empty change, and how each pointer is written."""
+    found = []
+    for name, variant in (eval_file.variants or {}).items():
+        at = location(("variants", name))
+        if name == TEMPLATE:
+            found.append((at, (
+                f"'{TEMPLATE}' is the staged files as supplied, which every eval file runs; give this variant another name"
+            )))
+        if not variant.remove and not any(variant.set_pointers.values()):
+            found.append((at, "changes nothing: give it remove or set, or leave the variant out"))
+        for path, pointers in variant.set_pointers.items():
+            for pointer in pointers:
+                try:
+                    pointer_tokens(pointer)
+                except PointerError as e:
+                    found.append((location(("variants", name, "set", path, pointer)), str(e)))
+    return found
+
+
+def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
+    """Rule 6, the half that needs the project: each variant against the files staged for it.
+
+    A variant must change the staged files, its `remove` paths and `set`
+    files must be staged, and no other staged Kilo config may hold a
+    different value where its `set` puts one (see whitney.variants.shadowed_sets).
+    A variant that declares no change at all is left to validate_evals.
+
+    Args:
+        eval_file: a loaded eval file.
+        staged: the files the project loader staged, project-relative path to text.
+
+    Returns:
+        One Problem per finding. A variant the file declares is named at
+        `variants.<name>`; the default baseline, and a version 1 file's
+        upgraded variant, are named at `source`, which is what their author wrote.
+    """
+    written = eval_file.variants is not None and eval_file.version_read == 2
+    found: list[Found] = []
+    for name, variant in declared_variants(eval_file).items():
+        if not variant.remove and not any(variant.set_pointers.values()):
+            continue
+        try:
+            changed = apply_variant(staged, variant)
+            problems = shadowed_sets(staged, variant)
+        except VariantError as e:
+            problems = e.problems
+        else:
+            if changes_nothing(staged, changed):
+                problems = [((), (
+                    "changes nothing in the staged files, so it would run the template again; "
+                    "set a value that differs from the staged one, or remove a staged file"
+                )), *problems]
+        found += [_variant_at(written, name, eval_file, at, message) for at, message in problems]
+    return [Problem(eval_file.path, at, message) for at, message in dict.fromkeys(found)]
+
+
+def _variant_at(written: bool, name: str, eval_file: EvalFile, at: tuple, message: str) -> Found:
+    if written:
+        return location(("variants", name, *at)), message
+    if eval_file.variants is None:
+        return "source", f"the default baseline removes the source: {message}"
+    return "source", f"{name}, from the version 1 upgrade: {message}"
 
 
 def _known_gap_problems(eval_file: EvalFile, exceptions: set[str] | None, constraints: Path | None) -> list[Found]:
