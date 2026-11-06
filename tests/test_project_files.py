@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 
@@ -339,3 +340,42 @@ def test_the_not_staged_list_stops_at_fifty_names_and_counts_the_rest(tmp_path, 
     assert names[:50] == [f".claude/f{number:02d}.md" for number in range(50)]
     assert names[-1] == expected_tail
     assert len(names) == min(count, 51)
+
+
+def test_a_dot_claude_md_that_cannot_be_checked_is_not_staged_and_the_folder_is_named(tmp_path, monkeypatch):
+    # Python 3.11 and 3.12 raise PermissionError for a path inside a mode-000 folder; 3.14 returns False.
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
+    real_is_file, real_iterdir = Path.is_file, Path.iterdir
+
+    def is_file(path):
+        if path.parent.name == ".claude":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_is_file(path)
+
+    def iterdir(path):
+        if path.name == ".claude":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule\n"}
+    assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+
+
+def test_the_cap_never_hides_a_skipped_root_file(tmp_path):
+    (tmp_path / "shared.md").write_text("shared rule\n")
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / "AGENTS.md").write_text("rule\n")
+    (project / "CLAUDE.md").symlink_to(tmp_path / "shared.md")
+    for number in range(60):
+        (project / f".claude/f{number:02d}.md").write_text("x\n")
+
+    names = files_not_staged("claude-code", project)
+
+    assert names[0] == "CLAUDE.md"
+    assert names[1:] == [*(f".claude/f{number:02d}.md" for number in range(50)), "and 10 more"]

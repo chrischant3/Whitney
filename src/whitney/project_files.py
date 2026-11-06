@@ -144,7 +144,7 @@ def files_not_staged(target: str, project_dir: Path) -> list[str]:
     """Name what the project holds for `target`'s harness that its loader leaves out, for the report.
 
     Only claude-code leaves anything out today: a root AGENTS.md or CLAUDE.md
-    skipped because it is a symlink or resolves outside the project, and the
+    skipped because it isn't a regular file inside the project, and the
     entries of the project's .claude/ folder apart from a staged
     .claude/CLAUDE.md. Entries are named one level down, a folder with a
     trailing "/", rather than file by file. A symlinked entry is named
@@ -157,9 +157,10 @@ def files_not_staged(target: str, project_dir: Path) -> list[str]:
         project_dir: the project folder.
 
     Returns:
-        Sorted project-relative paths, empty if nothing was left out. Past
-        NOT_STAGED_LIMIT names, the rest are counted in a last item,
-        "and N more".
+        Project-relative paths, empty if nothing was left out: skipped root
+        files first, then the sorted .claude/ entries. Past NOT_STAGED_LIMIT
+        entries, the rest are counted in a last item, "and N more"; skipped
+        root files are never cut.
 
     Raises:
         FileNotFoundError: project_dir doesn't exist (claude-code only).
@@ -174,10 +175,10 @@ def files_not_staged(target: str, project_dir: Path) -> list[str]:
         for relative in CLAUDE_CODE_ROOT_INSTRUCTIONS
         if relative not in staged and ((root / relative).is_symlink() or (root / relative).exists())
     ]
-    names = sorted([*skipped, *_unstaged_claude_entries(root, staged)])
-    if len(names) > NOT_STAGED_LIMIT:
-        return [*names[:NOT_STAGED_LIMIT], f"and {len(names) - NOT_STAGED_LIMIT} more"]
-    return names
+    entries = sorted(_unstaged_claude_entries(root, staged))
+    if len(entries) > NOT_STAGED_LIMIT:
+        entries = [*entries[:NOT_STAGED_LIMIT], f"and {len(entries) - NOT_STAGED_LIMIT} more"]
+    return [*skipped, *entries]
 
 
 def set_external_directory(files: dict[str, str], action: str) -> dict[str, str]:
@@ -210,11 +211,18 @@ def _walk_files(root: Path, allowed_root: Path):
 def _claude_code_paths(root: Path) -> list[str]:
     # A symlinked .claude is never followed: `.claude -> .` would stage CLAUDE.md twice.
     linked = (root / CLAUDE_CODE_DIR).is_symlink()
-    return [
-        relative
-        for relative in CLAUDE_CODE_INSTRUCTIONS
-        if _is_project_file(root, relative) and not (linked and relative.startswith(f"{CLAUDE_CODE_DIR}/"))
-    ]
+    return [relative for relative in CLAUDE_CODE_INSTRUCTIONS if _is_staged_claude_code_file(root, relative, linked)]
+
+
+def _is_staged_claude_code_file(root: Path, relative: str, linked: bool) -> bool:
+    if not relative.startswith(f"{CLAUDE_CODE_DIR}/"):
+        return _is_project_file(root, relative)
+    if linked:
+        return False
+    try:
+        return _is_project_file(root, relative)
+    except OSError:  # Python 3.11 and 3.12 raise inside an unreadable .claude/; 3.14 returns False
+        return False
 
 
 def _unstaged_claude_entries(root: Path, staged: list[str]) -> list[str]:

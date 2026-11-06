@@ -453,7 +453,7 @@ def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant
         "\n"
         "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
         "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
-        "`AGENTS.md` or `CLAUDE.md` skipped because it is a symlink or resolves outside the project.\n"
+        "`AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project.\n"
         "\n"
         "| Eval variant | Not staged |\n"
         "|---|---|\n"

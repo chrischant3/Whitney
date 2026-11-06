@@ -35,7 +35,7 @@ GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used bu
 NOT_STAGED_NOTE = (
     "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
     "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
-    "`AGENTS.md` or `CLAUDE.md` skipped because it is a symlink or resolves outside the project."
+    "`AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project."
 )
 # The last item of a long not_staged list counts the names left off it (project_files.files_not_staged).
 MORE_NOT_STAGED = re.compile(r"and \d+ more")
@@ -341,7 +341,7 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
             prompt_preambles[str(preamble)].add(task)
         left_out = metadata.get("not_staged")  # absent from logs written before it was recorded
         if left_out:
-            not_staged[task] = list(left_out)  # already sorted, with any "and N more" last
+            not_staged[task] = list(left_out)  # in files_not_staged's order, with any "and N more" last
 
     if not task_inputs:
         return ""
