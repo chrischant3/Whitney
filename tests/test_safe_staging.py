@@ -112,3 +112,17 @@ def test_the_project_is_unchanged_after_a_run(project, tmp_path, home_with_block
     assert [log.status for log in logs] == ["success"] * len(tasks)
     assert all(sample.scores for log in logs for sample in log.samples)  # the agent ran and each sample was scored
     assert _snapshot(project) == before
+
+
+@pytest.mark.parametrize("build, target, variant", [case for case in CASES if case[1] == "kilo"], ids=lambda v: getattr(v, "__name__", v))
+def test_a_skill_file_that_is_not_utf8_and_skills_paths_are_named_as_not_staged(project, build, target, variant):
+    (project / ".claude/skills/x").mkdir(parents=True)
+    (project / ".claude/skills/x/SKILL.md").write_text("skill\n")
+    (project / ".claude/skills/x/logo.png").write_bytes(b"\x89PNG\xff")
+    config = json.loads((project / "kilo.jsonc").read_text())
+    (project / "kilo.jsonc").write_text(json.dumps({**config, "skills": {"paths": ["../shared"]}}))
+
+    task = build(target=target, model=MODEL, variant=variant, project_path=str(project))
+
+    assert task.metadata["not_staged"] == [".claude/skills/x/logo.png", "kilo.jsonc: skills.paths"]
+    assert ".claude/skills/x/SKILL.md" in task.metadata["evaluation_assets"]
