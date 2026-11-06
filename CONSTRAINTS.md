@@ -42,7 +42,7 @@ Numbered checks **warn until 2026-11-16, then block** (`WARN_UNTIL` in
 | Tests | Whole suite passes (blocks now; a hard constraint in CLAUDE.md) | `pytest` | task end, CI |
 | Secrets | No secrets in history or uncommitted changes (floor, blocks now) | `gitleaks git --redact` (+ `--pre-commit`) | every edit, CI |
 | Coverage: changed lines | ≥ 80% of lines changed since `origin/main` covered | `pytest --cov` + `diff-cover --fail-under=80` | task end, CI |
-| Mutation: touched functions | ≥ 60% of mutants in functions the diff touched are caught | `mutmut run` (incremental) + `scripts/check.py` | task end, CI |
+| Mutation: touched functions | ≥ 60% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end, before a pull request (`check.py full`) |
 | Dependencies | Nothing at high or above in the installed environment | `osv-scanner scan --no-resolve` on `pip freeze` | CI |
 
 Why these numbers:
@@ -68,7 +68,7 @@ commit; when it drops, that's the finding.
 | Metric | Today | Direction | Checked by |
 |--------|-------|-----------|------------|
 | Project coverage | 98.7% | must not fall | `pytest --cov=whitney` |
-| Mutation score (project) | 99.6% | must not fall | `mutmut run` |
+| Mutation score (project) | 99.6% | must not fall | `mutmut run` on every mutant in `check.py full`; `check.py task` judges mutmut's cached results |
 
 Measured 2026-11-03, with every extra installed from `requirements.lock`:
 2,854 mutants, 2,822 killed, 20 timeout, 12 survived, none unreached, no
@@ -105,9 +105,28 @@ case-sensitive one (Linux).
 ```bash
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
-python scripts/check.py task       # before handing work back, about 90 s (mutmut is incremental)
-python scripts/check.py full       # CI: adds the dependency scan
+python scripts/check.py task       # before handing work back, about a minute (mutmut runs only the touched functions' mutants)
+python scripts/check.py full       # before opening a pull request: every mutant, and the dependency scan
 ```
+
+Run `check.py full` before opening a pull request: CI runs only the floor
+guard, so nothing else runs the whole mutation suite or the dependency scan.
+`task` mutates only the functions the diff touches and judges them as above;
+its project mutation score is mutmut's cached results, the touched functions'
+fresh ones and every other function's last one, labelled as cached. It still
+enforces the ratchet, since each of those results was measured; mutants not
+checked since their function changed are left out and counted. `full` reruns
+every mutant mutmut has no result for and judges the ratchet from that.
+
+A new worktree starts cold: its first `full` runs every mutant, and until
+then `task`'s cached project score covers only the mutants run so far. To start
+warm, copy the main checkout's `mutants/` into it, then touch the sources:
+`cp -R ../Whitney/mutants . && find src -name '*.py' -exec touch {} +`.
+mutmut decides a file is unchanged by comparing modification times, and the
+copy is newer than the sources, so without the touch it keeps the mutants of
+whatever code the main checkout last mutated, even where that code has changed
+since. After the touch it regenerates every file and keeps the results of
+each function whose code is unchanged.
 
 Install every extra, as above: without `openai` the gateway tests skip, its
 mutants go untested, and the mutation score falls below its ratchet.

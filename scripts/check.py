@@ -1,8 +1,12 @@
 """Run the CONSTRAINTS.md checks for one stage of the work.
 
     python scripts/check.py fast    # after an edit: floor guard + secrets (seconds)
-    python scripts/check.py task    # before handing work back: + tests, coverage, mutation (~90s)
-    python scripts/check.py full    # CI: + dependency vulnerabilities
+    python scripts/check.py task    # before handing work back: + tests, coverage, mutation of touched functions (~1 min)
+    python scripts/check.py full    # before a pull request: + every mutant, dependency vulnerabilities
+
+`task` reports the project mutation score from mutmut's cache; `full` brings every
+mutant up to date first. A new worktree starts warm from a copy of the main
+checkout's mutants/ once its sources are touched (CONSTRAINTS.md, "How to run").
 
 CONSTRAINTS.md is the source of truth; this script mirrors it. The floor and
 secrets always block. The numbered checks warn until WARN_UNTIL, then block.
