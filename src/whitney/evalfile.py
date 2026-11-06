@@ -20,7 +20,8 @@ format, and is upgraded in memory with a FutureWarning, which Python shows by de
 
 This module checks the shape of a file. Whether its checks are registered,
 its fixtures exist and its tokens can be found is whitney.validate's job.
-`setup` and `variants` are parsed here but not yet applied to a run.
+`setup` is parsed here but not yet applied to a run; whitney.variants
+applies `variants` to the staged files.
 """
 
 import json

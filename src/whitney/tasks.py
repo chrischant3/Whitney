@@ -24,13 +24,18 @@ from inspect_ai.util import sandbox, store
 from whitney import targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
 from whitney.checks import Evidence, registry
+from whitney.evalfile import Variant, load
 from whitney.git_env import ISOLATED_GIT_SHELL
-from whitney.project_files import files_not_staged, load_project_files_for, load_template_files, set_external_directory
+from whitney.project_files import CONFIG_PATHS, files_not_staged, load_project_files_for, load_template_files
 from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
+from whitney.static_checks import parse_jsonc
+from whitney.variants import TEMPLATE, apply_variant, declared_variants, pointer_from, pointer_tokens, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
 EVALS_DIR = ROOT / "evals"
+AGENTS_MD_EVALS = EVALS_DIR / "agents-md.json"
+KILO_JSONC_EVALS = EVALS_DIR / "configuration" / "kilo-jsonc.json"
 
 # Lets the agent do the task without its asks being auto-rejected. The runner
 # applies these as a temporary overlay; project settings still take precedence.
@@ -94,6 +99,7 @@ def agents_md(
         variant: "template" copies the target's AGENTS.md into the project;
             "baseline" leaves root AGENTS.md out. Both get the same config
             and other instruction assets, so AGENTS.md is the only difference.
+            The variants come from evals/agents-md.json (whitney.variants).
         target: the harness under test, "kilo" or "claude-code" (see whitney.targets).
         model: the model under evaluation, as provider/model.
         execution: kilo only: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
@@ -104,14 +110,15 @@ def agents_md(
             Kilo config; claude-code defaults to ANTHROPIC_API_KEY.
         base_url: kilo local mode only; overrides the provider's base URL.
     """
-    _check_variant(variant, {"template", "baseline"})
+    variants = declared_variants(load(AGENTS_MD_EVALS))
+    _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     template_files = _source_files(project_path, target)
-    if variant == "baseline":
-        template_files.pop("AGENTS.md", None)
+    if variant != TEMPLATE:
+        template_files = apply_variant(template_files, _staged_removes_only(variants[variant], template_files))
     samples = [
         _with_project_files(s, template_files, setup=COMMIT_FIXTURE_SETUP, initial_commits=1)
-        for s in load_scenarios(EVALS_DIR / "agents-md.json")
+        for s in load_scenarios(AGENTS_MD_EVALS)
     ]
     return Task(
         name=f"agents_md_{variant}",
@@ -152,7 +159,9 @@ def kilo_jsonc(
     Args:
         variant: "template" uses the source project's Kilo config as-is;
             "allow_control" sets external_directory to "allow", which should
-            let access through and so proves the scorer can fail.
+            let access through and so proves the scorer can fail. It comes
+            from evals/configuration/kilo-jsonc.json, and is set in every
+            staged Kilo config, whichever ones the project has.
         target: must be "kilo": this eval tests kilo.jsonc, which only Kilo reads.
         model: the model under evaluation, as provider/model.
         execution: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
@@ -161,15 +170,16 @@ def kilo_jsonc(
             provider (e.g. ANTHROPIC_API_KEY). Unset, the global Kilo config is used.
         base_url: local mode only; overrides the provider's base URL.
     """
-    _check_variant(variant, {"template", "allow_control"})
+    variants = declared_variants(load(KILO_JSONC_EVALS))
+    _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     if target != "kilo":
         raise ValueError("kilo_jsonc tests kilo.jsonc permissions; it runs only for the kilo target")
     template_files = _source_files(project_path, target)
-    if variant == "allow_control":
-        template_files = set_external_directory(template_files, "allow")
+    if variant != TEMPLATE:
+        template_files = apply_variant(template_files, _on_every_kilo_config(variants[variant], template_files))
     samples = []
-    for s in load_scenarios(EVALS_DIR / "configuration" / "kilo-jsonc.json"):
+    for s in load_scenarios(KILO_JSONC_EVALS):
         outside_before = {
             path.removeprefix(f"{OUTSIDE_DIR}/"): text
             for path, text in s.files.items()
@@ -296,6 +306,51 @@ def _source_files(project_path: str | None, target: str) -> dict[str, str]:
 def model_access(api_key_env: str | None, base_url: str | None) -> dict:
     """How Kilo reached the model, for the log. Kept for callers; use targets.model_access."""
     return targets.model_access("kilo", api_key_env, base_url)
+
+
+def _staged_removes_only(variant: Variant, files: dict[str, str]) -> Variant:
+    """`variant` without the removes of paths that aren't staged.
+
+    Today's agents_md baseline left AGENTS.md out only if it was there, so a
+    Claude Code project with only CLAUDE.md still runs both variants (they
+    stage the same files). Validation of a project path (plan Task 8) is
+    where such a baseline will be refused.
+    """
+    return variant.model_copy(update={"remove": [path for path in variant.remove if staged_matches(files, path)]})
+
+
+def _on_every_kilo_config(variant: Variant, files: dict[str, str]) -> Variant:
+    """`variant` with its Kilo config pointers set in every staged Kilo config, as set_external_directory did.
+
+    The version 1 upgrade sets the pointer in `source`, kilo.jsonc. Kilo reads
+    the other configs too, so a project holding only .kilo/kilo.jsonc, or
+    both, gets the control in each. Today's code also created a missing
+    parent object (`"permission": {}`); `set` refuses a missing parent, so
+    the pointer is moved up to the first key that is missing, with the rest
+    nested in its value. A parent that isn't an object is left for `set` to refuse.
+
+    Raises:
+        ValueError: no Kilo config is staged.
+    """
+    staged = [path for path in CONFIG_PATHS if path in files]
+    if not staged:
+        raise ValueError("no Kilo config file found in project assets")
+    pointers = {p: value for path, sets in variant.set_pointers.items() if path in CONFIG_PATHS for p, value in sets.items()}
+    spread = {path: dict(_with_missing_parents(parse_jsonc(files[path]), p, v) for p, v in pointers.items()) for path in staged}
+    return variant.model_copy(update={"set_pointers": spread})
+
+
+def _with_missing_parents(document, pointer: str, value) -> tuple[str, object]:
+    tokens = pointer_tokens(pointer)
+    for depth, token in enumerate(tokens[:-1]):
+        if not isinstance(document, dict):
+            break
+        if token not in document:
+            for key in reversed(tokens[depth + 1 :]):
+                value = {key: value}
+            return pointer_from(tokens[: depth + 1]), value
+        document = document[token]
+    return pointer, value
 
 
 def _check_variant(variant: str, allowed: set[str]) -> None:
