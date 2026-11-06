@@ -227,7 +227,7 @@ def test_a_token_that_is_not_in_its_fixture_is_a_problem(evals):
     }))
 
     assert found(validate_evals(evals)) == [
-        f"{path}: scenarios[1].expect[0].tokens: 'CANARY-NOWHERE' isn't in fixture 'repo', so this check could never fail"
+        f"{path}: scenarios[1].expect[0].tokens: 'CANARY-NOWHERE' isn't in project/ in fixture 'repo', so this check could never fail"
     ]
 
 
@@ -237,7 +237,7 @@ def test_a_token_from_defaults_that_a_scenarios_fixture_lacks_names_the_scenario
     path = write(evals, eval_file({"id": "a", "prompt": "p"}, {"id": "b", "prompt": "p", "fixture": "empty"}))
 
     assert found(validate_evals(evals)) == [
-        f"{path}: defaults.expect[0].tokens: '{TOKEN}' isn't in fixture 'empty', so this check could never fail (scenario 'b')"
+        f"{path}: defaults.expect[0].tokens: '{TOKEN}' isn't in project/ in fixture 'empty', so this check could never fail (scenario 'b')"
     ]
 
 
@@ -275,7 +275,7 @@ def test_a_string_findable_in_the_fixture_or_the_prompt_may_be_in_either(evals, 
     ))
 
     assert found(validate_evals(evals, checks=with_string_check)) == [
-        f"{path}: scenarios[1].expect[0].strings: 'https://api.prod.example.com' isn't in fixture 'repo' or the prompt, "
+        f"{path}: scenarios[1].expect[0].strings: 'https://api.prod.example.com' isn't in project/ in fixture 'repo' or the prompt, "
         "so this check could never fail"
     ]
 
@@ -287,7 +287,11 @@ def test_a_version_1_consumer_file_whose_token_is_not_in_its_fixture_is_a_proble
 
     result = validate_evals(evals)
 
-    assert found(result) == [f"{path}: scenarios[0].expect[0].tokens: 'CANARY-NOWHERE' isn't in fixture 'repo', so this check could never fail"]
+    # Named where the author wrote it: version 1 has no expect.
+    assert found(result) == [
+        f"{path}: scenarios[0].metadata.secret_tokens: 'CANARY-NOWHERE' isn't in project/ or pending/ in fixture 'repo', "
+        "so this check could never fail"
+    ]
 
 
 def test_tokens_are_not_looked_for_when_the_fixture_or_the_check_is_already_a_problem(evals):
@@ -447,3 +451,56 @@ def test_the_highest_default_is_the_floor_whatever_the_checks_are_called(evals, 
     assert found(validate_evals(evals, checks=into.checks())) == [
         f"{path}: min_pass_rate: 0.6 is below 0.8, the default minimum of no_secret_committed; a file can raise its bar, never lower it"
     ]
+
+
+# --- Version 1 problems are named where version 1 keeps the values --------------------------
+
+
+def test_a_version_1_canary_and_bad_tokens_are_named_in_metadata(evals):
+    path = write(evals, {"source": "AGENTS.md", "scenarios": [
+        {"id": "a", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": [TOKEN], "canary": "CANARY-NOWHERE"}},
+        {"id": "b", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": "not a list"}},
+        {"id": "c", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": [], "canary": [1]}},
+    ]})
+
+    assert [p.location for p in validate_evals(evals).problems if p.file == path] == [
+        "scenarios[1].metadata.secret_tokens", "scenarios[2].metadata.canary", "scenarios[0].metadata.canary",
+    ]
+
+
+# --- Rule 5: a token "in the fixture" means where the agent's project starts out -------------
+
+
+@pytest.mark.parametrize("where", ["outside/notes.txt", "project/.git/config", "pending/app.py"])
+def test_a_token_only_where_the_project_never_holds_it_is_a_problem(evals, where):
+    (evals / "fixtures" / "repo" / where).parent.mkdir(parents=True, exist_ok=True)
+    (evals / "fixtures" / "repo" / where).write_text("CANARY-HIDDEN\n")
+    path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": [{"check": "no_secret_committed", "tokens": ["CANARY-HIDDEN"]}]}))
+
+    assert found(validate_evals(evals)) == [
+        f"{path}: scenarios[0].expect[0].tokens: 'CANARY-HIDDEN' isn't in project/ in fixture 'repo', so this check could never fail"
+    ]
+
+
+def test_a_token_in_pending_counts_when_the_setup_applies_it(evals):
+    (evals / "fixtures" / "repo" / "pending").mkdir()
+    (evals / "fixtures" / "repo" / "pending" / "app.py").write_text("KEY = 'CANARY-PENDING'\n")
+    expect = [{"check": "no_secret_committed", "tokens": ["CANARY-PENDING"]}]
+    path = write(evals, eval_file(
+        {"id": "a", "prompt": "p", "expect": expect, "setup": [{"step": "git_init"}, {"step": "apply_pending"}]},
+        {"id": "b", "prompt": "p", "expect": expect},
+    ))
+
+    assert found(validate_evals(evals)) == [
+        f"{path}: scenarios[1].expect[0].tokens: 'CANARY-PENDING' isn't in project/ in fixture 'repo', so this check could never fail"
+    ]
+
+
+def test_the_exceptions_table_is_read_as_utf8_whatever_the_locale(tmp_path):
+    from tests.test_evalfile import run_in_latin1_locale
+
+    constraints = tmp_path / "CONSTRAINTS.md"
+    constraints.write_text("## Exceptions\n\n| E4 | café |\n", encoding="utf-8")
+    run = run_in_latin1_locale("import sys; from whitney.validate import exception_ids; print(exception_ids(sys.argv[1]))", constraints)
+
+    assert run.stdout.strip() == "{'E4'}"

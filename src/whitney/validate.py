@@ -8,6 +8,7 @@ Rules, numbered as in docs/specs/package-and-expected-results.md ("Validation"):
 3. Every check and setup step is known, and its parameters are valid.
 4. Every fixture is a folder in `fixtures/`, holds no symlinks and is UTF-8 text.
 5. Every token parameter is findable where its check says, so the check can fail.
+   "fixture" means the project the agent starts in (see _searched).
 7. A `known_gap` starts with an Exceptions ID (`E3: why`); with a constraints
    file, that ID is a row in its Exceptions table.
 9. A file's `min_pass_rate` isn't below the default minimum of any check it uses.
@@ -27,6 +28,7 @@ from whitney.checks import CheckSpec, registry
 from whitney.evalfile import (
     FIXTURES_FOLDER,
     SETUP_STEPS,
+    V1_PARAMETER_KEYS,
     VERSION_1_DEPRECATED,
     EvalFile,
     EvalFileError,
@@ -39,6 +41,8 @@ from whitney.evalfile import (
     location,
 )
 
+# The fixture folders the agent's project starts from: project/ is staged as it is, pending/ by apply_pending.
+PROJECT, PENDING = "project", "pending"
 KNOWN_GAP = re.compile(r"E\d+: .+")
 EXCEPTION_ROW = re.compile(r"^\|\s*(E\d+)\s*\|", re.MULTILINE)
 # The Exceptions section runs from its heading to the next level-2 heading.
@@ -153,7 +157,10 @@ def _check_and_step_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec
                     f"unknown check '{expectation.check}'; registered checks: {', '.join(sorted(checks))}"
                 )))
             else:
-                found += _parameter_problems(spec.params, expectation.params, f"{at}.expect[{index}]")
+                found += [
+                    (_parameter_at(eval_file, at, index, expectation.check, loc), message)
+                    for loc, message in _errors(spec.params, expectation.params)
+                ]
         for index, step in enumerate(block.setup or []):
             model = SETUP_STEPS.get(step.step)
             if model is None:
@@ -161,16 +168,29 @@ def _check_and_step_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec
                     f"unknown setup step '{step.step}'; setup steps: {', '.join(SETUP_STEPS)}"
                 )))
             else:
-                found += _parameter_problems(model, step.params, f"{at}.setup[{index}]")
+                found += [(location(loc, f"{at}.setup[{index}]"), message) for loc, message in _errors(model, step.params)]
     return found
 
 
-def _parameter_problems(model: type[BaseModel], params: dict, at: str) -> list[Found]:
+def _errors(model: type[BaseModel], params: dict) -> list[tuple[tuple, str]]:
+    """(pydantic location, message) for each way `params` breaks `model`."""
     try:
         model.model_validate(params)
     except ValidationError as e:
-        return [(location(err["loc"], at), err["msg"]) for err in e.errors()]
+        return [(err["loc"], err["msg"]) for err in e.errors()]
     return []
+
+
+def _parameter_at(eval_file: EvalFile, block_at: str, index: int, check: str, loc: tuple) -> str:
+    """Where the author wrote a check's parameter: `<block>.expect[<index>].<parameter>`.
+
+    A version 1 file has no expect: its tokens are in metadata (secret_tokens,
+    canary), so a problem with one is named there.
+    """
+    keys = V1_PARAMETER_KEYS.get(check, {})
+    if eval_file.version_read == 1 and loc and loc[0] in keys:
+        return location((keys[loc[0]], *loc[1:]), f"{block_at}.metadata")
+    return location(loc, f"{block_at}.expect[{index}]")
 
 
 def _fixture_and_token_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec], fixtures_dir: Path) -> list[Found]:
@@ -187,12 +207,16 @@ def _fixture_and_token_problems(eval_file: EvalFile, checks: Mapping[str, CheckS
         if isinstance(files, str):
             found.append((scenario.fixture_at, files))
         else:
-            found += _token_problems(scenario, files, checks)
+            found += _token_problems(eval_file, scenario, files, checks)
     return found
 
 
-def _token_problems(scenario: ResolvedScenario, files: dict[str, str], checks: Mapping[str, CheckSpec]) -> list[Found]:
+def _token_problems(
+    eval_file: EvalFile, scenario: ResolvedScenario, files: dict[str, str], checks: Mapping[str, CheckSpec]
+) -> list[Found]:
     found = []
+    applies_pending = any(step.step == "apply_pending" for step in scenario.setup)
+    block_at = scenario.expect_at.removesuffix(".expect")
     for index, expectation in enumerate(scenario.expect):
         spec = checks.get(expectation.check)
         if spec is None:
@@ -204,29 +228,39 @@ def _token_problems(scenario: ResolvedScenario, files: dict[str, str], checks: M
         for parameter, place in spec.findable.items():
             value = getattr(params, parameter)
             for token in [value] if isinstance(value, str) else value:
-                if not any(token in text for text in _searched(place, files, scenario.prompt)):
-                    inherited = f" (scenario '{scenario.id}')" if scenario.expect_at.startswith("defaults") else ""
-                    found.append((f"{scenario.expect_at}[{index}].{parameter}", (
-                        f"{token!r} {_where(place, scenario.fixture)}, so this check could never fail{inherited}"
+                if not any(token in text for text in _searched(place, files, scenario.prompt, applies_pending)):
+                    inherited = f" (scenario '{scenario.id}')" if block_at == "defaults" else ""
+                    found.append((_parameter_at(eval_file, block_at, index, expectation.check, (parameter,)), (
+                        f"{token!r} {_where(place, scenario.fixture, applies_pending)}, so this check could never fail{inherited}"
                     )))
     return found
 
 
-def _searched(place: str, files: dict[str, str], prompt: str) -> list[str]:
-    """The texts a token declared findable at `place` may be in: each file on its own, so none matches across two."""
-    if place == "fixture":
-        return list(files.values())
-    if place == "fixture_or_prompt":
-        return [*files.values(), prompt]
+def _searched(place: str, files: dict[str, str], prompt: str, applies_pending: bool) -> list[str]:
+    """The texts a token declared findable at `place` may be in: each file on its own, so none matches across two.
+
+    "fixture" means the project the agent starts in: project/ without its
+    .git/, plus pending/ if the setup applies it. A token only in outside/,
+    in git's own files or in a pending/ that's never applied can't reach
+    anything the agent commits or writes, so the check couldn't fail.
+    """
+    if place in ("fixture", "fixture_or_prompt"):
+        texts = [text for path, text in files.items() if _in_starting_project(path, applies_pending)]
+        return [*texts, prompt] if place == "fixture_or_prompt" else texts
     return [text for path, text in files.items() if path.startswith(f"{place}/")]
 
 
-def _where(place: str, fixture: str) -> str:
-    if place == "fixture":
-        return f"isn't in fixture '{fixture}'"
-    if place == "fixture_or_prompt":
-        return f"isn't in fixture '{fixture}' or the prompt"
-    return f"isn't in any file under {place}/ in fixture '{fixture}'"
+def _in_starting_project(path: str, applies_pending: bool) -> bool:
+    if path.startswith(f"{PROJECT}/.git/"):
+        return False
+    return path.startswith(f"{PROJECT}/") or (applies_pending and path.startswith(f"{PENDING}/"))
+
+
+def _where(place: str, fixture: str, applies_pending: bool) -> str:
+    if place not in ("fixture", "fixture_or_prompt"):
+        return f"isn't in any file under {place}/ in fixture '{fixture}'"
+    folders = f"{PROJECT}/ or {PENDING}/" if applies_pending else f"{PROJECT}/"
+    return f"isn't in {folders} in fixture '{fixture}'" + (" or the prompt" if place == "fixture_or_prompt" else "")
 
 
 def _known_gap_problems(eval_file: EvalFile, exceptions: set[str] | None, constraints: Path | None) -> list[Found]:
