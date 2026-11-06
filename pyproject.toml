@@ -46,4 +46,4 @@ markers = ["e2e: end-to-end smoke test against a real harness and model (opt-in,
 [tool.mutmut]
 source_paths = ["src/whitney/"]
 pytest_add_cli_args_test_selection = ["tests/"]
-also_copy = ["evals/", "template/", "docker/", "scripts/", "docs/", "requirements.lock"]
+also_copy = ["evals/", "template/", "docker/", "scripts/", "docs/", "requirements.lock", "CONSTRAINTS.md"]

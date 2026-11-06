@@ -38,6 +38,8 @@ from typing import Any, Literal, TypeVar
 from pydantic import BaseModel
 
 from whitney import scoring
+from whitney import report
+from whitney.report import MIN_ADHERENCE, MIN_HELD
 from whitney.target_names import TARGETS
 
 Outcome = Literal["pass", "fail", "inconclusive"]
@@ -48,6 +50,9 @@ NEEDS = ("git", "snapshots")
 NAME = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 # Where a token must be findable: "fixture", "fixture_or_prompt", or a folder in the fixture such
 # as "outside". A name, never a path, like a fixture's own name.
+# report.py's constants that are pass rates. Not every MIN_* constant is one: MIN_CONCLUSIVE is
+# the share of runs that must be conclusive, and taking it as a pass rate would halve a check's bar.
+PASS_RATE_CONSTANTS = ("MIN_ADHERENCE", "MIN_HELD")
 FINDABLE_PLACE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 CheckFunction = TypeVar("CheckFunction", bound=Callable[..., "Verdict"])
@@ -164,6 +169,11 @@ class CheckSpec:
         metrics: the names of the values its verdicts carry beside the
             outcome (Verdict.metrics), such as task_done. They share the
             score's value with the labels, so no metric may be named like one.
+        min_pass_rate: its default minimum pass rate for the template
+            variant, from 0 to 1. Left out, report.MIN_ADHERENCE for an
+            agent-judged check and report.MIN_HELD for a harness-judged one.
+            It must be one of report.py's pass-rate constants (PASS_RATE_CONSTANTS): a different default
+            is a new constant there, where the floor guard sees it lowered.
 
     The lists are stored as tuples and findable as a read-only mapping, so a
     spec read from registry() can't change the registered one.
@@ -181,6 +191,7 @@ class CheckSpec:
     needs: tuple[str, ...] = ()
     findable: Mapping[str, str] = field(default_factory=dict)
     metrics: tuple[str, ...] = ()
+    min_pass_rate: float | None = None
 
     def __post_init__(self) -> None:
         if not NAME.fullmatch(self.name):
@@ -191,6 +202,8 @@ class CheckSpec:
                 raise CheckError(f"check {self.name!r}: {listed} must be a list of words, not one string")
             object.__setattr__(self, listed, tuple(getattr(self, listed)))
         object.__setattr__(self, "findable", MappingProxyType(dict(self.findable)))
+        if self.min_pass_rate is None:
+            object.__setattr__(self, "min_pass_rate", MIN_ADHERENCE if self.judges == "agent" else MIN_HELD)
         problem = self._declaration_problem()
         if problem:
             raise CheckError(f"check {self.name!r}: {problem}")
@@ -211,6 +224,18 @@ class CheckSpec:
         for metric in self.metrics:
             if metric in self.labels:
                 return f"metric {metric!r} has a label's name, and would overwrite that label's score value"
+        rate = self.min_pass_rate
+        # bool is an int, so True would pass as 1.0 without its own test.
+        if isinstance(rate, bool) or not isinstance(rate, int | float) or not 0 <= rate <= 1:
+            return f"min_pass_rate must be a number from 0 to 1, got {rate!r}"
+        # The floor guard watches report.py's MIN_* constants, not a number written here.
+        guarded = sorted({getattr(report, name) for name in PASS_RATE_CONSTANTS})
+        if rate not in guarded:
+            return (
+                f"min_pass_rate {rate!r} isn't one of report.py's pass-rate constants "
+                f"{', '.join(PASS_RATE_CONSTANTS)} ({', '.join(map(str, guarded))}); "
+                "add a constant there, where the floor guard sees it lowered"
+            )
         if not self.targets:
             return "it must support at least one target"
         for target in self.targets:
@@ -312,6 +337,7 @@ def check(
     needs: Iterable[str] = (),
     findable: Mapping[str, str] | None = None,
     metrics: Iterable[str] = (),
+    min_pass_rate: float | None = None,
     into: Registry = REGISTRY,
 ) -> Callable[[CheckFunction], CheckFunction]:
     """Register a function as the check `name`, with its declaration (see CheckSpec).
@@ -339,6 +365,7 @@ def check(
                 needs=needs,
                 findable=findable or {},
                 metrics=metrics,
+                min_pass_rate=min_pass_rate,
             )
         )
         return function

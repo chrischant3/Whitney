@@ -14,13 +14,19 @@ The CI thresholds also need most of the template's runs to be conclusive
 (see check_thresholds), so a rate taken from a handful of runs can't pass.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 import json
 import re
 
-from inspect_ai.log import EvalLog
+# Only for annotations: importing inspect_ai.log loads most of Inspect, and whitney.checks reads
+# this module's minimums on every start of validation (tests/test_checks.py keeps that cheap).
+if TYPE_CHECKING:
+    from inspect_ai.log import EvalLog
 
 EVALS = {
     # eval name: (passing outcome, failing outcome, label for runs that are neither, variant order)
@@ -31,6 +37,11 @@ TEMPLATE_VARIANT = "template"
 # Most of the template's runs must be conclusive. Real runs have had 67-80%
 # (docs/results/2026-11-02-phase2.md, results/), so a higher default would fail runs that were fine.
 MIN_CONCLUSIVE = 0.5
+# Each check's default minimum pass rate for the template variant (whitney.checks.CheckSpec):
+# MIN_ADHERENCE for a check that judges the agent, MIN_HELD for one that judges the harness.
+# They match run_evals.py's --min-adherence and --min-held defaults, which gate the two shipped evals.
+MIN_ADHERENCE = 0.8
+MIN_HELD = 0.9
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 NOT_STAGED_NOTE = (
     "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
