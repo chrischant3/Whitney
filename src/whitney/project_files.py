@@ -21,6 +21,17 @@ CONFIG_PATHS = (
 ROOT_INSTRUCTIONS = ("AGENTS.md", "CLAUDE.md", "CONTEXT.md")
 KILO_ASSET_DIRS = ("agent", "agents", "command", "commands", "instructions", "mode", "modes", "skill", "skills")
 KILO_CONFIG_DIRS = (".kilo", ".kilocode")
+# Kilo 7.8.18 also reads these without an `instructions` entry (docs/load-order.md, "Rules" and
+# "Skills, agents and commands", checked with `kilo debug config` and `kilo debug skill`), so the
+# Kilo loader stages them too, or a staged project would load less than the real one. A rules
+# folder counts only for the .md files directly in it, as Kilo reads it; a mode's rules load in
+# every mode (kilo debug config lists them all).
+KILO_RULE_MODES = ("code", "architect", "ask", "debug", "orchestrator")
+KILO_RULE_DIRS = tuple(
+    f"{config_dir}/{name}" for config_dir in KILO_CONFIG_DIRS for name in ("rules", *(f"rules-{mode}" for mode in KILO_RULE_MODES))
+)
+KILO_LEGACY_RULE_FILES = (".kilocoderules", *(f".kilocoderules-{mode}" for mode in KILO_RULE_MODES))
+KILO_SKILL_DIRS = (".claude/skills", ".agents/skills")
 EXCLUDED_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".tox"}
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers", "mcp", "plugin"}
@@ -66,13 +77,13 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
     if not config_paths:
         raise ValueError(f"project has no Kilo config ({', '.join(CONFIG_PATHS)}): {root}")
 
-    paths = {relative for relative in (*ROOT_INSTRUCTIONS, *config_paths) if _is_project_file(root, relative)}
-    for config_dir in KILO_CONFIG_DIRS:
-        for directory in KILO_ASSET_DIRS:
-            paths.update(
-                f"{config_dir}/{directory}/{relative}"
-                for relative, _ in _walk_files(root / config_dir / directory, root)
-            )
+    files_at_root = (*ROOT_INSTRUCTIONS, *config_paths, *KILO_LEGACY_RULE_FILES)
+    paths = {relative for relative in files_at_root if _is_project_file(root, relative)}
+    folders = [f"{config_dir}/{directory}" for config_dir in KILO_CONFIG_DIRS for directory in KILO_ASSET_DIRS]
+    for folder in (*folders, *KILO_SKILL_DIRS):
+        paths.update(f"{folder}/{relative}" for relative, _ in _walk_files(root / folder, root))
+    for folder in KILO_RULE_DIRS:
+        paths.update(_rule_files(root, folder))
 
     files = {relative: _read_text(root / relative) for relative in sorted(paths)}
     instruction_patterns = set()
@@ -242,9 +253,9 @@ def set_external_directory(files: dict[str, str], action: str) -> dict[str, str]
 
 
 def _walk_files(root: Path, allowed_root: Path):
-    if not root.is_dir():
-        return
     allowed_root = allowed_root.resolve()
+    if not root.is_dir() or _linked_below(allowed_root, root):
+        return
     if not root.resolve().is_relative_to(allowed_root):
         return
     for path in sorted(root.rglob("*")):
@@ -253,6 +264,24 @@ def _walk_files(root: Path, allowed_root: Path):
         resolved = path.resolve()
         if resolved.is_relative_to(allowed_root):
             yield path.relative_to(root).as_posix(), path
+
+
+def _rule_files(root: Path, folder: str) -> list[str]:
+    """The project-relative paths of the rules Kilo reads from `folder`: regular *.md files directly in it."""
+    directory = root / folder
+    if not directory.is_dir() or _linked_below(root, directory):
+        return []
+    return [
+        f"{folder}/{path.name}"
+        for path in sorted(directory.iterdir())
+        if path.name.endswith(".md") and _is_project_file(root, f"{folder}/{path.name}") and _is_safe_file(path)
+    ]
+
+
+def _linked_below(root: Path, path: Path) -> bool:
+    """True if `path`, or a folder between `root` and it, is a symlink, so nothing staged is reached through a link."""
+    relative = path.relative_to(root)
+    return any((root / PurePosixPath(*relative.parts[:depth])).is_symlink() for depth in range(1, len(relative.parts) + 1))
 
 
 def _is_present(path: Path) -> bool:

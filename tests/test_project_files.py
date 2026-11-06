@@ -605,3 +605,83 @@ def test_a_dot_claude_md_in_a_folder_that_cannot_be_listed_is_renamed_under_its_
 
     assert files_renamed("claude-code", tmp_path, staged) == {".claude/CLAUDE.md": "AGENTS.md"}
     assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+
+
+# Phase 5 Task 8: the Kilo loader stages what Kilo 7.8.18 reads without being told to, checked
+# with `kilo debug config --pure` and `kilo debug skill --pure` (docs/load-order.md, "Rules" and
+# "Skills, agents and commands"), under the same safety rules as everything else it stages.
+
+
+def _kilo_project(root, files):
+    (root / "kilo.jsonc").write_text("{}")
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text)
+    return root
+
+
+def test_rules_kilo_reads_without_an_instructions_entry_are_staged(tmp_path):
+    _kilo_project(tmp_path, {
+        ".kilo/rules/a.md": "a\n",
+        ".kilocode/rules/b.md": "b\n",
+        ".kilocode/rules/.hidden.md": "hidden\n",
+        ".kilo/rules-code/c.md": "c\n",
+        ".kilocode/rules-orchestrator/d.md": "d\n",
+        ".kilocoderules": "legacy\n",
+        ".kilocoderules-architect": "legacy architect\n",
+    })
+
+    files = load_project_files(tmp_path)
+
+    assert set(files) == {
+        "kilo.jsonc", ".kilo/rules/a.md", ".kilocode/rules/b.md", ".kilocode/rules/.hidden.md",
+        ".kilo/rules-code/c.md", ".kilocode/rules-orchestrator/d.md", ".kilocoderules", ".kilocoderules-architect",
+    }
+    assert files[".kilocode/rules/b.md"] == "b\n"
+
+
+def test_only_the_rules_kilo_reads_are_staged_and_never_an_unsafe_one(tmp_path):
+    # Kilo reads the .md files directly in a rules folder, with a lowercase suffix, and only for its five modes.
+    _kilo_project(tmp_path, {
+        ".kilocode/rules/nested/deep.md": "nested\n",
+        ".kilocode/rules/notes.txt": "not markdown\n",
+        ".kilocode/rules/UPPER.MD": "upper case suffix\n",
+        ".kilocode/rules-review/r.md": "not one of Kilo's modes\n",
+        ".kilocode/rules/.env.md": "SECRET=x\n",
+        ".kilocoderules-review": "not one of Kilo's modes\n",
+        "elsewhere/real.md": "linked to\n",
+    })
+    (tmp_path / ".kilocode/rules/folder.md").mkdir()
+    (tmp_path / ".kilocode/rules/linked.md").symlink_to(tmp_path / "elsewhere/real.md")
+    (tmp_path / ".kilocoderules").symlink_to(tmp_path / "elsewhere/real.md")
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+
+def test_skills_kilo_reads_from_dot_claude_and_dot_agents_are_staged_and_nothing_else_there(tmp_path):
+    _kilo_project(tmp_path, {
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/skills/review/scripts/check.sh": "echo check\n",
+        ".agents/skills/release/SKILL.md": "release skill\n",
+        ".claude/skills/review/.env": "SECRET=x\n",
+        ".claude/settings.json": '{"hooks": {}}',
+        ".claude/agents/helper.md": "not read by Kilo\n",
+        ".claude/CLAUDE.md": "not read by Kilo from .claude/\n",
+        ".agents/notes.md": "not a skill\n",
+    })
+
+    assert set(load_project_files(tmp_path)) == {
+        "kilo.jsonc", ".claude/skills/review/SKILL.md", ".claude/skills/review/scripts/check.sh", ".agents/skills/release/SKILL.md",
+    }
+
+
+@pytest.mark.parametrize("linked", [".claude", ".agents/skills", ".kilocode", ".kilocode/rules", ".kilo/skills"])
+def test_a_folder_reached_through_a_symlink_stages_nothing_even_inside_the_project(tmp_path, linked):
+    _kilo_project(tmp_path, {
+        "real/skills/x/SKILL.md": "skill\n", "real/x/SKILL.md": "skill\n", "real/rules/r.md": "rule\n", "real/r.md": "rule\n",
+    })
+    (tmp_path / linked).parent.mkdir(parents=True, exist_ok=True)
+    target = {".claude": "real", ".kilocode": "real", ".agents/skills": "real", ".kilo/skills": "real", ".kilocode/rules": "real"}[linked]
+    (tmp_path / linked).symlink_to(tmp_path / target)
+
+    assert not [name for name in load_project_files(tmp_path) if name.startswith(linked.split("/")[0])]
