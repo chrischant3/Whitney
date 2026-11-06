@@ -228,6 +228,20 @@ def test_lowering_an_eval_gate_threshold_is_flagged():
     assert _rules(removed=[Line("scripts/run_evals.py", 242, arg(0.9).replace("adherence", "held"))]) == ["threshold-lowered"]
 
 
+def test_lowering_or_removing_a_minimum_in_the_thresholds_module_is_flagged():
+    # whitney.checks and report.py both read the gate's minimums from src/whitney/thresholds.py.
+    at = "src/whitney/thresholds.py"
+    assert _rules(removed=[Line(at, 20, "MIN_HELD = 0.9")], added=[Line(at, 20, "MIN_HELD = 0.85")]) == ["threshold-lowered"]
+    assert _rules(removed=[Line(at, 19, "MIN_ADHERENCE = 0.8")]) == ["threshold-lowered"]
+    assert _rules(removed=[Line(at, 20, "MIN_HELD = 0.9")], added=[Line(at, 20, "MIN_HELD = 1.0")]) == []
+
+
+def test_a_minimum_moved_from_report_py_to_the_thresholds_module_keeps_its_floor():
+    moved_from = [Line("src/whitney/report.py", 43, "MIN_ADHERENCE = 0.8")]
+    assert _rules(removed=moved_from, added=[Line("src/whitney/thresholds.py", 19, "MIN_ADHERENCE = 0.8")]) == []
+    assert _rules(removed=moved_from, added=[Line("src/whitney/thresholds.py", 19, "MIN_ADHERENCE = 0.7")]) == ["threshold-lowered"]
+
+
 def test_the_guard_checks_the_repository_it_is_pointed_at(tmp_path):
     # CI runs main's copy of the guard on the pull request's checkout, so a pull request
     # can't weaken the guard that checks it.
