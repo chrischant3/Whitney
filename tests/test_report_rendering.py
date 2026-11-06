@@ -487,7 +487,7 @@ def test_a_claude_md_staged_as_agents_md_is_named_as_renamed():
     report = render_asset_provenance_markdown(logs)
 
     assert (
-        "\n### Renamed for the Eval\n"
+        "|\n\n### Renamed for the Eval\n"
         "\n"
         "Whitney's `claude-code` evals and their baseline are about `AGENTS.md`, so a project with no usable "
         "`AGENTS.md` has its `CLAUDE.md` staged under that name. Only the temporary copy is renamed; the project "
@@ -506,3 +506,9 @@ def test_a_log_with_no_rename_renders_as_a_log_from_before_renames_were_recorded
     after = [_asset_log("older_log", {"AGENTS.md": "x"}, not_staged=[".claude/a.md"], renamed={})]
     assert render_asset_provenance_markdown(after) == render_asset_provenance_markdown(before)
     assert "Renamed" not in render_asset_provenance_markdown(after)
+
+
+def test_more_than_one_rename_for_a_variant_is_listed_in_one_row():
+    renamed = {"CLAUDE.md": "AGENTS.md", "notes.md": "CONTEXT.md"}  # only one today; the table doesn't assume it
+    report = render_asset_provenance_markdown([_asset_log("run", {"AGENTS.md": "x"}, renamed=renamed)])
+    assert "| `run` | `CLAUDE.md` staged as `AGENTS.md`, `notes.md` staged as `CONTEXT.md` |\n" in report
