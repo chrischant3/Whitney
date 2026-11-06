@@ -89,9 +89,10 @@ to `/` but finds no symlink there, since the root is already resolved; and
 Two more survive here but are not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
 and 3.12 it is `re.TEMPLATE`, matching raises `re.error`, and
-`test_names_match_whatever_their_case_only_where_kilos_glob_does` kills it; and `harbor_tasks._host_variables` opening
-`DOCKER-COMPOSE.YAML` finds the same file on a case-insensitive disk such as
-macOS's, but is killed on a case-sensitive one (Linux).
+`test_names_match_whatever_their_case_only_where_kilos_glob_does` kills it;
+and `harbor_tasks._host_variables` opening `DOCKER-COMPOSE.YAML` finds the
+same file on a case-insensitive disk such as macOS's, but is killed on a
+case-sensitive one (Linux).
 
 ## Not covered, on purpose
 
