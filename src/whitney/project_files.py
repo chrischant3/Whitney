@@ -6,7 +6,7 @@ picks between them.
 """
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from whitney.static_checks import parse_jsonc
 
@@ -24,17 +24,27 @@ KILO_CONFIG_DIRS = (".kilo", ".kilocode")
 EXCLUDED_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".tox"}
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers", "mcp", "plugin"}
-# Claude Code reads these as project instructions (tasks/plan-phase5.md, decision 5),
-# though in one run on 2026-11-06 it ignored AGENTS.md when .claude/CLAUDE.md was there
-# too (docs/results/2026-11-06-claude-code-canary.md). The rest of .claude/ stays out:
-# settings.json can hold hooks, which run commands, and which of its keys are safe to
-# copy is still open (spec open question 8).
+# Whitney's claude-code evals and their baseline are about AGENTS.md, so the loader stages one
+# instruction file, always as AGENTS.md: the first of these that is a regular file inside the
+# project. A CLAUDE.md beside a staged AGENTS.md stays out: in one run on 2026-11-06 Claude Code
+# ignored AGENTS.md once .claude/CLAUDE.md existed (docs/results/2026-11-06-claude-code-canary.md),
+# which would make the results about a file the agent never read (tasks/plan-phase5.md,
+# decision 5, as revised). The rest of .claude/ stays out too: settings.json can hold hooks,
+# which run commands, and which of its keys are safe to copy is still open (spec open question 8).
 CLAUDE_CODE_DIR = ".claude"
-CLAUDE_CODE_ROOT_INSTRUCTIONS = ("AGENTS.md", "CLAUDE.md")
-CLAUDE_CODE_INSTRUCTIONS = (*CLAUDE_CODE_ROOT_INSTRUCTIONS, f"{CLAUDE_CODE_DIR}/CLAUDE.md")
+AGENTS_MD = "AGENTS.md"
+CLAUDE_MD = "CLAUDE.md"
+DOT_CLAUDE_MD = f"{CLAUDE_CODE_DIR}/{CLAUDE_MD}"
+CLAUDE_CODE_ROOT_INSTRUCTIONS = (AGENTS_MD, CLAUDE_MD)
+CLAUDE_CODE_INSTRUCTIONS = (*CLAUDE_CODE_ROOT_INSTRUCTIONS, DOT_CLAUDE_MD)
 # files_not_staged names this many paths and counts the rest, so a large .claude/
 # (Claude Code can keep whole worktrees there) can't swell the log or the report.
 NOT_STAGED_LIMIT = 50
+# Why files_not_staged_reasons says a name was left out.
+BESIDE_REASON = "beside {staged}"
+UNSAFE_REASON = "a symlink or outside the project"
+REST_REASON = f"rest of {CLAUDE_CODE_DIR}/"
+WHOLE_REASON = "a symlink, or can't be read"
 
 
 def load_template_files(template_dir: Path) -> dict[str, str]:
@@ -91,34 +101,35 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
 
 
 def load_claude_code_project_files(project_dir: Path) -> dict[str, str]:
-    """Load the instruction files Claude Code reads from a project, and nothing else.
+    """Load one instruction file for Claude Code, always as AGENTS.md, and nothing else.
 
-    Loads root AGENTS.md and CLAUDE.md and .claude/CLAUDE.md, under the same
-    rules as load_project_files: a file that is a symlink, or that resolves
-    outside the project, is left out. A .claude folder that is itself a
-    symlink is never followed, even to a folder inside the project. No Kilo
-    config is needed.
+    The file is root AGENTS.md, else root CLAUDE.md, else .claude/CLAUDE.md
+    (CLAUDE_CODE_INSTRUCTIONS gives the reason). files_renamed says when it
+    wasn't AGENTS.md, and files_not_staged names the ones passed over. The
+    same rules as load_project_files apply: a file that is a symlink, or
+    that resolves outside the project, is skipped. A .claude folder that is
+    itself a symlink is never followed. No Kilo config is needed.
 
     Args:
         project_dir: the project folder. It is read, never written.
 
     Returns:
-        Each instruction file found, project-relative path to its text.
+        {"AGENTS.md": the chosen file's text}.
 
     Raises:
         FileNotFoundError: project_dir doesn't exist.
         ValueError: project_dir isn't a folder, holds none of the files
-            (the message names them and says what is skipped), or a file
-            isn't UTF-8.
+            (the message names them and says what is skipped), or the
+            chosen file isn't UTF-8.
     """
     root = _project_root(project_dir)
-    paths = _claude_code_paths(root)
-    if not paths:
+    source = _claude_code_source(root)
+    if source is None:
         raise ValueError(
             f"project has no Claude Code instructions ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}; "
             f"symlinks and files outside the project are skipped): {root}"
         )
-    return {relative: _read_text(root / relative) for relative in paths}
+    return {AGENTS_MD: _read_text(root / source)}
 
 
 def load_project_files_for(target: str, project_dir: Path) -> dict[str, str]:
@@ -140,45 +151,81 @@ def load_project_files_for(target: str, project_dir: Path) -> dict[str, str]:
     return loaders[target](project_dir)
 
 
+def files_renamed(target: str, project_dir: Path, staged: dict[str, str]) -> dict[str, str]:
+    """Say which project file was staged under another name, for the report.
+
+    Only claude-code renames: a CLAUDE.md or .claude/CLAUDE.md staged as
+    AGENTS.md because the project has no usable AGENTS.md. The file is named
+    as the folder spells it: names are looked up as the filesystem does, so
+    on a case-insensitive disk a lowercase agents.md is staged, and named
+    here, too. The project's own files are never renamed or changed, only
+    the copy.
+
+    Args:
+        target: "kilo" or "claude-code".
+        project_dir: the project folder, as given to the loader.
+        staged: the files the variant stages, after any it drops; a
+            baseline without AGENTS.md has no rename to name.
+
+    Returns:
+        {project-relative path: name it was staged as}, empty if nothing was renamed.
+
+    Raises:
+        FileNotFoundError, ValueError: as files_not_staged raises them (claude-code only).
+    """
+    if target != "claude-code" or AGENTS_MD not in staged:
+        return {}
+    root = _project_root(project_dir)
+    spelled = _spelled(root, _claude_code_source(root))
+    return {} if spelled == AGENTS_MD else {spelled: AGENTS_MD}
+
+
 def files_not_staged(target: str, project_dir: Path) -> list[str]:
     """Name what the project holds for `target`'s harness that its loader leaves out, for the report.
 
-    Only claude-code leaves anything out today: a root AGENTS.md or CLAUDE.md
-    skipped because it isn't a regular file inside the project, and the
-    entries of the project's .claude/ folder apart from a staged
-    .claude/CLAUDE.md. Entries are named one level down, a folder with a
-    trailing "/", rather than file by file. A symlinked entry is named
-    without being followed. A .claude/ that is a symlink, or that can't be
-    read, is named as a whole, so nothing it points to is listed. Only names
-    are read, never contents.
+    Only claude-code leaves anything out today: each of root AGENTS.md, root
+    CLAUDE.md and .claude/CLAUDE.md that exists but isn't the one file
+    staged (see load_claude_code_project_files), and the other entries of
+    the project's .claude/ folder. Names are spelled as on disk. Entries are
+    named one level down, a folder with a trailing "/", rather than file by
+    file. A symlinked entry is named without being followed. A .claude/
+    that is a symlink, or that can't be read, is named as a whole, so
+    nothing it points to is listed. Only names are read, never contents.
 
     Args:
         target: "kilo" or "claude-code".
         project_dir: the project folder.
 
     Returns:
-        Project-relative paths, empty if nothing was left out: skipped root
-        files first, then the sorted .claude/ entries. Past NOT_STAGED_LIMIT
-        entries, the rest are counted in a last item, "and N more"; skipped
-        root files are never cut.
+        Project-relative paths, empty if nothing was left out: root files
+        first, then .claude/CLAUDE.md, then the other .claude/ entries,
+        sorted. Past NOT_STAGED_LIMIT of those others, the rest are counted
+        in a last item, "and N more"; root files and .claude/CLAUDE.md are
+        never cut.
 
     Raises:
         FileNotFoundError: project_dir doesn't exist (claude-code only).
         ValueError: project_dir isn't a folder (claude-code only).
     """
-    if target != "claude-code":
-        return []
-    root = _project_root(project_dir)
-    staged = _claude_code_paths(root)
-    skipped = [
-        relative
-        for relative in CLAUDE_CODE_ROOT_INSTRUCTIONS
-        if relative not in staged and ((root / relative).is_symlink() or (root / relative).exists())
-    ]
-    entries = sorted(_unstaged_claude_entries(root, staged))
-    if len(entries) > NOT_STAGED_LIMIT:
-        entries = [*entries[:NOT_STAGED_LIMIT], f"and {len(entries) - NOT_STAGED_LIMIT} more"]
-    return [*skipped, *entries]
+    return _not_staged(target, project_dir)[0]
+
+
+def files_not_staged_reasons(target: str, project_dir: Path) -> dict[str, str]:
+    """Say why each name files_not_staged gives was left out, for the report.
+
+    Args:
+        target: "kilo" or "claude-code".
+        project_dir: the project folder.
+
+    Returns:
+        {name: short reason} for every name files_not_staged lists except a
+        last "and N more"; empty for kilo. The reasons are BESIDE_REASON,
+        UNSAFE_REASON, REST_REASON and WHOLE_REASON.
+
+    Raises:
+        FileNotFoundError, ValueError: as files_not_staged raises them.
+    """
+    return _not_staged(target, project_dir)[1]
 
 
 def set_external_directory(files: dict[str, str], action: str) -> dict[str, str]:
@@ -208,13 +255,46 @@ def _walk_files(root: Path, allowed_root: Path):
             yield path.relative_to(root).as_posix(), path
 
 
-def _claude_code_paths(root: Path) -> list[str]:
-    # A symlinked .claude is never followed: `.claude -> .` would stage CLAUDE.md twice.
+def _is_present(path: Path) -> bool:
+    return path.is_symlink() or path.exists()  # a broken link is still named
+
+
+def _not_staged(target: str, project_dir: Path) -> tuple[list[str], dict[str, str]]:
+    if target != "claude-code":
+        return [], {}
+    root = _project_root(project_dir)
+    source = _claude_code_source(root)
+    first = [
+        (_spelled(root, relative), _instruction_reason(root, relative, source))
+        for relative in CLAUDE_CODE_ROOT_INSTRUCTIONS
+        if relative != source and _is_present(root / relative)
+    ]
+    others = []
+    for name, reason in sorted(_unstaged_claude_entries(root, source)):
+        # .claude/CLAUDE.md, in any spelling, goes ahead of the cap: the report most needs to name it.
+        (first if name.casefold() == DOT_CLAUDE_MD.casefold() else others).append((name, reason))
+    shown = first + others[:NOT_STAGED_LIMIT]
+    names = [name for name, _ in shown]
+    if len(others) > NOT_STAGED_LIMIT:
+        names.append(f"and {len(others) - NOT_STAGED_LIMIT} more")
+    return names, dict(shown)
+
+
+def _instruction_reason(root: Path, relative: str, source: str | None) -> str:
+    # Only reached for a file that isn't a symlinked .claude's: those are named as the folder.
+    if _is_staged_claude_code_file(root, relative):
+        return BESIDE_REASON.format(staged=_spelled(root, source))
+    return UNSAFE_REASON
+
+
+def _claude_code_source(root: Path) -> str | None:
+    # A symlinked .claude is never followed, even to a folder inside the project: no staged file is reached by a link.
     linked = (root / CLAUDE_CODE_DIR).is_symlink()
-    return [relative for relative in CLAUDE_CODE_INSTRUCTIONS if _is_staged_claude_code_file(root, relative, linked)]
+    usable = (relative for relative in CLAUDE_CODE_INSTRUCTIONS if _is_staged_claude_code_file(root, relative, linked))
+    return next(usable, None)  # lazily, so .claude/ is only looked in when no root file will do
 
 
-def _is_staged_claude_code_file(root: Path, relative: str, linked: bool) -> bool:
+def _is_staged_claude_code_file(root: Path, relative: str, linked: bool = False) -> bool:
     if not relative.startswith(f"{CLAUDE_CODE_DIR}/"):
         return _is_project_file(root, relative)
     if linked:
@@ -225,23 +305,44 @@ def _is_staged_claude_code_file(root: Path, relative: str, linked: bool) -> bool
         return False
 
 
-def _unstaged_claude_entries(root: Path, staged: list[str]) -> list[str]:
+def _unstaged_claude_entries(root: Path, source: str | None) -> list[tuple[str, str]]:
     folder = root / CLAUDE_CODE_DIR
+    whole = [(f"{CLAUDE_CODE_DIR}/", WHOLE_REASON)]
     if folder.is_symlink():
-        return [f"{CLAUDE_CODE_DIR}/"]
+        return whole
     if not folder.is_dir():
         return []
-    try:
+    try:  # an unreadable folder or entry is named, not allowed to stop the task being built
         entries = list(folder.iterdir())
-    except OSError:  # an unreadable folder is named, not allowed to stop the task being built
-        return [f"{CLAUDE_CODE_DIR}/"]
-    # By file, not by name: on a case-insensitive disk .claude/claude.md is staged as .claude/CLAUDE.md.
-    staged_inside = [root / relative for relative in staged if relative.startswith(f"{CLAUDE_CODE_DIR}/")]
-    return [
-        f"{CLAUDE_CODE_DIR}/{entry.name}" + ("/" if not entry.is_symlink() and entry.is_dir() else "")
-        for entry in entries
-        if entry.is_symlink() or not any(entry.samefile(path) for path in staged_inside)
-    ]
+        names = [entry.name for entry in entries]
+        instruction = _on_disk_name(names, CLAUDE_MD) if _is_present(folder / CLAUDE_MD) else None
+        items = []
+        for entry in entries:
+            if entry.name != instruction:
+                suffix = "/" if not entry.is_symlink() and entry.is_dir() else ""
+                items.append((f"{CLAUDE_CODE_DIR}/{entry.name}{suffix}", REST_REASON))
+            elif source != DOT_CLAUDE_MD:
+                items.append((f"{CLAUDE_CODE_DIR}/{entry.name}", _instruction_reason(root, DOT_CLAUDE_MD, source)))
+        return items
+    except OSError:
+        return whole
+
+
+def _spelled(root: Path, relative: str) -> str:
+    # Names are looked up as the filesystem does, so on a case-insensitive disk "CLAUDE.md"
+    # finds claude.md. The report names the file as the folder spells it.
+    path = PurePosixPath(relative)
+    try:
+        names = [entry.name for entry in (root / path.parent).iterdir()]
+    except OSError:  # a folder that can't be listed keeps the name the file was found by
+        return relative
+    return (path.parent / _on_disk_name(names, path.name)).as_posix()
+
+
+def _on_disk_name(names: list[str], wanted: str) -> str:
+    # Called only for a name the filesystem found, so one of `names` matches it, ignoring case.
+    matches = [name for name in names if name.casefold() == wanted.casefold()]
+    return wanted if wanted in matches else matches[0]
 
 
 def _project_root(project_dir: Path) -> Path:

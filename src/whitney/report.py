@@ -45,8 +45,15 @@ MIN_HELD = 0.9
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 NOT_STAGED_NOTE = (
     "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
-    "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
-    "`AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project."
+    "Where the log records why, the reason follows each name. For `claude-code`, Whitney copies one instruction "
+    "file, as `AGENTS.md`. A `CLAUDE.md` beside `AGENTS.md` stays out because Whitney's `claude-code` evals and "
+    "their baseline (the same run with `AGENTS.md` removed) are about `AGENTS.md`, and in one run Claude Code "
+    "ignored `AGENTS.md` once `.claude/CLAUDE.md` existed."
+)
+RENAMED_NOTE = (
+    "Whitney's `claude-code` evals and their baseline (the same run with `AGENTS.md` removed) are about "
+    "`AGENTS.md`, so a project with no usable `AGENTS.md` has its `CLAUDE.md` staged under that name. Only the "
+    "temporary copy is renamed; the project itself is never changed."
 )
 # The last item of a long not_staged list counts the names left off it (project_files.files_not_staged).
 MORE_NOT_STAGED = re.compile(r"and \d+ more")
@@ -310,18 +317,30 @@ def render_harbor_markdown(logs: list[EvalLog]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _not_staged_name(path: str, reasons: dict[str, str]) -> str:
+    if MORE_NOT_STAGED.fullmatch(path):
+        return path
+    return f"`{path}` ({reasons[path]})" if path in reasons else f"`{path}`"
+
+
 def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
     """Include each staged policy/config copy once and map it to its variants.
 
-    Project paths a variant's loader left out (the `not_staged` metadata,
-    see whitney.project_files.files_not_staged) are named after the
-    variant inputs, so a reader knows the runs didn't see them.
+    Project files staged under another name (the `renamed` metadata, see
+    whitney.project_files.files_renamed) and project paths a variant's
+    loader left out (the `not_staged` metadata, see
+    whitney.project_files.files_not_staged, each with its reason from
+    `not_staged_reasons` when recorded) are named after the variant
+    inputs, so a reader knows what the runs saw. Logs without those keys
+    render as before.
     """
     task_inputs: dict[str, dict[str, object]] = {}
     file_copies: dict[tuple[str, str], set[str]] = defaultdict(set)
     permission_overlays: dict[str, set[str]] = defaultdict(set)
     prompt_preambles: dict[str, set[str]] = defaultdict(set)
     not_staged: dict[str, list[str]] = {}
+    not_staged_reasons: dict[str, dict[str, str]] = {}
+    renamed: dict[str, dict[str, str]] = {}
     for log in logs:
         metadata = log.eval.metadata or {}
         assets = metadata.get("evaluation_assets")
@@ -350,9 +369,12 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
         preamble = metadata.get("evaluation_preamble")
         if preamble:
             prompt_preambles[str(preamble)].add(task)
+        if metadata.get("renamed"):  # absent from logs written before it was recorded
+            renamed[task] = dict(metadata["renamed"])
         left_out = metadata.get("not_staged")  # absent from logs written before it was recorded
         if left_out:
             not_staged[task] = list(left_out)  # in files_not_staged's order, with any "and N more" last
+            not_staged_reasons[task] = dict(metadata.get("not_staged_reasons") or {})  # also absent from older logs
 
     if not task_inputs:
         return ""
@@ -376,10 +398,16 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
             f"| {details['execution']} | {paths} |"
         )
 
+    if renamed:
+        sections.extend(["", "### Renamed for the Eval", "", RENAMED_NOTE, "", "| Eval variant | Renamed |", "|---|---|"])
+        for task, names in sorted(renamed.items()):
+            pairs = ", ".join(f"`{original}` staged as `{staged}`" for original, staged in sorted(names.items()))
+            sections.append(f"| `{task}` | {pairs} |")
+
     if not_staged:
         sections.extend(["", "### Not Staged", "", NOT_STAGED_NOTE, "", "| Eval variant | Not staged |", "|---|---|"])
         for task, paths in sorted(not_staged.items()):
-            names = (path if MORE_NOT_STAGED.fullmatch(path) else f"`{path}`" for path in paths)
+            names = (_not_staged_name(path, not_staged_reasons[task]) for path in paths)
             sections.append(f"| `{task}` | {', '.join(names)} |")
 
     sections.extend(["", "### File Snapshots", ""])

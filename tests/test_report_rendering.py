@@ -452,8 +452,10 @@ def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant
         "### Not Staged\n"
         "\n"
         "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
-        "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
-        "`AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project.\n"
+        "Where the log records why, the reason follows each name. For `claude-code`, Whitney copies one instruction "
+        "file, as `AGENTS.md`. A `CLAUDE.md` beside `AGENTS.md` stays out because Whitney's `claude-code` evals and "
+        "their baseline (the same run with `AGENTS.md` removed) are about `AGENTS.md`, and in one run Claude Code "
+        "ignored `AGENTS.md` once `.claude/CLAUDE.md` existed.\n"
         "\n"
         "| Eval variant | Not staged |\n"
         "|---|---|\n"
@@ -472,3 +474,56 @@ def test_there_is_no_not_staged_section_when_nothing_was_left_out():
 def test_the_count_of_names_left_off_the_not_staged_list_is_not_shown_as_a_path():
     logs = [_asset_log("agents_md_template", {"AGENTS.md": "x"}, not_staged=[".claude/a.md", "and 3 more"])]
     assert "| `agents_md_template` | `.claude/a.md`, and 3 more |\n" in render_asset_provenance_markdown(logs)
+
+
+def test_a_claude_md_staged_as_agents_md_is_named_as_renamed():
+    logs = [
+        _asset_log("agents_md_template", {"AGENTS.md": "x"}, target="claude-code", renamed={"CLAUDE.md": "AGENTS.md"}),
+        _asset_log("agents_md_baseline", {}, target="claude-code", renamed={}),
+    ]
+
+    report = render_asset_provenance_markdown(logs)
+
+    assert (
+        "|\n\n### Renamed for the Eval\n"
+        "\n"
+        "Whitney's `claude-code` evals and their baseline (the same run with `AGENTS.md` removed) are about "
+        "`AGENTS.md`, so a project with no usable `AGENTS.md` has its `CLAUDE.md` staged under that name. Only the "
+        "temporary copy is renamed; the project itself is never changed.\n"
+        "\n"
+        "| Eval variant | Renamed |\n"
+        "|---|---|\n"
+        "| `agents_md_template` | `CLAUDE.md` staged as `AGENTS.md` |\n"
+        "\n"
+        "### File Snapshots\n"
+    ) in report
+
+
+def test_a_log_with_no_rename_renders_as_a_log_from_before_renames_were_recorded():
+    before = [_asset_log("older_log", {"AGENTS.md": "x"}, not_staged=[".claude/a.md"])]
+    after = [_asset_log("older_log", {"AGENTS.md": "x"}, not_staged=[".claude/a.md"], renamed={})]
+    assert render_asset_provenance_markdown(after) == render_asset_provenance_markdown(before)
+    assert "Renamed" not in render_asset_provenance_markdown(after)
+
+
+def test_more_than_one_rename_for_a_variant_is_listed_in_one_row():
+    renamed = {"CLAUDE.md": "AGENTS.md", "notes.md": "CONTEXT.md"}  # only one today; the table doesn't assume it
+    report = render_asset_provenance_markdown([_asset_log("run", {"AGENTS.md": "x"}, renamed=renamed)])
+    assert "| `run` | `CLAUDE.md` staged as `AGENTS.md`, `notes.md` staged as `CONTEXT.md` |\n" in report
+
+
+def test_each_name_left_out_is_shown_with_its_reason():
+    left_out = ["CLAUDE.md", ".claude/settings.json", "and 3 more"]
+    reasons = {"CLAUDE.md": "beside AGENTS.md", ".claude/settings.json": "rest of .claude/"}
+    logs = [_asset_log("run", {"AGENTS.md": "x"}, not_staged=left_out, not_staged_reasons=reasons)]
+
+    report = render_asset_provenance_markdown(logs)
+
+    assert "| `run` | `CLAUDE.md` (beside AGENTS.md), `.claude/settings.json` (rest of .claude/), and 3 more |\n" in report
+
+
+def test_a_log_without_reasons_names_what_was_left_out_as_before():
+    before = [_asset_log("run", {"AGENTS.md": "x"}, not_staged=[".claude/a.md"])]
+    after = [_asset_log("run", {"AGENTS.md": "x"}, not_staged=[".claude/a.md"], not_staged_reasons={})]
+    assert render_asset_provenance_markdown(after) == render_asset_provenance_markdown(before)
+    assert "| `run` | `.claude/a.md` |\n" in render_asset_provenance_markdown(after)

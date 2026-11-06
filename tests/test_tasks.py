@@ -394,3 +394,25 @@ def test_the_kilo_target_still_needs_a_kilo_config_in_the_project(tmp_path):
 def test_nothing_is_named_as_not_staged_when_the_template_is_used():
     assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["not_staged"] == []
     assert agents_md(target="kilo", model=MODEL).metadata["not_staged"] == []
+
+
+def test_a_claude_md_staged_as_agents_md_is_named_as_renamed_in_the_template_variant_only(tmp_path):
+    (tmp_path / "CLAUDE.md").write_text("- Team rule\n")
+
+    template = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path))
+    baseline = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path), variant="baseline")
+
+    assert template.metadata["evaluation_assets"] == {"AGENTS.md": "- Team rule\n"}
+    assert template.metadata["renamed"] == {"CLAUDE.md": "AGENTS.md"}
+    assert baseline.metadata["renamed"] == {}
+    assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["renamed"] == {}
+
+
+def test_the_reason_each_name_was_left_out_is_recorded(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("- Team rule\n")
+    (tmp_path / "CLAUDE.md").write_text("- Claude rule\n")
+
+    task = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path))
+
+    assert task.metadata["not_staged_reasons"] == {"CLAUDE.md": "beside AGENTS.md"}
+    assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["not_staged_reasons"] == {}
