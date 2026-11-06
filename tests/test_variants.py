@@ -349,3 +349,5 @@ def test_a_set_on_a_file_kilo_does_not_read_as_config_is_never_shadowed():
     files = {"other.json": "{}", "kilo.jsonc": '{"a": 2}'}
 
     assert shadowed_sets(files, variant(set={"other.json": {"/a": 1}})) == []
+    [(where, _)] = shadowed_sets({**files, "kilo.json": "{}"}, variant(set={"other.json": {"/a": 1}, "kilo.json": {"/a": 1}}))
+    assert where == ("set", "kilo.json", "/a")
