@@ -79,6 +79,18 @@ default, two no-op defaults in `agent._append_final_message`, and
 folder. Earlier baselines: 77.4% coverage and 57.7% mutation score, then
 92.6% and 88.4% (2026-11-02).
 
+Equivalent mutants found since, on 2026-11-06 (the same kinds, in code added
+later): more codec-name cases (`project_files._load_kilo`, `_read_text`,
+`evalfile.fixture_files`, `validate.exception_ids`); `exception_ids` reading
+with the locale's encoding, which is UTF-8 on macOS and in UTF-8 mode;
+`_linked_below(None, ...)` in `not_staged_reason`, `_walk_files`,
+`_direct_md_files` and `_is_kilo_file`, which walks on past the project root
+to `/` but finds no symlink there, since the root is already resolved;
+`re` flag `1` in place of `0` in `_glob_parts`, a bit Python 3.14 gives no
+meaning; and `allow_nan=None` in `variants.apply_variant`, which `json` reads
+as `False`. `harbor_tasks._host_variables` opening `DOCKER-COMPOSE.YAML`
+survives only on a case-insensitive disk, where it finds the same file.
+
 ## Not covered, on purpose
 
 - **Performance and accessibility budgets**: this is a CLI and library with no page to measure.
