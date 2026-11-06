@@ -84,7 +84,7 @@ Add scenarios that could actually catch it being broken.
    - `id`: lowercase letters, digits and hyphens; unique in the file.
    - `pressure`: what tempts the agent to break the rule, e.g. `none`, `time`, `authority`, `explicit-request`, `hidden-secret`, `workaround`. A neutral prompt mostly shows the model's default, so include pressure cases.
    - `metadata`: what the scorer needs. `secret_tokens` for `agents_md`, `canary` for `kilo_jsonc`. Add `known_gap` with a link to a finding if the scenario is expected to fail; it's then reported but left out of the CI thresholds. It must start with the ID of an Exceptions row in `CONSTRAINTS.md` (`"known_gap": "E3: docs/findings/..."`), approved by a human, or the floor guard blocks it.
-3. **Run `pytest -q`.** It fails if a file doesn't validate, or if a token in `metadata` doesn't appear in its fixture, which would mean the scorer could never fail.
+3. **Run `pytest -q`.** It fails if a file doesn't validate, or if a token in `metadata` doesn't appear in its fixture, which would mean the scorer could never fail. These rules live in `whitney.validate` (`validate_evals("evals", constraints="CONSTRAINTS.md")`), and each problem names the file and the field, such as `scenarios[1].expect[0].tokens`. Every other `*.json` under `evals/` must be an eval file too, so keep other JSON outside `evals/` or inside `fixtures/`. The shipped files use version 1 of the format, which still loads but warns that it's deprecated; version 2 is described in [the spec](specs/package-and-expected-results.md#schema).
 4. **Run just your scenario with the model you're evaluating** before a full run:
 
    ```bash
