@@ -25,12 +25,16 @@ EXCLUDED_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache"
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers", "mcp", "plugin"}
 # Claude Code reads these as project instructions (tasks/plan-phase5.md, decision 5),
-# though a canary run on 2026-11-06 showed it ignoring AGENTS.md when .claude/CLAUDE.md
-# was there too (docs/adding-tests.md). The rest of .claude/ stays out: settings.json
-# can hold hooks, which run commands, and which of its keys are safe to copy is still
-# open (spec open question 8).
+# though in one run on 2026-11-06 it ignored AGENTS.md when .claude/CLAUDE.md was there
+# too (docs/results/2026-11-06-claude-code-canary.md). The rest of .claude/ stays out:
+# settings.json can hold hooks, which run commands, and which of its keys are safe to
+# copy is still open (spec open question 8).
 CLAUDE_CODE_DIR = ".claude"
-CLAUDE_CODE_INSTRUCTIONS = ("AGENTS.md", "CLAUDE.md", f"{CLAUDE_CODE_DIR}/CLAUDE.md")
+CLAUDE_CODE_ROOT_INSTRUCTIONS = ("AGENTS.md", "CLAUDE.md")
+CLAUDE_CODE_INSTRUCTIONS = (*CLAUDE_CODE_ROOT_INSTRUCTIONS, f"{CLAUDE_CODE_DIR}/CLAUDE.md")
+# files_not_staged names this many paths and counts the rest, so a large .claude/
+# (Claude Code can keep whole worktrees there) can't swell the log or the report.
+NOT_STAGED_LIMIT = 50
 
 
 def load_template_files(template_dir: Path) -> dict[str, str]:
@@ -89,9 +93,11 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
 def load_claude_code_project_files(project_dir: Path) -> dict[str, str]:
     """Load the instruction files Claude Code reads from a project, and nothing else.
 
-    Stages root AGENTS.md and CLAUDE.md and .claude/CLAUDE.md, under the same
+    Loads root AGENTS.md and CLAUDE.md and .claude/CLAUDE.md, under the same
     rules as load_project_files: a file that is a symlink, or that resolves
-    outside the project, is left out. No Kilo config is needed.
+    outside the project, is left out. A .claude folder that is itself a
+    symlink is never followed, even to a folder inside the project. No Kilo
+    config is needed.
 
     Args:
         project_dir: the project folder. It is read, never written.
@@ -102,12 +108,16 @@ def load_claude_code_project_files(project_dir: Path) -> dict[str, str]:
     Raises:
         FileNotFoundError: project_dir doesn't exist.
         ValueError: project_dir isn't a folder, holds none of the files
-            (the message names them), or a file isn't UTF-8.
+            (the message names them and says what is skipped), or a file
+            isn't UTF-8.
     """
     root = _project_root(project_dir)
-    paths = [relative for relative in CLAUDE_CODE_INSTRUCTIONS if _is_project_file(root, relative)]
+    paths = _claude_code_paths(root)
     if not paths:
-        raise ValueError(f"project has no Claude Code instructions ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}): {root}")
+        raise ValueError(
+            f"project has no Claude Code instructions ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}; "
+            f"symlinks and files outside the project are skipped): {root}"
+        )
     return {relative: _read_text(root / relative) for relative in paths}
 
 
@@ -133,19 +143,23 @@ def load_project_files_for(target: str, project_dir: Path) -> dict[str, str]:
 def files_not_staged(target: str, project_dir: Path) -> list[str]:
     """Name what the project holds for `target`'s harness that its loader leaves out, for the report.
 
-    Only claude-code leaves anything out today: the entries of the project's
-    .claude/ folder, apart from a staged .claude/CLAUDE.md. Entries are
-    named one level down, a folder with a trailing "/", rather than file by
-    file, because Claude Code can keep whole worktrees under .claude/. A
-    .claude/ folder that resolves outside the project is named as a whole,
-    so nothing outside it is listed. Only names are read, never contents.
+    Only claude-code leaves anything out today: a root AGENTS.md or CLAUDE.md
+    skipped because it is a symlink or resolves outside the project, and the
+    entries of the project's .claude/ folder apart from a staged
+    .claude/CLAUDE.md. Entries are named one level down, a folder with a
+    trailing "/", rather than file by file. A symlinked entry is named
+    without being followed. A .claude/ that is a symlink, or that can't be
+    read, is named as a whole, so nothing it points to is listed. Only names
+    are read, never contents.
 
     Args:
         target: "kilo" or "claude-code".
         project_dir: the project folder.
 
     Returns:
-        Sorted project-relative paths; empty if nothing was left out.
+        Sorted project-relative paths, empty if nothing was left out. Past
+        NOT_STAGED_LIMIT names, the rest are counted in a last item,
+        "and N more".
 
     Raises:
         FileNotFoundError: project_dir doesn't exist (claude-code only).
@@ -154,14 +168,16 @@ def files_not_staged(target: str, project_dir: Path) -> list[str]:
     if target != "claude-code":
         return []
     root = _project_root(project_dir)
-    folder = root / CLAUDE_CODE_DIR
-    if not folder.is_dir():
-        return []
-    if not folder.resolve().is_relative_to(root):
-        return [f"{CLAUDE_CODE_DIR}/"]
-    staged = {relative for relative in CLAUDE_CODE_INSTRUCTIONS if _is_project_file(root, relative)}
-    entries = (f"{CLAUDE_CODE_DIR}/{entry.name}" + ("/" if entry.is_dir() else "") for entry in folder.iterdir())
-    return sorted(entry for entry in entries if entry not in staged)
+    staged = _claude_code_paths(root)
+    skipped = [
+        relative
+        for relative in CLAUDE_CODE_ROOT_INSTRUCTIONS
+        if relative not in staged and ((root / relative).is_symlink() or (root / relative).exists())
+    ]
+    names = sorted([*skipped, *_unstaged_claude_entries(root, staged)])
+    if len(names) > NOT_STAGED_LIMIT:
+        return [*names[:NOT_STAGED_LIMIT], f"and {len(names) - NOT_STAGED_LIMIT} more"]
+    return names
 
 
 def set_external_directory(files: dict[str, str], action: str) -> dict[str, str]:
@@ -189,6 +205,35 @@ def _walk_files(root: Path, allowed_root: Path):
         resolved = path.resolve()
         if resolved.is_relative_to(allowed_root):
             yield path.relative_to(root).as_posix(), path
+
+
+def _claude_code_paths(root: Path) -> list[str]:
+    # A symlinked .claude is never followed: `.claude -> .` would stage CLAUDE.md twice.
+    linked = (root / CLAUDE_CODE_DIR).is_symlink()
+    return [
+        relative
+        for relative in CLAUDE_CODE_INSTRUCTIONS
+        if _is_project_file(root, relative) and not (linked and relative.startswith(f"{CLAUDE_CODE_DIR}/"))
+    ]
+
+
+def _unstaged_claude_entries(root: Path, staged: list[str]) -> list[str]:
+    folder = root / CLAUDE_CODE_DIR
+    if folder.is_symlink():
+        return [f"{CLAUDE_CODE_DIR}/"]
+    if not folder.is_dir():
+        return []
+    try:
+        entries = list(folder.iterdir())
+    except OSError:  # an unreadable folder is named, not allowed to stop the task being built
+        return [f"{CLAUDE_CODE_DIR}/"]
+    # By file, not by name: on a case-insensitive disk .claude/claude.md is staged as .claude/CLAUDE.md.
+    staged_inside = [root / relative for relative in staged if relative.startswith(f"{CLAUDE_CODE_DIR}/")]
+    return [
+        f"{CLAUDE_CODE_DIR}/{entry.name}" + ("/" if not entry.is_symlink() and entry.is_dir() else "")
+        for entry in entries
+        if entry.is_symlink() or not any(entry.samefile(path) for path in staged_inside)
+    ]
 
 
 def _project_root(project_dir: Path) -> Path:

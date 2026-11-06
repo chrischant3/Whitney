@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from whitney.project_files import (
@@ -177,7 +179,8 @@ def test_a_claude_code_project_without_instructions_is_told_which_files_were_loo
     with pytest.raises(ValueError) as raised:
         load_claude_code_project_files(tmp_path)
     assert str(raised.value) == (
-        f"project has no Claude Code instructions (AGENTS.md, CLAUDE.md, .claude/CLAUDE.md): {tmp_path.resolve()}"
+        "project has no Claude Code instructions (AGENTS.md, CLAUDE.md, .claude/CLAUDE.md; "
+        f"symlinks and files outside the project are skipped): {tmp_path.resolve()}"
     )
 
 
@@ -265,3 +268,73 @@ def test_a_dot_claude_folder_outside_the_project_is_named_but_not_listed(tmp_pat
     (tmp_path / "elsewhere/private-notes.md").write_text("not the project's\n")
     (project / ".claude").symlink_to(tmp_path / "elsewhere")
     assert files_not_staged("claude-code", project) == [".claude/"]
+
+
+def test_a_symlinked_dot_claude_folder_stages_nothing_through_it_and_is_named_whole(tmp_path):
+    (tmp_path / "CLAUDE.md").write_text("root rule\n")
+    (tmp_path / ".claude").symlink_to(tmp_path)  # inside the project, but still a symlink
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": "root rule\n"}
+    assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+
+
+def test_a_symlinked_entry_in_dot_claude_is_named_without_following_it(tmp_path):
+    (tmp_path / "outside").mkdir()
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude/CLAUDE.md").write_text("folder rule\n")
+    (project / ".claude/shared").symlink_to(tmp_path / "outside")
+    (project / ".claude/alias.md").symlink_to(project / ".claude/CLAUDE.md")
+
+    assert files_not_staged("claude-code", project) == [".claude/alias.md", ".claude/shared"]
+
+
+def test_a_dot_claude_md_staged_under_another_case_is_not_named(tmp_path):
+    (tmp_path / "probe").write_text("")
+    if not (tmp_path / "PROBE").exists():
+        pytest.skip("needs a case-insensitive filesystem, such as macOS's default")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/claude.md").write_text("folder rule\n")
+
+    assert load_claude_code_project_files(tmp_path) == {".claude/CLAUDE.md": "folder rule\n"}
+    assert files_not_staged("claude-code", tmp_path) == []
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can read a folder whatever its mode")
+def test_an_unreadable_dot_claude_folder_is_named_whole(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/settings.json").write_text("{}")
+    (tmp_path / ".claude").chmod(0o000)
+    try:
+        assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule\n"}
+        assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+    finally:
+        (tmp_path / ".claude").chmod(0o755)
+
+
+def test_root_instruction_files_skipped_for_safety_are_named(tmp_path):
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared/CLAUDE.md").write_text("shared rule\n")
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude/CLAUDE.md").write_text("folder rule\n")
+    (project / "CLAUDE.md").symlink_to(tmp_path / "shared/CLAUDE.md")
+    (project / "AGENTS.md").symlink_to(project / "missing.md")  # a broken link is named too
+
+    assert load_claude_code_project_files(project) == {".claude/CLAUDE.md": "folder rule\n"}
+    assert files_not_staged("claude-code", project) == ["AGENTS.md", "CLAUDE.md"]
+
+
+@pytest.mark.parametrize("count, expected_tail", [(50, ".claude/f49.md"), (52, "and 2 more")])
+def test_the_not_staged_list_stops_at_fifty_names_and_counts_the_rest(tmp_path, count, expected_tail):
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / ".claude").mkdir()
+    for number in range(count):
+        (tmp_path / f".claude/f{number:02d}.md").write_text("x\n")
+
+    names = files_not_staged("claude-code", tmp_path)
+
+    assert names[:50] == [f".claude/f{number:02d}.md" for number in range(50)]
+    assert names[-1] == expected_tail
+    assert len(names) == min(count, 51)

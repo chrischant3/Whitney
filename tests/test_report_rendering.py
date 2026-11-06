@@ -436,7 +436,7 @@ def test_logs_from_before_the_model_rename_still_show_the_model():
 
 
 def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant_inputs():
-    left_out = [".claude/skills/", ".claude/settings.json"]
+    left_out = [".claude/settings.json", ".claude/skills/"]  # as files_not_staged gives it: sorted
     logs = [
         _asset_log("agents_md_template", {"AGENTS.md": "x"}, target="claude-code", not_staged=left_out),
         _asset_log("agents_md_baseline", {}, target="claude-code", not_staged=left_out),
@@ -451,8 +451,9 @@ def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant
         "\n"
         "### Not Staged\n"
         "\n"
-        "The project held these, but Whitney doesn't copy them into the eval projects yet, so the runs didn't use them. "
-        "For `claude-code`, that is everything in `.claude/` except `.claude/CLAUDE.md`.\n"
+        "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
+        "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
+        "`AGENTS.md` or `CLAUDE.md` skipped because it is a symlink or resolves outside the project.\n"
         "\n"
         "| Eval variant | Not staged |\n"
         "|---|---|\n"
@@ -466,3 +467,8 @@ def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant
 def test_there_is_no_not_staged_section_when_nothing_was_left_out():
     logs = [_asset_log("kilo_run", {"AGENTS.md": "x"}, not_staged=[]), _asset_log("older_log", {"AGENTS.md": "x"})]
     assert "Not Staged" not in render_asset_provenance_markdown(logs)
+
+
+def test_the_count_of_names_left_off_the_not_staged_list_is_not_shown_as_a_path():
+    logs = [_asset_log("agents_md_template", {"AGENTS.md": "x"}, not_staged=[".claude/a.md", "and 3 more"])]
+    assert "| `agents_md_template` | `.claude/a.md`, and 3 more |\n" in render_asset_provenance_markdown(logs)

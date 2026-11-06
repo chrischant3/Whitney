@@ -33,9 +33,12 @@ TEMPLATE_VARIANT = "template"
 MIN_CONCLUSIVE = 0.5
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 NOT_STAGED_NOTE = (
-    "The project held these, but Whitney doesn't copy them into the eval projects yet, so the runs didn't use them. "
-    "For `claude-code`, that is everything in `.claude/` except `.claude/CLAUDE.md`."
+    "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
+    "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
+    "`AGENTS.md` or `CLAUDE.md` skipped because it is a symlink or resolves outside the project."
 )
+# The last item of a long not_staged list counts the names left off it (project_files.files_not_staged).
+MORE_NOT_STAGED = re.compile(r"and \d+ more")
 
 
 @dataclass(frozen=True)
@@ -338,7 +341,7 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
             prompt_preambles[str(preamble)].add(task)
         left_out = metadata.get("not_staged")  # absent from logs written before it was recorded
         if left_out:
-            not_staged[task] = sorted(left_out)
+            not_staged[task] = list(left_out)  # already sorted, with any "and N more" last
 
     if not task_inputs:
         return ""
@@ -365,7 +368,8 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
     if not_staged:
         sections.extend(["", "### Not Staged", "", NOT_STAGED_NOTE, "", "| Eval variant | Not staged |", "|---|---|"])
         for task, paths in sorted(not_staged.items()):
-            sections.append(f"| `{task}` | {', '.join(f'`{path}`' for path in paths)} |")
+            names = (path if MORE_NOT_STAGED.fullmatch(path) else f"`{path}`" for path in paths)
+            sections.append(f"| `{task}` | {', '.join(names)} |")
 
     sections.extend(["", "### File Snapshots", ""])
     for path in sorted({path for path, _ in file_copies}):
