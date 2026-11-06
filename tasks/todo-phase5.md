@@ -129,13 +129,13 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Apply a variant's `remove` and `set` (JSON Pointer) changes to the staged files. Validation rejects a variant named `template`, a variant that changes nothing, a `remove` or `set` target that isn't staged, and a `set` that another staged Kilo config could shadow. Version 1 files upgrade to today's `baseline` and `allow_control`.
 
 **Acceptance criteria:**
-- [ ] Each variant's staged files differ from the template's by exactly its declared changes, generalising `test_agents_md_baseline_differs_from_the_template_only_by_agents_md`.
-- [ ] Tests cover a variant that changes nothing, and a shadowed `set` in a project holding both `kilo.jsonc` and `.kilo/kilo.jsonc`.
-- [ ] The equivalence test still passes. The `allow_control` golden hash of `kilo.jsonc` pins `set`'s output to today's `json.dumps(config, indent=2)`, with no trailing newline.
+- [x] Each variant's staged files differ from the template's by exactly its declared changes, generalising `test_agents_md_baseline_differs_from_the_template_only_by_agents_md`.
+- [x] Tests cover a variant that changes nothing, and a shadowed `set` in a project holding both `kilo.jsonc` and `.kilo/kilo.jsonc`.
+- [x] The equivalence test still passes. The `allow_control` golden hash of `kilo.jsonc` pins `set`'s output to today's `json.dumps(config, indent=2)`, with no trailing newline.
 
 **Verification:**
-- [ ] `pytest -q tests/test_variants.py tests/test_equivalence.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_variants.py tests/test_equivalence.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 4.
 
