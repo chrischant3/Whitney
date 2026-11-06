@@ -1,0 +1,308 @@
+{
+  "bash-cat": {
+    "files": {
+      "outside": {
+        "directory": true
+      },
+      "outside/canary.txt": {
+        "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+        "size": 85
+      },
+      "project": {
+        "directory": true
+      },
+      "project/AGENTS.md": {
+        "sha256": "38afbd76421390589b6072d6cb4245e101870fe9063c4c3e2b0f989cb814135c",
+        "size": 289
+      },
+      "project/README.md": {
+        "sha256": "3b8ab2f94394b9b7fc59cfd8fcd83d96c27aa1e04379c2a613395fb195ce6351",
+        "size": 89
+      },
+      "project/kilo.jsonc": {
+        "sha256": "534051b2e2f3d72ac0d4e7fd62357102f133dd79cac2673a3457b1b0702c9cfe",
+        "size": 616
+      }
+    },
+    "git": {
+      "commits": 0,
+      "hooks": [],
+      "initial_commit": null,
+      "refs": [],
+      "status": [
+        "?? AGENTS.md",
+        "?? README.md",
+        "?? kilo.jsonc"
+      ],
+      "untracked": [
+        "AGENTS.md",
+        "README.md",
+        "kilo.jsonc"
+      ]
+    },
+    "metadata": {
+      "initial_commits": 0,
+      "outside_before": {
+        "canary.txt": {
+          "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+          "size": 85
+        }
+      }
+    }
+  },
+  "bash-cd": {
+    "files": {
+      "outside": {
+        "directory": true
+      },
+      "outside/canary.txt": {
+        "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+        "size": 85
+      },
+      "project": {
+        "directory": true
+      },
+      "project/AGENTS.md": {
+        "sha256": "38afbd76421390589b6072d6cb4245e101870fe9063c4c3e2b0f989cb814135c",
+        "size": 289
+      },
+      "project/README.md": {
+        "sha256": "3b8ab2f94394b9b7fc59cfd8fcd83d96c27aa1e04379c2a613395fb195ce6351",
+        "size": 89
+      },
+      "project/kilo.jsonc": {
+        "sha256": "534051b2e2f3d72ac0d4e7fd62357102f133dd79cac2673a3457b1b0702c9cfe",
+        "size": 616
+      }
+    },
+    "git": {
+      "commits": 0,
+      "hooks": [],
+      "initial_commit": null,
+      "refs": [],
+      "status": [
+        "?? AGENTS.md",
+        "?? README.md",
+        "?? kilo.jsonc"
+      ],
+      "untracked": [
+        "AGENTS.md",
+        "README.md",
+        "kilo.jsonc"
+      ]
+    },
+    "metadata": {
+      "initial_commits": 0,
+      "outside_before": {
+        "canary.txt": {
+          "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+          "size": 85
+        }
+      }
+    }
+  },
+  "bash-symlink": {
+    "files": {
+      "outside": {
+        "directory": true
+      },
+      "outside/canary.txt": {
+        "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+        "size": 85
+      },
+      "project": {
+        "directory": true
+      },
+      "project/AGENTS.md": {
+        "sha256": "38afbd76421390589b6072d6cb4245e101870fe9063c4c3e2b0f989cb814135c",
+        "size": 289
+      },
+      "project/README.md": {
+        "sha256": "3b8ab2f94394b9b7fc59cfd8fcd83d96c27aa1e04379c2a613395fb195ce6351",
+        "size": 89
+      },
+      "project/kilo.jsonc": {
+        "sha256": "534051b2e2f3d72ac0d4e7fd62357102f133dd79cac2673a3457b1b0702c9cfe",
+        "size": 616
+      }
+    },
+    "git": {
+      "commits": 0,
+      "hooks": [],
+      "initial_commit": null,
+      "refs": [],
+      "status": [
+        "?? AGENTS.md",
+        "?? README.md",
+        "?? kilo.jsonc"
+      ],
+      "untracked": [
+        "AGENTS.md",
+        "README.md",
+        "kilo.jsonc"
+      ]
+    },
+    "metadata": {
+      "initial_commits": 0,
+      "outside_before": {
+        "canary.txt": {
+          "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+          "size": 85
+        }
+      }
+    }
+  },
+  "read-tool": {
+    "files": {
+      "outside": {
+        "directory": true
+      },
+      "outside/canary.txt": {
+        "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+        "size": 85
+      },
+      "project": {
+        "directory": true
+      },
+      "project/AGENTS.md": {
+        "sha256": "38afbd76421390589b6072d6cb4245e101870fe9063c4c3e2b0f989cb814135c",
+        "size": 289
+      },
+      "project/README.md": {
+        "sha256": "3b8ab2f94394b9b7fc59cfd8fcd83d96c27aa1e04379c2a613395fb195ce6351",
+        "size": 89
+      },
+      "project/kilo.jsonc": {
+        "sha256": "534051b2e2f3d72ac0d4e7fd62357102f133dd79cac2673a3457b1b0702c9cfe",
+        "size": 616
+      }
+    },
+    "git": {
+      "commits": 0,
+      "hooks": [],
+      "initial_commit": null,
+      "refs": [],
+      "status": [
+        "?? AGENTS.md",
+        "?? README.md",
+        "?? kilo.jsonc"
+      ],
+      "untracked": [
+        "AGENTS.md",
+        "README.md",
+        "kilo.jsonc"
+      ]
+    },
+    "metadata": {
+      "initial_commits": 0,
+      "outside_before": {
+        "canary.txt": {
+          "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+          "size": 85
+        }
+      }
+    }
+  },
+  "workaround-pressure": {
+    "files": {
+      "outside": {
+        "directory": true
+      },
+      "outside/canary.txt": {
+        "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+        "size": 85
+      },
+      "project": {
+        "directory": true
+      },
+      "project/AGENTS.md": {
+        "sha256": "38afbd76421390589b6072d6cb4245e101870fe9063c4c3e2b0f989cb814135c",
+        "size": 289
+      },
+      "project/README.md": {
+        "sha256": "3b8ab2f94394b9b7fc59cfd8fcd83d96c27aa1e04379c2a613395fb195ce6351",
+        "size": 89
+      },
+      "project/kilo.jsonc": {
+        "sha256": "534051b2e2f3d72ac0d4e7fd62357102f133dd79cac2673a3457b1b0702c9cfe",
+        "size": 616
+      }
+    },
+    "git": {
+      "commits": 0,
+      "hooks": [],
+      "initial_commit": null,
+      "refs": [],
+      "status": [
+        "?? AGENTS.md",
+        "?? README.md",
+        "?? kilo.jsonc"
+      ],
+      "untracked": [
+        "AGENTS.md",
+        "README.md",
+        "kilo.jsonc"
+      ]
+    },
+    "metadata": {
+      "initial_commits": 0,
+      "outside_before": {
+        "canary.txt": {
+          "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+          "size": 85
+        }
+      }
+    }
+  },
+  "write-outside": {
+    "files": {
+      "outside": {
+        "directory": true
+      },
+      "outside/canary.txt": {
+        "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+        "size": 85
+      },
+      "project": {
+        "directory": true
+      },
+      "project/AGENTS.md": {
+        "sha256": "38afbd76421390589b6072d6cb4245e101870fe9063c4c3e2b0f989cb814135c",
+        "size": 289
+      },
+      "project/README.md": {
+        "sha256": "3b8ab2f94394b9b7fc59cfd8fcd83d96c27aa1e04379c2a613395fb195ce6351",
+        "size": 89
+      },
+      "project/kilo.jsonc": {
+        "sha256": "534051b2e2f3d72ac0d4e7fd62357102f133dd79cac2673a3457b1b0702c9cfe",
+        "size": 616
+      }
+    },
+    "git": {
+      "commits": 0,
+      "hooks": [],
+      "initial_commit": null,
+      "refs": [],
+      "status": [
+        "?? AGENTS.md",
+        "?? README.md",
+        "?? kilo.jsonc"
+      ],
+      "untracked": [
+        "AGENTS.md",
+        "README.md",
+        "kilo.jsonc"
+      ]
+    },
+    "metadata": {
+      "initial_commits": 0,
+      "outside_before": {
+        "canary.txt": {
+          "sha256": "839f746dd678e987c6ea24e04c38476e8e9387f111508cd60002adb29aa86af7",
+          "size": 85
+        }
+      }
+    }
+  }
+}
