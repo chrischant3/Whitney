@@ -180,9 +180,19 @@ def test_a_spec_read_from_the_registry_cannot_change_the_registered_one():
     assert registry()["no_secret_committed"].findable == {"tokens": "fixture"}
 
 
+def test_a_spec_keeps_its_findable_however_the_caller_changes_theirs():
+    findable = {"token": "outside"}
+    spec = declare(params=TokenParams, findable=findable).checks()["demo_check"]
+    findable["token"] = "fixture"
+
+    with pytest.raises(TypeError):
+        spec.findable["token"] = "fixture_or_prompt"
+    assert spec.findable == {"token": "outside"}
+
+
 def test_a_verdict_carrying_an_undeclared_metric_is_refused():
-    spec = declare(verdict=Verdict("pass", "fine", {"task_done": 1.0})).checks()["demo_check"]
-    with pytest.raises(CheckError, match="^check 'demo_check' returned undeclared metric\\(s\\): task_done$"):
+    spec = declare(verdict=Verdict("pass", "fine", {"task_done": 1.0, "seen": 1.0})).checks()["demo_check"]
+    with pytest.raises(CheckError, match="^check 'demo_check' returned undeclared metric\\(s\\): seen, task_done$"):
         spec.run(Evidence(exit_code=0), {})
 
 
