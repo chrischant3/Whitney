@@ -27,7 +27,6 @@ from pydantic import BaseModel, ValidationError
 from whitney.checks import CheckSpec, registry
 from whitney.evalfile import (
     FIXTURES_FOLDER,
-    SETUP_STEPS,
     V1_PARAMETER_KEYS,
     VERSION_1_DEPRECATED,
     EvalFile,
@@ -40,9 +39,10 @@ from whitney.evalfile import (
     load,
     location,
 )
+from whitney.setup_steps import PENDING_DIR, PROJECT_DIR, SETUP_STEPS
 
 # The fixture folders the agent's project starts from: project/ is staged as it is, pending/ by apply_pending.
-PROJECT, PENDING = "project", "pending"
+PROJECT, PENDING = PROJECT_DIR, PENDING_DIR
 KNOWN_GAP = re.compile(r"E\d+: .+")
 EXCEPTION_ROW = re.compile(r"^\|\s*(E\d+)\s*\|", re.MULTILINE)
 # The Exceptions section runs from its heading to the next level-2 heading.
