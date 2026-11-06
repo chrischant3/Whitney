@@ -143,15 +143,39 @@ def test_assets_are_read_as_utf8_whatever_the_locale(tmp_path, ascii_locale):
     assert load_template_files(tmp_path) == {"AGENTS.md": "- Règle : jamais de secrets\n"}
 
 
-# The claude-code target's loader. Claude Code reads root AGENTS.md and CLAUDE.md,
-# and .claude/CLAUDE.md (tasks/plan-phase5.md, decision 5); nothing else is staged.
+# The claude-code target's loader. Whitney stages root AGENTS.md and nothing else; CLAUDE.md and
+# .claude/CLAUDE.md are named as not staged (tasks/plan-phase5.md, decision 5, reversed 2026-11-06).
+
+NO_CLAUDE_CODE_INSTRUCTIONS = (
+    "project has no Claude Code instructions (AGENTS.md; CLAUDE.md and .claude/CLAUDE.md aren't staged, "
+    "and symlinks and files outside the project are skipped): "
+)
 
 
-@pytest.mark.parametrize("name", ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"])
-def test_a_claude_code_project_with_one_instruction_file_stages_it_without_kilo_config(tmp_path, name):
+def test_a_claude_code_project_with_one_instruction_file_stages_it_without_kilo_config(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("- Team rule\n")
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "- Team rule\n"}
+
+
+@pytest.mark.parametrize("name", ["CLAUDE.md", ".claude/CLAUDE.md"])
+def test_a_claude_code_project_whose_only_instructions_are_a_claude_md_stops_and_says_it_is_not_staged(tmp_path, name):
     (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / name).write_text("- Team rule\n")
-    assert load_claude_code_project_files(tmp_path) == {name: "- Team rule\n"}
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(tmp_path)
+    assert str(raised.value) == f"{NO_CLAUDE_CODE_INSTRUCTIONS}{tmp_path.resolve()}"
+    assert files_not_staged("claude-code", tmp_path) == [name]
+
+
+@pytest.mark.parametrize("name", ["CLAUDE.md", ".claude/CLAUDE.md"])
+def test_a_claude_md_beside_agents_md_is_named_not_staged_and_agents_md_is_staged(tmp_path, name):
+    # Claude Code ignored AGENTS.md once .claude/CLAUDE.md existed (docs/results/2026-11-06-claude-code-canary.md).
+    (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / name).write_text("claude rule\n")
+    (tmp_path / "AGENTS.md").write_text("agents rule\n")
+
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "agents rule\n"}
+    assert files_not_staged("claude-code", tmp_path) == [name]
 
 
 def test_a_claude_code_project_stages_only_its_instruction_files(tmp_path):
@@ -170,8 +194,6 @@ def test_a_claude_code_project_stages_only_its_instruction_files(tmp_path):
 
     assert load_claude_code_project_files(tmp_path) == {
         "AGENTS.md": "agents rule\n",
-        "CLAUDE.md": "claude rule\n",
-        ".claude/CLAUDE.md": "folder rule\n",
     }
 
 
@@ -179,10 +201,7 @@ def test_a_claude_code_project_without_instructions_is_told_which_files_were_loo
     (tmp_path / "kilo.jsonc").write_text("{}")
     with pytest.raises(ValueError) as raised:
         load_claude_code_project_files(tmp_path)
-    assert str(raised.value) == (
-        "project has no Claude Code instructions (AGENTS.md, CLAUDE.md, .claude/CLAUDE.md; "
-        f"symlinks and files outside the project are skipped): {tmp_path.resolve()}"
-    )
+    assert str(raised.value) == f"{NO_CLAUDE_CODE_INSTRUCTIONS}{tmp_path.resolve()}"
 
 
 def test_claude_code_instruction_files_that_are_symlinks_are_not_staged(tmp_path):
@@ -195,7 +214,8 @@ def test_claude_code_instruction_files_that_are_symlinks_are_not_staged(tmp_path
     (project / ".claude").mkdir()
     (project / ".claude/CLAUDE.md").write_text("folder rule\n")
 
-    assert load_claude_code_project_files(project) == {".claude/CLAUDE.md": "folder rule\n"}
+    with pytest.raises(ValueError, match="^project has no Claude Code instructions"):
+        load_claude_code_project_files(project)
 
 
 def test_a_dot_claude_folder_that_links_outside_the_project_stages_nothing(tmp_path):
@@ -210,8 +230,8 @@ def test_a_dot_claude_folder_that_links_outside_the_project_stages_nothing(tmp_p
 
 
 def test_a_claude_code_instruction_file_that_is_not_utf8_is_named(tmp_path):
-    (tmp_path / "CLAUDE.md").write_bytes(b"\xff\xfe rules")
-    with pytest.raises(ValueError, match=f"^template/config asset must be UTF-8 text: {tmp_path.resolve() / 'CLAUDE.md'}$"):
+    (tmp_path / "AGENTS.md").write_bytes(b"\xff\xfe rules")
+    with pytest.raises(ValueError, match=f"^template/config asset must be UTF-8 text: {tmp_path.resolve() / 'AGENTS.md'}$"):
         load_claude_code_project_files(tmp_path)
 
 
@@ -239,11 +259,11 @@ def test_the_dot_claude_entries_left_out_are_named_for_the_report(tmp_path):
     (tmp_path / ".claude/settings.json").write_text('{"hooks": {}}')
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
 
-    assert files_not_staged("claude-code", tmp_path) == [".claude/settings.json", ".claude/skills/"]
+    assert files_not_staged("claude-code", tmp_path) == [".claude/CLAUDE.md", ".claude/settings.json", ".claude/skills/"]
     assert files_not_staged("kilo", tmp_path) == []
 
 
-def test_nothing_is_named_when_there_is_no_dot_claude_folder_or_it_holds_only_claude_md(tmp_path):
+def test_nothing_is_named_without_a_dot_claude_folder_and_a_lone_dot_claude_md_is_named(tmp_path):
     (tmp_path / "AGENTS.md").write_text("rule\n")
     assert files_not_staged("claude-code", tmp_path) == []
     (tmp_path / ".claude").write_text("a file, not a folder")
@@ -251,7 +271,7 @@ def test_nothing_is_named_when_there_is_no_dot_claude_folder_or_it_holds_only_cl
     (tmp_path / ".claude").unlink()
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
-    assert files_not_staged("claude-code", tmp_path) == []
+    assert files_not_staged("claude-code", tmp_path) == [".claude/CLAUDE.md"]
 
 
 def test_a_dot_claude_md_that_was_not_staged_is_named(tmp_path):
@@ -272,10 +292,10 @@ def test_a_dot_claude_folder_outside_the_project_is_named_but_not_listed(tmp_pat
 
 
 def test_a_symlinked_dot_claude_folder_stages_nothing_through_it_and_is_named_whole(tmp_path):
-    (tmp_path / "CLAUDE.md").write_text("root rule\n")
+    (tmp_path / "AGENTS.md").write_text("root rule\n")
     (tmp_path / ".claude").symlink_to(tmp_path)  # inside the project, but still a symlink
 
-    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": "root rule\n"}
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "root rule\n"}
     assert files_not_staged("claude-code", tmp_path) == [".claude/"]
 
 
@@ -288,18 +308,21 @@ def test_a_symlinked_entry_in_dot_claude_is_named_without_following_it(tmp_path)
     (project / ".claude/alias.md").symlink_to(project / ".claude/CLAUDE.md")
     (project / ".claude/agents").mkdir()  # a real folder gets its "/"; the linked one doesn't
 
-    assert files_not_staged("claude-code", project) == [".claude/agents/", ".claude/alias.md", ".claude/shared"]
+    assert files_not_staged("claude-code", project) == [
+        ".claude/CLAUDE.md", ".claude/agents/", ".claude/alias.md", ".claude/shared"
+    ]
 
 
-def test_a_dot_claude_md_staged_under_another_case_is_not_named(tmp_path):
+def test_a_dot_claude_md_under_another_case_is_named_as_it_is_spelled(tmp_path):
     (tmp_path / "probe").write_text("")
     if not (tmp_path / "PROBE").exists():
         pytest.skip("needs a case-insensitive filesystem, such as macOS's default")
+    (tmp_path / "AGENTS.md").write_text("rule\n")
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/claude.md").write_text("folder rule\n")
 
-    assert load_claude_code_project_files(tmp_path) == {".claude/CLAUDE.md": "folder rule\n"}
-    assert files_not_staged("claude-code", tmp_path) == []
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule\n"}
+    assert files_not_staged("claude-code", tmp_path) == [".claude/claude.md"]
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root can read a folder whatever its mode")
@@ -324,8 +347,9 @@ def test_root_instruction_files_skipped_for_safety_are_named(tmp_path):
     (project / "CLAUDE.md").symlink_to(tmp_path / "shared/CLAUDE.md")
     (project / "AGENTS.md").symlink_to(project / "missing.md")  # a broken link is named too
 
-    assert load_claude_code_project_files(project) == {".claude/CLAUDE.md": "folder rule\n"}
-    assert files_not_staged("claude-code", project) == ["AGENTS.md", "CLAUDE.md"]
+    with pytest.raises(ValueError, match="^project has no Claude Code instructions"):
+        load_claude_code_project_files(project)
+    assert files_not_staged("claude-code", project) == ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"]
 
 
 @pytest.mark.parametrize("count, expected_tail", [(50, ".claude/f49.md"), (52, "and 2 more")])
@@ -379,3 +403,17 @@ def test_the_cap_never_hides_a_skipped_root_file(tmp_path):
 
     assert names[0] == "CLAUDE.md"
     assert names[1:] == [*(f".claude/f{number:02d}.md" for number in range(50)), "and 10 more"]
+
+
+def test_the_cap_never_hides_a_dot_claude_md(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / "CLAUDE.md").write_text("root rule\n")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
+    for number in range(60):
+        (tmp_path / f".claude/0{number:02d}.md").write_text("x\n")  # digits sort ahead of "CLAUDE.md"
+
+    names = files_not_staged("claude-code", tmp_path)
+
+    assert names[:2] == ["CLAUDE.md", ".claude/CLAUDE.md"]
+    assert names[2:] == [*(f".claude/0{number:02d}.md" for number in range(50)), "and 10 more"]

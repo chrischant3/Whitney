@@ -45,8 +45,12 @@ MIN_HELD = 0.9
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 NOT_STAGED_NOTE = (
     "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
-    "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
-    "`AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project."
+    "For `claude-code`, Whitney copies only a root `AGENTS.md` that is a regular file inside the project, "
+    "so this is any `CLAUDE.md`, `.claude/CLAUDE.md` and other `.claude/` entries, and an `AGENTS.md` that "
+    "is a symlink or points outside the project. `CLAUDE.md` is left out on purpose: Whitney evaluates "
+    "`AGENTS.md`, the file Claude Code reads when no `CLAUDE.md` is present, and in one run Claude Code "
+    "ignored `AGENTS.md` once `.claude/CLAUDE.md` existed, so leaving `CLAUDE.md` out keeps the `agents_md` "
+    "difference between template and baseline about `AGENTS.md`."
 )
 # The last item of a long not_staged list counts the names left off it (project_files.files_not_staged).
 MORE_NOT_STAGED = re.compile(r"and \d+ more")

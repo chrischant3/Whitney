@@ -436,7 +436,7 @@ def test_logs_from_before_the_model_rename_still_show_the_model():
 
 
 def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant_inputs():
-    left_out = [".claude/settings.json", ".claude/skills/"]  # as files_not_staged gives it: sorted
+    left_out = ["CLAUDE.md", ".claude/settings.json", ".claude/skills/"]  # in files_not_staged's order
     logs = [
         _asset_log("agents_md_template", {"AGENTS.md": "x"}, target="claude-code", not_staged=left_out),
         _asset_log("agents_md_baseline", {}, target="claude-code", not_staged=left_out),
@@ -452,13 +452,17 @@ def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant
         "### Not Staged\n"
         "\n"
         "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
-        "For `claude-code`, that is everything in `.claude/` except a staged `.claude/CLAUDE.md`, and any root "
-        "`AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project.\n"
+        "For `claude-code`, Whitney copies only a root `AGENTS.md` that is a regular file inside the project, "
+        "so this is any `CLAUDE.md`, `.claude/CLAUDE.md` and other `.claude/` entries, and an `AGENTS.md` that "
+        "is a symlink or points outside the project. `CLAUDE.md` is left out on purpose: Whitney evaluates "
+        "`AGENTS.md`, the file Claude Code reads when no `CLAUDE.md` is present, and in one run Claude Code "
+        "ignored `AGENTS.md` once `.claude/CLAUDE.md` existed, so leaving `CLAUDE.md` out keeps the `agents_md` "
+        "difference between template and baseline about `AGENTS.md`.\n"
         "\n"
         "| Eval variant | Not staged |\n"
         "|---|---|\n"
-        "| `agents_md_baseline` | `.claude/settings.json`, `.claude/skills/` |\n"
-        "| `agents_md_template` | `.claude/settings.json`, `.claude/skills/` |\n"
+        "| `agents_md_baseline` | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/` |\n"
+        "| `agents_md_template` | `CLAUDE.md`, `.claude/settings.json`, `.claude/skills/` |\n"
         "\n"
         "### File Snapshots\n"
     ) in report
