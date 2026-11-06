@@ -1,4 +1,9 @@
-"""Collect safe text configuration and instruction files for eval workspaces."""
+"""Collect safe text configuration and instruction files for eval workspaces.
+
+There is one project loader per target: `load_project_files` for kilo and
+`load_claude_code_project_files` for claude-code. `load_project_files_for`
+picks between them.
+"""
 
 import json
 from pathlib import Path
@@ -19,6 +24,11 @@ KILO_CONFIG_DIRS = (".kilo", ".kilocode")
 EXCLUDED_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".tox"}
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers", "mcp", "plugin"}
+# Claude Code reads all three as project instructions (tasks/plan-phase5.md, decision 5).
+# The rest of .claude/ stays out: settings.json can hold hooks, which run commands,
+# and which of its keys are safe to copy is still open (spec open question 8).
+CLAUDE_CODE_DIR = ".claude"
+CLAUDE_CODE_INSTRUCTIONS = ("AGENTS.md", "CLAUDE.md", f"{CLAUDE_CODE_DIR}/CLAUDE.md")
 
 
 def load_template_files(template_dir: Path) -> dict[str, str]:
@@ -35,10 +45,7 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
     Provider connections and runtime integrations remain sourced from the user's
     global Kilo config. Project assets are copied into a temporary eval project.
     """
-    root = Path(project_dir).expanduser().resolve(strict=True)
-    if not root.is_dir():
-        raise ValueError(f"project path is not a directory: {root}")
-
+    root = _project_root(project_dir)
     config_paths = [relative for relative in CONFIG_PATHS if _is_project_file(root, relative)]
     if not config_paths:
         raise ValueError(f"project has no Kilo config ({', '.join(CONFIG_PATHS)}): {root}")
@@ -77,6 +84,84 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
     return files
 
 
+def load_claude_code_project_files(project_dir: Path) -> dict[str, str]:
+    """Load the instruction files Claude Code reads from a project, and nothing else.
+
+    Stages root AGENTS.md and CLAUDE.md and .claude/CLAUDE.md, under the same
+    rules as load_project_files: a file that is a symlink, or that resolves
+    outside the project, is left out. No Kilo config is needed.
+
+    Args:
+        project_dir: the project folder. It is read, never written.
+
+    Returns:
+        Each instruction file found, project-relative path to its text.
+
+    Raises:
+        FileNotFoundError: project_dir doesn't exist.
+        ValueError: project_dir isn't a folder, holds none of the files
+            (the message names them), or a file isn't UTF-8.
+    """
+    root = _project_root(project_dir)
+    paths = [relative for relative in CLAUDE_CODE_INSTRUCTIONS if _is_project_file(root, relative)]
+    if not paths:
+        raise ValueError(f"project has no Claude Code instructions ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}): {root}")
+    return {relative: _read_text(root / relative) for relative in paths}
+
+
+def load_project_files_for(target: str, project_dir: Path) -> dict[str, str]:
+    """Load a project with the loader for `target`'s harness.
+
+    Args:
+        target: "kilo" or "claude-code", as whitney.targets names them.
+        project_dir: the project folder. It is read, never written.
+
+    Returns:
+        What load_project_files (kilo) or load_claude_code_project_files
+        (claude-code) returns.
+
+    Raises:
+        KeyError: an unknown target.
+        FileNotFoundError, ValueError: as the chosen loader raises them.
+    """
+    loaders = {"kilo": load_project_files, "claude-code": load_claude_code_project_files}
+    return loaders[target](project_dir)
+
+
+def files_not_staged(target: str, project_dir: Path) -> list[str]:
+    """Name what the project holds for `target`'s harness that its loader leaves out, for the report.
+
+    Only claude-code leaves anything out today: the entries of the project's
+    .claude/ folder, apart from a staged .claude/CLAUDE.md. Entries are
+    named one level down, a folder with a trailing "/", rather than file by
+    file, because Claude Code can keep whole worktrees under .claude/. A
+    .claude/ folder that resolves outside the project is named as a whole,
+    so nothing outside it is listed. Only names are read, never contents.
+
+    Args:
+        target: "kilo" or "claude-code".
+        project_dir: the project folder.
+
+    Returns:
+        Sorted project-relative paths; empty if nothing was left out.
+
+    Raises:
+        FileNotFoundError: project_dir doesn't exist (claude-code only).
+        ValueError: project_dir isn't a folder (claude-code only).
+    """
+    if target != "claude-code":
+        return []
+    root = _project_root(project_dir)
+    folder = root / CLAUDE_CODE_DIR
+    if not folder.is_dir():
+        return []
+    if not folder.resolve().is_relative_to(root):
+        return [f"{CLAUDE_CODE_DIR}/"]
+    staged = {relative for relative in CLAUDE_CODE_INSTRUCTIONS if _is_project_file(root, relative)}
+    entries = (f"{CLAUDE_CODE_DIR}/{entry.name}" + ("/" if entry.is_dir() else "") for entry in folder.iterdir())
+    return sorted(entry for entry in entries if entry not in staged)
+
+
 def set_external_directory(files: dict[str, str], action: str) -> dict[str, str]:
     """Return a copy of project files with each Kilo config's test policy set."""
     updated = dict(files)
@@ -102,6 +187,13 @@ def _walk_files(root: Path, allowed_root: Path):
         resolved = path.resolve()
         if resolved.is_relative_to(allowed_root):
             yield path.relative_to(root).as_posix(), path
+
+
+def _project_root(project_dir: Path) -> Path:
+    root = Path(project_dir).expanduser().resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError(f"project path is not a directory: {root}")
+    return root
 
 
 def _is_project_file(root: Path, relative: str) -> bool:
