@@ -222,9 +222,19 @@ def snapshot_problem(evidence: Evidence, folders: Iterable[str]) -> str | None:
         if unread:
             return (
                 f"{len(unread)} file(s) in {folder} changed and couldn't be read as text "
-                f"(over the snapshot's size cap, not UTF-8, or not a regular file): {', '.join(unread)}"
+                f"(over the snapshot's size cap, not UTF-8, or not a regular file): {_listed(unread)}"
             )
     return None
+
+
+# How many names an explanation lists, so a run that wrote thousands of files can't make it unreadable.
+LISTED_NAMES = 5
+
+
+def _listed(names: list[str]) -> str:
+    """The first LISTED_NAMES of `names`, comma-separated, with a count of the rest."""
+    shown = ", ".join(names[:LISTED_NAMES])
+    return f"{shown} and {len(names) - LISTED_NAMES} more" if len(names) > LISTED_NAMES else shown
 
 
 def _without_text(snapshot: FolderSnapshot, path: str) -> bool:

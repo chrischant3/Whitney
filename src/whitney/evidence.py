@@ -88,7 +88,7 @@ else:
             with open(path, "rb") as f:
                 out[path] = base64.b64encode(f.read()).decode("ascii")
         except OSError:
-            pass
+            continue  # left out, so the reader marks it unreadable
     print(json.dumps(out))
 """
 

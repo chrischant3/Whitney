@@ -329,6 +329,18 @@ def test_a_changed_file_over_the_size_cap_makes_a_check_that_needs_it_inconclusi
     )
 
 
+def test_the_explanation_names_at_most_five_unreadable_files():
+    after = {f"big{n}.bin": BIG for n in range(7)}
+    verdict = _snapshot_check().run(_evidence({}, after), {})
+    assert verdict.explanation.endswith(": big0.bin, big1.bin, big2.bin, big3.bin, big4.bin and 2 more")
+    assert verdict.explanation.startswith("judged, but 7 file(s) in project changed")
+
+
+def test_five_unreadable_files_are_all_named():
+    after = {f"big{n}.bin": BIG for n in range(5)}
+    assert _snapshot_check().run(_evidence({}, after), {}).explanation.endswith(": big0.bin, big1.bin, big2.bin, big3.bin, big4.bin")
+
+
 def test_a_folder_over_the_file_cap_makes_a_check_that_needs_it_inconclusive():
     verdict = _snapshot_check().run(_evidence({"a": SMALL}, {"a": SMALL}, complete=False), {})
     assert verdict.outcome == "inconclusive"
