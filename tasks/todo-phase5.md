@@ -148,14 +148,14 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Rewrite `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json` as version 2, as in the spec's "The shipped files after migration". `agents_md` and `kilo_jsonc` build their samples from them. `known_gap` moves from `metadata` to the scenario.
 
 **Acceptance criteria:**
-- [ ] The equivalence test passes against the version 2 files.
-- [ ] `python scripts/floor_guard.py` still finds E3's `known_gap`.
-- [ ] Task names, outcome labels and metadata keys are unchanged, and `tests/test_tasks.py` passes without edits.
-- [ ] The version 2 `kilo-jsonc.json` keeps the `allow_control` spread consistent: the `kilo_jsonc` wrapper and `validate_variants` both put the control in every staged Kilo config (`variants.spread_over_kilo_configs`), but `validate_variants` does so only for a version 1 file today. Make it do the same for the migrated file, or the shipped control is reported as shadowed in a project holding both `kilo.jsonc` and `.kilo/kilo.jsonc`.
+- [x] The equivalence test passes against the version 2 files.
+- [x] `python scripts/floor_guard.py` still finds E3's `known_gap`.
+- [x] Task names, outcome labels and metadata keys are unchanged, and `tests/test_tasks.py` passes without edits.
+- [x] The version 2 `kilo-jsonc.json` keeps the `allow_control` spread consistent: the `kilo_jsonc` wrapper and `validate_variants` both put the control in every staged Kilo config (`variants.spread_over_kilo_configs`), but `validate_variants` does so only for a version 1 file today. Make it do the same for the migrated file, or the shipped control is reported as shadowed in a project holding both `kilo.jsonc` and `.kilo/kilo.jsonc`.
 
 **Verification:**
-- [ ] `pytest -q`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Tasks 5 and 6.
 
