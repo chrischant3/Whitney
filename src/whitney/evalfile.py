@@ -40,6 +40,10 @@ FIXTURE_NAME = r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
 # Eval and variant names go into Inspect task names, <eval name>_<variant>.
 NAME = r"^[a-z0-9_]+$"
 FIXTURES_FOLDER = "fixtures"
+VERSION_1_DEPRECATED = (
+    "version 1 eval file, upgraded in memory; add \"version\": 2 and name each scenario's checks in expect, "
+    "because version 1 goes in a later breaking release"
+)
 NOT_AN_EVAL_FILE = (
     "not an eval file: it must be a JSON object with source and scenarios; "
     "keep other JSON outside the evals root, or inside fixtures/"
@@ -356,12 +360,7 @@ def read(path: Path) -> V1File | EvalFile:
     if not isinstance(raw, dict) or not {"source", "scenarios"} & raw.keys():
         raise EvalFileError(path, [("", NOT_AN_EVAL_FILE)])
     if raw.get("version", 1) == 1:
-        warnings.warn(
-            f"{path}: version 1 eval file, upgraded in memory; add \"version\": 2 and name each scenario's checks in "
-            "expect, because version 1 goes in a later breaking release",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        warnings.warn(f"{path}: {VERSION_1_DEPRECATED}", DeprecationWarning, stacklevel=2)
         parsed: V1File | EvalFile = _validate(V1File, raw, path)
     else:
         parsed = _validate(EvalFile, raw, path)
