@@ -81,7 +81,7 @@ def walk(folder, max_files):
 
 if sys.argv[1] == "list":
     print(json.dumps({folder: walk(folder, int(sys.argv[2])) for folder in sys.argv[3:]}))
-else:
+elif sys.argv[1] == "read":
     out = {}
     for path in json.load(sys.stdin):
         try:
@@ -90,6 +90,8 @@ else:
         except OSError:
             continue  # left out, so the reader marks it unreadable
     print(json.dumps(out))
+else:
+    sys.exit("usage: list <max files> <folder>... | read")
 """
 
 
@@ -99,7 +101,8 @@ class EvidencePlan:
 
     Attributes:
         needs: the evidence any of its checks needs (whitney.checks.NEEDS).
-        folders: the fixture folders to snapshot, in the order first named.
+        folders: the fixture folders to snapshot, in the order first named;
+            only a check that needs "snapshots" names any.
         tokens: the strings to search the git history for: every findable
             parameter of a check that needs "git", in the order first named.
     """
@@ -149,8 +152,7 @@ async def collect(
         before: the snapshots taken after setup (snapshot), by folder.
     """
     git = await git_state(sbox, evidence_plan.tokens) if "git" in evidence_plan.needs else None
-    folders = evidence_plan.folders if "snapshots" in evidence_plan.needs else ()
-    after = await snapshot(sbox, folders, python)
+    after = await snapshot(sbox, evidence_plan.folders, python)
     return Evidence.from_run(
         run,
         initial_commits=initial_commits,
@@ -247,13 +249,14 @@ def _text(content: str) -> str | None:
 def _batches(sized: list[tuple[str, int]], limit: int) -> list[list[str]]:
     """The paths in order, grouped so each group's sizes add up to at most `limit` (or one file, if it alone is larger)."""
     batches: list[list[str]] = []
-    total = 0
+    totals: list[int] = []
     for path, size in sized:
-        if not batches or total + size > limit:
-            batches.append([])
-            total = 0
-        batches[-1].append(path)
-        total += size
+        if batches and totals[-1] + size <= limit:
+            batches[-1].append(path)
+            totals[-1] += size
+        else:
+            batches.append([path])
+            totals.append(size)
     return batches
 
 

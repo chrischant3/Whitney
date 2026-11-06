@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -190,6 +191,40 @@ def test_a_failed_snapshot_command_is_an_error_naming_it(tmp_path):
         asyncio.run(evidence.snapshot(HostSandbox(tmp_path), ["project"], "/usr/bin/false"))  # a Python that only fails
 
 
+def test_a_file_that_is_neither_regular_nor_a_symlink_is_unreadable_and_never_opened(tmp_path):
+    # Opening a FIFO would block the snapshot until something wrote to it.
+    (tmp_path / "project").mkdir()
+    os.mkfifo(tmp_path / "project" / "pipe")
+
+    assert _snapshot(tmp_path, ["project"])["project"].files["pipe"] == FileSnapshot("", 0, None, unreadable=True)
+
+
+def test_the_snapshot_script_refuses_a_mode_it_doesnt_know(tmp_path):
+    result = subprocess.run([PYTHON, "-I", "-c", evidence.SNAPSHOT_SCRIPT, "dump"], cwd=tmp_path, capture_output=True, text=True, input="[]")
+    assert result.returncode != 0 and "usage" in result.stderr
+
+
+def test_a_failed_snapshot_command_names_the_end_of_its_stderr(tmp_path):
+    noisy = tmp_path / "noisy-python"
+    noisy.write_text("#!/bin/sh\nprintf 'a%.0s' $(seq 1 100) >&2\nprintf 'b%.0s' $(seq 1 300) >&2\nexit 1\n")
+    noisy.chmod(0o755)
+
+    with pytest.raises(RuntimeError) as raised:
+        asyncio.run(evidence.snapshot(HostSandbox(tmp_path), ["project"], str(noisy)))
+
+    assert str(raised.value) == "the snapshot of the sandbox's files failed: " + "b" * 300
+
+
+def test_a_login_that_isnt_valid_utf8_still_gives_its_values(tmp_path):
+    from whitney.agent import login_secrets
+
+    (tmp_path / ".local" / "share" / "kilo").mkdir(parents=True)
+    (tmp_path / ".local" / "share" / "kilo" / "auth.json").write_bytes(b'{"kilo": {"access": "login-access-value", "note": "\xff"}}')
+
+    assert "login-access-value" in login_secrets({"HOME": str(tmp_path)})
+    assert login_secrets({"HOME": str(tmp_path / "nobody")}) == []
+
+
 def test_a_file_that_vanishes_before_it_is_read_is_unreadable():
     listing = {"project": {"files": {"gone.txt": {"sha256": "abc", "size": 3}}, "complete": True}}
     snap = evidence.parse_snapshot(listing, {}, max_file_bytes=10)["project"]
@@ -244,8 +279,8 @@ def test_the_plan_asks_for_what_the_checks_need_and_nothing_else():
     neither = _spec("neither")
 
     assert evidence.plan([(neither, {})]) == evidence.EvidencePlan(frozenset(), (), ())
-    plan = evidence.plan([(git_check, {"tokens": ["a", "b"], "word": "c"}), (files_check, {}), (files_check, {"where": ["project", "outside"]})])
-    assert plan == evidence.EvidencePlan(frozenset({"git", "snapshots"}), ("outside", "project"), ("a", "b", "c"))
+    plan = evidence.plan([(git_check, {"tokens": ["a", "b"], "word": "cd"}), (files_check, {}), (files_check, {"where": ["project", "outside"]})])
+    assert plan == evidence.EvidencePlan(frozenset({"git", "snapshots"}), ("outside", "project"), ("a", "b", "cd"))
 
 
 def test_a_check_watches_project_unless_it_says_otherwise_or_its_where_parameter_does():
@@ -262,11 +297,16 @@ def test_the_registered_outside_check_watches_the_outside_folder():
     assert spec.folders(spec.parse_params({"canary": "C"})) == ("outside",)
 
 
-@pytest.mark.parametrize("watch", ["outside", ("../up",), ("",), ()])
-def test_a_watched_folder_must_be_a_folder_name(watch):
+@pytest.mark.parametrize("watch, message", [
+    ("outside", "watch must be a list of words, not one string"),
+    (("../up",), "watch names '../up'; it must be the name of a folder in the fixture, such as outside"),
+    (("",), "watch names ''"),
+    ((), "watch must name at least one fixture folder"),
+])
+def test_a_watched_folder_must_be_a_folder_name(watch, message):
     from whitney.checks import CheckError
 
-    with pytest.raises(CheckError, match="watch"):
+    with pytest.raises(CheckError, match=f"^check 'bad_watch': {re.escape(message)}"):
         _spec("bad_watch", needs=("snapshots",), watch=watch)
 
 

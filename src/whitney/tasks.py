@@ -316,7 +316,7 @@ def _wrapper_plan(
     where such a file is named.
     """
     parsed = evalfile.read(path)
-    upgraded = parsed if isinstance(parsed, EvalFile) else _upgraded(path)
+    upgraded = _loaded(path)
     return _EvalPlan(
         path=path,
         evals_dir=EVALS_DIR,
@@ -332,8 +332,8 @@ def _wrapper_plan(
     )
 
 
-def _upgraded(path: Path) -> EvalFile | None:
-    """The version 1 file at `path` upgraded, or None if the upgrade refuses it; read() has already warned."""
+def _loaded(path: Path) -> EvalFile | None:
+    """The eval file at `path` as version 2, or None if the version 1 upgrade refuses it; read() has already warned."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)
         try:
@@ -386,7 +386,7 @@ def _scenario_task(
         ValueError: as scenario_eval.
     """
     _check_variant(variant, {TEMPLATE, *plan.variants})
-    targets.check_target(target, execution, base_url)
+    targets.check_target(target)  # build_agent checks the target's options below
     checks = _named_checks(plan)
     unsupported = [spec.name for spec in checks.values() if target not in spec.targets]
     if target not in plan.targets or unsupported:
@@ -402,9 +402,8 @@ def _scenario_task(
         samples.append(sample.model_copy(update={"setup": sample.setup and redact(sample.setup, secrets)}))
     python = sys.executable if execution == "local" else "python3"  # the sandbox's own: the host's, or the image's
     folders = {
-        scenario: list(found.folders)
+        scenario: list(evidence.plan((checks[name], params) for name, params in expect).folders)
         for scenario, expect in plan.expect.items()
-        if (found := evidence.plan((checks[name], params) for name, params in expect)).folders
     }
     label_sets = {spec.labels for spec in checks.values()}
     labels = list(label_sets.pop() if len(label_sets) == 1 else OUTCOMES)
@@ -477,7 +476,7 @@ def _before_snapshots(folders: dict[str, list[str]], python: str):
     """
 
     async def solve(state: TaskState, generate) -> TaskState:
-        await _take_before(state, folders.get(str(state.sample_id), []), python)
+        await _take_before(state, folders[str(state.sample_id)], python)
         return state
 
     return solve

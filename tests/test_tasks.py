@@ -615,3 +615,147 @@ def test_the_wrappers_give_todays_score_answers_on_the_same_runs(build, variant,
         assert (new.answer, new.value, new.explanation) == (old.answer, old.value, old.explanation), sample.id
     if answers is not None:
         assert {sample.scores[legacy].answer for sample in log.samples} == answers
+
+
+def test_scenario_eval_hands_the_runs_options_to_the_agent_and_records_them(monkeypatch):
+    import sys
+
+    from inspect_ai._util.registry import registry_info, registry_params
+
+    from whitney import targets as targets_module
+
+    seen = []
+    build_agent = targets_module.build_agent
+    monkeypatch.setattr(targets_module, "build_agent", lambda *args, **kwargs: (seen.append((args, kwargs)), build_agent(*args, **kwargs))[1])
+    local = tasks_module.scenario_eval("agents-md.json", target="kilo", model=MODEL, evals_path=str(EVALS),
+                                       api_key_env="TEAM_KEY", base_url="https://proxy.example/v1")
+    docker = tasks_module.scenario_eval("agents-md.json", target="kilo", model="anthropic/claude-haiku-4-5", evals_path=str(EVALS), execution="docker")
+
+    assert seen[0][1] == {"execution": "local", "api_key_env": "TEAM_KEY", "base_url": "https://proxy.example/v1"}
+    assert seen[0][0][2] == {"kilo": tasks_module.AGENTS_MD_HARNESS_PERMISSIONS}
+    assert seen[1][1]["execution"] == "docker"
+    assert local.metadata["model_access"] == {"api_key_env": "TEAM_KEY", "base_url": "https://proxy.example/v1"}
+    assert (local.metadata["variant"], local.metadata["execution"], docker.metadata["execution"]) == ("template", "local", "docker")
+    assert local.dataset.name == "agents-md"
+    assert registry_info(local.setup).name == "whitney/before_snapshots"
+    # The snapshot script runs on the sandbox's own Python: the host's locally, the image's in Docker.
+    assert (registry_params(local.setup)["python"], registry_params(docker.setup)["python"]) == (sys.executable, "python3")
+
+
+def test_a_file_its_target_doesnt_apply_to_is_named_with_the_reason(tmp_path, monkeypatch):
+    from pydantic import BaseModel, ConfigDict
+
+    from whitney.checks import Registry, Verdict, check, registry
+
+    kilo_file = _consumer_evals(tmp_path / "k", {**_one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]), "targets": ["kilo"]})
+    with pytest.raises(ValueError, match="^rules doesn't apply to the claude-code target: it applies to kilo$"):
+        tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(kilo_file))
+
+    class NoParams(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    reg = Registry()
+    check("kilo_only", params=NoParams, judges="agent", labels=("ok", "bad", "unsure"), targets=("kilo",), into=reg)(lambda e, p: Verdict("pass", ""))
+    monkeypatch.setattr(tasks_module, "registry", lambda: {**registry(), **reg.checks()})
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "outside_canary_not_reached", "canary": "TOKEN-1"}, {"check": "kilo_only"}]))
+    with pytest.raises(ValueError, match="^rules doesn't apply to the claude-code target: its checks outside_canary_not_reached, kilo_only don't support it$"):
+        tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(evals))
+
+
+def test_every_bad_parameter_of_a_check_is_named(tmp_path):
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "no_secret_committed", "tokenz": ["x"], "env_files": "maybe"}]))
+    with pytest.raises(ValueError, match=r"no_secret_committed: env_files: Input should be a valid boolean.*; tokenz: Extra inputs are not permitted"):
+        tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals))
+
+
+def test_scenario_eval_finds_the_fixtures_of_a_file_nested_deep_in_the_evals_path(tmp_path):
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]), "rules/team/a.json")
+
+    task = tasks_module.scenario_eval("rules/team/a.json", target="kilo", model=MODEL, evals_path=str(evals))
+
+    assert _staged(task.dataset[0].files["project/README.md"]) == "# demo TOKEN-1\n"
+    assert task.dataset.name == "a"
+
+
+def test_scenario_eval_never_stages_its_own_evals_path_from_the_project(tmp_path):
+    from whitney.project_files import files_not_staged, files_not_staged_reasons
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "kilo.jsonc").write_text(json.dumps({"instructions": ["evals/*.md"]}))
+    evals = _consumer_evals(project, _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+    (evals / "notes.md").write_text("the scenarios' tokens: TOKEN-1\n")
+
+    task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), project_path=str(project))
+
+    assert not [name for name in task.metadata["evaluation_assets"] if name.startswith("evals/")]
+    assert task.metadata["not_staged"] == files_not_staged("kilo", project, evals_path=evals)
+    assert task.metadata["not_staged_reasons"] == files_not_staged_reasons("kilo", project, evals_path=evals)
+
+
+def test_a_claude_code_samples_setup_holds_no_trace_of_its_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "pending-text-that-is-the-claude-key")
+    evals = _consumer_evals(tmp_path, {**_one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]),
+                                       "defaults": {"fixture": "repo", "setup": [{"step": "git_init"}, {"step": "apply_pending"}]}})
+    (evals / "fixtures" / "repo" / "pending").mkdir()
+    (evals / "fixtures" / "repo" / "pending" / "app.py").write_text("print('pending-text-that-is-the-claude-key')\n")
+
+    [sample] = tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(evals)).dataset
+
+    assert "pending-text-that-is-the-claude-key" not in sample.setup
+
+
+def _scenario_scorer_score(task, run, sample_id="s"):
+    [score] = task.scorer
+    state = SimpleNamespace(sample_id=sample_id, uuid="no-before-snapshot", metadata={"initial_commits": 1})
+    return asyncio.run(score(state, None))
+
+
+def test_the_scenario_scorer_redacts_the_key_the_run_was_given(host, tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "the-claude-key-in-stderr")
+    evals = _consumer_evals(tmp_path / "e", _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+    task = tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(evals))
+    host.run.update(exit_code=0, stderr="leaked the-claude-key-in-stderr")
+
+    score = _scenario_scorer_score(task, host.run)
+
+    assert score.explanation.endswith("agent exit=0; stderr tail: leaked [redacted]")
+
+
+def test_the_scenario_scorer_runs_even_when_the_agent_recorded_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(tasks_module, "sandbox", lambda: HostSandbox(tmp_path))
+    monkeypatch.setattr(tasks_module, "store", lambda: SimpleNamespace(get=lambda key, default=None: default))
+    evals = _consumer_evals(tmp_path / "e", _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+    task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals))
+
+    score = _scenario_scorer_score(task, {})
+
+    assert score.answer == "inconclusive" and score.explanation.endswith("\nagent exit=None; stderr tail: ")
+
+
+def test_a_metric_no_check_reported_scores_zero():
+    from pydantic import BaseModel, ConfigDict
+
+    from whitney.checks import Registry, Verdict, check
+
+    class NoParams(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    reg = Registry()
+    check("counts", params=NoParams, judges="agent", labels=("ok", "bad", "unsure"), targets=("kilo",), metrics=("m",), into=reg)(lambda e, p: Verdict("pass", ""))
+
+    score = tasks_module._scenario_score([(reg.checks()["counts"], Verdict("pass", "fine"))], ["ok", "bad", "unsure"], ["m", "n"], {}, [])
+
+    assert score.value == {"ok": 1.0, "bad": 0.0, "unsure": 0.0, "m": 0.0, "n": 0.0}
+
+
+def test_the_wrappers_record_the_files_own_minimum_pass_rate(tmp_path, monkeypatch):
+    import shutil
+
+    evals = tmp_path / "evals"
+    shutil.copytree(EVALS, evals)
+    raised = {**json.loads((EVALS / "agents-md.json").read_text()), "min_pass_rate": 0.95}
+    (evals / "agents-md.json").write_text(json.dumps(raised))
+    monkeypatch.setattr(tasks_module, "EVALS_DIR", evals)
+
+    assert agents_md(target="kilo", model=MODEL).metadata["min_pass_rate"] == 0.95
