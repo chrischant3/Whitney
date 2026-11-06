@@ -67,7 +67,7 @@ Whitney is at its first milestone. A scorer is the code that decides whether a r
 
 Not supported yet:
 
-- **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, and a task and scorer in `src/whitney/tasks.py` that use it. The runner reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new scenario file on its own isn't run.
+- **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, registered with `check(...)`. `inspect eval` runs any eval file through `scenario_eval` (below), but `scripts/run_evals.py` reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new eval file isn't in its report yet.
 - **Skills and agents.** Files under `.kilo/skills/` and `.kilo/agents/` are copied into each Kilo run, so the agent has them, but no eval checks whether a skill is triggered or followed.
 - **Claude Code settings, skills and agents.** With `--project-path`, the `claude-code` target copies one instruction file, always as `AGENTS.md`, because its evals and their baseline are about `AGENTS.md`: the root `AGENTS.md`, or if there is none, the root `CLAUDE.md`, or else `.claude/CLAUDE.md`. A `CLAUDE.md` beside an `AGENTS.md` isn't copied, because in one run Claude Code ignored `AGENTS.md` once `.claude/CLAUDE.md` existed. A root `CLAUDE.md` beside `AGENTS.md` wasn't tried and is left out by the same rule. Only the temporary copy is renamed, never your project, and the report says when it was. The rest of `.claude/`, such as `settings.json`, skills and agents, isn't copied either, and the report lists what was left out and why.
 - **Which instruction wins** when two files disagree.
@@ -236,6 +236,13 @@ You can also run one task and variant with Inspect directly, passing the same op
 inspect eval src/whitney/tasks.py@agents_md -T target=claude-code -T model=anthropic/claude-haiku-4-5 -T variant=template
 inspect eval src/whitney/tasks.py@kilo_jsonc -T target=kilo -T variant=allow_control \
   -T model=anthropic/claude-haiku-4-5 -T api_key_env=ANTHROPIC_API_KEY
+```
+
+`agents_md` and `kilo_jsonc` are Whitney's two eval files run through `scenario_eval`, which runs any eval file in one variant, scored by the checks its scenarios name:
+
+```bash
+inspect eval src/whitney/tasks.py@scenario_eval -T eval_file=agents-md.json -T evals_path=evals \
+  -T target=kilo -T model=kilo/anthropic/claude-haiku-4.5 -T variant=baseline
 ```
 
 ## Running inspect_evals (IFEvalCode and BigCodeBench-Hard)
