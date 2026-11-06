@@ -119,9 +119,8 @@ def _apply_pending(params: _NoStepParams, pending: Mapping[str, str]) -> str:
         raise SetupError(f"apply_pending: the fixture has no {PENDING_DIR}/ files to apply")
     lines = []
     for path, text in sorted(pending.items()):
-        folder = PurePosixPath(path).parent
-        if folder != PurePosixPath("."):
-            lines.append(f"mkdir -p -- {shlex.quote(folder.as_posix())}")
+        # For a file at the top this is `mkdir -p -- .`, which does nothing, so no branch is needed to skip it.
+        lines.append(f"mkdir -p -- {shlex.quote(PurePosixPath(path).parent.as_posix())}")
         # printf '%s' writes the text byte for byte; echo or a heredoc would add or reinterpret characters.
         lines.append(f"printf '%s' {shlex.quote(text)} > {shlex.quote(path)}")
     return "\n".join(lines) + "\n"
