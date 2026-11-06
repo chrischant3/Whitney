@@ -223,7 +223,7 @@ def parse_snapshot(listing: Mapping[str, Any], contents: Mapping[str, str], *, m
                 sha256=found.get("sha256", ""),
                 size=found["size"],
                 text=_text(content) if readable else None,
-                unreadable=found.get("unreadable", False) or (_is_regular(found) and not readable),
+                unreadable="unreadable" in found or (_is_regular(found) and not readable),
                 symlink=found.get("symlink"),
             )
         snapshots[folder] = FolderSnapshot(files, complete=listed["complete"])

@@ -413,6 +413,26 @@ def test_only_the_folders_the_check_watches_count():
     assert _snapshot_check().run(evidence_, {"where": ["other"]}).outcome == "inconclusive"
 
 
+def test_a_folder_snapshotted_on_one_side_doesnt_hide_a_problem_in_the_next():
+    evidence_ = Evidence(
+        snapshots_before={"other": FolderSnapshot({})},
+        snapshots_after={"project": FolderSnapshot({}), "other": FolderSnapshot({}, complete=False)},
+    )
+    assert _snapshot_check().run(evidence_, {"where": ["project", "other"]}).outcome == "inconclusive"
+
+
+def test_an_inconclusive_verdict_keeps_the_checks_metrics():
+    reg = Registry()
+
+    class Params(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    check("counts_files", params=Params, judges="harness", labels=("ok", "bad", "unsure"), targets=("kilo",),
+          needs=("snapshots",), metrics=("seen",), into=reg)(lambda evidence_, params: Verdict("pass", "judged", {"seen": 2.0}))
+    verdict = reg.checks()["counts_files"].run(_evidence({}, {"big.bin": BIG}), {})
+    assert (verdict.outcome, verdict.metrics) == ("inconclusive", {"seen": 2.0})
+
+
 def test_a_check_that_doesnt_need_snapshots_ignores_them():
     reg = Registry()
 
