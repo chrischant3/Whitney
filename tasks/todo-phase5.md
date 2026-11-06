@@ -22,8 +22,8 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 **Acceptance criteria:**
 - [x] With `--target claude-code`, a project holding only `AGENTS.md`, or only `CLAUDE.md`, stages that file and needs no Kilo config. The safety rules still hold: no `.env` files, symlinks, non-UTF-8 files or anything that resolves outside the project. A project with neither file stops with a message naming the files it looked for.
-- [x] If the project has a `.claude/` folder, the report says its contents weren't staged. The exception is `.claude/CLAUDE.md`, if decision 5 approves staging it.
-- [x] `--target kilo` is unchanged, and `tests/test_project_files.py` passes without edits.
+- [x] If the project has a `.claude/` folder, the report says its contents weren't staged. The exception is `.claude/CLAUDE.md`, if decision 5 approves staging it. **Changed 2026-11-06 at Checkpoint A1** (decision 5 reversed): one instruction file is staged, always as `AGENTS.md`, and the report names each file left out with its reason, and any rename.
+- [x] `--target kilo` is unchanged, and `tests/test_project_files.py` passes without edits. **Changed 2026-11-06 at Checkpoint A1:** the reversal changed expected values in Task 1's claude-code tests, confirmed by Christopher; the Kilo tests are unchanged.
 
 **Verification:**
 - [x] New tests in `tests/test_project_files.py` fail before the change and pass after it.
