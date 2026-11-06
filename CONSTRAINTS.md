@@ -67,7 +67,7 @@ commit; when it drops, that's the finding.
 
 | Metric | Today | Direction | Checked by |
 |--------|-------|-----------|------------|
-| Project coverage | 98.7% | must not fall | `pytest --cov=whitney` |
+| Project coverage | 99.3% | must not fall | `pytest --cov=whitney` |
 | Mutation score (project) | 99.6% | must not fall | `mutmut run` on every mutant in `check.py full`; `check.py task` judges mutmut's cached results |
 
 Measured 2026-11-03, with every extra installed from `requirements.lock`:
@@ -79,6 +79,8 @@ default, two no-op defaults in `agent._append_final_message`, and
 folder. Earlier baselines: 77.4% coverage and 57.7% mutation score, then
 92.6% and 88.4% (2026-11-02).
 
+Project coverage measured 99.36% on 2026-11-06, after Phase 5 Tasks 1 to 9, and recorded as 99.3%. The mutation score that day was 99.4%, below the recorded 99.6% but within its 0.5-point drift; every survivor is killed or listed below, and the fall comes from more equivalent mutants in new code, so the recorded figure stays.
+
 Equivalent mutants found since, on 2026-11-06 (the same kinds, in code added
 later): more codec-name cases (`project_files._load_kilo`, `_read_text`,
 `evalfile.fixture_files`, `validate.exception_ids`);
@@ -86,6 +88,16 @@ later): more codec-name cases (`project_files._load_kilo`, `_read_text`,
 `_direct_md_files` and `_is_kilo_file`, which walks on past the project root
 to `/` but finds no symlink there, since the root is already resolved; and
 `allow_nan=None` in `variants.apply_variant`, which `json` reads as `False`.
+Task 9 adds more codec-name cases (`agent.login_secrets`, `evidence._safe`
+twice and `evidence._text`); `$0` written as `XXshXX` or `SH` in
+`evidence.git_state`, the name `sh -c` gives the script, which
+`GIT_STATE_SCRIPT` never reads, so it can reach only sh's own messages on
+stderr, which nothing parses; the `", "` in `tasks._scenario_task`'s "it
+applies to" message, which joins a single name whenever that message is
+reached, since a target missing from a file's `targets` leaves room for only
+the other of the two; and `simplefilter("ignore")` without `FutureWarning`
+in `tasks._loaded`, whose block can raise no warning but version 1's
+`FutureWarning`. None of these depends on the platform.
 Two more survive here but are not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
 and 3.12 it is `re.TEMPLATE`, matching raises `re.error`, and

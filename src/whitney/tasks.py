@@ -1,30 +1,41 @@
-"""Inspect tasks for the MVP evals.
+"""Inspect tasks: one per eval file and variant, built from the eval file.
 
+    inspect eval src/whitney/tasks.py@scenario_eval -T eval_file=agents-md.json -T evals_path=evals \
+        -T target=kilo -T model=kilo/anthropic/claude-haiku-4.5 -T variant=baseline
     inspect eval src/whitney/tasks.py@agents_md  -T target=kilo -T model=kilo/anthropic/claude-haiku-4.5
     inspect eval src/whitney/tasks.py@agents_md  -T target=claude-code -T model=anthropic/claude-haiku-4-5 -T variant=baseline
     inspect eval src/whitney/tasks.py@kilo_jsonc -T target=kilo -T model=... -T variant=allow_control
 
-Each task copies the target's template into the sandbox project, runs the
-target's harness once per scenario with only the permissions the task needs,
-and scores what happened on disk and in git, not what the agent said. For the
-kilo target, local execution uses the user's Kilo config and Docker execution
+scenario_eval copies the target's staged files into each scenario's sandbox
+project, runs the target's harness once per scenario with the permissions the
+eval file grants, and scores what happened on disk, in git and in the
+harness's own record, not what the agent said: a scenario passes only if
+every check it names in `expect` passes (whitney.checks), and each check gets
+only the evidence it declares (whitney.evidence). agents_md and kilo_jsonc
+are the tasks for Whitney's own two eval files, kept with their names,
+labels and metadata as wrappers around the same builder. For the kilo
+target, local execution uses the user's Kilo config and Docker execution
 routes calls through Inspect's model bridge; claude-code runs locally.
 """
 
 import base64
-from dataclasses import replace
+import sys
+import warnings
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.scorer import Score, Target, mean, scorer
-from inspect_ai.solver import TaskState
+from inspect_ai.solver import TaskState, solver
 from inspect_ai.util import sandbox, store
+from pydantic import ValidationError
 
-from whitney import evalfile, setup_steps, shipped_evals, targets
-from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
-from whitney.checks import Evidence, registry
-from whitney.evalfile import DEFAULT_SETUP, V1_COMMIT_SETUP, Variant
+from whitney import evalfile, evidence, setup_steps, shipped_evals, targets
+from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model, redact
+from whitney.checks import OUTCOMES, CheckSpec, Evidence, FolderSnapshot, Verdict, combine, registry
+from whitney.evalfile import DEFAULT_SETUP, FIXTURES_FOLDER, V1_COMMIT_SETUP, EvalFile, EvalFileError, Variant
 from whitney.project_files import (
     CONFIG_PATHS,
     files_not_staged,
@@ -35,6 +46,8 @@ from whitney.project_files import (
 from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
 from whitney.setup_steps import SetupError, SetupStep
+from whitney.target_names import TARGETS
+from whitney.validate import _spread_by_the_wrapper
 from whitney.variants import TEMPLATE, apply_variant, declared_variants, spread_over_kilo_configs, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
@@ -73,6 +86,124 @@ COMMIT_FIXTURE_SETUP = setup_steps.build(
 ).script
 REPO_FIXTURE_SETUP = setup_steps.build([SetupStep(**step) for step in DEFAULT_SETUP], {}).script
 
+# For an eval file that leaves harness_permissions out, per target: what the agent needs to work
+# headlessly, in its own harness's terms (Write creates files, which Kilo's edit covers).
+DEFAULT_HARNESS_PERMISSIONS = {"kilo": HARNESS_PERMISSIONS, "claude-code": {"allow": ["Bash", "Edit", "Write"]}}
+
+# Each sample's snapshots from before its run, by sample uuid, from the setup step to the scorer.
+# Held here because Inspect logs a sample's store and metadata, and a snapshot can hold whatever the
+# setup wrote. The scorer takes each one out, and the task's cleanup drops one a sample never scored.
+_BEFORE_SNAPSHOTS: dict[str, dict[str, FolderSnapshot]] = {}
+# The most text the held snapshots may hold at once, with several samples running. A snapshot that
+# would pass it keeps its hashes and sizes only, so a check can still see what changed but can't read it.
+MAX_HELD_BYTES = 256 * 1024**2
+
+
+@dataclass(frozen=True)
+class _EvalPlan:
+    """What the tasks for one eval file run, whichever task read it.
+
+    Attributes:
+        path: the eval file.
+        evals_dir: the evals root: fixtures are in its fixtures/, and nothing under it is staged.
+        eval_name: the first half of each task name, <eval name>_<variant>.
+        title: the file's title, for the report.
+        min_pass_rate: the file's own minimum, if it raises its checks' defaults.
+        source: the file under test.
+        variants: the variants besides `template`.
+        expect: scenario id -> [(check name, parameters)], in the order the scenario names them.
+        harness_permissions: per target, the overlay that lets the agent work headlessly.
+        targets: the targets the file applies to, before its checks have their say.
+        adjust: how a variant is fitted to the staged files before it is applied:
+            (variant, staged files, source) -> variant.
+        fixtures_dir: where its fixtures are; None for the folder beside the
+            file that load_scenarios finds, as the wrappers have always used.
+    """
+
+    path: Path
+    evals_dir: Path
+    eval_name: str
+    title: str | None
+    min_pass_rate: float | None
+    source: str
+    variants: dict[str, Variant]
+    expect: dict[str, list[tuple[str, dict]]]
+    harness_permissions: dict[str, dict]
+    targets: tuple[str, ...]
+    adjust: Callable[[Variant, dict[str, str], str], Variant]
+    fixtures_dir: Path | None = None
+
+
+@task
+def scenario_eval(
+    eval_file: str,
+    variant: str = TEMPLATE,
+    *,
+    evals_path: str,
+    target: str,
+    model: str,
+    execution: str = "local",
+    project_path: str | None = None,
+    api_key_env: str | None = None,
+    base_url: str | None = None,
+) -> Task:
+    """One eval file's scenarios in one variant, each scored by the checks it names.
+
+    Args:
+        eval_file: the eval file, relative to evals_path, such as rules/data-handling-md.json.
+        variant: "template" runs the staged files as supplied; any other is
+            one the file declares (or its default baseline, which removes its
+            `source`), applied to the staged files as written. Whitney's own
+            kilo-jsonc.json and version 1 files have their `set` spread over
+            every staged Kilo config, as validation expects (variants.spread_over_kilo_configs).
+        evals_path: the evals root. Fixtures are in its fixtures/ folder,
+            and nothing under it is ever staged.
+        target: the harness under test, "kilo" or "claude-code" (see whitney.targets).
+        model: the model under evaluation, as provider/model.
+        execution: kilo only: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
+        project_path: the project supplying config and instruction files, read
+            by the target's loader (whitney.project_files); unset, Whitney's
+            own template for the target.
+        api_key_env: local mode only; env var holding the API key for model's
+            provider. For kilo, unset means the global Kilo config;
+            claude-code defaults to ANTHROPIC_API_KEY.
+        base_url: kilo local mode only; overrides the provider's base URL.
+
+    The task is named <eval name>_<variant> and its metadata names the eval
+    file, its title, the variant's role and each check's labels (see
+    _scenario_task). Its scores are in the checks' words when they all share
+    one set of labels, else pass, fail and inconclusive.
+
+    Raises:
+        ValueError: eval_file isn't inside evals_path, the variant isn't one
+            the file runs, the file or one of its checks doesn't apply to the
+            target, or a scenario names an unknown check or bad parameters.
+        whitney.evalfile.EvalFileError: the eval file isn't valid.
+    """
+    root = Path(evals_path)
+    path = root / eval_file
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError(f"eval_file must be inside evals_path ({root}); got {eval_file!r}")
+    parsed = evalfile.load(path)
+    plan = _EvalPlan(
+        path=path,
+        evals_dir=root,
+        eval_name=parsed.eval_name,
+        title=parsed.title,
+        min_pass_rate=parsed.min_pass_rate,
+        source=parsed.source,
+        variants=declared_variants(parsed),
+        expect=_expectations(parsed),
+        harness_permissions={**DEFAULT_HARNESS_PERMISSIONS, **(parsed.harness_permissions or {})},
+        targets=tuple(parsed.targets or TARGETS),
+        adjust=spread_over_kilo_configs if _spread_by_the_wrapper(parsed) else _as_written,
+        fixtures_dir=root / FIXTURES_FOLDER,
+    )
+    return _scenario_task(
+        plan, variant, target=target, model=model, execution=execution, project_path=project_path,
+        api_key_env=api_key_env, base_url=base_url,
+    )
+
 
 @task
 def agents_md(
@@ -103,35 +234,18 @@ def agents_md(
             Kilo config; claude-code defaults to ANTHROPIC_API_KEY.
         base_url: kilo local mode only; overrides the provider's base URL.
     """
-    variants = declared_variants(evalfile.read(EVALS_DIR / AGENTS_MD_EVALS))
-    _check_variant(variant, {TEMPLATE, *variants})
-    targets.check_target(target, execution, base_url)
-    template_files = _source_files(project_path, target)
-    if variant != TEMPLATE:
-        template_files = apply_variant(template_files, _staged_removes_only(variants[variant], template_files))
-    samples = [_with_project_files(s, template_files) for s in _scenario_samples(EVALS_DIR / AGENTS_MD_EVALS)]
-    return Task(
-        name=f"agents_md_{variant}",
-        dataset=MemoryDataset(samples, name="agents-md"),
-        solver=targets.build_agent(
-            target, model, AGENTS_MD_PERMISSIONS, execution=execution, api_key_env=api_key_env, base_url=base_url
-        ),
-        scorer=no_secrets_committed(),
-        sandbox=_sandbox_config(execution),
-        metadata={
-            "variant": variant,
-            "target": target,
-            "execution": execution,
-            "model": model,
-            "model_access": targets.model_access(target, api_key_env, base_url),
-            "asset_source": "local project" if project_path else "template",
-            "evaluation_assets": template_files,
-            "renamed": files_renamed(target, project_path, template_files) if project_path else {},
-            "not_staged": files_not_staged(target, project_path, evals_path=EVALS_DIR) if project_path else [],
-            "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=EVALS_DIR) if project_path else {},
-            "harness_permissions": AGENTS_MD_PERMISSIONS[target],
-            **_docker_model_names(model, execution),
-        },
+    plan = _wrapper_plan(
+        EVALS_DIR / AGENTS_MD_EVALS,
+        "agents_md",
+        AGENTS_MD_PERMISSIONS,
+        TARGETS,
+        adjust=lambda variant, files, source: _staged_removes_only(variant, files),
+        # A version 1 file the upgrade refuses is scored as agents_md always scored it.
+        fallback=lambda metadata: [("no_secret_committed", {"tokens": metadata.get("secret_tokens", [])})],
+    )
+    return _scenario_task(
+        plan, variant, target=target, model=model, execution=execution, project_path=project_path,
+        api_key_env=api_key_env, base_url=base_url,
     )
 
 
@@ -163,43 +277,310 @@ def kilo_jsonc(
             provider (e.g. ANTHROPIC_API_KEY). Unset, the global Kilo config is used.
         base_url: local mode only; overrides the provider's base URL.
     """
-    eval_file = evalfile.read(EVALS_DIR / KILO_JSONC_EVALS)
-    variants = declared_variants(eval_file)
-    _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     if target != "kilo":
         raise ValueError("kilo_jsonc tests kilo.jsonc permissions; it runs only for the kilo target")
-    template_files = _source_files(project_path, target)
+    plan = _wrapper_plan(
+        EVALS_DIR / KILO_JSONC_EVALS,
+        "kilo_jsonc",
+        {"kilo": HARNESS_PERMISSIONS},
+        ("kilo",),
+        adjust=_on_every_kilo_config,
+        fallback=lambda metadata: [("outside_canary_not_reached", {"canary": metadata.get("canary")})],
+    )
+    built = _scenario_task(
+        plan, variant, target=target, model=model, execution=execution, project_path=project_path,
+        api_key_env=api_key_env, base_url=base_url, sample_metadata=_outside_before,
+    )
+    del built.metadata["renamed"]  # kilo_jsonc's metadata never had it: a Kilo project's files aren't renamed
+    return built
+
+
+def _outside_before(sample: Sample) -> dict:
+    """The fixture's outside/ files as kilo_jsonc's samples have always recorded them, before the run."""
+    files = sample.files or {}
+    return {"outside_before": {path.removeprefix(f"{OUTSIDE_DIR}/"): text for path, text in files.items() if path.startswith(f"{OUTSIDE_DIR}/")}}
+
+
+def _wrapper_plan(
+    path: Path,
+    eval_name: str,
+    harness_permissions: dict[str, dict],
+    applies_to: tuple[str, ...],
+    *,
+    adjust: Callable[[Variant, dict[str, str], str], Variant],
+    fallback: Callable[[dict], list[tuple[str, dict]]],
+) -> _EvalPlan:
+    """The plan agents_md or kilo_jsonc runs: their own name, permissions, targets and variant fitting, from `path`.
+
+    The file is read as written, as these tasks always read it. A version 1
+    file the upgrade refuses (a scenario with neither token key) still runs:
+    each scenario is scored by `fallback(its metadata)`, and validation is
+    where such a file is named.
+    """
+    parsed = evalfile.read(path)
+    upgraded = _loaded(path)
+    return _EvalPlan(
+        path=path,
+        evals_dir=EVALS_DIR,
+        eval_name=eval_name,
+        title=upgraded.title if upgraded else None,
+        min_pass_rate=upgraded.min_pass_rate if upgraded else None,
+        source=parsed.source,
+        variants=declared_variants(parsed),
+        expect=_expectations(upgraded) if upgraded else {s.id: fallback(s.metadata) for s in parsed.scenarios},
+        harness_permissions=harness_permissions,
+        targets=applies_to,
+        adjust=adjust,
+    )
+
+
+def _loaded(path: Path) -> EvalFile | None:
+    """The eval file at `path` as version 2, or None if the version 1 upgrade refuses it; read() has already warned."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        try:
+            return evalfile.load(path)
+        except EvalFileError:
+            return None
+
+
+def _expectations(eval_file: EvalFile) -> dict[str, list[tuple[str, dict]]]:
+    """Each scenario's checks and their parameters, by scenario id."""
+    return {s.id: [(e.check, e.params) for e in s.expect] for s in eval_file.resolved()}
+
+
+def _as_written(variant: Variant, files: dict[str, str], source: str) -> Variant:
+    """`variant` as the eval file wrote it."""
+    return variant
+
+
+def _scenario_task(
+    plan: _EvalPlan,
+    variant: str,
+    *,
+    target: str,
+    model: str,
+    execution: str,
+    project_path: str | None,
+    api_key_env: str | None,
+    base_url: str | None,
+    sample_metadata: Callable[[Sample], dict] | None = None,
+) -> Task:
+    """The Inspect task for `plan` in `variant`: what scenario_eval, agents_md and kilo_jsonc each return.
+
+    Each sample is a scenario with the staged files in project/, its fixture
+    beside them and its setup script. Inspect logs the script, which carries
+    the fixture's pending/ text, so a script holding one of the run's
+    secrets is refused rather than run differently; the logged copy of the
+    staged files (evaluation_assets) has them redacted. The task's
+    setup step snapshots the folders the scenario's checks watch; the agent
+    runs through targets.build_agent; the scorer is scenario_checks.
+
+    Args:
+        sample_metadata: extra metadata for each sample, from the sample as loaded.
+
+    The metadata holds, besides the run's settings and staged files:
+    eval_file (relative to the evals root), eval_name, title, variant_role
+    ("template", "baseline" or "control"), labels (the score's words for
+    pass, fail and inconclusive), checks (each check's labels, what it
+    judges and its default minimum pass rate) and min_pass_rate (the file's
+    own). The report and the gate read these.
+
+    Raises:
+        ValueError: as scenario_eval.
+    """
+    _check_variant(variant, {TEMPLATE, *plan.variants})
+    targets.check_target(target)  # build_agent checks the target's options below
+    checks = _named_checks(plan)
+    unsupported = [spec.name for spec in checks.values() if target not in spec.targets]
+    if target not in plan.targets or unsupported:
+        why = f"its checks {', '.join(unsupported)} don't support it" if unsupported else f"it applies to {', '.join(plan.targets)}"
+        raise ValueError(f"{plan.eval_name} doesn't apply to the {target} target: {why}")
+    staged = _source_files(project_path, target, plan.evals_dir)
     if variant != TEMPLATE:
-        template_files = apply_variant(template_files, _on_every_kilo_config(variants[variant], template_files, eval_file.source))
+        staged = apply_variant(staged, plan.adjust(plan.variants[variant], staged, plan.source))
+    secrets = evidence.run_secrets(target, execution, api_key_env)
     samples = []
-    for s in _scenario_samples(EVALS_DIR / KILO_JSONC_EVALS):
-        outside_before = {
-            path.removeprefix(f"{OUTSIDE_DIR}/"): text
-            for path, text in s.files.items()
-            if path.startswith(f"{OUTSIDE_DIR}/")
-        }
-        samples.append(_with_project_files(s, template_files, outside_before=outside_before))
+    for sample in _scenario_samples(plan.path, plan.fixtures_dir):
+        if sample.setup and redact(sample.setup, secrets) != sample.setup:
+            raise ValueError(
+                f"{plan.path}: scenario '{sample.id}': its setup holds the value of a secret this run is given; "
+                "Inspect logs the setup, which carries the fixture's pending/ text, so keep only fake values there"
+            )
+        samples.append(_with_project_files(sample, staged, **(sample_metadata(sample) if sample_metadata else {})))
+    python = sys.executable if execution == "local" else "python3"  # the sandbox's own: the host's, or the image's
+    folders = {
+        scenario: list(evidence.plan((checks[name], params) for name, params in expect).folders)
+        for scenario, expect in plan.expect.items()
+    }
+    label_sets = {spec.labels for spec in checks.values()}
+    labels = list(label_sets.pop() if len(label_sets) == 1 else OUTCOMES)
+    metrics = list(dict.fromkeys(metric for spec in checks.values() for metric in spec.metrics))
+    checks_scorer = scorer(metrics={name: [mean()] for name in (*labels, *metrics)}, name="scenario_checks")(_checks_scorer)
     return Task(
-        name=f"kilo_jsonc_{variant}",
-        dataset=MemoryDataset(samples, name="kilo-jsonc"),
+        name=f"{plan.eval_name}_{variant}",
+        dataset=MemoryDataset(samples, name=plan.path.stem),
+        setup=solver(name="before_snapshots")(_before_snapshots)(folders, python, target, execution, api_key_env),
         solver=targets.build_agent(
-            target, model, {"kilo": HARNESS_PERMISSIONS}, execution=execution, api_key_env=api_key_env, base_url=base_url
+            target, model, {target: plan.harness_permissions[target]}, execution=execution,
+            api_key_env=api_key_env, base_url=base_url,
         ),
-        scorer=outside_access(),
+        scorer=checks_scorer(plan.expect, labels, metrics, target, execution, api_key_env, python),
+        cleanup=_forget_before,
         sandbox=_sandbox_config(execution),
         metadata={
             "variant": variant,
             "target": target,
             "execution": execution,
             "model": model,
-            "model_access": model_access(api_key_env, base_url),
+            "model_access": targets.model_access(target, api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
-            "evaluation_assets": template_files,
-            "not_staged": files_not_staged(target, project_path, evals_path=EVALS_DIR) if project_path else [],
-            "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=EVALS_DIR) if project_path else {},
-            "harness_permissions": HARNESS_PERMISSIONS,
+            "evaluation_assets": {path: redact(text, secrets) for path, text in staged.items()},
+            "renamed": files_renamed(target, project_path, staged) if project_path else {},
+            "not_staged": files_not_staged(target, project_path, evals_path=plan.evals_dir) if project_path else [],
+            "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=plan.evals_dir) if project_path else {},
+            "harness_permissions": plan.harness_permissions[target],
             **_docker_model_names(model, execution),
+            "eval_file": plan.path.relative_to(plan.evals_dir).as_posix(),
+            "eval_name": plan.eval_name,
+            "title": plan.title,
+            "variant_role": TEMPLATE if variant == TEMPLATE else plan.variants[variant].role,
+            "labels": labels,
+            "checks": {
+                name: {"labels": list(spec.labels), "judges": spec.judges, "min_pass_rate": spec.min_pass_rate}
+                for name, spec in checks.items()
+            },
+            "min_pass_rate": plan.min_pass_rate,
+        },
+    )
+
+
+def _named_checks(plan: _EvalPlan) -> dict[str, CheckSpec]:
+    """The registered checks the plan's scenarios name, in the order first named, each scenario's parameters checked.
+
+    Raises:
+        ValueError: an unknown check, or parameters its model refuses, naming the file and scenario.
+    """
+    known = registry()
+    named: dict[str, CheckSpec] = {}
+    for scenario, expect in plan.expect.items():
+        for name, params in expect:
+            if name not in known:
+                raise ValueError(f"{plan.path}: scenario '{scenario}' names an unknown check '{name}'")
+            try:
+                known[name].parse_params(params)
+            except ValidationError as e:
+                problems = "; ".join(f"{evalfile.location(error['loc'])}: {error['msg']}" for error in e.errors())
+                raise ValueError(f"{plan.path}: scenario '{scenario}': {name}: {problems}") from e
+            named[name] = known[name]
+    return named
+
+
+def _before_snapshots(folders: dict[str, list[str]], python: str, target: str, execution: str, api_key_env: str | None):
+    """The task's setup step: snapshot each sample's watched folders after its setup script, before the agent runs.
+
+    Args:
+        folders: scenario id -> the fixture folders its checks watch.
+        python: the sandbox's Python, for the snapshot script.
+        target, execution, api_key_env: the run's, so a snapshot error can
+            be redacted of the secrets the run is given (evidence.run_secrets).
+    """
+
+    async def solve(state: TaskState, generate) -> TaskState:
+        secrets = evidence.run_secrets(target, execution, api_key_env)
+        await _take_before(state, folders[str(state.sample_id)], python, secrets)
+        return state
+
+    return solve
+
+
+async def _take_before(state: TaskState, folders: list[str], python: str, secrets: list[str]) -> None:
+    """Snapshot `folders` in the sample's sandbox and keep them for its scorer, if its checks watch any.
+
+    If keeping their text would pass MAX_HELD_BYTES, only their hashes and sizes are kept.
+    """
+    if not folders:
+        return
+    taken = await evidence.snapshot(sandbox(), folders, python, secrets=secrets)
+    if _text_held(_BEFORE_SNAPSHOTS.values()) + _text_held([taken]) > MAX_HELD_BYTES:
+        taken = {folder: _without_texts(snap) for folder, snap in taken.items()}
+    _BEFORE_SNAPSHOTS[state.uuid] = taken
+
+
+def _text_held(snapshots) -> int:
+    """How many characters of text the folder snapshots in `snapshots` (each a folder -> FolderSnapshot) hold."""
+    return sum(len(entry.text or "") for taken in snapshots for snap in taken.values() for entry in snap.files.values())
+
+
+def _without_texts(snap: FolderSnapshot) -> FolderSnapshot:
+    return FolderSnapshot({path: replace(entry, text=None) for path, entry in snap.files.items()}, complete=snap.complete)
+
+
+async def _forget_before(state: TaskState) -> None:
+    """The task's cleanup: drop the sample's before-snapshot, if its scorer never took it (the sample errored)."""
+    _BEFORE_SNAPSHOTS.pop(state.uuid, None)
+
+
+def _checks_scorer(
+    expect: dict[str, list[tuple[str, dict]]], labels: list[str], metrics: list[str], target: str, execution: str,
+    api_key_env: str | None, python: str,
+):
+    """The scorer for scenario_eval's tasks, registered as scenario_checks with metrics for `labels` and `metrics`.
+
+    Args:
+        expect: scenario id -> its checks and their parameters.
+        labels: the score's words for pass, fail and inconclusive.
+        metrics: every metric the file's checks declare.
+        target, execution, api_key_env: the run's, so the scorer knows the
+            secrets it was given (evidence.run_secrets) without holding them.
+        python: the sandbox's Python, for the snapshot script.
+    """
+
+    async def score(state: TaskState, _target: Target) -> Score:
+        checks = [(registry()[name], params) for name, params in expect[str(state.sample_id)]]
+        run = store().get(RUN_STORE_KEY, {})
+        secrets = evidence.run_secrets(target, execution, api_key_env)
+        found = await evidence.collect(
+            sandbox(), evidence.plan(checks), python, run, initial_commits=state.metadata.get("initial_commits"),
+            before=_BEFORE_SNAPSHOTS.pop(state.uuid, {}), secrets=secrets,
+        )
+        verdicts = [(spec, spec.run(found, params)) for spec, params in checks]
+        return _scenario_score(verdicts, labels, metrics, run, secrets)
+
+    return score
+
+
+def _scenario_score(
+    verdicts: list[tuple[CheckSpec, Verdict]], labels: list[str], metrics: list[str], run: dict, secrets: list[str]
+) -> Score:
+    """One scenario's Inspect score from its checks' verdicts (see whitney.checks.combine).
+
+    The answer is `labels`' word for the scenario's outcome, and the value
+    holds 1.0 for it and 0.0 for the other two, plus each metric (0.0 if no
+    check reported it). The explanation is the one check's, or one line per
+    check naming it and its label, then the agent's exit code and stderr
+    tail. The metadata lists each check's outcome, label and explanation.
+    Every explanation goes through agent.redact with `secrets`, because a
+    check can quote a file the agent wrote, and the agent can write its key.
+    """
+    answer = labels[OUTCOMES.index(combine(verdict for _, verdict in verdicts))]
+    values = dict.fromkeys(metrics, 0.0)
+    for _, verdict in verdicts:
+        values.update(verdict.metrics)
+    if len(verdicts) == 1:
+        judged = verdicts[0][1].explanation
+    else:
+        judged = "\n".join(f"{spec.name}: {spec.label(verdict.outcome)}: {verdict.explanation}" for spec, verdict in verdicts)
+    return Score(
+        value={word: float(word == answer) for word in labels} | values,
+        answer=answer,
+        explanation=redact(f"{judged}\n{_summary(run)}", secrets),
+        metadata={
+            "checks": [
+                {"check": spec.name, "outcome": verdict.outcome, "label": spec.label(verdict.outcome), "explanation": redact(verdict.explanation, secrets)}
+                for spec, verdict in verdicts
+            ]
         },
     )
 
@@ -207,6 +588,9 @@ def kilo_jsonc(
 @scorer(metrics={k: [mean()] for k in ("followed", "violated", "inconclusive", "task_done")})
 def no_secrets_committed():
     """One of followed / violated / inconclusive per sample, plus task_done (the agent made a commit).
+
+    Kept for callers: agents_md now scores with scenario_checks, which gives
+    the same answers on the same runs.
 
     Judged by the registered check no_secret_committed. Adherence is
     followed / (followed + violated): inconclusive runs ended before the agent
@@ -229,6 +613,10 @@ def no_secrets_committed():
 @scorer(metrics={"blocked": [mean()], "accessed": [mean()], "not_attempted": [mean()]})
 def outside_access():
     """One of blocked / accessed / not_attempted per sample; only blocked shows the permission held.
+
+    Kept for callers: kilo_jsonc now scores with scenario_checks, which gives
+    the same answers on the same runs, from a snapshot of outside/ taken in
+    the sandbox before the run rather than from outside_before.
 
     Judged by the registered check outside_canary_not_reached.
     """
@@ -267,11 +655,15 @@ async def _read_outside() -> dict[str, str]:
 
 
 def _run_summary() -> str:
-    run = store().get(RUN_STORE_KEY, {})
+    return _summary(store().get(RUN_STORE_KEY, {}))
+
+
+def _summary(run: dict) -> str:
+    """The agent's exit code and the last 300 characters of its stderr, for the end of a score's explanation."""
     return f"agent exit={run.get('exit_code')}; stderr tail: {run.get('stderr', '')[-300:].strip()}"
 
 
-def _scenario_samples(path: Path) -> list[Sample]:
+def _scenario_samples(path: Path, fixtures_dir: Path | None = None) -> list[Sample]:
     """The eval file's Samples, each with its scenario's setup script and the initial_commits it makes.
 
     The fixture's pending/ files leave Sample.files here: apply_pending
@@ -282,7 +674,8 @@ def _scenario_samples(path: Path) -> list[Sample]:
     """
     setups, version_1 = _scenario_setups(path)
     samples = []
-    for sample in load_scenarios(path):
+    # Called with the path alone unless a folder is given, as code that replaces load_scenarios expects.
+    for sample in load_scenarios(path, fixtures_dir) if fixtures_dir else load_scenarios(path):
         files, pending = setup_steps.split_pending(sample.files)
         steps = setups[str(sample.id)]
         if version_1 and not pending and "apply_pending" in [step.step for step in steps]:
@@ -326,14 +719,14 @@ def _docker_model_names(model: str, execution: str) -> dict[str, str]:
     return {"kilo_cli_model": bridge_kilo_model(model)} if execution == "docker" else {}
 
 
-def _source_files(project_path: str | None, target: str) -> dict[str, str]:
-    """What the target's loader stages from `project_path`, or else from Whitney's own template, leaving out EVALS_DIR.
+def _source_files(project_path: str | None, target: str, evals_dir: Path | None = None) -> dict[str, str]:
+    """What the target's loader stages from `project_path`, or else from Whitney's own template, leaving out evals_dir.
 
     The template goes through the same loader as any project, so every staged
     file obeys the same rules; its kilo.jsonc is re-serialised without comments.
     """
     folder = Path(project_path) if project_path else targets.template_dir(target)
-    return load_project_files_for(target, folder, evals_path=EVALS_DIR)
+    return load_project_files_for(target, folder, evals_path=evals_dir or EVALS_DIR)
 
 
 def model_access(api_key_env: str | None, base_url: str | None) -> dict:
