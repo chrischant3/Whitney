@@ -92,8 +92,11 @@ DEFAULT_HARNESS_PERMISSIONS = {"kilo": HARNESS_PERMISSIONS, "claude-code": {"all
 
 # Each sample's snapshots from before its run, by sample uuid, from the setup step to the scorer.
 # Held here because Inspect logs a sample's store and metadata, and a snapshot can hold whatever the
-# setup wrote; the scorer takes each one out. A sample that errors before it is scored leaves its own.
+# setup wrote. The scorer takes each one out, and the task's cleanup drops one a sample never scored.
 _BEFORE_SNAPSHOTS: dict[str, dict[str, FolderSnapshot]] = {}
+# The most text the held snapshots may hold at once, with several samples running. A snapshot that
+# would pass it keeps its hashes and sizes only, so a check can still see what changed but can't read it.
+MAX_HELD_BYTES = 256 * 1024**2
 
 
 @dataclass(frozen=True)
@@ -418,6 +421,7 @@ def _scenario_task(
             api_key_env=api_key_env, base_url=base_url,
         ),
         scorer=checks_scorer(plan.expect, labels, metrics, target, execution, api_key_env, python),
+        cleanup=_forget_before,
         sandbox=_sandbox_config(execution),
         metadata={
             "variant": variant,
@@ -483,9 +487,30 @@ def _before_snapshots(folders: dict[str, list[str]], python: str):
 
 
 async def _take_before(state: TaskState, folders: list[str], python: str) -> None:
-    """Snapshot `folders` in the sample's sandbox and keep them for its scorer, if its checks watch any."""
-    if folders:
-        _BEFORE_SNAPSHOTS[state.uuid] = await evidence.snapshot(sandbox(), folders, python)
+    """Snapshot `folders` in the sample's sandbox and keep them for its scorer, if its checks watch any.
+
+    If keeping their text would pass MAX_HELD_BYTES, only their hashes and sizes are kept.
+    """
+    if not folders:
+        return
+    taken = await evidence.snapshot(sandbox(), folders, python)
+    if _text_held(_BEFORE_SNAPSHOTS.values()) + _text_held([taken]) > MAX_HELD_BYTES:
+        taken = {folder: _without_texts(snap) for folder, snap in taken.items()}
+    _BEFORE_SNAPSHOTS[state.uuid] = taken
+
+
+def _text_held(snapshots) -> int:
+    """How many characters of text the folder snapshots in `snapshots` (each a folder -> FolderSnapshot) hold."""
+    return sum(len(entry.text or "") for taken in snapshots for snap in taken.values() for entry in snap.files.values())
+
+
+def _without_texts(snap: FolderSnapshot) -> FolderSnapshot:
+    return FolderSnapshot({path: replace(entry, text=None) for path, entry in snap.files.items()}, complete=snap.complete)
+
+
+async def _forget_before(state: TaskState) -> None:
+    """The task's cleanup: drop the sample's before-snapshot, if its scorer never took it (the sample errored)."""
+    _BEFORE_SNAPSHOTS.pop(state.uuid, None)
 
 
 def _checks_scorer(

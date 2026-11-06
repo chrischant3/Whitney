@@ -215,10 +215,7 @@ def snapshot_problem(evidence: Evidence, folders: Iterable[str]) -> str | None:
             continue
         if not (before.complete and after.complete):
             return f"{folder} held more files than the snapshot's cap, so it wasn't read in full"
-        changed = sorted(
-            path for path in before.files.keys() | after.files.keys() if before.files.get(path) != after.files.get(path)
-        )
-        unread = [path for path in changed if _without_text(before, path) or _without_text(after, path)]
+        unread = [path for path in changed_paths(before, after) if _without_text(before, path) or _without_text(after, path)]
         if unread:
             return (
                 f"{len(unread)} file(s) in {folder} changed and couldn't be read as text "
@@ -235,6 +232,24 @@ def _listed(names: list[str]) -> str:
     """The first LISTED_NAMES of `names`, comma-separated, with a count of the rest."""
     shown = ", ".join(names[:LISTED_NAMES])
     return f"{shown} and {len(names) - LISTED_NAMES} more" if len(names) > LISTED_NAMES else shown
+
+
+def changed_paths(before: FolderSnapshot, after: FolderSnapshot) -> list[str]:
+    """The paths the run added, deleted or changed, sorted.
+
+    Entries are compared by hash, size and symlink target, not by text, so a
+    snapshot that dropped its texts still shows what changed. An entry with
+    no hash (too large to hash, or not a file) can never be shown unchanged.
+    """
+
+    def unchanged(path: str) -> bool:
+        old, new = before.files.get(path), after.files.get(path)
+        return (
+            old is not None and new is not None and bool(old.sha256)
+            and (old.sha256, old.size, old.symlink) == (new.sha256, new.size, new.symlink)
+        )
+
+    return sorted(path for path in before.files.keys() | after.files.keys() if not unchanged(path))
 
 
 def _without_text(snapshot: FolderSnapshot, path: str) -> bool:

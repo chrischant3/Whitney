@@ -537,6 +537,22 @@ def test_an_inconclusive_verdict_keeps_the_checks_metrics():
     assert (verdict.outcome, verdict.metrics) == ("inconclusive", {"seen": 2.0})
 
 
+def test_changed_paths_compare_hashes_so_a_before_snapshot_without_texts_still_shows_what_changed():
+    from whitney.checks import changed_paths
+
+    before = FolderSnapshot({"same": FileSnapshot("aa", 1), "edited": FileSnapshot("bb", 1), "gone": SMALL, "relinked": FileSnapshot("cc", 2, symlink="a")})
+    after = FolderSnapshot({"same": FileSnapshot("aa", 1, "x"), "edited": FileSnapshot("bz", 1, "y"), "new": SMALL, "relinked": FileSnapshot("cc", 2, symlink="b")})
+
+    assert changed_paths(before, after) == ["edited", "gone", "new", "relinked"]
+
+
+def test_a_file_too_large_to_hash_can_never_be_shown_unchanged():
+    from whitney.checks import changed_paths
+
+    unhashed = FileSnapshot("", 2_000_000_000, None, unreadable=True)
+    assert changed_paths(FolderSnapshot({"huge": unhashed}), FolderSnapshot({"huge": unhashed})) == ["huge"]
+
+
 def test_a_check_that_doesnt_need_snapshots_ignores_them():
     reg = Registry()
 
