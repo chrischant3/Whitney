@@ -323,6 +323,8 @@ def test_a_name_above_the_project_that_cannot_be_checked_stops_the_run(fake_clau
     with pytest.raises(RuntimeError) as raised:
         _run(claude_code(model=MODEL))
 
-    assert str(raised.value).startswith(f"can't check {unreadable}, which the harness would read if it were there")
-    assert str(raised.value).endswith("Set TMPDIR to a folder you can read, with none of these files above it.")
+    assert str(raised.value) == (
+        f"can't check {unreadable}, which the harness would read if it were there (Permission denied). "
+        "Set TMPDIR to a folder you can read, with none of these files above it."
+    )
     assert not (fake_claude.project / "args.txt").exists()
