@@ -24,9 +24,11 @@ KILO_CONFIG_DIRS = (".kilo", ".kilocode")
 EXCLUDED_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".tox"}
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers", "mcp", "plugin"}
-# Claude Code reads all three as project instructions (tasks/plan-phase5.md, decision 5).
-# The rest of .claude/ stays out: settings.json can hold hooks, which run commands,
-# and which of its keys are safe to copy is still open (spec open question 8).
+# Claude Code reads these as project instructions (tasks/plan-phase5.md, decision 5),
+# though a canary run on 2026-11-06 showed it ignoring AGENTS.md when .claude/CLAUDE.md
+# was there too (docs/adding-tests.md). The rest of .claude/ stays out: settings.json
+# can hold hooks, which run commands, and which of its keys are safe to copy is still
+# open (spec open question 8).
 CLAUDE_CODE_DIR = ".claude"
 CLAUDE_CODE_INSTRUCTIONS = ("AGENTS.md", "CLAUDE.md", f"{CLAUDE_CODE_DIR}/CLAUDE.md")
 
