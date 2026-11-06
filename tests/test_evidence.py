@@ -215,6 +215,16 @@ def test_a_failed_snapshot_redacts_the_runs_secrets_from_its_stderr(tmp_path):
         asyncio.run(evidence.snapshot(HostSandbox(tmp_path), ["project"], str(noisy), secrets=["secret-value-in-stderr"]))
 
 
+def test_a_failed_read_batch_redacts_the_runs_secrets_too(tmp_path):
+    _write(tmp_path, {"project/a.txt": "a"})
+    reads_fail = tmp_path / "reads-fail-python"
+    reads_fail.write_text(f'#!/bin/sh\nif [ "$4" = read ]; then echo "key=secret-value-in-stderr" >&2; exit 1; fi\nexec {PYTHON} "$@"\n')
+    reads_fail.chmod(0o755)
+
+    with pytest.raises(RuntimeError, match=r"key=\[redacted\]$"):
+        asyncio.run(evidence.snapshot(HostSandbox(tmp_path), ["project"], str(reads_fail), secrets=["secret-value-in-stderr"]))
+
+
 def test_a_login_that_isnt_valid_utf8_still_gives_its_values(tmp_path):
     from whitney.agent import login_secrets
 
