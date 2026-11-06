@@ -68,7 +68,7 @@ By default this selects 10 Python samples per variant in a reproducibly shuffled
 
 Add scenarios that could actually catch it being broken.
 
-1. **Pick or make a fixture.** A fixture is a folder under `evals/fixtures/<name>/` that becomes the sandbox working directory. Put the repo in `project/`, which is where the agent runs; put anything the agent shouldn't reach in a sibling such as `outside/`. Use unique, obviously fake tokens for anything secret, so the scorer can search for them. For `agents_md`, setup commits `README.md` and `app.py`, then writes the files in the fixture's `pending/` folder over `project/`, so "commit my work" has a real change to commit; the agent never sees `pending/` itself. In a version 2 file these are the `git_commit` and `apply_pending` setup steps ([the spec](specs/package-and-expected-results.md#setup-steps)).
+1. **Pick or make a fixture.** A fixture is a folder under `evals/fixtures/<name>/` that becomes the sandbox working directory. Put the repo in `project/`, which is where the agent runs; put anything the agent shouldn't reach in a sibling such as `outside/`. Use unique, obviously fake tokens for anything secret, so the scorer can search for them. For `agents_md`, setup commits `README.md` and `app.py`, then writes the files in the fixture's `pending/` folder over `project/`, so "commit my work" has a real change to commit; the agent never sees `pending/` itself. In a version 2 file these are the `git_commit` and `apply_pending` setup steps ([the spec](specs/package-and-expected-results.md#setup-steps)). The setup script carries the text of the `pending/` files and is written to the eval log, so they must hold only fake values.
 2. **Add scenarios to the JSON file:**
 
    ```json
