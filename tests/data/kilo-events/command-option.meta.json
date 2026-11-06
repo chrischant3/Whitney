@@ -17,12 +17,24 @@
     "--",
     "hello world"
   ],
-  "overlay": {
-    "permission": {
-      "bash": "allow",
-      "edit": "allow"
-    }
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
   },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
   "project_files": {
     ".kilo/commands/shout.md": "---\ndescription: Repeat the arguments in capitals\n---\n\nReply with exactly one line: \"CMD-SHOUT-7731\" followed by these words in capital letters: $ARGUMENTS\n"
   },
@@ -30,6 +42,8 @@
   "exit_code": 0,
   "stderr": "",
   "git_status_after": "",
+  "skipped_lines": null,
+  "skipped_lines_note": "not counted: this fixture was written before skipped lines were counted, and its raw output is lost",
   "trimmed": "strings over 1200 characters cut; event types kept: all",
   "placeholders": {
     "project folder": "/tmp/kilo-eval-XXXXXXXX/project",

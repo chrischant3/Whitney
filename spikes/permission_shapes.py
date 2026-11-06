@@ -45,6 +45,14 @@ MERGES = {
         {"bash": {"touch *": "deny"}, "edit": "allow"},
         {"bash": {"*": "allow"}},
     ),
+    "merge-overlay-scalar-project-no-catchall": (
+        {"bash": "allow", "edit": "allow"},
+        {"bash": {"touch *": "deny"}},
+    ),
+    "merge-same-pattern-both": (
+        {"bash": {"*": "allow", "touch *": "allow"}, "edit": "allow"},
+        {"bash": {"touch *": "deny"}},
+    ),
     "merge-overlay-patterns-project-scalar": (
         {"bash": {"*": "allow", "touch *": "allow"}, "edit": "allow"},
         {"bash": "ask"},

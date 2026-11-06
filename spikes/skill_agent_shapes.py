@@ -40,6 +40,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -57,6 +58,8 @@ from whitney.git_env import isolated_git_env
 from whitney.tasks import HARNESS_PERMISSIONS
 
 MODEL = "kilo/anthropic/claude-haiku-4.5"
+REPO = Path(__file__).resolve().parents[1]
+MIN_USER_NAME = 4  # a shorter user name would be replaced inside ordinary words
 TIMEOUT = 300
 
 # Placeholders the fixtures use instead of this machine's temporary folders.
@@ -74,6 +77,7 @@ REQUEST_ID_PLACEHOLDER = "REQUEST-ID-PLACEHOLDER"
 APP_PY = "def total(items):\n    return sum(items)\n"
 APP_PY_V2 = APP_PY + "\n\ndef refund(amount):\n    return -amount\n"
 BASE_FILES = {"README.md": "# Till\n\nA tiny till for the spike.\n", "app.py": APP_PY}
+COMMITS = ["Add the till with total()", "Add refund()"]  # see _init_repo
 
 
 @dataclass
@@ -337,6 +341,8 @@ def _home_with(files: dict[str, str], seen: dict) -> Iterator[kilo_agent.KiloHom
             root = Path(home.env["HOME"])
             seen["home"] = str(root)
             for relative, content in files.items():
+                if Path(relative).is_absolute() or ".." in Path(relative).parts:
+                    raise ValueError(f"home file path must be relative: {relative!r}")
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
@@ -355,6 +361,8 @@ def _command_for(case: Case, seen: dict):
         if case.options:
             end = argv.index("--")
             argv[end:end] = case.options
+        if "--auto" in argv:
+            raise ValueError("--auto turns every ask into allow; the spikes never pass it")
         seen["argv"] = argv
         return argv
 
@@ -370,9 +378,18 @@ def _init_repo(project: Path) -> None:
     """Two commits, so the project has a history: everything staged, then refund() added to app.py."""
     _git(project, "init", "-q", "--template=")
     _git(project, "add", "-A")
-    _git(project, "commit", "-q", "-m", "Add the till with total()")
+    _git(project, "commit", "-q", "-m", COMMITS[0])
     (project / "app.py").write_text(APP_PY_V2, encoding="utf-8")
-    _git(project, "commit", "-q", "-am", "Add refund()")
+    _git(project, "commit", "-q", "-am", COMMITS[1])
+
+
+def _kilo_version() -> str:
+    """`kilo --version`, run with an empty temporary HOME so the user's own Kilo setup isn't read."""
+    with tempfile.TemporaryDirectory(prefix="kilo-version-home-") as home:
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": home, "XDG_CONFIG_HOME": f"{home}/.config",
+               "XDG_DATA_HOME": f"{home}/.local/share", "XDG_STATE_HOME": f"{home}/.local/state",
+               "XDG_CACHE_HOME": f"{home}/.cache"}
+        return subprocess.run(["kilo", "--version"], capture_output=True, text=True, env=env).stdout.strip()
 
 
 def run_case(case: Case, out: Path) -> dict:
@@ -412,7 +429,7 @@ def run_case(case: Case, out: Path) -> dict:
         "case": case.id,
         "about": case.about,
         "date": date.today().isoformat(),
-        "kilo_version": subprocess.run(["kilo", "--version"], capture_output=True, text=True).stdout.strip(),
+        "kilo_version": _kilo_version(),
         "model": MODEL if case.calls_model else None,
         "argv": seen.get("argv"),
         "overlay": overlay,
@@ -432,13 +449,17 @@ def run_case(case: Case, out: Path) -> dict:
 
 
 def sanitise(text: str, summary: dict) -> str:
-    """`text` with this machine's paths, user name and email addresses replaced by placeholders.
+    """`text` with this machine's paths and user name replaced by placeholders.
 
     Whitney's runner has already replaced the Kilo login's values with
     "[redacted]". This replaces the temporary project folder and HOME (in
     their /private/var and /var forms), any other path in the temporary
-    folder, the user's own home folder and name, and email addresses other
-    than the fixed git identity.
+    folder, the user's own home folder, and the user name as a whole word.
+    Email addresses are replaced by sanitise_emails, on parsed strings: on
+    JSON text the pattern would swallow the "n" of an escaped newline.
+
+    Raises:
+        ValueError: the user name is shorter than MIN_USER_NAME characters.
     """
     replacements = []
     for key, placeholder in (("project_dir", PROJECT_PLACEHOLDER), ("home_dir", HOME_PLACEHOLDER)):
@@ -448,11 +469,24 @@ def sanitise(text: str, summary: dict) -> str:
             replacements += [("/private" + bare, placeholder), (bare, placeholder)]
     tmp = tempfile.gettempdir().rstrip("/") + "/"
     replacements += [("/private" + tmp.removeprefix("/private"), TMP_PLACEHOLDER), (tmp.removeprefix("/private"), TMP_PLACEHOLDER)]
-    user_home = str(Path.home())
-    replacements += [(user_home, USER_HOME_PLACEHOLDER), (Path.home().name, "user")]
+    replacements.append((str(Path.home()), USER_HOME_PLACEHOLDER))
     for old, new in replacements:
         text = text.replace(old, new)
-    return EMAIL.sub(lambda m: m.group(0) if m.group(0) in KEEP_EMAILS else "user@example.invalid", text)
+    name = Path.home().name
+    if len(name) < MIN_USER_NAME:
+        raise ValueError(f"user name {name!r} is too short to replace safely; sanitise the fixtures by hand")
+    return re.sub(rf"\b{re.escape(name)}\b", "user", text)
+
+
+def sanitise_emails(value):
+    """`value` with every email address in its strings, other than KEEP_EMAILS, replaced."""
+    if isinstance(value, str):
+        return EMAIL.sub(lambda m: m.group(0) if m.group(0) in KEEP_EMAILS else "user@example.invalid", value)
+    if isinstance(value, dict):
+        return {key: sanitise_emails(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [sanitise_emails(item) for item in value]
+    return value
 
 
 def _trim(value):
@@ -493,31 +527,36 @@ def _select(output, keys: tuple[str, ...], rules: tuple[str, ...] = ()):
 def write_fixture(case: Case, out: Path, fixtures: Path) -> list[Path]:
     """Turn out/<case id>/ into sanitised fixtures: <id>.jsonl (events) and <id>.meta.json.
 
-    For a `kilo debug ...` case the events file is replaced by <id>.json,
-    holding the command's JSON output, cut to case.fixture_keys and trimmed
-    the same way.
+    Each event is parsed and written again with json.dumps, so the lines
+    are re-serialised, not byte-for-byte what Kilo printed. Lines that
+    aren't JSON are left out and counted in the meta's skipped_lines.
+    For a `kilo debug ...` case the events file is replaced by
+    <id>.debug.json, holding the command's JSON output, cut to
+    case.fixture_keys and trimmed the same way.
     """
     folder = out / case.id
     summary = json.loads((folder / "summary.json").read_text(encoding="utf-8"))
     events_text = sanitise((folder / "events.jsonl").read_text(encoding="utf-8"), summary)
-    stderr = sanitise((folder / "stderr.txt").read_text(encoding="utf-8"), summary)
+    stderr = sanitise_emails(sanitise((folder / "stderr.txt").read_text(encoding="utf-8"), summary))
     fixtures.mkdir(parents=True, exist_ok=True)
     written = []
+    skipped = 0
     if case.calls_model:
         lines = []
         for line in events_text.splitlines():
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
+                skipped += bool(line.strip())
                 continue
             if not case.keep or event.get("type") in case.keep:
-                lines.append(json.dumps(_trim(event)))
+                lines.append(json.dumps(_trim(sanitise_emails(event))))
         path = fixtures / f"{case.id}.jsonl"
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     else:
-        path = fixtures / f"{case.id}.json"
+        path = fixtures / f"{case.id}.debug.json"
         output = _select(_debug_output(events_text), case.fixture_keys, case.fixture_rules)
-        path.write_text(json.dumps(_trim(output), indent=2) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(_trim(sanitise_emails(output)), indent=2) + "\n", encoding="utf-8")
     written.append(path)
     meta = {
         "case": case.id,
@@ -526,12 +565,17 @@ def write_fixture(case: Case, out: Path, fixtures: Path) -> list[Path]:
         "kilo_version": summary["kilo_version"],
         "model": summary["model"],
         "argv": json.loads(sanitise(json.dumps(summary["argv"]), summary)),
-        "overlay": summary["overlay"],
+        # Only the overlay's permissions: the rest can hold provider settings from the user's global config.
+        "overlay_permission": (summary["overlay"] or {}).get("permission"),
+        "base_files": BASE_FILES,
+        "commits": [{"message": COMMITS[0], "files": "every project file"},
+                    {"message": COMMITS[1], "app.py": APP_PY_V2}],
         "project_files": {name: text for name, text in summary["project_files"].items() if name not in BASE_FILES},
         "home_files": summary["home_files"],
         "exit_code": summary["exit_code"],
         "stderr": stderr,
         "git_status_after": summary["git_status_after"],
+        "skipped_lines": skipped,
         "trimmed": (
             f"strings over {LONG_TEXT} characters cut; event types kept: {list(case.keep) or 'all'}"
             + (f"; output keys kept: {list(case.fixture_keys)}" if case.fixture_keys else "")
@@ -563,6 +607,8 @@ def main(cases: list[Case], argv: list[str] | None = None) -> int:
     parser.add_argument("--fixtures", type=Path, help="write sanitised fixtures here (from saved runs with --rewrite)")
     parser.add_argument("--rewrite", action="store_true", help="with --fixtures: rewrite them from saved runs, and run nothing")
     args = parser.parse_args(argv)
+    if args.out.resolve().is_relative_to(REPO):
+        parser.error(f"--out must be outside the repo ({REPO}), so raw output is never committed")
     chosen = [c for c in cases if not args.case or c.id in args.case]
     if args.list:
         for case in cases:

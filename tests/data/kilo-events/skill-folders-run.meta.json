@@ -15,12 +15,24 @@
     "--",
     "Call the skill tool once for each of these skill names, one after another: canary-kilo, canary-kilocode, canary-claude, canary-global-xdg. Then list which calls worked. Do nothing else."
   ],
-  "overlay": {
-    "permission": {
-      "bash": "allow",
-      "edit": "allow"
-    }
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
   },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
   "project_files": {
     ".kilo/skills/canary-kilo/SKILL.md": "---\nname: canary-kilo\ndescription: Canary skill CANARY-CANARY-KILO-3307. Use only when asked for canary-kilo by name.\n---\n\nMarker: CANARY-CANARY-KILO-3307\n",
     ".kilo/skill/canary-kilo-singular/SKILL.md": "---\nname: canary-kilo-singular\ndescription: Canary skill CANARY-CANARY-KILO-SINGULAR-3307. Use only when asked for canary-kilo-singular by name.\n---\n\nMarker: CANARY-CANARY-KILO-SINGULAR-3307\n",
@@ -40,6 +52,8 @@
   "exit_code": 0,
   "stderr": "",
   "git_status_after": "",
+  "skipped_lines": null,
+  "skipped_lines_note": "not counted: this fixture was written before skipped lines were counted, and its raw output is lost",
   "trimmed": "strings over 1200 characters cut; event types kept: all",
   "placeholders": {
     "project folder": "/tmp/kilo-eval-XXXXXXXX/project",

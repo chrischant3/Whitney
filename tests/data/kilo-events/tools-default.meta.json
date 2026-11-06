@@ -11,17 +11,30 @@
     "code",
     "--pure"
   ],
-  "overlay": {
-    "permission": {
-      "bash": "allow",
-      "edit": "allow"
-    }
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
   },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
   "project_files": {},
   "home_files": {},
   "exit_code": 0,
   "stderr": "",
   "git_status_after": "",
+  "skipped_lines": 0,
   "trimmed": "strings over 1200 characters cut; event types kept: all; output keys kept: ['name', 'tools']",
   "placeholders": {
     "project folder": "/tmp/kilo-eval-XXXXXXXX/project",

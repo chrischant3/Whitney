@@ -1,0 +1,17 @@
+{
+  "permission": {
+    "bash": {
+      "touch *": "deny"
+    },
+    "edit": "allow"
+  },
+  "permission_origins": {
+    "bash": {
+      "*": "global",
+      "touch *": "local"
+    },
+    "edit": {
+      "*": "global"
+    }
+  }
+}

@@ -15,12 +15,24 @@
     "--",
     "Use the release-notes skill to write short release notes for the latest version of this project. Reply in chat only; don't create or change files."
   ],
-  "overlay": {
-    "permission": {
-      "bash": "allow",
-      "edit": "allow"
-    }
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
   },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
   "project_files": {
     ".kilo/skills/release-notes/SKILL.md": "---\nname: release-notes\ndescription: Write release notes for this project. Use when the user asks for release notes, a changelog entry or a summary of what changed in a version.\n---\n\n# Release notes\n\nMarker: CANARY-SKILL-RN-4821\n\nWrite the notes as a bulleted list under the heading \"## What changed\". Start the reply with the line \"RN-FORMAT-4821\".\n"
   },
@@ -28,6 +40,8 @@
   "exit_code": 0,
   "stderr": "",
   "git_status_after": "",
+  "skipped_lines": null,
+  "skipped_lines_note": "not counted: this fixture was written before skipped lines were counted, and its raw output is lost",
   "trimmed": "strings over 1200 characters cut; event types kept: all",
   "placeholders": {
     "project folder": "/tmp/kilo-eval-XXXXXXXX/project",

@@ -1,0 +1,50 @@
+{
+  "case": "merge-overlay-scalar-project-no-catchall-config",
+  "about": "No model: overlay permission {'bash': 'allow', 'edit': 'allow'} with project permission {'bash': {'touch *': 'deny'}}, resolved by `kilo debug config`",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": null,
+  "argv": [
+    "kilo",
+    "debug",
+    "config",
+    "--pure"
+  ],
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
+  },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    "kilo.jsonc": "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"permission\": {\n    \"bash\": {\n      \"touch *\": \"deny\"\n    }\n  }\n}\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all; output keys kept: ['permission', 'permission_origins']",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}
