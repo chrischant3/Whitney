@@ -441,3 +441,28 @@ def test_a_version_1_canary_scenario_keeps_its_single_git_init(tmp_path, monkeyp
 
     assert sample.metadata["initial_commits"] == 0
     assert sample.setup == tasks.REPO_FIXTURE_SETUP
+
+
+def test_the_version_1_pending_change_is_app_py_with_the_refund_appended():
+    assert evalfile.version_1_pending({"project/app.py": "x\n"}) == {"app.py": "x\n" + evalfile.V1_APPENDED_REFUND}
+
+
+def test_a_version_1_fixture_with_its_own_pending_folder_applies_it(tmp_path, monkeypatch, home_with_blocking_git_hooks):
+    evals = version_1_evals(tmp_path, {"secret_tokens": ["CANARY-1"]})
+    fixture_in(evals / "fixtures" / "repo", {"pending/app.py": "print('changed')\n"})
+    monkeypatch.setattr(tasks, "EVALS_DIR", evals)
+    with pytest.warns(FutureWarning):
+        [sample] = agents_md(target="kilo", model=MODEL).dataset
+    root = stage(sample, tmp_path / "sandbox")
+
+    assert run(sample.setup, root).returncode == 0
+    assert (root / "project" / "app.py").read_text() == "print('changed')\n"
+
+
+def test_a_version_2_fixture_gets_no_version_1_change_in_place_of_pending(tmp_path, monkeypatch):
+    evals = consumer_evals(tmp_path, setup=[{"step": "git_init"}, {"step": "apply_pending"}])
+    fixture_in(evals / "fixtures" / "repo", {"project/app.py": "x\n"})
+    monkeypatch.setattr(tasks, "EVALS_DIR", evals)
+
+    with pytest.raises(SetupError, match="apply_pending has nothing to apply"):
+        agents_md(target="kilo", model=MODEL)
