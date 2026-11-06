@@ -987,3 +987,123 @@ def test_a_project_path_spelled_otherwise_is_still_matched_against_the_evals_pat
     if case_insensitive:
         with pytest.raises(ValueError, match="inside the evals path"):
             load_project_files(project / "evals", evals_path=tmp_path / "PROJECT")
+
+
+def test_a_file_in_a_skill_folder_that_is_not_utf8_is_left_out_and_named(tmp_path):
+    # Skills can carry fonts and images; one such file mustn't stop every run of the project.
+    _kilo_project(tmp_path, {
+        ".claude/skills/x/SKILL.md": "skill x\n", ".agents/skills/y/SKILL.md": "skill y\n", ".kilo/skills/z/SKILL.md": "skill z\n",
+    })
+    for name in (".claude/skills/x/font.ttf", ".agents/skills/y/logo.png", ".kilo/skills/z/data.bin"):
+        (tmp_path / name).write_bytes(b"\xff\xd8 binary")
+
+    assert set(load_project_files(tmp_path)) == {
+        "kilo.jsonc", ".claude/skills/x/SKILL.md", ".agents/skills/y/SKILL.md", ".kilo/skills/z/SKILL.md",
+    }
+    assert files_not_staged("kilo", tmp_path) == [".agents/skills/y/logo.png", ".claude/skills/x/font.ttf", ".kilo/skills/z/data.bin"]
+    assert set(files_not_staged_reasons("kilo", tmp_path).values()) == {"not UTF-8 text"}
+
+
+def test_an_instruction_file_that_is_not_utf8_still_stops_a_kilo_run(tmp_path):
+    _kilo_project(tmp_path, {})
+    (tmp_path / "AGENTS.md").write_bytes(b"\xff rules")
+    with pytest.raises(ValueError, match="must be UTF-8 text"):
+        load_project_files(tmp_path)
+
+
+def test_workflows_and_kilocodemodes_kilo_reads_are_staged(tmp_path):
+    # kilo debug config shows each workflow's .md as a command, and .kilocodemodes's modes as agents.
+    _kilo_project(tmp_path, {
+        ".kilo/workflows/release.md": "release\n",
+        ".kilocode/workflows/review.md": "review\n",
+        ".kilo/workflows/.hidden.md": "hidden\n",
+        ".kilo/workflows/nested/deep.md": "not read\n",
+        ".kilo/workflows/notes.txt": "not read\n",
+        ".kilocode/workflows/UP.MD": "not read\n",
+        ".kilocodemodes": "customModes:\n  - slug: reviewer\n    name: Reviewer\n    roleDefinition: You review.\n",
+    })
+
+    assert set(load_project_files(tmp_path)) == {
+        "kilo.jsonc", ".kilo/workflows/release.md", ".kilocode/workflows/review.md", ".kilo/workflows/.hidden.md", ".kilocodemodes",
+    }
+
+
+def test_a_symlinked_kilocodemodes_is_not_staged(tmp_path):
+    _kilo_project(tmp_path, {"real.yaml": "customModes: []\n"})
+    (tmp_path / ".kilocodemodes").symlink_to(tmp_path / "real.yaml")
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+
+@pytest.mark.parametrize("config", ["kilo.jsonc", ".kilo/kilo.json"])
+def test_skills_paths_is_stripped_like_the_connection_keys_and_named(tmp_path, config):
+    _kilo_project(tmp_path, {})
+    (tmp_path / "kilo.jsonc").unlink()
+    (tmp_path / config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / config).write_text(json.dumps({
+        "skills": {"paths": ["../shared-skills"], "urls": ["https://example.invalid/skills/"]}, "permission": {"bash": "ask"},
+    }))
+
+    staged = parse_jsonc(load_project_files(tmp_path)[config])
+
+    assert staged == {"skills": {"urls": ["https://example.invalid/skills/"]}, "permission": {"bash": "ask"}}
+    assert files_not_staged("kilo", tmp_path) == [f"{config}: skills.paths"]
+    assert files_not_staged_reasons("kilo", tmp_path) == {
+        f"{config}: skills.paths": "left out of the staged config: its folders can be outside the project"
+    }
+
+
+def test_a_skills_block_holding_only_paths_is_left_out_whole(tmp_path):
+    _kilo_project(tmp_path, {})
+    (tmp_path / "kilo.jsonc").write_text('{"skills": {"paths": ["./my-skills"]}}')
+    assert parse_jsonc(load_project_files(tmp_path)["kilo.jsonc"]) == {}
+
+
+def test_a_kilo_project_with_nothing_left_out_names_nothing(tmp_path):
+    _kilo_project(tmp_path, {"AGENTS.md": "rule\n", "app.py": "source\n"})
+    assert files_not_staged("kilo", tmp_path) == []
+    assert files_not_staged_reasons("kilo", tmp_path) == {}
+
+
+@pytest.fixture
+def unreadable(tmp_path):
+    """Folders made unreadable by the test, given back their permissions afterwards."""
+    folders = []
+
+    def make(path):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "x.md").write_text("x\n")
+        path.chmod(0)
+        folders.append(path)
+
+    yield make
+    for path in folders:
+        path.chmod(0o755)
+
+
+@pytest.mark.parametrize("evals", ["evals", ".claude/skills/evals-inside"])
+def test_the_evals_path_and_the_excluded_folders_are_never_looked_in(tmp_path, unreadable, evals):
+    # An unreadable folder can't be listed, so the walk would fail if it looked in one.
+    _kilo_project(tmp_path, {"rules/a.md": "a\n", ".claude/skills/x/SKILL.md": "x\n"})
+    for folder in (evals, "node_modules/pkg", ".claude/skills/node_modules", ".git/objects"):
+        unreadable(tmp_path / folder)
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+
+    staged = set(load_project_files(tmp_path, evals_path=tmp_path / evals))
+
+    assert staged == {"kilo.jsonc", "rules/a.md", ".claude/skills/x/SKILL.md"}
+
+
+def test_a_pattern_that_expands_to_too_many_alternatives_is_refused_by_name(tmp_path):
+    pattern = "{a,b}" * 11 + ".md"  # 2,048 alternatives
+    with pytest.raises(ValueError) as raised:
+        _glob_project(tmp_path, pattern)
+    assert str(raised.value) == f"project instruction pattern {pattern!r} expands to more than 1024 patterns; split it into smaller ones"
+    assert _glob_project(tmp_path, "{a,b}" * 10 + "x.md") == set()  # 1,024 is allowed
+
+
+def test_repeated_double_stars_match_what_one_does(tmp_path):
+    assert _glob_project(tmp_path, "rules/**/**/**/*.md") == _glob_project(tmp_path, "rules/**/*.md")
+
+
+def test_a_path_outside_the_root_is_walked_up_to_the_top_and_found_unlinked(tmp_path):
+    assert project_files._linked_below(tmp_path / "root", tmp_path / "elsewhere" / "file.md") is False

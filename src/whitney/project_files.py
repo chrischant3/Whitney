@@ -36,6 +36,20 @@ KILO_RULE_DIRS = tuple(
 )
 KILO_LEGACY_RULE_FILES = (".kilocoderules", *(f".kilocoderules-{mode}" for mode in KILO_RULE_MODES))
 KILO_SKILL_DIRS = (".claude/skills", ".agents/skills")
+# Kilo also turns the .md files directly in these folders into commands, and .kilocodemodes's
+# modes into agents (kilo debug config, docs/load-order.md, "Workflows and custom modes").
+KILO_WORKFLOW_DIRS = tuple(f"{config_dir}/workflows" for config_dir in KILO_CONFIG_DIRS)
+KILO_MODES_FILE = ".kilocodemodes"
+# Skills can carry fonts and images, so a file in a skill folder that isn't UTF-8 is left out and
+# named in the report instead of stopping the run.
+KILO_SKILL_FOLDERS = (*(f"{d}/{name}" for d in KILO_CONFIG_DIRS for name in ("skill", "skills")), *KILO_SKILL_DIRS)
+NOT_UTF8_REASON = "not UTF-8 text"
+# skills.paths names more skill folders, which can be anywhere on the machine, so it is stripped
+# from the staged config as the connection keys are, and named in the report.
+SKILLS_KEY, SKILL_PATHS_KEY = "skills", "paths"
+SKILL_PATHS_REASON = "left out of the staged config: its folders can be outside the project"
+# A brace pattern such as {a,b}{c,d}... doubles with each group, so its expansion is capped.
+MAX_BRACE_ALTERNATIVES = 1024
 EXCLUDED_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".tox"}
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers", "mcp", "plugin"}
@@ -95,21 +109,35 @@ def load_project_files(project_dir: Path, *, evals_path: Path | None = None) -> 
             Kilo config, an `instructions` pattern reaches outside it or can't
             be expanded as Kilo expands it, or a staged file isn't UTF-8.
     """
-    root = _project_root(project_dir)
+    return _load_kilo(_project_root(project_dir), evals_path)[0]
+
+
+def _load_kilo(root: Path, evals_path: Path | None) -> tuple[dict[str, str], list[tuple[str, str]]]:
+    """What load_project_files stages, and (name, reason) for each thing it left out that the report names."""
     evals = _evals_root(root, evals_path)
     config_paths = [relative for relative in CONFIG_PATHS if _is_kilo_file(root, relative, evals)]
     if not config_paths:
         raise ValueError(f"project has no Kilo config ({', '.join(CONFIG_PATHS)}): {root}")
 
-    files_at_root = (*ROOT_INSTRUCTIONS, *config_paths, *KILO_LEGACY_RULE_FILES)
+    files_at_root = (*ROOT_INSTRUCTIONS, *config_paths, *KILO_LEGACY_RULE_FILES, KILO_MODES_FILE)
     paths = {relative for relative in files_at_root if _is_kilo_file(root, relative, evals)}
+    skill_files = set()
     folders = [f"{config_dir}/{directory}" for config_dir in KILO_CONFIG_DIRS for directory in KILO_ASSET_DIRS]
     for folder in (*folders, *KILO_SKILL_DIRS):
-        paths.update(f"{folder}/{relative}" for relative, _ in _walk_files(root / folder, root))
-    for folder in KILO_RULE_DIRS:
-        paths.update(_rule_files(root, folder))
+        found = {f"{folder}/{relative}" for relative, _ in _walk_files(root / folder, root, evals)}
+        (skill_files if folder in KILO_SKILL_FOLDERS else paths).update(found)
+    for folder in (*KILO_RULE_DIRS, *KILO_WORKFLOW_DIRS):
+        paths.update(_direct_md_files(root, folder, evals))
 
-    files = {relative: _read_text(root / relative) for relative in sorted(paths) if not _under(root / relative, evals)}
+    files, left_out = {}, []
+    for relative in sorted(paths | skill_files):
+        if relative in paths:
+            files[relative] = _read_text(root / relative)
+            continue
+        try:
+            files[relative] = (root / relative).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            left_out.append((relative, NOT_UTF8_REASON))
     instruction_patterns = set()
     for relative in config_paths:
         config = parse_jsonc(files[relative])
@@ -120,17 +148,23 @@ def load_project_files(project_dir: Path, *, evals_path: Path | None = None) -> 
             instruction_patterns.update(item for item in instructions if isinstance(item, str))
         for key in CONNECTION_CONFIG_KEYS:
             config.pop(key, None)
+        skills = config.get(SKILLS_KEY)
+        if isinstance(skills, dict) and SKILL_PATHS_KEY in skills:
+            del skills[SKILL_PATHS_KEY]
+            left_out.append((f"{relative}: {SKILLS_KEY}.{SKILL_PATHS_KEY}", SKILL_PATHS_REASON))
+            if not skills:
+                del config[SKILLS_KEY]
         files[relative] = json.dumps(config, indent=2)
 
     for pattern in sorted(instruction_patterns):
-        for match in _instruction_matches(root, pattern):
+        for match in _instruction_matches(root, pattern, evals):
             relative = match.relative_to(root).as_posix()
             if _under(match, evals) or not _is_project_file(root, relative) or _linked_below(root, match):
                 continue
             if _is_safe_file(match):
                 files[relative] = _read_text(match)
 
-    return files
+    return files, sorted(left_out)
 
 
 def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None = None) -> dict[str, str]:
@@ -222,10 +256,11 @@ def files_renamed(target: str, project_dir: Path, staged: dict[str, str]) -> dic
     return {} if spelled == AGENTS_MD else {spelled: AGENTS_MD}
 
 
-def files_not_staged(target: str, project_dir: Path) -> list[str]:
+def files_not_staged(target: str, project_dir: Path, *, evals_path: Path | None = None) -> list[str]:
     """Name what the project holds for `target`'s harness that its loader leaves out, for the report.
 
-    Only claude-code leaves anything out today: each of root AGENTS.md, root
+    For kilo: each file in a skill folder that isn't UTF-8 text, and each
+    config's skills.paths, named "<config>: skills.paths". For claude-code: each of root AGENTS.md, root
     CLAUDE.md and .claude/CLAUDE.md that exists but isn't the one file
     staged (see load_claude_code_project_files), and the other entries of
     the project's .claude/ folder. Names are spelled as on disk. Entries are
@@ -237,37 +272,42 @@ def files_not_staged(target: str, project_dir: Path) -> list[str]:
     Args:
         target: "kilo" or "claude-code".
         project_dir: the project folder.
+        evals_path: the evals path the loader was given (kilo only).
 
     Returns:
-        Project-relative paths, empty if nothing was left out: root files
+        For kilo, the names sorted, cut at NOT_STAGED_LIMIT as below. For
+        claude-code, project-relative paths, empty if nothing was left out: root files
         first, then .claude/CLAUDE.md, then the other .claude/ entries,
         sorted. Past NOT_STAGED_LIMIT of those others, the rest are counted
         in a last item, "and N more"; root files and .claude/CLAUDE.md are
         never cut.
 
     Raises:
-        FileNotFoundError: project_dir doesn't exist (claude-code only).
-        ValueError: project_dir isn't a folder (claude-code only).
+        FileNotFoundError: project_dir doesn't exist.
+        ValueError: project_dir isn't a folder. For kilo, a project
+            load_project_files refuses names nothing instead.
     """
-    return _not_staged(target, project_dir)[0]
+    return _not_staged(target, project_dir, evals_path)[0]
 
 
-def files_not_staged_reasons(target: str, project_dir: Path) -> dict[str, str]:
+def files_not_staged_reasons(target: str, project_dir: Path, *, evals_path: Path | None = None) -> dict[str, str]:
     """Say why each name files_not_staged gives was left out, for the report.
 
     Args:
         target: "kilo" or "claude-code".
         project_dir: the project folder.
+        evals_path: the evals path the loader was given (kilo only).
 
     Returns:
         {name: short reason} for every name files_not_staged lists except a
-        last "and N more"; empty for kilo. The reasons are BESIDE_REASON,
-        UNSAFE_REASON, REST_REASON and WHOLE_REASON.
+        last "and N more". The reasons are NOT_UTF8_REASON and
+        SKILL_PATHS_REASON for kilo, and BESIDE_REASON, UNSAFE_REASON,
+        REST_REASON and WHOLE_REASON for claude-code.
 
     Raises:
         FileNotFoundError, ValueError: as files_not_staged raises them.
     """
-    return _not_staged(target, project_dir)[1]
+    return _not_staged(target, project_dir, evals_path)[1]
 
 
 def not_staged_reason(
@@ -335,28 +375,49 @@ def set_external_directory(files: dict[str, str], action: str) -> dict[str, str]
     return updated
 
 
-def _walk_files(root: Path, allowed_root: Path):
+def _walk_files(root: Path, allowed_root: Path, evals: "_EvalsFolder | None" = None):
+    """Yield (path relative to `root`, path) for each safe regular file under `root`, in path order.
+
+    Nothing is reached through a symlink, and the excluded folders and the
+    evals folder are never looked in.
+    """
     allowed_root = allowed_root.resolve()
-    if not root.is_dir() or _linked_below(allowed_root, root):
+    if not root.is_dir() or _linked_below(allowed_root, root) or _under(root, evals):
         return
     if not root.resolve().is_relative_to(allowed_root):
         return
-    for path in sorted(root.rglob("*")):
-        if path.is_symlink() or not path.is_file() or not _is_safe_file(path):
-            continue
-        resolved = path.resolve()
-        if resolved.is_relative_to(allowed_root):
+    for path in sorted(_tree_files(root, evals)):
+        if _is_safe_file(path) and path.resolve().is_relative_to(allowed_root):
             yield path.relative_to(root).as_posix(), path
 
 
-def _instruction_matches(root: Path, pattern: str) -> list[Path]:
+def _tree_files(directory: Path, evals: "_EvalsFolder | None"):
+    for child in _folder_entries(directory, evals):
+        if child.is_symlink():
+            continue
+        if child.is_dir():
+            yield from _tree_files(child, evals)
+        elif child.is_file():
+            yield child
+
+
+def _instruction_matches(root: Path, pattern: str, evals: "_EvalsFolder | None" = None) -> list[Path]:
     """The paths under `root` that an `instructions` pattern matches, as Kilo matches them (see UNEXPANDED_GLOB).
 
+    The excluded folders and the evals folder are never looked in.
+
     Raises:
-        ValueError: the pattern reaches outside the project (absolute, "~/" or ".."), or uses
-            glob syntax that isn't expanded here.
+        ValueError: the pattern reaches outside the project (absolute, "~/" or ".."), uses
+            glob syntax that isn't expanded here, or expands to more than
+            MAX_BRACE_ALTERNATIVES patterns.
     """
-    expanded = _expand_braces(pattern)
+    try:
+        expanded = _expand_braces(pattern)
+    except _TooManyAlternatives:
+        raise ValueError(
+            f"project instruction pattern {pattern!r} expands to more than {MAX_BRACE_ALTERNATIVES} patterns; "
+            "split it into smaller ones"
+        ) from None
     for candidate in [pattern, *expanded]:
         if candidate.startswith("~") or Path(candidate).is_absolute() or ".." in PurePosixPath(candidate).parts:
             raise ValueError(f"project instruction path must stay inside the project: {pattern!r}")
@@ -367,50 +428,81 @@ def _instruction_matches(root: Path, pattern: str) -> list[Path]:
         )
     matches = {}
     for alternative in expanded:
-        parts = [part for part in alternative.split("/") if part not in ("", ".")]
-        matches.update(dict.fromkeys(_glob_parts(root, parts)))
+        parts = []
+        for part in alternative.split("/"):
+            # "a/**/**/b" matches what "a/**/b" does; walking each "**" again would only repeat the work.
+            if part not in ("", ".") and not (part == "**" and parts[-1:] == ["**"]):
+                parts.append(part)
+        matches.update(dict.fromkeys(_glob_parts(root, parts, evals)))
     return list(matches)
 
 
+class _TooManyAlternatives(Exception):
+    """A brace pattern expands past MAX_BRACE_ALTERNATIVES."""
+
+
 def _expand_braces(pattern: str) -> list[str]:
-    """`pattern` with each {a,b} group expanded, innermost first; one without a closing brace is kept as written."""
+    """`pattern` with each {a,b} group expanded, innermost first; one without a closing brace is kept as written.
+
+    Raises:
+        _TooManyAlternatives: past MAX_BRACE_ALTERNATIVES, checked as they're made, so a huge pattern stops early.
+    """
     start = None
     for index, char in enumerate(pattern):
         if char == "{":
             start = index
         elif char == "}" and start is not None:
             head, options, tail = pattern[:start], pattern[start + 1 : index].split(","), pattern[index + 1 :]
-            return [expanded for option in options for expanded in _expand_braces(head + option + tail)]
+            expanded = []
+            for option in options:
+                expanded += _expand_braces(head + option + tail)
+                if len(expanded) > MAX_BRACE_ALTERNATIVES:
+                    raise _TooManyAlternatives
+            return expanded
     return [pattern]
 
 
-def _glob_parts(directory: Path, parts: list[str]):
+def _glob_parts(directory: Path, parts: list[str], evals: "_EvalsFolder | None" = None):
     """Yield what the path segments `parts` match below `directory`; "**" matches any number of segments."""
     if not parts:
         yield directory
         return
     head, rest = parts[0], parts[1:]
     if head == "**":
-        yield from _glob_parts(directory, rest)  # no segments
+        yield from _glob_parts(directory, rest, evals)  # no segments
     flags = re.IGNORECASE if GLOB_CASE_BLIND else 0
-    for child in _folder_entries(directory):
+    for child in _folder_entries(directory, evals):
         if head == "**":
-            yield from _glob_parts(child, parts)  # one segment more; a file yields itself only when nothing follows
+            yield from _glob_parts(child, parts, evals)  # one segment more; a file yields itself only when nothing follows
         elif re.fullmatch(fnmatch.translate(head), child.name, flags):
-            yield from _glob_parts(child, rest)
+            yield from _glob_parts(child, rest, evals)
 
 
-def _folder_entries(directory: Path) -> list[Path]:
-    # A symlinked folder is never looked in: a link to / or to a parent would have ** walk the disk, or loop.
+def _folder_entries(directory: Path, evals: "_EvalsFolder | None" = None) -> list[Path]:
+    """The entries of `directory`, leaving out the excluded folders and the evals folder, which are never looked in.
+
+    A symlinked folder is never looked in: a link to / or to a parent would have ** walk the disk, or loop.
+    """
     if directory.is_symlink() or not directory.is_dir():
         return []
-    return sorted(directory.iterdir())
+    return [
+        child for child in sorted(directory.iterdir())
+        if child.name not in EXCLUDED_DIRS and not (evals is not None and child.is_dir() and _is_evals(child, evals))
+    ]
 
 
-def _rule_files(root: Path, folder: str) -> list[str]:
-    """The project-relative paths of the rules Kilo reads from `folder`: regular *.md files directly in it."""
+def _is_evals(folder: Path, evals: "_EvalsFolder") -> bool:
+    try:
+        info = folder.stat()
+    except OSError:
+        return False
+    return (info.st_dev, info.st_ino) == evals.identity
+
+
+def _direct_md_files(root: Path, folder: str, evals: "_EvalsFolder | None") -> list[str]:
+    """The project-relative paths of the files Kilo reads from a rules or workflows `folder`: regular *.md files directly in it."""
     directory = root / folder
-    if not directory.is_dir() or _linked_below(root, directory):
+    if not directory.is_dir() or _linked_below(root, directory) or _under(directory, evals):
         return []
     return [
         f"{folder}/{path.name}"
@@ -421,7 +513,7 @@ def _rule_files(root: Path, folder: str) -> list[str]:
 
 def _linked_below(root: Path, path: Path) -> bool:
     """True if `path`, or a folder between `root` and it, is a symlink, so nothing staged is reached through a link."""
-    while path != root:
+    while path != root and path != path.parent:  # the second stops at / for a path not under root
         if path.is_symlink():
             return True
         path = path.parent
@@ -438,10 +530,14 @@ def _is_present(path: Path) -> bool:
     return path.is_symlink() or path.exists()  # a broken link is still named
 
 
-def _not_staged(target: str, project_dir: Path) -> tuple[list[str], dict[str, str]]:
-    if target != "claude-code":
-        return [], {}
+def _not_staged(target: str, project_dir: Path, evals_path: Path | None) -> tuple[list[str], dict[str, str]]:
     root = _project_root(project_dir)
+    if target != "claude-code":
+        try:
+            left_out = _load_kilo(root, evals_path)[1]
+        except ValueError:  # a project the loader refuses stages nothing, so the refusal, not this list, says why
+            return [], {}
+        return _capped([], left_out)
     source = _claude_code_source(root)
     first = [
         (_spelled(root, relative), _instruction_reason(root, relative, source))
@@ -452,6 +548,11 @@ def _not_staged(target: str, project_dir: Path) -> tuple[list[str], dict[str, st
     for name, reason in sorted(_unstaged_claude_entries(root, source)):
         # .claude/CLAUDE.md, in any spelling, goes ahead of the cap: the report most needs to name it.
         (first if name.casefold() == DOT_CLAUDE_MD.casefold() else others).append((name, reason))
+    return _capped(first, others)
+
+
+def _capped(first: list[tuple[str, str]], others: list[tuple[str, str]]) -> tuple[list[str], dict[str, str]]:
+    """The names and reasons files_not_staged gives: all of `first`, then `others` up to NOT_STAGED_LIMIT, counting the rest."""
     shown = first + others[:NOT_STAGED_LIMIT]
     names = [name for name, _ in shown]
     if len(others) > NOT_STAGED_LIMIT:
@@ -562,16 +663,8 @@ def _under(path: Path, evals: _EvalsFolder | None) -> bool:
     Folders are compared by identity, not by spelling: on a case-insensitive
     disk Evals/ is evals/, and a project path may be spelled either way.
     """
-    if evals is None:
-        return False
-    for folder in (path, *path.parents):
-        try:
-            info = folder.stat()
-        except OSError:  # not there, or can't be looked at: it can't be the evals folder
-            continue
-        if (info.st_dev, info.st_ino) == evals.identity:
-            return True
-    return False
+    # A folder that isn't there, or can't be looked at, can't be the evals folder.
+    return evals is not None and any(_is_evals(folder, evals) for folder in (path, *path.parents))
 
 
 def _project_root(project_dir: Path) -> Path:
