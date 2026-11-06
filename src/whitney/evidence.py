@@ -339,7 +339,7 @@ def _quietly(sbox) -> contextlib.AbstractContextManager:
     """
     if not isinstance(sbox, SandboxEnvironmentProxy):
         return contextlib.nullcontext()
-    if not callable(getattr(sbox, "no_events", None)):
+    if not callable(sbox.no_events):
         raise RuntimeError(
             "this Inspect's sandbox can't turn off its event log, so a snapshot would write the files' text "
             "into the eval log; use the Inspect version in requirements.lock"

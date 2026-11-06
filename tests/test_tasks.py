@@ -3,7 +3,9 @@
 import asyncio
 import json
 import os
+import re
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -578,7 +580,10 @@ def test_a_setup_holding_a_secret_the_run_is_given_is_refused(tmp_path, monkeypa
     (evals / "fixtures" / "repo" / "pending").mkdir()
     (evals / "fixtures" / "repo" / "pending" / "app.py").write_text("print('pending-text-that-is-the-run-secret')\n")
 
-    with pytest.raises(ValueError, match=r"rules.json: scenario 's': its setup holds the value of a secret this run is given; "):
+    with pytest.raises(ValueError, match=re.escape(
+        "rules.json: scenario 's': its setup holds the value of a secret this run is given; "
+        "Inspect logs the setup, which carries the fixture's pending/ text, so keep only fake values there"
+    )):
         tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), api_key_env="TEAM_PROVIDER_VALUE")
     [plain] = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals)).dataset
     assert "pending-text-that-is-the-run-secret" in plain.setup
@@ -795,7 +800,7 @@ def _outside_and_quiet_evals(tmp_path, monkeypatch):
         model_config = ConfigDict(extra="forbid")
 
     reg = Registry()
-    check("always_passes", params=NoParams, judges="harness", labels=("ok", "bad", "unsure"), targets=("kilo",),
+    check("always_passes", params=NoParams, judges="harness", labels=("ok", "bad", "unsure"), targets=("kilo", "claude-code"),
           needs=("snapshots",), into=reg)(lambda e, p: Verdict("pass", "nothing to see"))
     monkeypatch.setattr(tasks_module, "registry", lambda: {**registry(), **reg.checks()})
     return _consumer_evals(tmp_path, _one_scenario([{"check": "always_passes"}]))
@@ -844,3 +849,81 @@ def test_a_samples_before_snapshot_is_dropped_when_it_ends(host, tmp_path, monke
     asyncio.run(task.cleanup(state))
 
     assert "wasn't snapshotted before and after the run" in score().explanation
+
+
+class FailingSnapshotSandbox:
+    """A sandbox whose snapshot commands fail, quoting the run's key in stderr; it records each command's timeout."""
+
+    def __init__(self, leaked: str) -> None:
+        self.leaked = leaked
+        self.timeouts: list = []
+
+    async def exec(self, command, timeout=None, **kwargs):
+        self.timeouts.append(timeout)
+        if command[0] == "sh":
+            return SimpleNamespace(returncode=0, stdout="COMMITS 1\n", stderr="")
+        return SimpleNamespace(returncode=1, stdout="", stderr=f"cannot read key={self.leaked}")
+
+
+@pytest.mark.parametrize("target, model, variable, api_key_env", [
+    ("kilo", MODEL, "TEAM_PROVIDER_VALUE", "TEAM_PROVIDER_VALUE"),
+    ("claude-code", "anthropic/claude-haiku-4-5", "ANTHROPIC_API_KEY", None),
+])
+def test_a_failed_snapshot_names_no_secret_the_run_is_given(target, model, variable, api_key_env, tmp_path, monkeypatch):
+    from whitney.evidence import COMMAND_TIMEOUT
+
+    monkeypatch.setenv(variable, "the-runs-own-secret-value")
+    failing = FailingSnapshotSandbox("the-runs-own-secret-value")
+    monkeypatch.setattr(tasks_module, "sandbox", lambda: failing)
+    monkeypatch.setattr(tasks_module, "store", lambda: SimpleNamespace(get=lambda key, default=None: default))
+    evals = _outside_and_quiet_evals(tmp_path, monkeypatch)
+    task = tasks_module.scenario_eval("rules.json", target=target, model=model, evals_path=str(evals), api_key_env=api_key_env)
+    state = SimpleNamespace(sample_id="s", uuid="failing", metadata={})
+
+    for step in (lambda: task.setup(state, None), lambda: task.scorer[0](state, None)):
+        with pytest.raises(RuntimeError, match=r"cannot read key=\[redacted\]$"):
+            asyncio.run(step())
+    assert failing.timeouts == [COMMAND_TIMEOUT, COMMAND_TIMEOUT]
+
+
+def test_git_state_and_every_read_batch_have_a_timeout(tmp_path, monkeypatch):
+    from whitney import evidence
+    from whitney.evidence import COMMAND_TIMEOUT
+
+    timeouts = []
+
+    class Timed(StdinHostSandbox):
+        async def exec(self, command, timeout=None, **kwargs):
+            timeouts.append(timeout)
+            return await super().exec(command, **kwargs)
+
+    (tmp_path / "project").mkdir()
+    (tmp_path / "project" / "a.txt").write_text("a")
+    asyncio.run(evidence.git_state(Timed(tmp_path), []))
+    asyncio.run(evidence.snapshot(Timed(tmp_path), ["project"], sys.executable, timeout=7))
+
+    assert timeouts == [COMMAND_TIMEOUT, 7, 7]
+
+
+def test_a_before_snapshot_exactly_at_the_held_cap_keeps_its_texts(host, tmp_path, monkeypatch):
+    evals = _outside_and_quiet_evals(tmp_path / "e", monkeypatch)
+    task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals))
+    host.run.update(exit_code=0, stderr="")
+    monkeypatch.setattr(tasks_module, "sandbox", lambda: StdinHostSandbox(host.root))
+    monkeypatch.setattr(tasks_module, "MAX_HELD_BYTES", len("print('hi')\n"))
+
+    score = _setup_then_score(task, SimpleNamespace(sample_id="s", uuid="at-cap", metadata={}))
+    (host.repo / "app.py").write_text("print('changed')\n")
+
+    assert score().answer == "ok"
+
+
+def test_a_snapshot_without_texts_stays_incomplete():
+    from whitney.checks import FileSnapshot, FolderSnapshot
+
+    snap = tasks_module._without_texts(FolderSnapshot({"a": FileSnapshot("aa", 1, "x")}, complete=False))
+    assert snap == FolderSnapshot({"a": FileSnapshot("aa", 1, None)}, complete=False)
+
+
+def test_cleanup_for_a_sample_with_no_before_snapshot_does_nothing():
+    asyncio.run(tasks_module._forget_before(SimpleNamespace(uuid="never-snapshotted")))

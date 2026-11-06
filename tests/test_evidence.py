@@ -352,7 +352,10 @@ def test_a_proxy_that_cant_turn_its_events_off_is_refused(tmp_path):
     class OldProxy(RecordingProxy):
         no_events = None
 
-    with pytest.raises(RuntimeError, match="can't turn off its event log"):
+    with pytest.raises(RuntimeError, match=re.escape(
+        "this Inspect's sandbox can't turn off its event log, so a snapshot would write the files' text "
+        "into the eval log; use the Inspect version in requirements.lock"
+    )):
         asyncio.run(evidence.snapshot(OldProxy(tmp_path), ["project"], PYTHON))
 
 
