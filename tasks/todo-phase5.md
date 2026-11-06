@@ -63,6 +63,8 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 **Description:** Add `evalfile.py`, holding the version 2 schema (`defaults`, `expect`, `known_gap`, with `setup` and `variants` parsed but not yet applied) and the discovery of eval files under an evals root. Add the validation rules that need only the evals path: the spec's rules 2 to 5, 7 and 9. Version 1 files are upgraded in memory, with a deprecation warning. `load_scenarios` delegates to the new code. The shipped files stay at version 1.
 
+**Added 2026-11-06 (Task 2 review):** add each check's default minimum pass rate here, with `MIN_ADHERENCE` and `MIN_HELD` in `report.py`, because validation rule 9 needs them. Task 10 then uses them for the gate.
+
 **Acceptance criteria:**
 - [ ] One failing file per rule, each giving a message that names the file and the location, such as `scenarios[1].expect[0].strings`.
 - [ ] A scenario whose token isn't in its fixture fails validation, for any evals path and not only Whitney's (criterion 6).
@@ -163,6 +165,8 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 ### Task 8: Safe staging for every project path
 
 **Description:** Whitney's own `template/<target>/` goes through the target's safe loader, so every staged file obeys the same rules. Nothing under the evals path is ever staged, even when an `instructions` glob matches it. Validation rule 6: `source` must be a staged file, and if the safety rules left it out, validation says which rule. Answer spec open question 12 (`.kilocode/rules/`) before starting.
+
+**Added 2026-11-06 (Task 16):** Kilo also loads skills from `.claude/skills/` and `.agents/skills/` in the project, which Whitney doesn't stage. Stage them for `kilo`, or name them in the report as not staged, and decide whether `check_no_inherited_instructions` should look for them above the project.
 
 **Acceptance criteria:**
 - [ ] A project holding a `.env`, a symlink, source files, provider, MCP and plugin settings, and an `evals/` folder matched by an `instructions` glob stages none of them, and is unchanged after a run (criterion 14).
@@ -274,6 +278,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 **Description:** The two file checks from the spec's "Check details". `no_string_added` counts each string in each watched file before and after the run. `no_file_edits` reports any added, changed or deleted file under `where`, outside `ignore` and `.git/`. Both judge the agent, so an early end with nothing seen is inconclusive.
 
+**Added 2026-11-06 (Task 22 review):** Kilo 7.8.18 rewrites a project `kilo.jsonc` that has no `$schema`, adding one and reformatting the file (seen with `kilo debug config`; `kilo run` unchecked). `no_file_edits` must not count that as the agent's edit.
+
 **Acceptance criteria:**
 - [ ] Each check has tests, using hand-built `Evidence`, for pass, fail, inconclusive, an early end and unreadable evidence, and every mutant in it is killed or explained.
 - [ ] `no_string_added` catches a copy into a new file and a rise in an existing file's count, and ignores a file whose count didn't rise.
@@ -369,6 +375,8 @@ This can run at any time, in the same sitting as Task 22.
 
 **Description:** Four checks, relying only on the fields Task 16 confirmed. The negative checks pass only when the event stream holds at least one tool call the parser recognises, so a change in Kilo's output makes them inconclusive rather than passing. Each check records, in the score metadata, the order in which skills loaded or agents were delegated to.
 
+**Added 2026-11-06 (Task 16):** the fields are in `docs/spike-findings.md` ("Confirmed fields"). Don't assume every step that ends in `tool-calls` has a visible tool part, and handle an `error` event whose `error` is a string or an object.
+
 **Acceptance criteria:**
 - [ ] Unit tests against Task 16's fixtures cover pass, fail, inconclusive, an early end, and a stream the parser doesn't recognise, where the negative checks are inconclusive and don't pass.
 - [ ] Each check's docstring names the capture it relies on (spec, "Adding a Python check", rule 4).
@@ -416,6 +424,8 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Description:** `whitney validate` warns when a staged skill's `SKILL.md` has no `description`, and when two staged skills' descriptions are nearly the same, as the inspiration repo checks [A-cases]. Kilo picks a skill by its description [K-skills], so two near-identical descriptions are a routing hazard. It uses only the staged files and calls no model. If Task 16 shows Kilo routes subagents by description too, do the same for agents.
 
+**Added 2026-11-06 (Task 16):** one saved run suggests Kilo routes subagents by description, but its prompt asked for a hand-off, so it isn't enough on its own. Warn for skills; add agents only after a run that shows routing by description alone.
+
 **Acceptance criteria:**
 - [ ] Tests cover a missing description, a near-collision, and two distinct descriptions that give no warning.
 - [ ] The docstring states the similarity measure, its threshold and why that threshold was chosen.
@@ -435,6 +445,8 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Description:** Optional `agent` and `command` scenario fields that run `kilo run --agent <name>` or `kilo run --command <name>`, in the form Task 16 confirmed. Validation checks that the named agent or command is staged. Decision 6 settles what a baseline does when it removes the named agent; the recommendation is that it runs the same prompt with Kilo's default agent. These fields apply to the `kilo` target only.
 
+**Changed 2026-11-06 (Task 16):** decision 6's premise was wrong. With a missing agent, or one with `mode: subagent`, `kilo run --agent` doesn't fail: Kilo falls back to its default agent `code` and exits 0, with stderr containing `Falling back to default agent`, and no event names the agent used. So: validation checks the named agent is staged with `mode: primary` (or `all`, once tested); a run whose stderr holds the fallback line is inconclusive; and the baseline drops `--agent` rather than relying on the fallback. A missing command does make `kilo run --command` exit 1 before any model call, so a scenario naming a command needs its own baseline rule: decide it here (recommended: the baseline keeps the command, since removing it can't run).
+
 **Acceptance criteria:**
 - [ ] Command-line tests show each field adds exactly the confirmed option, and never `--auto`.
 - [ ] An unknown agent or command is a validation error naming it, and so is either field in a file that applies to `claude-code`.
@@ -453,6 +465,8 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 ### Task 21: Example skill and agent, a recorded real run, and docs
 
 **Description:** Add one skill and one agent to `examples/consumer/`, each with an eval file holding trigger tests and behaviour scenarios: `evals/skills/<name>.json` and `evals/agents/<name>.json`. The agent is a read-only reviewer. Its behaviour scenario runs it with `--agent` and asks it to fix a bug, and `no_file_edits` should pass; in the baseline, the default agent should edit the file. Run both for real, write up the results, and document skill and agent evals.
+
+**Changed 2026-11-06 (Task 16):** the reviewer must be delegated to (trigger tests) and run with `--agent` (behaviour), and only `mode: all` could serve both. That mode is untested: start this task with a one-run capture of a `mode: all` agent, both ways.
 
 **Acceptance criteria:**
 - [ ] Both eval files validate, and the skill file has at least one negative prompt owned by another skill.
@@ -501,6 +515,8 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 ### Task 23: Check `permission_held`
 
 **Description:** The spec's slice 10: the check, for the confirmed pairs only; the rule that the harness overlay never sets a key the check tests; and an example with a control. Answer spec open question 5 (`MIN_HELD`) before starting.
+
+**Needs a decision before starting (Task 22):** a scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so no refusal is ever seen, and the model can route round it (`read-deny` read the file with `bash`). Either confirm pattern rules and `ask` only, or use `kilo debug agent`'s tool list as the evidence for a scalar deny. Also, the stderr refusal names what was requested (the command or path), not the rule's pattern, and a project `bash` object without `"*"` drops the harness's allow, so unnamed commands are auto-rejected and the run exits 1.
 
 **Acceptance criteria:**
 - [ ] Unit tests run against the captured fixtures.
