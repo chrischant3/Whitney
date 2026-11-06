@@ -50,7 +50,9 @@ def mutation_score(statuses: Iterable[str]) -> float | None:
 
 def touched_function_prefixes(path: Path, lines: set[int], src_root: Path = SRC) -> set[str]:
     """mutmut mutant-name prefixes for the functions in `path` that contain any of `lines`."""
-    module = ".".join(path.relative_to(src_root).with_suffix("").parts)
+    parts = path.relative_to(src_root).with_suffix("").parts
+    # mutmut names a package's __init__.py mutants after the package itself.
+    module = ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
     prefixes = set()
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in tree.body:
