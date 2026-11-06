@@ -584,5 +584,5 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 ### Checkpoint D: release
 
-- [ ] The spec's acceptance criteria 1 to 19 hold for everything in the release.
+- [ ] The spec's acceptance criteria 1 to 20 hold for everything in the release.
 - [ ] Review with Christopher before the tag is pushed.

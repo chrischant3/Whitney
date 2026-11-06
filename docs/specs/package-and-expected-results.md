@@ -4,10 +4,10 @@ Updated on 2026-11-06 to match the approved Phase 5 plan, [tasks/plan-phase5.md]
 
 | | |
 |---|---|
-| **Status** | Draft for review. Nothing here is built yet. |
+| **Status** | Approved 2026-11-06. Being built on the `phase5` branch; see the plan for progress. |
 | **Written** | 2026-11-05, against commit `217230c` |
 | **Decisions it implements** | A: Whitney becomes a package that takes paths. B: each scenario states its expected result, using reusable checks named in the JSON. |
-| **Supersedes** | Nothing. `tasks/plan.md` stays the MVP record; the slices at the end of this spec become its next phase once approved. |
+| **Supersedes** | Nothing. `tasks/plan.md` stays the MVP record; the slices at the end of this spec are its Phase 5, planned in `tasks/plan-phase5.md`. |
 
 ## Objective
 
