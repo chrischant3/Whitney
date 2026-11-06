@@ -6,6 +6,8 @@ version 1. Built through `agents_md` and `kilo_jsonc` against the shipped
 fixtures, they must give the same tasks as the shipped files: the same task
 names and metadata, and the same samples (ids, prompts, staged files, setup
 scripts and metadata). So the upgrade and the shipped files can't drift apart.
+
+The shipped files' harness_permissions must also be what the wrappers grant.
 """
 
 import shutil
@@ -15,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from whitney import tasks
+from whitney.evalfile import load
 from whitney.tasks import agents_md, kilo_jsonc
 from whitney.validate import validate_evals
 
@@ -66,3 +69,14 @@ def test_the_version_1_files_are_valid_with_only_their_version_warnings(version_
 
     assert result.problems == []
     assert [(w.file.name, w.location) for w in result.warnings] == [("agents-md.json", "version"), ("kilo-jsonc.json", "version")]
+
+
+def test_the_shipped_files_harness_permissions_are_what_the_wrappers_grant():
+    # The wrappers grant their own constants until the generic task reads harness_permissions (plan Task 9),
+    # so the shipped files must say the same or a reader of the file is misled. None means Whitney's default.
+    agents = load(ROOT / "evals" / "agents-md.json")
+    kilo_config = load(ROOT / "evals" / "configuration" / "kilo-jsonc.json")
+
+    assert agents.harness_permissions == tasks.AGENTS_MD_PERMISSIONS
+    assert kilo_config.harness_permissions is None
+    assert kilo_jsonc(target="kilo", model=MODEL).metadata["harness_permissions"] == tasks.HARNESS_PERMISSIONS
