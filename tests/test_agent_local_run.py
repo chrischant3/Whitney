@@ -637,3 +637,21 @@ def test_global_config_and_outputs_are_read_as_utf8_whatever_the_locale(tmp_path
     sbox = FakeSandbox(tmp_path)
     asyncio.run(copy_outputs(sbox, tmp_path, {"solution.py": "/workspace/solution.py"}))
     assert sbox.writes == [("/workspace/solution.py", "print('déjà vu')\n")]
+
+
+@pytest.mark.parametrize("planted", [".claude/skills", ".agents/skills"])
+def test_a_skills_folder_kilo_reads_above_the_project_stops_the_run(fake_kilo, user_home, planted):
+    # Kilo 7.8.18 reads these from every folder up to the git worktree root when the project
+    # isn't a repository of its own, and GIT_CEILING_DIRECTORIES doesn't stop it (docs/load-order.md).
+    above = fake_kilo.sandbox.project.parent / planted
+    above.mkdir(parents=True)
+
+    with pytest.raises(RuntimeError) as raised:
+        _run(kilo(model=MODEL, timeout=30))
+
+    assert str(raised.value) == (
+        f"{above.resolve()} is above the project, where the harness would read it as instructions or "
+        "config the eval never declared. Set TMPDIR to a folder with none above it, or remove the folder "
+        "if it isn't your own skills."
+    )
+    assert not (fake_kilo.sandbox.project / "args.txt").exists()
