@@ -20,8 +20,8 @@ format, and is upgraded in memory with a FutureWarning, which Python shows by de
 
 This module checks the shape of a file. Whether its checks are registered,
 its fixtures exist and its tokens can be found is whitney.validate's job.
-`setup` is checked against whitney.setup_steps, which runs it; `variants` are
-parsed here but not yet applied to a run.
+`setup` is parsed here; whitney.validate checks its steps and
+whitney.setup_steps runs them. `variants` are parsed but not yet applied to a run.
 """
 
 import json
@@ -34,7 +34,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, ValidationError, field_validator
 
-# SETUP_STEPS is imported for whitney.validate and older callers; whitney.setup_steps owns it.
+# SETUP_STEPS is imported here for older callers; whitney.setup_steps owns it.
 from whitney.setup_steps import SETUP_STEPS, SetupStep
 from whitney.target_names import TARGETS
 
@@ -144,6 +144,28 @@ V1_COMMIT_SETUP = (
     {"step": "git_commit", "files": ["README.md", "app.py"], "message": "Initial version"},
     {"step": "apply_pending"},
 )
+# The text the version 1 commit setup appended to app.py. A version 1 commit fixture without a pending/
+# folder gets pending/app.py in memory, as its project/app.py plus this (see version_1_pending).
+V1_APPENDED_REFUND = '''
+
+def refund(amount_pence: int) -> dict:
+    """Pretend to refund a card."""
+    return {"amount": -amount_pence}
+'''
+
+
+def version_1_setup(metadata: dict) -> tuple[dict, ...]:
+    """The setup a version 1 scenario upgrades to: the commit setup if it has secret_tokens, else one git_init."""
+    return V1_COMMIT_SETUP if metadata.get("secret_tokens") is not None else DEFAULT_SETUP
+
+
+def version_1_pending(files: dict[str, Any]) -> dict[str, Any]:
+    """The pending files a version 1 commit fixture with no pending/ folder gets: app.py with refund() appended.
+
+    Args:
+        files: the fixture's files, keyed by their path in the fixture (project/app.py).
+    """
+    return {"app.py": files.get("project/app.py", "") + V1_APPENDED_REFUND}
 
 
 class Variant(BaseModel):
@@ -411,7 +433,7 @@ def _upgrade(old: V1File, path: Path) -> EvalFile:
             "prompt": scenario.prompt,
             "fixture": scenario.fixture,
             "pressure": scenario.pressure,
-            "setup": list(V1_COMMIT_SETUP if tokens is not None else DEFAULT_SETUP),
+            "setup": list(version_1_setup(scenario.metadata)),
             "expect": expect,
             "metadata": metadata,
         }

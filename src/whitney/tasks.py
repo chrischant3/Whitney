@@ -54,10 +54,10 @@ CLAUDE_CODE_HARNESS_PERMISSIONS = {"allow": ["Bash", "Edit", "Write", "Read"]}
 # Per target, for targets.build_agent.
 AGENTS_MD_PERMISSIONS = {"kilo": AGENTS_MD_HARNESS_PERMISSIONS, "claude-code": CLAUDE_CODE_HARNESS_PERMISSIONS}
 
-# Kept for callers: what the setup steps make of today's two setups, without a fixture's pending files.
-# agents_md's samples add the pending change to app.py (each commit fixture's pending/app.py) with
-# apply_pending; kilo_jsonc's empty repository bounds where Kilo looks for config. How they keep the
-# user's git out, and why a step that can't complete fails the sample, is in whitney.setup_steps.
+# Kept for callers, and deprecated: build setups with whitney.setup_steps. These are the steps' versions
+# of the two setups the tasks used before them. COMMIT_FIXTURE_SETUP no longer appends refund() to
+# app.py: agents_md's samples get that change from each commit fixture's pending/app.py, through
+# apply_pending. kilo_jsonc's empty repository bounds where Kilo looks for config.
 COMMIT_FIXTURE_SETUP = setup_steps.build(
     [SetupStep(**step) for step in V1_COMMIT_SETUP if step["step"] != "apply_pending"], {}
 ).script
@@ -258,17 +258,32 @@ def _scenario_samples(path: Path) -> list[Sample]:
     Raises:
         SetupError: a scenario's setup can't be built; the message names the scenario and its fixture.
     """
-    setups = {scenario.id: scenario.setup for scenario in evalfile.load(path).resolved()}
+    setups, version_1 = _scenario_setups(path)
     samples = []
     for sample in load_scenarios(path):
         files, pending = setup_steps.split_pending(sample.files)
+        steps = setups[str(sample.id)]
+        if version_1 and not pending and any(step.step == "apply_pending" for step in steps):
+            pending = evalfile.version_1_pending(files)
         try:
-            setup = setup_steps.build(setups[str(sample.id)], pending)
+            setup = setup_steps.build(steps, pending)
         except SetupError as e:
             raise SetupError(f"{path}: scenario '{sample.id}' (fixture '{sample.metadata['fixture']}'): {e}") from e
         metadata = {**sample.metadata, "initial_commits": setup.initial_commits}
         samples.append(sample.model_copy(update={"files": files, "setup": setup.script, "metadata": metadata}))
     return samples
+
+
+def _scenario_setups(path: Path) -> tuple[dict[str, tuple[SetupStep, ...]], bool]:
+    """Each scenario's setup steps by id, and whether the file is version 1.
+
+    A version 1 file is read as written, not upgraded, so a scenario with
+    neither token key still builds, as it always did; validation names it.
+    """
+    parsed = evalfile.read(path)
+    if isinstance(parsed, evalfile.V1File):
+        return {s.id: tuple(SetupStep(**step) for step in evalfile.version_1_setup(s.metadata)) for s in parsed.scenarios}, True
+    return {s.id: s.setup for s in parsed.resolved()}, False
 
 
 def _with_project_files(sample: Sample, extra: dict[str, str], **metadata) -> Sample:
