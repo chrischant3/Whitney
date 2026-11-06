@@ -70,6 +70,11 @@ EXCEPTIONS_SECTION = re.compile(r"^## Exceptions[ \t]*$(.*?)(?=^## |\Z)", re.MUL
 
 Found = tuple[str, str]  # (location, message) within one file
 
+# The eval file the kilo_jsonc task (whitney.tasks) runs: Whitney's own configuration/kilo-jsonc.json. That
+# wrapper puts its control in every staged Kilo config, as set_external_directory did, so validation spreads
+# it the same way and checks what runs, not a shadowing that the wrapper never lets happen.
+KILO_JSONC_WRAPPER_FILE = Path(__file__).resolve().parents[2] / "evals" / "configuration" / "kilo-jsonc.json"
+
 
 @dataclass
 class ValidationResult:
@@ -340,7 +345,9 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
     A variant must change the staged files, its `remove` paths and `set`
     files must be staged, and no other staged Kilo config may hold a
     different value where its `set` puts one (see whitney.variants.shadowed_sets).
-    A variant that declares no change at all is left to validate_evals.
+    A variant that declares no change at all is left to validate_evals. For a
+    file the kilo_jsonc wrapper spreads (see _spread_by_the_wrapper), the
+    variant is checked as spread over every staged Kilo config.
 
     Args:
         eval_file: a loaded eval file.
@@ -356,8 +363,7 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
     for name, variant in declared_variants(eval_file).items():
         if not variant.remove and not any(variant.set_pointers.values()):
             continue
-        if eval_file.version_read == 1:
-            # What the kilo_jsonc wrapper runs: today's control in every staged Kilo config (Task 7 keeps this for version 2).
+        if _spread_by_the_wrapper(eval_file):
             variant = spread_over_kilo_configs(variant, staged, eval_file.source)
         try:
             changed = apply_variant(staged, variant)
@@ -372,6 +378,17 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
                 )), *problems]
         found += [_variant_at(written, name, eval_file, at, message) for at, message in problems]
     return [Problem(eval_file.path, at, message) for at, message in dict.fromkeys(found)]
+
+
+def _spread_by_the_wrapper(eval_file: EvalFile) -> bool:
+    """True if the kilo_jsonc wrapper runs this file's control in every staged Kilo config.
+
+    It does for a version 1 file, whose upgraded control it has always spread,
+    and for Whitney's own kilo-jsonc.json (KILO_JSONC_WRAPPER_FILE), whatever its
+    version. Any other version 2 file runs its `set` as written, so a config
+    that could shadow it is still a problem.
+    """
+    return eval_file.version_read == 1 or eval_file.path.resolve() == KILO_JSONC_WRAPPER_FILE
 
 
 def _variant_at(written: bool, name: str, eval_file: EvalFile, at: tuple, message: str) -> Found:
