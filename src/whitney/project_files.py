@@ -5,7 +5,10 @@ There is one project loader per target: `load_project_files` for kilo and
 picks between them.
 """
 
+import fnmatch
 import json
+import re
+import sys
 from pathlib import Path, PurePosixPath
 
 from whitney.static_checks import parse_jsonc
@@ -35,6 +38,14 @@ KILO_SKILL_DIRS = (".claude/skills", ".agents/skills")
 EXCLUDED_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".tox"}
 SAFE_ENV_FILES = {".env.example", ".env.sample", ".env.template"}
 CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers", "mcp", "plugin"}
+# Kilo 7.8.18 expands an `instructions` entry with node-glob, matching dot files, not following
+# symlinked folders, returning files only, and comparing names without regard to case on macOS and
+# Windows (docs/load-order.md, "Instructions globs"). Whitney expands *, ?, **, [...], [!...] and
+# {a,b} the same way, and refuses the rest of node-glob's syntax rather than stage other files than
+# Kilo would read: extglobs such as !(a), ranges such as {1..3}, a brace group without a comma,
+# [^...], [:class:], backslash escapes and a leading !.
+UNEXPANDED_GLOB = re.compile(r"^!|[!@+*?]\(|\{[^{},]*\}|\{[^{}]*\.\.[^{}]*\}|\[\^|\[:|\\")
+GLOB_CASE_BLIND = sys.platform in ("darwin", "win32")
 # Whitney's claude-code evals and their baseline are about AGENTS.md, so the loader stages one
 # instruction file, always as AGENTS.md: the first of these that is a regular file inside the
 # project. A CLAUDE.md beside a staged AGENTS.md stays out: in one run on 2026-11-06 Claude Code
@@ -99,14 +110,10 @@ def load_project_files(project_dir: Path) -> dict[str, str]:
         files[relative] = json.dumps(config, indent=2)
 
     for pattern in sorted(instruction_patterns):
-        candidate = Path(pattern)
-        if candidate.is_absolute() or ".." in candidate.parts:
-            raise ValueError(f"project instruction path must stay inside the project: {pattern!r}")
-        for match in root.glob(pattern):
-            if match.is_file() and not match.is_symlink() and _is_safe_file(match):
-                resolved = match.resolve()
-                if resolved.is_relative_to(root):
-                    files[match.relative_to(root).as_posix()] = _read_text(match)
+        for match in _instruction_matches(root, pattern):
+            relative = match.relative_to(root).as_posix()
+            if _is_project_file(root, relative) and not _linked_below(root, match) and _is_safe_file(match):
+                files[relative] = _read_text(match)
 
     return files
 
@@ -264,6 +271,67 @@ def _walk_files(root: Path, allowed_root: Path):
         resolved = path.resolve()
         if resolved.is_relative_to(allowed_root):
             yield path.relative_to(root).as_posix(), path
+
+
+def _instruction_matches(root: Path, pattern: str) -> list[Path]:
+    """The paths under `root` that an `instructions` pattern matches, as Kilo matches them (see UNEXPANDED_GLOB).
+
+    Raises:
+        ValueError: the pattern reaches outside the project (absolute, "~/" or ".."), or uses
+            glob syntax that isn't expanded here.
+    """
+    expanded = _expand_braces(pattern)
+    for candidate in [pattern, *expanded]:
+        if candidate.startswith("~") or Path(candidate).is_absolute() or ".." in PurePosixPath(candidate).parts:
+            raise ValueError(f"project instruction path must stay inside the project: {pattern!r}")
+    if UNEXPANDED_GLOB.search(pattern):
+        raise ValueError(
+            f"project instruction pattern {pattern!r} uses glob syntax Whitney doesn't expand as Kilo does; "
+            "use *, ?, **, [...], [!...] and {a,b} only"
+        )
+    matches = {}
+    for alternative in expanded:
+        parts = [part for part in alternative.split("/") if part not in ("", ".")]
+        matches.update(dict.fromkeys(_glob_parts(root, parts)))
+    return list(matches)
+
+
+def _expand_braces(pattern: str) -> list[str]:
+    """`pattern` with each {a,b} group expanded, innermost first; one without a closing brace is kept as written."""
+    start = None
+    for index, char in enumerate(pattern):
+        if char == "{":
+            start = index
+        elif char == "}" and start is not None:
+            head, options, tail = pattern[:start], pattern[start + 1 : index].split(","), pattern[index + 1 :]
+            return [expanded for option in options for expanded in _expand_braces(head + option + tail)]
+    return [pattern]
+
+
+def _glob_parts(directory: Path, parts: list[str]):
+    """Yield what the path segments `parts` match below `directory`; "**" matches any number of segments."""
+    if not parts:
+        yield directory
+        return
+    head, rest = parts[0], parts[1:]
+    if head == "**":
+        yield from _glob_parts(directory, rest)
+    flags = re.IGNORECASE if GLOB_CASE_BLIND else 0
+    for child in _folder_entries(directory):
+        if head == "**":
+            if child.is_dir() and not child.is_symlink():
+                yield from _glob_parts(child, parts)
+            elif not rest:
+                yield child
+        elif re.fullmatch(fnmatch.translate(head), child.name, flags):
+            yield from _glob_parts(child, rest)
+
+
+def _folder_entries(directory: Path) -> list[Path]:
+    # Only a real folder is looked in, never one reached through a symlink.
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    return sorted(directory.iterdir())
 
 
 def _rule_files(root: Path, folder: str) -> list[str]:

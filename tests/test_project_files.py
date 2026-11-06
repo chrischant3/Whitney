@@ -1,4 +1,7 @@
+import json
 import os
+import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -685,3 +688,82 @@ def test_a_folder_reached_through_a_symlink_stages_nothing_even_inside_the_proje
     (tmp_path / linked).symlink_to(tmp_path / target)
 
     assert not [name for name in load_project_files(tmp_path) if name.startswith(linked.split("/")[0])]
+
+
+# `instructions` patterns are expanded as Kilo 7.8.18 expands them: node-glob with dot files
+# matched, symlinked folders not followed, files only, and names compared without regard to case
+# on macOS and Windows (docs/load-order.md, "Instructions globs"). Each expected set below is what
+# that expansion gave for the same tree.
+GLOB_TREE = (
+    "top.md", "docs/d.md", ".hidden/h.md", "rules/a.md", "rules/.dot.md", "rules/x.txt", "rules/sub/b.md", "rules/sub/deep/c.md",
+)
+CASE_BLIND = sys.platform in ("darwin", "win32")
+
+
+def _glob_project(root, pattern):
+    _kilo_project(root, {name: f"{name}\n" for name in GLOB_TREE})
+    (root / "kilo.jsonc").write_text(json.dumps({"instructions": [pattern]}))
+    return {name for name in load_project_files(root) if name != "kilo.jsonc"}
+
+
+@pytest.mark.parametrize("pattern, expected", [
+    ("rules/*.md", {"rules/a.md", "rules/.dot.md"}),
+    ("rules/**/*.md", {"rules/a.md", "rules/.dot.md", "rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("**/*.md", {"top.md", "docs/d.md", ".hidden/h.md", "rules/a.md", "rules/.dot.md", "rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("**", set(GLOB_TREE)),
+    ("rules/**", {"rules/a.md", "rules/.dot.md", "rules/x.txt", "rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("rules/sub/**", {"rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("rules/*", {"rules/a.md", "rules/.dot.md", "rules/x.txt"}),
+    ("rules", set()),
+    ("*.md", {"top.md"}),
+    ("top.md", {"top.md"}),
+    ("rules/sub/b.md", {"rules/sub/b.md"}),
+    ("./top.md", {"top.md"}),
+    ("rules//a.md", {"rules/a.md"}),
+    ("rules/?.md", {"rules/a.md"}),
+    ("rules/[a-c].md", {"rules/a.md"}),
+    ("rules/[!a].md", set()),
+    ("rules/{a,x}.*", {"rules/a.md", "rules/x.txt"}),
+    ("{top,rules/{a,sub/b}}.md", {"top.md", "rules/a.md", "rules/sub/b.md"}),
+    ("rules/{,sub/}*.md", {"rules/a.md", "rules/.dot.md", "rules/sub/b.md"}),
+    ("rules/{a,b.md", set()),
+    ("missing/*.md", set()),
+    ("RULES/*.MD", {"rules/a.md", "rules/.dot.md"} if CASE_BLIND else set()),
+    ("Top.md", {"top.md"} if CASE_BLIND else set()),
+])
+def test_instruction_patterns_match_the_files_kilo_matches(tmp_path, pattern, expected):
+    assert _glob_project(tmp_path, pattern) == expected
+
+
+@pytest.mark.parametrize("pattern", [
+    "rules/!(a).md", "rules/@(a).md", "rules/+(a).md", "rules/*(a).md", "rules/?(a).md",
+    "rules/{1..3}.md", "rules/{a}.md", "rules/[^a].md", "rules/[[:alpha:]].md", "rules/\\*.md", "!rules/a.md",
+])
+def test_glob_syntax_whitney_does_not_expand_as_kilo_does_is_refused_by_name(tmp_path, pattern):
+    with pytest.raises(ValueError) as raised:
+        _glob_project(tmp_path, pattern)
+    assert str(raised.value) == (
+        f"project instruction pattern {pattern!r} uses glob syntax Whitney doesn't expand as Kilo does; "
+        "use *, ?, **, [...], [!...] and {a,b} only"
+    )
+
+
+@pytest.mark.parametrize("pattern", ["~/rules.md", "{rules,..}/a.md", "rules/{../x,a}.md"])
+def test_a_pattern_that_reaches_outside_the_project_after_expansion_is_refused(tmp_path, pattern):
+    with pytest.raises(ValueError, match=f"^project instruction path must stay inside the project: {re.escape(repr(pattern))}$"):
+        _glob_project(tmp_path, pattern)
+
+
+def test_double_star_does_not_follow_a_symlinked_folder_and_a_named_one_is_not_staged(tmp_path):
+    _kilo_project(tmp_path, {"elsewhere/inner/t.md": "t\n", "rules/a.md": "a\n"})
+    (tmp_path / "rules" / "linked").symlink_to(tmp_path / "elsewhere")
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["rules/**/*.md", "rules/linked/inner/t.md"]}))
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc", "rules/a.md"}
+
+
+def test_a_file_matched_by_two_patterns_is_staged_once_as_spelled_on_disk(tmp_path):
+    _kilo_project(tmp_path, {"rules/a.md": "a\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["rules/*.md", "rules/a.md", "**/a.md"]}))
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc", "rules/a.md"}
