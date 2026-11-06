@@ -575,6 +575,7 @@ def write_fixture(case: Case, out: Path, fixtures: Path) -> list[Path]:
         "exit_code": summary["exit_code"],
         "stderr": stderr,
         "git_status_after": summary["git_status_after"],
+        "git_diff_after": sanitise(summary.get("git_diff_after", ""), summary),
         "skipped_lines": skipped,
         "trimmed": (
             f"strings over {LONG_TEXT} characters cut; event types kept: {list(case.keep) or 'all'}"

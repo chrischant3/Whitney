@@ -30,24 +30,24 @@
     "location": "/tmp/kilo-eval-home-XXXXXXXX/.config/kilo/skills/canary-global-xdg/SKILL.md"
   },
   {
-    "name": "canary-kilocode",
-    "description": "Canary skill CANARY-CANARY-KILOCODE-3307. Use only when asked for canary-kilocode by name.",
-    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilocode/skills/canary-kilocode/SKILL.md"
-  },
-  {
     "name": "canary-kilocode-singular",
     "description": "Canary skill CANARY-CANARY-KILOCODE-SINGULAR-3307. Use only when asked for canary-kilocode-singular by name.",
     "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilocode/skill/canary-kilocode-singular/SKILL.md"
   },
   {
-    "name": "canary-kilo-singular",
-    "description": "Canary skill CANARY-CANARY-KILO-SINGULAR-3307. Use only when asked for canary-kilo-singular by name.",
-    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilo/skill/canary-kilo-singular/SKILL.md"
+    "name": "canary-kilocode",
+    "description": "Canary skill CANARY-CANARY-KILOCODE-3307. Use only when asked for canary-kilocode by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilocode/skills/canary-kilocode/SKILL.md"
   },
   {
     "name": "canary-kilo",
     "description": "Canary skill CANARY-CANARY-KILO-3307. Use only when asked for canary-kilo by name.",
     "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilo/skills/canary-kilo/SKILL.md"
+  },
+  {
+    "name": "canary-kilo-singular",
+    "description": "Canary skill CANARY-CANARY-KILO-SINGULAR-3307. Use only when asked for canary-kilo-singular by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilo/skill/canary-kilo-singular/SKILL.md"
   },
   {
     "name": "canary-global-kilocode",

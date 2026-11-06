@@ -36,6 +36,7 @@
   "exit_code": 0,
   "stderr": "",
   "git_status_after": "",
+  "git_diff_after": "",
   "skipped_lines": 0,
   "trimmed": "strings over 1200 characters cut; event types kept: all; output keys kept: ['name', 'tools']",
   "placeholders": {

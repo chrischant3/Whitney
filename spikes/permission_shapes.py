@@ -113,6 +113,13 @@ for name, project in TOOL_LISTS.items():
              command=["kilo", "debug", "agent", "code", "--pure"], fixture_keys=("name", "tools"))
     )
 
+# Does Kilo change the project's config file? A kilo.jsonc without "$schema", committed by _init_repo.
+CASES.append(
+    Case("schema-rewrite", "No model: a project kilo.jsonc without $schema, before and after `kilo debug config`",
+         files={"kilo.jsonc": '{"permission": {"bash": "ask"}}\n'}, command=["kilo", "debug", "config", "--pure"],
+         fixture_keys=("permission",))
+)
+
 
 if __name__ == "__main__":
     raise SystemExit(main(CASES))
