@@ -191,6 +191,14 @@ def test_the_spread_keeps_siblings_under_one_missing_parent():
     }}
 
 
+def test_a_moved_pointer_after_a_value_at_its_parent_replaces_it_as_setting_them_in_turn_would():
+    control = variant(role="control", set={"kilo.jsonc": {"/permission": "ask", "/permission/bash": "allow"}})
+
+    spread = spread_over_kilo_configs(control, {"kilo.jsonc": "{}"}, "kilo.jsonc")
+
+    assert spread.set_pointers == {"kilo.jsonc": {"/permission": {"bash": "allow"}}}
+
+
 def test_the_spread_keeps_other_files_and_configs_the_variant_names_itself():
     control = variant(role="control", set={
         "kilo.jsonc": {"/permission/external_directory": "allow"},
