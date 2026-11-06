@@ -69,7 +69,7 @@ Not supported yet:
 
 - **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, and a task and scorer in `src/whitney/tasks.py` that use it. The runner reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new scenario file on its own isn't run.
 - **Skills and agents.** Files under `.kilo/skills/` and `.kilo/agents/` are copied into each Kilo run, so the agent has them, but no eval checks whether a skill is triggered or followed.
-- **Claude Code settings, skills and agents.** With `--project-path`, the `claude-code` target copies only the instruction files: root `AGENTS.md` and `CLAUDE.md`, and `.claude/CLAUDE.md`. The rest of `.claude/`, such as `settings.json`, skills and agents, isn't copied, and the report lists what was left out. Files a `CLAUDE.md` imports with `@path` aren't copied either.
+- **Claude Code settings, skills and agents.** With `--project-path`, the `claude-code` target copies only root `AGENTS.md`. It doesn't copy `CLAUDE.md` or `.claude/CLAUDE.md`, because in one run Claude Code ignored `AGENTS.md` once `.claude/CLAUDE.md` existed, and Whitney evaluates `AGENTS.md`. The rest of `.claude/`, such as `settings.json`, skills and agents, isn't copied either, and the report lists what was left out and why. To test rules that are only in a `CLAUDE.md`, copy them into `AGENTS.md`.
 - **Which instruction wins** when two files disagree.
 
 Skills, agents and instruction order are planned: see Future work in [docs/proposal.md](docs/proposal.md). Gaps found in what is tested: [docs/findings/](docs/findings/).

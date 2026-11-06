@@ -33,18 +33,17 @@ Pass `--project-path /path/to/project` to `run_evals.py`. The source directory i
 | Target | Staged files |
 |---|---|
 | `kilo` | Root `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md`; the Kilo config (`kilo.jsonc` or `kilo.json`, at the root or in `.kilo/` or `.kilocode/`), which must exist; the `agent`, `agents`, `command`, `commands`, `instructions`, `mode`, `modes`, `skill` and `skills` folders in `.kilo/` and `.kilocode/`; and files the config's `instructions` setting names |
-| `claude-code` | Root `AGENTS.md` and `CLAUDE.md`, and `.claude/CLAUDE.md`. At least one must exist; no Kilo config is needed |
+| `claude-code` | Root `AGENTS.md` only, which must exist. `CLAUDE.md` and `.claude/CLAUDE.md` are never copied; no Kilo config is needed |
 
 For both targets, project source code, `.env` files (other than `.env.example`, `.env.sample` and `.env.template`), symlinks and anything that resolves outside the project are not copied. A staged file that isn't UTF-8 text stops the run with a message naming it. Provider connections, MCP servers and plugins are omitted from the copied Kilo config: Kilo uses the user's global connection details, and runtime integrations from a target repo are not executed.
 
-For `claude-code`, nothing else in `.claude/` is copied: not `settings.json`, whose hooks run commands, and not skills, agents or commands. A `.claude` folder that is itself a symlink isn't followed, so nothing in it is copied. The report's "Not Staged" table lists any root `AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project, then up to 50 of the `.claude/` entries left out, so you can see what the runs didn't use. Files a `CLAUDE.md` imports with `@path` aren't copied either, unless they are one of the staged files above.
+For `claude-code`, Whitney evaluates `AGENTS.md`, the file Claude Code reads when no `CLAUDE.md` is present, so it copies nothing else. A root `CLAUDE.md` and `.claude/CLAUDE.md` are left out on purpose: in one run on 2026-11-06 with Claude Code 2.1.318, Claude Code ignored `AGENTS.md` when the project also had `.claude/CLAUDE.md` ([canary record](results/2026-11-06-claude-code-canary.md)). Copying a `CLAUDE.md` could make the report claim rules the agent never read. A root `CLAUDE.md` beside `AGENTS.md` wasn't tried; Whitney leaves it out by the same rule. The rest of `.claude/` isn't copied either: not `settings.json`, whose hooks run commands, and not skills, agents or commands. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
 
-Claude Code may not read root `AGENTS.md`. In one run on 2026-11-06 with Claude Code 2.1.318, it read `AGENTS.md` when that was the project's only instruction file. In another run that day, it ignored `AGENTS.md` when the project also had `.claude/CLAUDE.md`. Each was a single sample, and a root `CLAUDE.md` beside `AGENTS.md` wasn't tried ([canary record](results/2026-11-06-claude-code-canary.md)). Whitney stages both files anyway, so the report can list `AGENTS.md` as staged when Claude Code didn't read it.
+The report's "Not Staged" table names, with the reason, each file the runs didn't use: an `AGENTS.md` skipped because it isn't a regular file inside the project, a root `CLAUDE.md`, `.claude/CLAUDE.md`, and up to 50 other `.claude/` entries. A project with no `AGENTS.md` stops with a message that names `AGENTS.md` and says `CLAUDE.md` isn't staged.
 
-The `agents_md` baseline removes the root `AGENTS.md` only, so its Δ (template rate minus baseline rate) measures the rules in `AGENTS.md` and nothing else. What that means for an existing project:
+If your project's rules are only in a `CLAUDE.md`, copy them into a root `AGENTS.md` to test them.
 
-- **Rules in root `AGENTS.md`, and no `CLAUDE.md` or `.claude/CLAUDE.md`.** The Δ shows what the rules change. This is how the shipped `template/claude-code/` is set up ([docs/template.md](template.md)).
-- **The project has a `CLAUDE.md` or `.claude/CLAUDE.md`.** Both variants keep it, so the Δ doesn't measure the rules in it, and the `AGENTS.md` it does measure may not have been read at all. A Δ near zero then says nothing about your rules. Read the template column instead: how often the agent followed the rule with all of the project's instructions in place.
+The `agents_md` baseline removes the root `AGENTS.md`, so its Δ (template rate minus baseline rate) measures the rules in `AGENTS.md`. With no `CLAUDE.md` copied, both variants hold the same files apart from `AGENTS.md`, so the Δ shows what those rules change. This is how the shipped `template/claude-code/` is set up ([docs/template.md](template.md)).
 
 `kilo_jsonc`'s allow-control changes the copied external-directory permission to `allow`.
 

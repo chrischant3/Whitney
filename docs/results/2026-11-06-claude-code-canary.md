@@ -50,11 +50,11 @@ The outcome was followed, exit 0. The final reply ended "PINEAPPLE-7", which app
 
 ## What the runs showed
 
-- **`.claude/CLAUDE.md` was read as project instructions** in all 3 samples that had one. Whitney stages it for the `claude-code` target.
+- **`.claude/CLAUDE.md` was read as project instructions** in all 3 samples that had one.
 - **A `.claude/CLAUDE.md` in a folder above the workspace was obeyed** in both samples of run 1. Whitney's inherited-instructions guard didn't look for that file then. It now refuses to run when one is found (`INHERITED_INSTRUCTION_NAMES` in `src/whitney/agent.py`).
 - **Root `AGENTS.md` was read when it was the project's only instruction file** (run 2, 1 sample), as a spike on 2026-11-03 also found with Claude Code 2.1.285.
 - **Root `AGENTS.md` was ignored when the project also had `.claude/CLAUDE.md`** (run 3, 1 sample). Run 1's template sample agrees but is weaker evidence: its `AGENTS.md` canary used "Begin every reply" wording, and the folder above the workspace held instructions too.
 
 Not tested: a root `CLAUDE.md` beside `AGENTS.md`, more than one sample per setup, and other models or Claude Code versions.
 
-What this means for evaluating a project is in [Evaluating a local project](../adding-tests.md#evaluating-a-local-project).
+What this means: because Claude Code can ignore `AGENTS.md` once a `CLAUDE.md` exists, Whitney's `claude-code` loader now stages a project's root `AGENTS.md` only and names any `CLAUDE.md` or `.claude/CLAUDE.md` as not staged, so the report doesn't claim instructions the agent never read (decision 5, reversed on 2026-11-06). Whitney's own `template/claude-code/` holds only `AGENTS.md`, so it is unaffected. More on evaluating a project is in [Evaluating a local project](../adding-tests.md#evaluating-a-local-project).
