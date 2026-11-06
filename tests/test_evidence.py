@@ -35,11 +35,21 @@ class HostSandbox:
 
     async def exec(self, cmd, input=None, cwd=None, timeout=None, **kwargs):
         self.commands.append(cmd)
+        if not os.path.isabs(cmd[0]) and not _names_a_program_exactly(cmd[0]):
+            # As a Linux sandbox would, even on a case-insensitive disk such as macOS's.
+            return SimpleNamespace(returncode=127, stdout="", stderr=f"{cmd[0]}: not found")
         try:
             result = subprocess.run(cmd, cwd=self.root, input=input, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired as e:
             raise TimeoutError(f"{cmd[0]} timed out") from e
         return SimpleNamespace(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
+
+
+def _names_a_program_exactly(name: str) -> bool:
+    import shutil
+
+    found = shutil.which(name)
+    return found is not None and Path(found).name in os.listdir(Path(found).parent)
 
 
 class RecordingProxy(SandboxEnvironmentProxy):
@@ -338,6 +348,17 @@ def test_a_batch_counts_the_paths_too(tmp_path):
     asyncio.run(evidence.snapshot(sandbox, ["project"], PYTHON, read_batch_bytes=len("project/0.txt") * 2))
 
     assert len(sandbox.commands) == 1 + 2  # empty files, but their paths fill a batch two at a time
+
+
+def test_a_login_with_non_ascii_text_is_read_as_utf8_whatever_the_locale(tmp_path, ascii_locale):
+    from whitney.agent import login_secrets
+
+    (tmp_path / ".local" / "share" / "kilo").mkdir(parents=True)
+    (tmp_path / ".local" / "share" / "kilo" / "auth.json").write_bytes(
+        json.dumps({"kilo": {"access": "login-acc\u00e8s-value"}}, ensure_ascii=False).encode("utf-8")
+    )
+
+    assert login_secrets({"HOME": str(tmp_path)}) == ["login-acc\u00e8s-value"]
 
 
 def test_a_file_that_vanishes_before_it_is_read_is_unreadable():

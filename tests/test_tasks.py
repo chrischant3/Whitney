@@ -927,3 +927,16 @@ def test_a_snapshot_without_texts_stays_incomplete():
 
 def test_cleanup_for_a_sample_with_no_before_snapshot_does_nothing():
     asyncio.run(tasks_module._forget_before(SimpleNamespace(uuid="never-snapshotted")))
+
+
+def test_the_not_staged_list_leaves_out_the_evals_path_wherever_it_is(tmp_path):
+    # An evals path inside a skill folder: its files are never staged, so the report doesn't name them either.
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "kilo.jsonc").write_text("{}")
+    evals = _consumer_evals(project / ".claude" / "skills" / "team", _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+    (evals / "logo.png").write_bytes(b"\x89PNG\xff")
+
+    task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), project_path=str(project))
+
+    assert task.metadata["not_staged"] == [] and task.metadata["not_staged_reasons"] == {}
