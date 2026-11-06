@@ -91,13 +91,13 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Before anything changes how scenarios are set up, record what today's `agents_md` and `kilo_jsonc` stage for every shipped scenario and variant after setup: the working tree, the initial commit's tree, and the untracked files. This is the yardstick for Tasks 5 to 7.
 
 **Acceptance criteria:**
-- [ ] Golden data covers every shipped scenario in every variant.
-- [ ] An equivalence test compares today's tasks with the golden data and passes now.
-- [ ] Recording it calls no model: setup runs in a local sandbox only.
+- [x] Golden data covers every shipped scenario in every variant.
+- [x] An equivalence test compares today's tasks with the golden data and passes now.
+- [x] Recording it calls no model: setup runs in a local sandbox only.
 
 **Verification:**
-- [ ] `pytest -q tests/test_equivalence.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_equivalence.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 3.
 
