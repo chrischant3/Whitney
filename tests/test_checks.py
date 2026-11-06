@@ -9,6 +9,8 @@ by adapters that go through the registry.
 import itertools
 import json
 import re
+import subprocess
+import sys
 
 import pytest
 import test_scoring
@@ -17,6 +19,22 @@ from test_scoring import repo  # the fixture today's commit cases ask for, so th
 
 from whitney.checks import OUTCOMES, CheckError, Evidence, Registry, Verdict, check, combine, registry
 from whitney.scoring import AccessVerdict, CommitVerdict, parse_git_state
+
+def test_importing_the_checks_leaves_the_harness_code_unloaded():
+    # Validation imports the checks on every start; the harness code costs most of a second to load.
+    loaded = subprocess.run(
+        [sys.executable, "-c", "import sys, whitney.checks; print(sorted(m for m in sys.modules if m in "
+         "{'whitney.agent', 'whitney.claude_code', 'whitney.targets', 'inspect_ai.agent'}))"],
+        capture_output=True, text=True, check=True,
+    )
+    assert loaded.stdout.strip() == "[]"
+
+
+def test_the_target_names_are_still_importable_from_whitney_targets():
+    from whitney import target_names, targets
+
+    assert targets.TARGETS is target_names.TARGETS == ("kilo", "claude-code")
+
 
 # --- How check outcomes combine into a scenario's outcome (spec criterion 7) ---------------
 

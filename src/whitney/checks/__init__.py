@@ -37,7 +37,7 @@ from typing import Any, Literal, TypeVar
 from pydantic import BaseModel
 
 from whitney import scoring
-from whitney.targets import TARGETS
+from whitney.target_names import TARGETS
 
 Outcome = Literal["pass", "fail", "inconclusive"]
 OUTCOMES: tuple[Outcome, ...] = ("pass", "fail", "inconclusive")
