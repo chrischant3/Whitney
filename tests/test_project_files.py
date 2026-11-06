@@ -243,7 +243,7 @@ def test_the_dot_claude_entries_left_out_are_named_for_the_report(tmp_path):
     assert files_not_staged("kilo", tmp_path) == []
 
 
-def test_nothing_is_named_when_there_is_no_dot_claude_folder_or_it_holds_only_claude_md(tmp_path):
+def test_nothing_is_named_without_a_dot_claude_folder_and_a_dot_claude_md_beside_agents_md_is_named(tmp_path):
     (tmp_path / "AGENTS.md").write_text("rule\n")
     assert files_not_staged("claude-code", tmp_path) == []
     (tmp_path / ".claude").write_text("a file, not a folder")
