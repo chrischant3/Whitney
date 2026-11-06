@@ -31,7 +31,6 @@ from whitney.project_files import (
     files_not_staged_reasons,
     files_renamed,
     load_project_files_for,
-    load_template_files,
 )
 from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
@@ -328,10 +327,13 @@ def _docker_model_names(model: str, execution: str) -> dict[str, str]:
 
 
 def _source_files(project_path: str | None, target: str) -> dict[str, str]:
-    """The files the target's loader stages from `project_path`, leaving out EVALS_DIR, or else Whitney's template."""
-    if project_path:
-        return load_project_files_for(target, Path(project_path), evals_path=EVALS_DIR)
-    return load_template_files(targets.template_dir(target))
+    """What the target's loader stages from `project_path`, or else from Whitney's own template, leaving out EVALS_DIR.
+
+    The template goes through the same loader as any project, so every staged
+    file obeys the same rules; its kilo.jsonc is re-serialised without comments.
+    """
+    folder = Path(project_path) if project_path else targets.template_dir(target)
+    return load_project_files_for(target, folder, evals_path=EVALS_DIR)
 
 
 def model_access(api_key_env: str | None, base_url: str | None) -> dict:
