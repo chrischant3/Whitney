@@ -55,9 +55,14 @@ ENV_REFERENCE = re.compile(r"\{env:([A-Za-z_][A-Za-z0-9_]*)\}")
 REDACTED = "[redacted]"
 
 # Files the harnesses read from folders above the project: Claude Code loads
-# CLAUDE.md from every parent folder, and Kilo looks for AGENTS.md and config
-# up to the repository root, which a staged project doesn't have.
-INHERITED_INSTRUCTION_NAMES = (*ROOT_INSTRUCTIONS, "CLAUDE.local.md", "kilo.jsonc", "kilo.json", *KILO_CONFIG_DIRS)
+# CLAUDE.md and .claude/CLAUDE.md from every parent folder (the second seen in a
+# canary run, docs/results/2026-11-06-claude-code-canary.md), and Kilo looks for
+# AGENTS.md and config up to the repository root, which a staged project doesn't
+# have. The .claude/CLAUDE.md file is named, not the .claude folder: a real HOME
+# always has ~/.claude/, and a temp folder under HOME would be refused for nothing.
+INHERITED_INSTRUCTION_NAMES = (
+    *ROOT_INSTRUCTIONS, "CLAUDE.local.md", ".claude/CLAUDE.md", "kilo.jsonc", "kilo.json", *KILO_CONFIG_DIRS,
+)  # fmt: skip
 MIN_SECRET_LENGTH = 8  # shorter values would redact ordinary words
 
 # Kilo providers whose request format Inspect's bridge serves, each with how a
@@ -392,8 +397,9 @@ def check_no_inherited_instructions(project_dir: Path) -> None:
     """Refuse to run if a folder above `project_dir` holds a file the harness would read.
 
     Workspaces live in the temporary folder, which anyone can write to on a
-    shared runner; a planted CLAUDE.md or AGENTS.md there would add
-    instructions the eval never declared.
+    shared runner; a planted CLAUDE.md, .claude/CLAUDE.md or AGENTS.md there
+    would add instructions the eval never declared. The names checked are
+    INHERITED_INSTRUCTION_NAMES, each looked for in every parent folder.
 
     Raises:
         RuntimeError: names the first such file found.
