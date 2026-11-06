@@ -175,12 +175,12 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 **Acceptance criteria:**
 - [x] A project holding a `.env`, a symlink, source files, provider, MCP and plugin settings, and an `evals/` folder matched by an `instructions` glob stages none of them, and is unchanged after a run (criterion 14).
-- [ ] `tests/test_project_files.py` passes without edits. The template's `kilo.jsonc` is now re-serialised, so its comments leave the report's file snapshot; if a test pins those comments, name it and confirm with Christopher first. (The first half holds; the template half waits for the re-recording above.)
+- [x] `tests/test_project_files.py` passes without edits. The template's `kilo.jsonc` is now re-serialised, so its comments leave the report's file snapshot; if a test pins those comments, name it and confirm with Christopher first. (The first half holds; the template half waits for the re-recording above.)
 - [x] A `source` that isn't staged fails validation with the reason.
 
 **Verification:**
 - [x] `pytest -q tests/test_project_files.py tests/test_validate.py`
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Tasks 1 and 7.
 
