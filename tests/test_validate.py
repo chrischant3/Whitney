@@ -318,6 +318,9 @@ def test_tokens_are_not_looked_for_when_the_fixture_or_the_check_is_already_a_pr
     )),
     ({"baseline": {}}, "variants.baseline", "changes nothing: give it remove or set, or leave the variant out"),
     ({"allow": {"set": {"kilo.jsonc": {}}}}, "variants.allow", "changes nothing: give it remove or set, or leave the variant out"),
+    ({"baseline": {"remove": ["AGENTS.md", "AGENTS.md"]}}, "variants.baseline.remove[1]", (
+        "'AGENTS.md' is already removed by remove[0] ('AGENTS.md'); list each path once"
+    )),
     ({"allow": {"set": {"kilo.jsonc": {"/a~2": 1}}}}, 'variants.allow.set["kilo.jsonc"]["/a~2"]', (
         "'/a~2': ~ must be followed by 0 or 1 (~0 is ~, ~1 is /)"
     )),
@@ -389,6 +392,18 @@ def test_the_default_baseline_is_named_at_source_when_the_source_is_not_staged(e
         "the default baseline removes the source: 'CLAUDE.md' isn't staged, so removing it changes nothing; "
         "staged files: AGENTS.md, kilo.jsonc",
     )]
+
+
+@pytest.mark.parametrize("configs", [
+    {"kilo.jsonc": '{"permission": {"external_directory": "ask"}}'},
+    {"kilo.jsonc": '{"permission": {"external_directory": "ask"}}', ".kilo/kilo.jsonc": '{"permission": {"external_directory": "ask"}}'},
+    {".kilo/kilo.jsonc": '{"permission": {"external_directory": "ask"}}'},
+    {"kilo.json": '{"model": "m"}'},
+], ids=["root", "both", "dot-kilo-only", "no-permission"])
+def test_the_shipped_kilo_jsonc_control_is_valid_wherever_the_wrapper_can_spread_it(configs):
+    [shipped] = [f for f in validate_evals(ROOT / "evals").files if f.eval_name == "kilo_jsonc"]
+
+    assert validate_variants(shipped, {"AGENTS.md": "- rule\n", **configs}) == []
 
 
 def test_a_version_1_files_upgraded_variant_is_named_at_source(evals):

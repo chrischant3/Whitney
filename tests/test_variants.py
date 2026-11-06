@@ -27,7 +27,9 @@ from whitney.variants import (
     default_baseline,
     pointer_from,
     pointer_tokens,
+    repeated_removes,
     shadowed_sets,
+    spread_over_kilo_configs,
 )
 
 MODEL = "anthropic/claude-haiku-4-5"
@@ -150,22 +152,22 @@ def test_allow_control_stages_what_set_external_directory_did(tmp_path, files):
 def test_the_allow_control_wrapper_needs_a_staged_kilo_config():
     control = variant(role="control", set={"kilo.jsonc": {"/permission/external_directory": "allow"}})
     with pytest.raises(ValueError, match="^no Kilo config file found in project assets$"):
-        tasks_module._on_every_kilo_config(control, {"AGENTS.md": "x"})
+        tasks_module._on_every_kilo_config(control, {"AGENTS.md": "x"}, "kilo.jsonc")
 
 
-def test_the_allow_control_wrapper_leaves_a_non_object_parent_for_set_to_refuse():
+def test_the_spread_leaves_a_non_object_parent_for_set_to_refuse():
     control = variant(role="control", set={"kilo.jsonc": {"/permission/external_directory": "allow"}})
-    spread = tasks_module._on_every_kilo_config(control, {"kilo.jsonc": '{"permission": "ask"}'})
+    spread = spread_over_kilo_configs(control, {"kilo.jsonc": '{"permission": "ask"}'}, "kilo.jsonc")
 
     with pytest.raises(VariantError, match="/permission isn't an object"):
         apply_variant({"kilo.jsonc": '{"permission": "ask"}'}, spread)
 
 
-def test_the_allow_control_wrapper_creates_every_missing_parent_as_today_s_setdefault_did():
+def test_the_spread_creates_every_missing_parent_as_today_s_setdefault_did():
     control = variant(role="control", set={"kilo.jsonc": {"/a/b/c": 1, "/x/y": 2, "/x/q/r": 3, "/s/t/u": 4}})
     files = {"kilo.jsonc": '{"x": {"z": 0}, "s": "ask"}'}
 
-    spread = tasks_module._on_every_kilo_config(control, files)
+    spread = spread_over_kilo_configs(control, files, "kilo.jsonc")
 
     assert spread.set_pointers == {"kilo.jsonc": {"/a": {"b": {"c": 1}}, "/x/y": 2, "/x/q": {"r": 3}, "/s/t/u": 4}}
     without_s = spread.model_copy(update={"set_pointers": {"kilo.jsonc": {
@@ -174,6 +176,56 @@ def test_the_allow_control_wrapper_creates_every_missing_parent_as_today_s_setde
     assert json.loads(apply_variant(files, without_s)["kilo.jsonc"]) == {
         "x": {"z": 0, "y": 2, "q": {"r": 3}}, "s": "ask", "a": {"b": {"c": 1}}
     }
+
+
+def test_the_spread_keeps_siblings_under_one_missing_parent():
+    control = variant(role="control", set={"kilo.jsonc": {
+        "/permission/external_directory": "allow", "/permission/bash": "allow", "/permission/edit/x/y": "deny",
+        "/permission/edit/x/z": "ask",
+    }})
+
+    spread = spread_over_kilo_configs(control, {"kilo.jsonc": "{}"}, "kilo.jsonc")
+
+    assert json.loads(apply_variant({"kilo.jsonc": "{}"}, spread)["kilo.jsonc"]) == {"permission": {
+        "external_directory": "allow", "bash": "allow", "edit": {"x": {"y": "deny", "z": "ask"}},
+    }}
+
+
+def test_the_spread_keeps_other_files_and_configs_the_variant_names_itself():
+    control = variant(role="control", set={
+        "kilo.jsonc": {"/permission/external_directory": "allow"},
+        ".kilo/kilo.jsonc": {"/permission/external_directory": "deny"},
+        "notes.json": {"/a": 1},
+    })
+    files = {"kilo.jsonc": CONFIG, ".kilo/kilo.jsonc": CONFIG, "kilo.json": "{}", "notes.json": "{}"}
+
+    spread = spread_over_kilo_configs(control, files, "kilo.jsonc")
+
+    assert spread.set_pointers == {
+        "kilo.jsonc": {"/permission/external_directory": "allow"},
+        ".kilo/kilo.jsonc": {"/permission/external_directory": "deny"},
+        "notes.json": {"/a": 1},
+        "kilo.json": {"/permission": {"external_directory": "allow"}},
+    }
+
+
+@pytest.mark.parametrize("source, sets, files", [
+    ("AGENTS.md", {"kilo.jsonc": {"/a": 1}}, {"kilo.jsonc": "{}", "kilo.json": "{}"}),
+    ("kilo.jsonc", {"kilo.json": {"/a": 1}}, {"kilo.jsonc": "{}", "kilo.json": "{}"}),
+    ("kilo.jsonc", {"kilo.jsonc": {"/a": 1}}, {"AGENTS.md": "x"}),
+], ids=["source-not-a-config", "source-not-set", "no-config-staged"])
+def test_the_spread_changes_nothing_it_has_no_source_pointers_or_configs_for(source, sets, files):
+    control = variant(role="control", set=sets)
+
+    assert spread_over_kilo_configs(control, files, source) == control
+
+
+def test_the_spread_leaves_an_unreadable_config_for_set_to_refuse():
+    control = variant(role="control", set={"kilo.jsonc": {"/permission/external_directory": "allow"}})
+
+    spread = spread_over_kilo_configs(control, {"kilo.jsonc": "{"}, "kilo.jsonc")
+
+    assert spread == control
 
 
 def test_the_agents_md_baseline_still_runs_when_the_project_has_no_agents_md(tmp_path):
@@ -194,6 +246,21 @@ def test_remove_leaves_out_a_file_and_a_folder_ending_in_a_slash():
 
     assert updated == {".kilo/skills/xy/SKILL.md": "t"}
     assert files["AGENTS.md"] == "a", "the staged files passed in are not changed"
+
+
+@pytest.mark.parametrize("remove, expected", [
+    (["AGENTS.md", "AGENTS.md"], [(("remove", 1), "'AGENTS.md' is already removed by remove[0] ('AGENTS.md'); list each path once")]),
+    ([".kilo/", ".kilo/kilo.jsonc"], [(("remove", 1), "'.kilo/kilo.jsonc' is already removed by remove[0] ('.kilo/'); list each path once")]),
+    ([".kilo/kilo.jsonc", ".kilo/"], [(("remove", 1), "'.kilo/' also removes remove[0] ('.kilo/kilo.jsonc'); list each path once")]),
+    (["AGENTS.md", ".kilo/kilo.jsonc"], []),
+    ([".kilo/", ".kilocode/"], []),
+])
+def test_a_repeated_or_overlapping_remove_is_found_and_still_applies(remove, expected):
+    files = {"AGENTS.md": "a", ".kilo/kilo.jsonc": "{}", ".kilocode/x": "y"}
+
+    assert repeated_removes(variant(remove=remove)) == expected
+    removed = {path for path in files if any(path == r or (r.endswith("/") and path.startswith(r)) for r in remove)}
+    assert apply_variant(files, variant(remove=remove)) == {p: t for p, t in files.items() if p not in removed}
 
 
 def test_removing_a_path_that_is_not_staged_is_refused_with_its_place():
@@ -249,6 +316,17 @@ def test_a_pointer_into_a_non_object_or_a_missing_parent_is_refused(document, po
     assert error.value.problems == [(("set", "c.json", pointer), message)]
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), {"deep": [float("-inf")]}])
+def test_a_value_json_cannot_hold_is_refused_with_its_place(value):
+    with pytest.raises(VariantError) as error:
+        apply_variant({"c.json": "{}"}, variant(set={"c.json": {"/a": value}}))
+
+    [(where, message)] = error.value.problems
+    assert where == ("set", "c.json")
+    assert message.startswith("'c.json' can't be written as JSON after set (")
+    assert message.endswith("); set values must be JSON: no NaN or Infinity")
+
+
 def test_set_on_a_file_that_is_not_staged_or_not_json_or_removed_is_refused():
     files = {"kilo.jsonc": "{", "AGENTS.md": "a", ".kilo/kilo.jsonc": "{}"}
     with pytest.raises(VariantError) as error:
@@ -295,6 +373,21 @@ def test_a_variant_that_changes_nothing_is_found():
     assert not changes_nothing(files, apply_variant(files, different))
     assert not changes_nothing(files, apply_variant(files, variant(remove=["AGENTS.md"])))
     assert changes_nothing(files, apply_variant(files, variant()))
+
+
+@pytest.mark.parametrize("staged, value", [("true", 1), ("1", True), ("1.0", 1), ("1", 1.0)])
+def test_a_value_of_another_json_type_is_a_change_and_a_shadow(staged, value):
+    files = {"kilo.jsonc": f'{{"a": {staged}}}', ".kilo/kilo.jsonc": f'{{"a": {staged}}}'}
+    one = variant(set={"kilo.jsonc": {"/a": value}})
+
+    assert not changes_nothing(files, apply_variant(files, one))
+    assert [where for where, _ in shadowed_sets(files, one)] == [("set", "kilo.jsonc", "/a")]
+
+
+def test_key_order_is_not_a_change():
+    files = {"c.json": '{"a": {"x": 1, "y": 2}}'}
+
+    assert changes_nothing(files, apply_variant(files, variant(set={"c.json": {"/a": {"y": 2, "x": 1}}})))
 
 
 def test_a_set_another_staged_kilo_config_could_shadow_is_found():

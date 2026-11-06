@@ -29,8 +29,7 @@ from whitney.project_files import CONFIG_PATHS, files_not_staged, load_project_f
 from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
 from whitney.setup_steps import SetupError, SetupStep
-from whitney.static_checks import parse_jsonc
-from whitney.variants import TEMPLATE, apply_variant, declared_variants, pointer_from, pointer_tokens, staged_matches
+from whitney.variants import TEMPLATE, apply_variant, declared_variants, spread_over_kilo_configs, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
 EVALS_DIR = ROOT / "evals"
@@ -154,14 +153,15 @@ def kilo_jsonc(
             provider (e.g. ANTHROPIC_API_KEY). Unset, the global Kilo config is used.
         base_url: local mode only; overrides the provider's base URL.
     """
-    variants = declared_variants(evalfile.read(EVALS_DIR / KILO_JSONC_EVALS))
+    eval_file = evalfile.read(EVALS_DIR / KILO_JSONC_EVALS)
+    variants = declared_variants(eval_file)
     _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     if target != "kilo":
         raise ValueError("kilo_jsonc tests kilo.jsonc permissions; it runs only for the kilo target")
     template_files = _source_files(project_path, target)
     if variant != TEMPLATE:
-        template_files = apply_variant(template_files, _on_every_kilo_config(variants[variant], template_files))
+        template_files = apply_variant(template_files, _on_every_kilo_config(variants[variant], template_files, eval_file.source))
     samples = []
     for s in _scenario_samples(EVALS_DIR / KILO_JSONC_EVALS):
         outside_before = {
@@ -336,38 +336,15 @@ def _staged_removes_only(variant: Variant, files: dict[str, str]) -> Variant:
     return variant.model_copy(update={"remove": [path for path in variant.remove if staged_matches(files, path)]})
 
 
-def _on_every_kilo_config(variant: Variant, files: dict[str, str]) -> Variant:
-    """`variant` with its Kilo config pointers set in every staged Kilo config, as set_external_directory did.
-
-    The version 1 upgrade sets the pointer in `source`, kilo.jsonc. Kilo reads
-    the other configs too, so a project holding only .kilo/kilo.jsonc, or
-    both, gets the control in each. Today's code also created a missing
-    parent object (`"permission": {}`); `set` refuses a missing parent, so
-    the pointer is moved up to the first key that is missing, with the rest
-    nested in its value. A parent that isn't an object is left for `set` to refuse.
+def _on_every_kilo_config(variant: Variant, files: dict[str, str], source: str) -> Variant:
+    """`variant` spread over every staged Kilo config (variants.spread_over_kilo_configs), as set_external_directory did.
 
     Raises:
-        ValueError: no Kilo config is staged.
+        ValueError: no Kilo config is staged, with set_external_directory's message.
     """
-    staged = [path for path in CONFIG_PATHS if path in files]
-    if not staged:
+    if not any(path in files for path in CONFIG_PATHS):
         raise ValueError("no Kilo config file found in project assets")
-    pointers = {p: value for path, sets in variant.set_pointers.items() if path in CONFIG_PATHS for p, value in sets.items()}
-    spread = {path: dict(_with_missing_parents(parse_jsonc(files[path]), p, v) for p, v in pointers.items()) for path in staged}
-    return variant.model_copy(update={"set_pointers": spread})
-
-
-def _with_missing_parents(document, pointer: str, value) -> tuple[str, object]:
-    tokens = pointer_tokens(pointer)
-    for depth, token in enumerate(tokens[:-1]):
-        if not isinstance(document, dict):
-            break
-        if token not in document:
-            for key in reversed(tokens[depth + 1 :]):
-                value = {key: value}
-            return pointer_from(tokens[: depth + 1]), value
-        document = document[token]
-    return pointer, value
+    return spread_over_kilo_configs(variant, files, source)
 
 
 def _check_variant(variant: str, allowed: set[str]) -> None:

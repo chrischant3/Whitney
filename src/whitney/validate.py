@@ -56,7 +56,9 @@ from whitney.variants import (
     changes_nothing,
     declared_variants,
     pointer_tokens,
+    repeated_removes,
     shadowed_sets,
+    spread_over_kilo_configs,
 )
 
 # The fixture folders the agent's project starts from: project/ is staged as it is, pending/ by apply_pending.
@@ -322,6 +324,7 @@ def _declared_variant_problems(eval_file: EvalFile) -> list[Found]:
             )))
         if not variant.remove and not any(variant.set_pointers.values()):
             found.append((at, "changes nothing: give it remove or set, or leave the variant out"))
+        found += [(location(("variants", name, *where)), message) for where, message in repeated_removes(variant)]
         for path, pointers in variant.set_pointers.items():
             for pointer in pointers:
                 try:
@@ -353,6 +356,9 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
     for name, variant in declared_variants(eval_file).items():
         if not variant.remove and not any(variant.set_pointers.values()):
             continue
+        if eval_file.version_read == 1:
+            # What the kilo_jsonc wrapper runs: today's control in every staged Kilo config (Task 7 keeps this for version 2).
+            variant = spread_over_kilo_configs(variant, staged, eval_file.source)
         try:
             changed = apply_variant(staged, variant)
             problems = shadowed_sets(staged, variant)
