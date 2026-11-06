@@ -482,3 +482,54 @@ def test_load_scenarios_names_a_fixture_that_is_not_utf8(tmp_path):
 
     with pytest.raises(ScenarioError, match=rf"^{path}: fixture 'repo' holds project/x.bin, which isn't UTF-8 text"):
         load_scenarios(path)
+
+
+# --- Details the tests above leave open ------------------------------------------------------
+
+
+def test_every_problem_is_listed_with_its_location_in_the_message(tmp_path):
+    path = write(tmp_path, v2(colour="red", scenarios=[{"id": "a", "prompt": " "}]))
+
+    with pytest.raises(EvalFileError) as raised:
+        load(path)
+
+    assert str(raised.value) == (
+        f"{path}: scenarios[0].prompt: Value error, must not be blank; colour: Extra inputs are not permitted"
+    )
+
+
+def test_an_object_with_scenarios_but_no_source_is_an_eval_file_missing_its_source(tmp_path):
+    with pytest.raises(EvalFileError) as raised:
+        load(write(tmp_path, v2() | {"source": None}))
+    assert problems(raised) == [("source", "Input should be a valid string")]
+
+    data = v2()
+    del data["source"]
+    with pytest.raises(EvalFileError) as raised:
+        load(write(tmp_path, data))
+    assert problems(raised) == [("source", "Field required")]
+
+
+def test_a_version_1_value_that_breaks_the_upgraded_schema_names_the_file(tmp_path):
+    path = write(tmp_path, {"source": "kilo.jsonc", "scenarios": [v1_scenario(canary="C", known_gap=3)]})
+
+    with pytest.raises(EvalFileError) as raised, pytest.warns(DeprecationWarning):
+        load(path)
+
+    assert [str(p) for p in raised.value.problems] == [f"{path}: scenarios[0].known_gap: Input should be a valid string"]
+
+
+def test_a_folders_eval_files_are_found_together(tmp_path):
+    for name in ["rules-b.json", "rules/a.json", "rules/c.json"]:
+        write(tmp_path, v2(source=name), name=name)
+
+    assert [p.relative_to(tmp_path).as_posix() for p in eval_file_paths(tmp_path)] == ["rules/a.json", "rules/c.json", "rules-b.json"]
+
+
+def test_a_version_2_check_with_no_tokens_gives_today_an_empty_token_list(tmp_path):
+    (tmp_path / "fixtures" / "repo" / "project").mkdir(parents=True)
+    path = write(tmp_path, v2(defaults={"fixture": "repo", "expect": [{"check": "no_secret_committed", "env_files": True}]}))
+
+    [sample] = load_scenarios(path)
+
+    assert sample.metadata["secret_tokens"] == []

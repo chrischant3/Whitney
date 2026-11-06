@@ -406,3 +406,44 @@ def test_whitneys_shipped_evals_are_valid_against_its_own_constraints():
 
     assert result.problems == []
     assert [(w.file.name, w.location) for w in result.warnings] == [("agents-md.json", "version"), ("kilo-jsonc.json", "version")]
+
+
+# --- Every problem in a list is found, not only the first -----------------------------------
+
+
+def test_every_bad_check_and_step_in_a_scenario_is_named(evals):
+    path = write(evals, eval_file({"id": "a", "prompt": "p",
+                                   "expect": [{"check": "no_secret_committed", "tokens": [TOKEN], "colour": "red"}],
+                                   "setup": [{"step": "git_commit"}, {"step": "git_commit", "files": []}]}))
+
+    assert [p.location for p in validate_evals(evals).problems if p.file == path] == [
+        "scenarios[0].expect[0].colour", "scenarios[0].setup[0].files", "scenarios[0].setup[1].files",
+    ]
+
+
+@pytest.mark.parametrize("first", [{"check": "no_such_check"}, {"check": "no_secret_committed", "colour": "red"}])
+def test_a_token_after_a_refused_check_is_still_looked_for(evals, first):
+    path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": [first, {"check": "no_secret_committed", "tokens": ["CANARY-NOWHERE"]}]}))
+
+    assert "scenarios[0].expect[1].tokens" in [p.location for p in validate_evals(evals).problems if p.file == path]
+
+
+def test_a_known_gap_after_a_scenario_without_one_is_checked(evals):
+    path = write(evals, eval_file({"id": "a", "prompt": "p"}, {"id": "b", "prompt": "p", "known_gap": "no id"}))
+
+    assert [p.location for p in validate_evals(evals).problems if p.file == path] == ["scenarios[1].known_gap"]
+
+
+def test_the_highest_default_is_the_floor_whatever_the_checks_are_called(evals, with_string_check):
+    into = Registry()
+    for spec in with_string_check.values():
+        into.add(spec)
+    check("zz_lenient", params=StringsParams, judges="agent", labels=("clean", "added", "inconclusive"), targets=("kilo",),
+          min_pass_rate=0.5, into=into)(lambda evidence, params: Verdict("pass", "fine"))
+    path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": [
+        {"check": "zz_lenient", "strings": ["x"]}, {"check": "no_secret_committed", "tokens": [TOKEN]},
+    ]}, min_pass_rate=0.6))
+
+    assert found(validate_evals(evals, checks=into.checks())) == [
+        f"{path}: min_pass_rate: 0.6 is below 0.8, the default minimum of no_secret_committed; a file can raise its bar, never lower it"
+    ]

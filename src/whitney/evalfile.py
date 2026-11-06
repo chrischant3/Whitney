@@ -354,13 +354,14 @@ def read(path: Path) -> V1File | EvalFile:
     """
     path = Path(path)
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        # json.loads reads the bytes as UTF-8 (or UTF-16 or 32, by their first bytes), so no codec is named here.
+        raw = json.loads(path.read_bytes())
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise EvalFileError(path, [("", f"not valid JSON ({e})")]) from e
     if not isinstance(raw, dict) or not {"source", "scenarios"} & raw.keys():
         raise EvalFileError(path, [("", NOT_AN_EVAL_FILE)])
     if raw.get("version", 1) == 1:
-        warnings.warn(f"{path}: {VERSION_1_DEPRECATED}", DeprecationWarning, stacklevel=2)
+        warnings.warn(f"{path}: {VERSION_1_DEPRECATED}", DeprecationWarning)
         parsed: V1File | EvalFile = _validate(V1File, raw, path)
     else:
         parsed = _validate(EvalFile, raw, path)
@@ -463,7 +464,7 @@ def location(loc: Iterable[Any], prefix: str = "") -> str:
 
 
 def eval_file_paths(evals_root: Path) -> list[Path]:
-    """Every eval file under `evals_root`: each `*.json`, recursively, in path order.
+    """Every eval file under `evals_root`: each `*.json`, recursively, in path order (a folder's files together).
 
     Files under the root's `fixtures/` folder and in hidden folders are left
     out. Every other JSON file must be an eval file, so a typo can't drop one
@@ -475,8 +476,7 @@ def eval_file_paths(evals_root: Path) -> list[Path]:
     root = Path(evals_root)
     if not root.is_dir():
         raise EvalFileError(root, [("", "the evals path isn't a folder")])
-    found = [path for path in root.rglob("*.json") if path.is_file() and not _left_out(path.relative_to(root))]
-    return sorted(found, key=lambda path: path.relative_to(root).as_posix())
+    return sorted(path for path in root.rglob("*.json") if path.is_file() and not _left_out(path.relative_to(root)))
 
 
 def _left_out(relative: Path) -> bool:

@@ -17,7 +17,6 @@ Each problem names the file and the location, such as
 """
 
 import re
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -95,10 +94,7 @@ def validate_evals(
     exceptions = exception_ids(constraints) if constraints is not None else None
     for path in paths:
         try:
-            # The deprecation is reported as a warning below, so Python's own copy would be said twice.
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                eval_file = load(path)
+            eval_file = load(path)
         except EvalFileError as e:
             result.problems.extend(e.problems)
             continue
