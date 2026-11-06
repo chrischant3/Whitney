@@ -155,13 +155,18 @@ def test_the_allow_control_wrapper_leaves_a_non_object_parent_for_set_to_refuse(
 
 
 def test_the_allow_control_wrapper_creates_every_missing_parent_as_today_s_setdefault_did():
-    control = variant(role="control", set={"kilo.jsonc": {"/a/b/c": 1, "/x/y": 2}})
-    files = {"kilo.jsonc": '{"x": {"z": 0}}'}
+    control = variant(role="control", set={"kilo.jsonc": {"/a/b/c": 1, "/x/y": 2, "/x/q/r": 3, "/s/t/u": 4}})
+    files = {"kilo.jsonc": '{"x": {"z": 0}, "s": "ask"}'}
 
     spread = tasks_module._on_every_kilo_config(control, files)
 
-    assert spread.set_pointers == {"kilo.jsonc": {"/a": {"b": {"c": 1}}, "/x/y": 2}}
-    assert json.loads(apply_variant(files, spread)["kilo.jsonc"]) == {"x": {"z": 0, "y": 2}, "a": {"b": {"c": 1}}}
+    assert spread.set_pointers == {"kilo.jsonc": {"/a": {"b": {"c": 1}}, "/x/y": 2, "/x/q": {"r": 3}, "/s/t/u": 4}}
+    without_s = spread.model_copy(update={"set_pointers": {"kilo.jsonc": {
+        p: v for p, v in spread.set_pointers["kilo.jsonc"].items() if p != "/s/t/u"
+    }}})
+    assert json.loads(apply_variant(files, without_s)["kilo.jsonc"]) == {
+        "x": {"z": 0, "y": 2, "q": {"r": 3}}, "s": "ask", "a": {"b": {"c": 1}}
+    }
 
 
 def test_the_agents_md_baseline_still_runs_when_the_project_has_no_agents_md(tmp_path):
@@ -319,6 +324,25 @@ def test_another_kilo_config_that_cannot_shadow_the_set_is_not_found(other, chan
     control = variant(set=sets, remove=[".kilo/kilo.jsonc"] if change.get("remove") else [])
 
     assert shadowed_sets(files, control) == []
+
+
+def test_a_later_kilo_config_is_checked_when_an_earlier_one_is_not_staged():
+    files = {"kilo.json": "{}", ".kilo/kilo.jsonc": '{"a": 2}'}
+
+    [(where, message)] = shadowed_sets(files, variant(set={"kilo.json": {"/a": 1}}))
+
+    assert message.startswith("'.kilo/kilo.jsonc' also sets /a,")
+
+
+def test_a_set_that_overwrites_its_own_pointer_is_not_shadowing():
+    files = {"kilo.jsonc": '{"p": {}}'}
+
+    assert shadowed_sets(files, variant(set={"kilo.jsonc": {"/p/a": 1, "/p": "x"}})) == []
+
+
+def test_a_listing_of_no_staged_files_says_none():
+    with pytest.raises(VariantError, match="staged files: none$"):
+        apply_variant({}, variant(remove=["AGENTS.md"]))
 
 
 def test_a_set_on_a_file_kilo_does_not_read_as_config_is_never_shadowed():
