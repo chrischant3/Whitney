@@ -149,7 +149,7 @@ The listing also holds a built-in skill, `kilo-config`, with `location` `builtin
 | `~/.kilo/agents/` | yes | (not tested) |
 | `~/.claude/agents/` / `~/.claude/commands/` | no | no |
 
-So under Whitney's isolation, skills, agents and commands all load, and the user's own skill folders stay out because HOME is temporary. Kilo reads skills from `.claude/skills/` and `.agents/skills/`, which Whitney doesn't stage (`project_files.KILO_CONFIG_DIRS` is `.kilo` and `.kilocode`), so a staged project can load fewer skills than the real one.
+So under Whitney's isolation, skills, agents and commands all load, and the user's own skill folders stay out because HOME is temporary. Kilo reads skills from `.claude/skills/` and `.agents/skills/`, which Whitney didn't stage then (`project_files.KILO_CONFIG_DIRS` is `.kilo` and `.kilocode`), so a staged project could load fewer skills than the real one. Since Phase 5 Task 8 the Kilo loader stages both ([load-order.md](load-order.md#rules-skill-folders-and-instructions-globs)).
 
 ### Case 3: a subagent in `.kilo/agents/`
 
@@ -302,4 +302,4 @@ The fields Tasks 17, 20 and 23 may rely on, with a fixture that shows each.
 - `kilo serve` approve-once behaviour.
 - A subagent's own tool calls. They aren't in the parent's stream; `kilo export <sessionID>` might show them, but Whitney deletes the temporary HOME, and Kilo's session store with it, when the run ends.
 - `--agent` with `mode: all`, and whether such an agent can also be delegated to with `task`.
-- Skill and agent discovery in a staged project that isn't a git repository, where Kilo may look above the project for `.claude/skills/` and `.agents/skills/`, folders `check_no_inherited_instructions` doesn't look for.
+- Agent discovery in a staged project that isn't a git repository. Skills were checked in Phase 5 Task 8: Kilo reads `.claude/skills/` and `.agents/skills/` above the project up to the git root, and `check_no_inherited_instructions` now looks for both ([load-order.md](load-order.md#skill-folders)).
