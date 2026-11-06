@@ -1,8 +1,8 @@
 import json
 import os
 import re
+import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -1224,17 +1224,28 @@ def test_a_broken_symlink_is_named_as_a_symlink_when_an_evals_path_is_given(tmp_
 def test_many_repeated_double_stars_are_expanded_as_one_without_walking_each(tmp_path):
     # Walked one by one, 40 "**" in a row try every way of sharing the 7 folders above x.md between
     # them (tens of millions of splits, which takes hours); folded into one, the walk is a single pass
-    # (a few milliseconds). The 60-second bound sits orders of magnitude from both, so a slow runner
-    # can't fail it and an unfolded walk can't pass it; counting directory listings instead would
-    # assert on a call count. A first segment pair keeps the fold honest about where the run of "**" starts.
+    # (a few milliseconds). The load runs in a subprocess first, so an unfolded walk fails at 60 s
+    # instead of hanging the run; counting directory listings instead would assert on a call count.
+    # A first segment pair keeps the fold honest about where the run of "**" starts.
     _kilo_project(tmp_path, {"docs/rules/a/b/c/d/e/f/g/x.md": "x\n", "docs/rules/top.md": "top\n"})
     (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["docs/rules/" + "**/" * 40 + "*.md"]}))
+    expected = ["docs/rules/a/b/c/d/e/f/g/x.md", "docs/rules/top.md", "kilo.jsonc"]
+    code = "import sys; from whitney.project_files import load_project_files; print(sorted(load_project_files(sys.argv[1])))"
 
-    started = time.monotonic()
-    staged = set(load_project_files(tmp_path))
+    run = _run_whitney(code, tmp_path, timeout=60)
+    # Also called here, so mutation testing, which maps tests to the functions they call in-process, runs this test.
+    staged = load_project_files(tmp_path)
 
-    assert staged == {"kilo.jsonc", "docs/rules/a/b/c/d/e/f/g/x.md", "docs/rules/top.md"}
-    assert time.monotonic() - started < 60
+    assert run.stdout.strip() == str(expected), run.stderr
+    assert sorted(staged) == expected
+
+
+def _run_whitney(code, *args, timeout, env=None):
+    """Run `code` in a fresh Python that imports the whitney this test imported; past `timeout` seconds it is killed and the test fails."""
+    import whitney
+
+    env = {**os.environ, **(env or {}), "PYTHONPATH": str(Path(whitney.__file__).parent.parent)}
+    return subprocess.run([sys.executable, "-c", code, *map(str, args)], capture_output=True, text=True, env=env, timeout=timeout, check=True)
 
 
 def test_on_a_case_sensitive_disk_the_exact_spelling_is_named_over_another_case(tmp_path):
@@ -1260,6 +1271,7 @@ PROJECT_UNDER_TEST = {
     "docs/notes.md": "notes\n",
     "node_modules/pkg/x.md": "a dependency's file\n",
     ".env": "SECRET=1\n",
+    "app.py": "source\n",
 }
 STAGED_FROM_PROJECT_UNDER_TEST = {"kilo.jsonc", "AGENTS.md", ".kilo/rules/a.md", ".kilo/skills/x/SKILL.md", "docs/notes.md"}
 
@@ -1275,7 +1287,7 @@ def test_a_project_stages_the_same_files_whatever_the_folders_above_it_are_calle
     staged = load_project_files(project)
 
     assert set(staged) == STAGED_FROM_PROJECT_UNDER_TEST
-    assert set(load_template_files(project)) == STAGED_FROM_PROJECT_UNDER_TEST
+    assert set(load_template_files(project)) == STAGED_FROM_PROJECT_UNDER_TEST | {"app.py"}  # a template stages every text file
     assert not_staged_reason("kilo", project, "docs/notes.md", staged) is None
     assert not_staged_reason("kilo", project, "node_modules/pkg/x.md", staged) == (
         "it is inside node_modules/, which is never staged"
@@ -1283,3 +1295,25 @@ def test_a_project_stages_the_same_files_whatever_the_folders_above_it_are_calle
     assert not_staged_reason("kilo", project, ".env", staged) == (
         ".env files are never staged, except .env.example, .env.sample and .env.template"
     )
+    assert not_staged_reason("kilo", project, "app.py", staged).startswith("the kilo loader stages only")
+
+
+def test_instructions_and_skill_folders_never_reach_into_an_excluded_folder(tmp_path):
+    _kilo_project(tmp_path, {
+        ".git/config": "[core]\n",
+        "node_modules/x.md": "dependency\n",
+        ".venv/a.md": "venv\n",
+        "x/config": "plain\n",
+        ".kilo/skills/s/SKILL.md": "skill\n",
+        ".kilo/skills/s/node_modules/y.md": "dependency in a skill\n",
+    })
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": [".git/config", "node_modules/x.md", ".venv/a.md", "{.git,x}/config"]}))
+
+    staged = load_project_files(tmp_path)
+
+    assert set(staged) == {"kilo.jsonc", "x/config", ".kilo/skills/s/SKILL.md"}
+    for relative, folder in [
+        (".git/config", ".git"), ("node_modules/x.md", "node_modules"), (".venv/a.md", ".venv"),
+        (".kilo/skills/s/node_modules/y.md", "node_modules"),
+    ]:
+        assert not_staged_reason("kilo", tmp_path, relative, staged) == f"it is inside {folder}/, which is never staged"
