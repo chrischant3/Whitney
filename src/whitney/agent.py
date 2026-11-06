@@ -60,7 +60,8 @@ REDACTED = "[redacted]"
 # AGENTS.md and config up to the repository root, which a staged project doesn't
 # have. Kilo also reads skills from .claude/skills/ and .agents/skills/ in each
 # folder up to that root (KILO_SKILL_DIRS; seen with `kilo debug skill`,
-# docs/load-order.md), and setting GIT_CEILING_DIRECTORIES doesn't stop it. The
+# docs/load-order.md), and setting GIT_CEILING_DIRECTORIES doesn't stop it; with no
+# .git there or above, Kilo reads none, so those are refused only then. The
 # .claude/CLAUDE.md file and .claude/skills/ are named, not the .claude folder: a
 # real HOME always has ~/.claude/, and a temp folder under HOME would be refused for nothing.
 INHERITED_INSTRUCTION_NAMES = (
@@ -407,7 +408,9 @@ def check_no_inherited_instructions(project_dir: Path) -> None:
     Workspaces live in the temporary folder, which anyone can write to on a
     shared runner; a planted CLAUDE.md, .claude/CLAUDE.md or AGENTS.md there
     would add instructions the eval never declared. The names checked are
-    INHERITED_INSTRUCTION_NAMES, each looked for in every parent folder.
+    INHERITED_INSTRUCTION_NAMES, each looked for in every parent folder. A
+    skill folder (KILO_SKILL_DIRS) counts only when that folder or one above
+    it holds a .git: Kilo reads them only up to a git worktree root.
 
     Raises:
         RuntimeError: names the first such file found, or the first name
@@ -424,6 +427,8 @@ def check_no_inherited_instructions(project_dir: Path) -> None:
                     f"can't check {path}, which the harness would read if it were there ({error.strerror or error}). "
                     "Set TMPDIR to a folder you can read, with none of these files above it."
                 ) from error
+            if found and name in KILO_SKILL_DIRS and not _in_a_repository(folder):
+                continue  # Kilo reads skill folders only up to a git worktree root, and there is none here
             if found:
                 advice = (
                     f"Set TMPDIR to a folder with none above it, or remove {USERS_OWN[name]}."
@@ -434,6 +439,17 @@ def check_no_inherited_instructions(project_dir: Path) -> None:
                     f"{path} is above the project, where the harness would read it as instructions or "
                     f"config the eval never declared. {advice}"
                 )
+
+
+def _in_a_repository(folder: Path) -> bool:
+    """True if `folder`, or a folder above it, holds a .git; one that can't be checked counts, so the run is refused."""
+    for candidate in (folder, *folder.parents):
+        try:
+            if (candidate / ".git").exists():
+                return True
+        except OSError:
+            return True
+    return False
 
 
 @contextlib.contextmanager

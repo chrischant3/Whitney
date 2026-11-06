@@ -113,7 +113,7 @@ Kilo's bundled code gives the full list: the folders `.kilo/rules` and `.kilocod
 | The project is a plain folder inside a git repository that starts above it | **yes**, from each folder up to the repository root |
 | The same, with `GIT_CEILING_DIRECTORIES` set to the folder above the project, as Whitney sets it | **yes**: Kilo doesn't use it |
 
-**What Whitney does:** the Kilo loader stages both skill folders. A scenario whose setup has no `git_init` runs in a project that isn't a repository, so `check_no_inherited_instructions` now refuses a run with `.claude/skills/` or `.agents/skills/` in any folder above the project, as it already did for `.kilo/` and `.kilocode/`.
+**What Whitney does:** the Kilo loader stages both skill folders. A scenario whose setup has no `git_init` runs in a project that isn't a repository, so `check_no_inherited_instructions` refuses a run with `.claude/skills/` or `.agents/skills/` in a folder above the project when that folder, or one above it, holds a `.git`. Without one, Kilo has no worktree root to walk up to and reads none of them (the second row above), and refusing would only stop users whose TMPDIR is under a HOME holding `~/.claude/skills/`. `.kilo/`, `.kilocode/` and `.claude/CLAUDE.md` above the project are still refused wherever they are.
 
 ### Instructions globs
 
