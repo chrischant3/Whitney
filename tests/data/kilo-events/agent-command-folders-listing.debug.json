@@ -1,0 +1,70 @@
+{
+  "agent": {
+    "canary-agent-global-xdg": {
+      "name": "canary-agent-global-xdg",
+      "description": "Canary agent CANARY-CANARY-AGENT-GLOBAL-XDG-3307. Use only when asked for canary-agent-global-xdg by name.",
+      "mode": "subagent",
+      "prompt": "Marker: CANARY-CANARY-AGENT-GLOBAL-XDG-3307",
+      "options": {},
+      "permission": {}
+    },
+    "canary-agent-kilocode-singular": {
+      "name": "canary-agent-kilocode-singular",
+      "description": "Canary agent CANARY-CANARY-AGENT-KILOCODE-SINGULAR-3307. Use only when asked for canary-agent-kilocode-singular by name.",
+      "mode": "subagent",
+      "prompt": "Marker: CANARY-CANARY-AGENT-KILOCODE-SINGULAR-3307",
+      "options": {},
+      "permission": {}
+    },
+    "canary-agent-kilocode": {
+      "name": "canary-agent-kilocode",
+      "description": "Canary agent CANARY-CANARY-AGENT-KILOCODE-3307. Use only when asked for canary-agent-kilocode by name.",
+      "mode": "subagent",
+      "prompt": "Marker: CANARY-CANARY-AGENT-KILOCODE-3307",
+      "options": {},
+      "permission": {}
+    },
+    "canary-agent-kilo-singular": {
+      "name": "canary-agent-kilo-singular",
+      "description": "Canary agent CANARY-CANARY-AGENT-KILO-SINGULAR-3307. Use only when asked for canary-agent-kilo-singular by name.",
+      "mode": "subagent",
+      "prompt": "Marker: CANARY-CANARY-AGENT-KILO-SINGULAR-3307",
+      "options": {},
+      "permission": {}
+    },
+    "canary-agent-kilo": {
+      "name": "canary-agent-kilo",
+      "description": "Canary agent CANARY-CANARY-AGENT-KILO-3307. Use only when asked for canary-agent-kilo by name.",
+      "mode": "subagent",
+      "prompt": "Marker: CANARY-CANARY-AGENT-KILO-3307",
+      "options": {},
+      "permission": {}
+    },
+    "canary-agent-global-kilo": {
+      "name": "canary-agent-global-kilo",
+      "description": "Canary agent CANARY-CANARY-AGENT-GLOBAL-KILO-3307. Use only when asked for canary-agent-global-kilo by name.",
+      "mode": "subagent",
+      "prompt": "Marker: CANARY-CANARY-AGENT-GLOBAL-KILO-3307",
+      "options": {},
+      "permission": {}
+    }
+  },
+  "command": {
+    "canary-command-global-xdg": {
+      "description": "Canary command CANARY-CANARY-COMMAND-GLOBAL-XDG-3307",
+      "template": "Reply with CANARY-CANARY-COMMAND-GLOBAL-XDG-3307."
+    },
+    "canary-command-kilocode": {
+      "description": "Canary command CANARY-CANARY-COMMAND-KILOCODE-3307",
+      "template": "Reply with CANARY-CANARY-COMMAND-KILOCODE-3307."
+    },
+    "canary-command-kilo-singular": {
+      "description": "Canary command CANARY-CANARY-COMMAND-KILO-SINGULAR-3307",
+      "template": "Reply with CANARY-CANARY-COMMAND-KILO-SINGULAR-3307."
+    },
+    "canary-command-kilo": {
+      "description": "Canary command CANARY-CANARY-COMMAND-KILO-3307",
+      "template": "Reply with CANARY-CANARY-COMMAND-KILO-3307."
+    }
+  }
+}

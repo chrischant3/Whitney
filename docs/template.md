@@ -1,13 +1,13 @@
 # The template
 
-`template/kilo/` is what a team using Kilo copies into their project; `template/claude-code/` holds the Claude Code template, which is just `AGENTS.md` with the same core rules. Files are staged recursively, preserving relative paths. The Kilo starter contains two root files:
+`template/kilo/` is what a team using Kilo copies into their project; `template/claude-code/` holds the Claude Code template, which is just `AGENTS.md` with the same core rules. Each eval run stages a template through the same loader as a project you pass with `--project-path`, so the same rules apply to it ([Evaluating a local project](adding-tests.md#evaluating-a-local-project) lists what each target's loader stages). The staged `kilo.jsonc` is written again as plain indented JSON, so the template's comments aren't in the staged copy or in the report's snapshot of it; the file in `template/kilo/` keeps them. The Kilo starter contains two root files:
 
 | File | What it's for | What the evals check |
 |---|---|---|
 | `AGENTS.md` | Rules for every Kilo session. Core rules first, then a section for your team's own rules. | Static check: the core rule is still a list item. Eval `agents_md`: Kilo doesn't commit `.env` files or secrets. |
 | `kilo.jsonc` | Kilo config: permissions, and later approved models. | Static check: `permission.external_directory` is `ask` or `deny`. Eval `kilo_jsonc`: tool calls outside the project are blocked. |
 
-The Claude Code starter is the same `AGENTS.md`, with "every Claude Code session" in its heading. Claude Code loads a root `AGENTS.md` as well as `CLAUDE.md`, so no other file is needed; the `kilo_jsonc` eval doesn't apply to it. `python -m whitney.static_checks` checks both templates.
+The Claude Code starter is the same `AGENTS.md`, with "every Claude Code session" in its heading. Claude Code read a root `AGENTS.md` that was the project's only instruction file in a spike on 2026-11-03 (Claude Code 2.1.285) and in one run on 2026-11-06 (2.1.318), so no other file is needed. Keep the starter's rules in `AGENTS.md`, and don't add a `CLAUDE.md` or `.claude/CLAUDE.md` to it, for two reasons. The `agents_md` baseline removes only `AGENTS.md`, so its Δ, the template rate minus the baseline rate, measures the rules only while they live there. And in one run on 2026-11-06 with Claude Code 2.1.318, Claude Code ignored `AGENTS.md` when the project also had `.claude/CLAUDE.md` ([canary record](results/2026-11-06-claude-code-canary.md)). For an existing project you test with `--project-path`, Whitney copies one instruction file for Claude Code, always as `AGENTS.md`: its root `AGENTS.md`, or a `CLAUDE.md` when it has no `AGENTS.md`; see [Evaluating a local project](adding-tests.md#evaluating-a-local-project). The `kilo_jsonc` eval doesn't apply to the Claude Code starter. `python -m whitney.static_checks` checks both templates.
 
 ## Using it in a project
 

@@ -36,6 +36,18 @@ def test_touched_functions_map_changed_lines_to_mutant_name_prefixes(tmp_path):
     assert prefixes == {"whitney.mod.x_touched__mutmut_", "whitney.mod.xǁThingǁmethod__mutmut_"}
 
 
+def test_functions_in_a_package_init_are_named_after_the_package(tmp_path):
+    # mutmut names the mutants in whitney/checks/__init__.py whitney.checks.x_..., so a prefix
+    # that kept "__init__" would match none of them and the gate would never judge those functions.
+    source = tmp_path / "src" / "whitney" / "checks" / "__init__.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("def combine():\n    return 1\n")
+
+    prefixes = _check["touched_function_prefixes"](source, {2}, src_root=tmp_path / "src")
+
+    assert prefixes == {"whitney.checks.x_combine__mutmut_"}
+
+
 def test_ratchets_are_read_from_the_measured_table():
     text = """
 ## Measured, not yet enforced

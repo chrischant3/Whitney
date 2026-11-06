@@ -14,13 +14,22 @@ The CI thresholds also need most of the template's runs to be conclusive
 (see check_thresholds), so a rate taken from a handful of runs can't pass.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 import json
 import re
 
-from inspect_ai.log import EvalLog
+# The gate's minimums live in whitney.thresholds, which whitney.checks reads too; they are
+# re-exported here under their old names, report.MIN_CONCLUSIVE and the rest.
+from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
+
+# Only for annotations: importing inspect_ai.log loads most of Inspect.
+if TYPE_CHECKING:
+    from inspect_ai.log import EvalLog
 
 EVALS = {
     # eval name: (passing outcome, failing outcome, label for runs that are neither, variant order)
@@ -28,10 +37,21 @@ EVALS = {
     "kilo_jsonc": ("blocked", "accessed", "not attempted", ("template", "allow_control")),
 }
 TEMPLATE_VARIANT = "template"
-# Most of the template's runs must be conclusive. Real runs have had 67-80%
-# (docs/results/2026-11-02-phase2.md, results/), so a higher default would fail runs that were fine.
-MIN_CONCLUSIVE = 0.5
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
+NOT_STAGED_NOTE = (
+    "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
+    "Where the log records why, the reason follows each name. For `claude-code`, Whitney copies one instruction "
+    "file, as `AGENTS.md`. A `CLAUDE.md` beside `AGENTS.md` stays out because Whitney's `claude-code` evals and "
+    "their baseline (the same run with `AGENTS.md` removed) are about `AGENTS.md`, and in one run Claude Code "
+    "ignored `AGENTS.md` once `.claude/CLAUDE.md` existed."
+)
+RENAMED_NOTE = (
+    "Whitney's `claude-code` evals and their baseline (the same run with `AGENTS.md` removed) are about "
+    "`AGENTS.md`, so a project with no usable `AGENTS.md` has its `CLAUDE.md` staged under that name. Only the "
+    "temporary copy is renamed; the project itself is never changed."
+)
+# The last item of a long not_staged list counts the names left off it (project_files.files_not_staged).
+MORE_NOT_STAGED = re.compile(r"and \d+ more")
 
 
 @dataclass(frozen=True)
@@ -292,12 +312,30 @@ def render_harbor_markdown(logs: list[EvalLog]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _not_staged_name(path: str, reasons: dict[str, str]) -> str:
+    if MORE_NOT_STAGED.fullmatch(path):
+        return path
+    return f"`{path}` ({reasons[path]})" if path in reasons else f"`{path}`"
+
+
 def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
-    """Include each staged policy/config copy once and map it to its variants."""
+    """Include each staged policy/config copy once and map it to its variants.
+
+    Project files staged under another name (the `renamed` metadata, see
+    whitney.project_files.files_renamed) and project paths a variant's
+    loader left out (the `not_staged` metadata, see
+    whitney.project_files.files_not_staged, each with its reason from
+    `not_staged_reasons` when recorded) are named after the variant
+    inputs, so a reader knows what the runs saw. Logs without those keys
+    render as before.
+    """
     task_inputs: dict[str, dict[str, object]] = {}
     file_copies: dict[tuple[str, str], set[str]] = defaultdict(set)
     permission_overlays: dict[str, set[str]] = defaultdict(set)
     prompt_preambles: dict[str, set[str]] = defaultdict(set)
+    not_staged: dict[str, list[str]] = {}
+    not_staged_reasons: dict[str, dict[str, str]] = {}
+    renamed: dict[str, dict[str, str]] = {}
     for log in logs:
         metadata = log.eval.metadata or {}
         assets = metadata.get("evaluation_assets")
@@ -326,6 +364,12 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
         preamble = metadata.get("evaluation_preamble")
         if preamble:
             prompt_preambles[str(preamble)].add(task)
+        if metadata.get("renamed"):  # absent from logs written before it was recorded
+            renamed[task] = dict(metadata["renamed"])
+        left_out = metadata.get("not_staged")  # absent from logs written before it was recorded
+        if left_out:
+            not_staged[task] = list(left_out)  # in files_not_staged's order, with any "and N more" last
+            not_staged_reasons[task] = dict(metadata.get("not_staged_reasons") or {})  # also absent from older logs
 
     if not task_inputs:
         return ""
@@ -348,6 +392,18 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
             f"| `{task}` | {details['target']} | {details['source']} | `{details['model']}` | {details['model_access']} "
             f"| {details['execution']} | {paths} |"
         )
+
+    if renamed:
+        sections.extend(["", "### Renamed for the Eval", "", RENAMED_NOTE, "", "| Eval variant | Renamed |", "|---|---|"])
+        for task, names in sorted(renamed.items()):
+            pairs = ", ".join(f"`{original}` staged as `{staged}`" for original, staged in sorted(names.items()))
+            sections.append(f"| `{task}` | {pairs} |")
+
+    if not_staged:
+        sections.extend(["", "### Not Staged", "", NOT_STAGED_NOTE, "", "| Eval variant | Not staged |", "|---|---|"])
+        for task, paths in sorted(not_staged.items()):
+            names = (_not_staged_name(path, not_staged_reasons[task]) for path in paths)
+            sections.append(f"| `{task}` | {', '.join(names)} |")
 
     sections.extend(["", "### File Snapshots", ""])
     for path in sorted({path for path, _ in file_copies}):

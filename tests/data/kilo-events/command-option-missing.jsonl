@@ -1,0 +1,2 @@
+{"type": "error", "timestamp": 1793960590663, "sessionID": "ses_e4f9dddfeffeMjpbHxEYUD9n1D", "error": {"name": "UnknownError", "data": {"message": "Unexpected server error. Check server logs for details.", "ref": "err_b5d53244"}}}
+{"type": "error", "timestamp": 1793960590666, "sessionID": "ses_e4f9dddfeffeMjpbHxEYUD9n1D", "error": {"name": "UnknownError", "data": {"message": "Command not found: \"no-such-command\". Available commands: compact, goal, init, kilo-config, resume-claude, resume-codex, review, summarize"}}}

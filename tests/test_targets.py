@@ -10,6 +10,7 @@ import pytest
 from inspect_ai._eval.task.sandbox import read_sandboxenv_file
 from inspect_ai._util.registry import registry_info
 
+from whitney.project_files import load_project_files_for
 from whitney.tasks import agents_md, kilo_jsonc
 
 ROOT = Path(__file__).parents[1]
@@ -58,7 +59,8 @@ def test_kilo_target_stages_the_kilo_template_and_runs_kilo():
     task = agents_md(target="kilo", model=KILO_MODEL)
 
     files = _project_files(task.dataset[0])
-    assert files["kilo.jsonc"] == (ROOT / "template" / "kilo" / "kilo.jsonc").read_text()
+    # The template goes through the Kilo loader, which re-serialises kilo.jsonc without its comments.
+    assert files["kilo.jsonc"] == load_project_files_for("kilo", ROOT / "template" / "kilo")["kilo.jsonc"]
     assert _agent_name(task).endswith("kilo")
     assert task.metadata["target"] == "kilo"
 

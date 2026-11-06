@@ -205,7 +205,10 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     )
     p.add_argument("--base-url", help="local mode: base URL for --model's provider (e.g. a proxy)")
     p.add_argument("--evals", nargs="+", choices=list(RUNS), help="default: every eval the target supports")
-    p.add_argument("--project-path", help="local project to read Kilo config and instruction files from")
+    p.add_argument(
+        "--project-path",
+        help="local project to read the target's config and instruction files from (see docs/adding-tests.md)",
+    )
     p.add_argument(
         "--harbor-dataset-path",
         default="dataset/harbor/bigcodebench-hard-complete",

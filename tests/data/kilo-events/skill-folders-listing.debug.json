@@ -1,0 +1,62 @@
+[
+  {
+    "name": "kilo-config",
+    "description": "Guide for Kilo configuration: config paths, kilo.json fields, commands, agents, skills, permissions, MCPs, providers, TUI settings, plus Agent Manager worktree setup/run scripts, workflows, and state. Use for Kilo config questions, locating loaded config, changing settings, or Agent Manager questions about run/setup scripts, worktree setup/workflows, apply/merge/PR/conflicts, missing sessions/worktrees, and agent-manager.json recovery.",
+    "location": "builtin"
+  },
+  {
+    "name": "canary-global-claude",
+    "description": "Canary skill CANARY-CANARY-GLOBAL-CLAUDE-3307. Use only when asked for canary-global-claude by name.",
+    "location": "/tmp/kilo-eval-home-XXXXXXXX/.claude/skills/canary-global-claude/SKILL.md"
+  },
+  {
+    "name": "canary-global-agents",
+    "description": "Canary skill CANARY-CANARY-GLOBAL-AGENTS-3307. Use only when asked for canary-global-agents by name.",
+    "location": "/tmp/kilo-eval-home-XXXXXXXX/.agents/skills/canary-global-agents/SKILL.md"
+  },
+  {
+    "name": "canary-claude",
+    "description": "Canary skill CANARY-CANARY-CLAUDE-3307. Use only when asked for canary-claude by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.claude/skills/canary-claude/SKILL.md"
+  },
+  {
+    "name": "canary-agents",
+    "description": "Canary skill CANARY-CANARY-AGENTS-3307. Use only when asked for canary-agents by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.agents/skills/canary-agents/SKILL.md"
+  },
+  {
+    "name": "canary-global-xdg",
+    "description": "Canary skill CANARY-CANARY-GLOBAL-XDG-3307. Use only when asked for canary-global-xdg by name.",
+    "location": "/tmp/kilo-eval-home-XXXXXXXX/.config/kilo/skills/canary-global-xdg/SKILL.md"
+  },
+  {
+    "name": "canary-kilocode-singular",
+    "description": "Canary skill CANARY-CANARY-KILOCODE-SINGULAR-3307. Use only when asked for canary-kilocode-singular by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilocode/skill/canary-kilocode-singular/SKILL.md"
+  },
+  {
+    "name": "canary-kilocode",
+    "description": "Canary skill CANARY-CANARY-KILOCODE-3307. Use only when asked for canary-kilocode by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilocode/skills/canary-kilocode/SKILL.md"
+  },
+  {
+    "name": "canary-kilo",
+    "description": "Canary skill CANARY-CANARY-KILO-3307. Use only when asked for canary-kilo by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilo/skills/canary-kilo/SKILL.md"
+  },
+  {
+    "name": "canary-kilo-singular",
+    "description": "Canary skill CANARY-CANARY-KILO-SINGULAR-3307. Use only when asked for canary-kilo-singular by name.",
+    "location": "/tmp/kilo-eval-XXXXXXXX/project/.kilo/skill/canary-kilo-singular/SKILL.md"
+  },
+  {
+    "name": "canary-global-kilocode",
+    "description": "Canary skill CANARY-CANARY-GLOBAL-KILOCODE-3307. Use only when asked for canary-global-kilocode by name.",
+    "location": "/tmp/kilo-eval-home-XXXXXXXX/.kilocode/skills/canary-global-kilocode/SKILL.md"
+  },
+  {
+    "name": "canary-global-kilo",
+    "description": "Canary skill CANARY-CANARY-GLOBAL-KILO-3307. Use only when asked for canary-global-kilo by name.",
+    "location": "/tmp/kilo-eval-home-XXXXXXXX/.kilo/skills/canary-global-kilo/SKILL.md"
+  }
+]
