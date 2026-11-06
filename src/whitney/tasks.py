@@ -27,6 +27,7 @@ from whitney.checks import Evidence, registry
 from whitney.evalfile import DEFAULT_SETUP, V1_COMMIT_SETUP
 from whitney.project_files import (
     files_not_staged,
+    files_not_staged_reasons,
     files_renamed,
     load_project_files_for,
     load_template_files,
@@ -121,6 +122,7 @@ def agents_md(
             "evaluation_assets": template_files,
             "renamed": files_renamed(target, project_path, template_files) if project_path else {},
             "not_staged": files_not_staged(target, project_path) if project_path else [],
+            "not_staged_reasons": files_not_staged_reasons(target, project_path) if project_path else {},
             "harness_permissions": AGENTS_MD_PERMISSIONS[target],
             **_docker_model_names(model, execution),
         },

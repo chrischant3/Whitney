@@ -406,3 +406,13 @@ def test_a_claude_md_staged_as_agents_md_is_named_as_renamed_in_the_template_var
     assert template.metadata["renamed"] == {"CLAUDE.md": "AGENTS.md"}
     assert baseline.metadata["renamed"] == {}
     assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["renamed"] == {}
+
+
+def test_the_reason_each_name_was_left_out_is_recorded(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("- Team rule\n")
+    (tmp_path / "CLAUDE.md").write_text("- Claude rule\n")
+
+    task = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path))
+
+    assert task.metadata["not_staged_reasons"] == {"CLAUDE.md": "beside AGENTS.md"}
+    assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["not_staged_reasons"] == {}
