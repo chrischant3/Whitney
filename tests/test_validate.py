@@ -438,18 +438,21 @@ def test_a_known_gap_after_a_scenario_without_one_is_checked(evals):
     assert [p.location for p in validate_evals(evals).problems if p.file == path] == ["scenarios[1].known_gap"]
 
 
-def test_the_highest_default_is_the_floor_whatever_the_checks_are_called(evals, with_string_check):
+@pytest.mark.parametrize("strict_first", [True, False])
+def test_the_highest_default_is_the_floor_whatever_the_checks_are_called(evals, with_string_check, strict_first):
     into = Registry()
     for spec in with_string_check.values():
         into.add(spec)
-    check("zz_lenient", params=StringsParams, judges="agent", labels=("clean", "added", "inconclusive"), targets=("kilo",),
-          min_pass_rate=0.5, into=into)(lambda evidence, params: Verdict("pass", "fine"))
-    path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": [
-        {"check": "zz_lenient", "strings": ["x"]}, {"check": "no_secret_committed", "tokens": [TOKEN]},
-    ]}, min_pass_rate=0.6))
+    # zz_strict sorts after no_secret_committed, and is tried first and last in expect, so the floor
+    # comes from neither the first nor the last check, by name or by place.
+    check("zz_strict", params=StringsParams, judges="agent", labels=("clean", "added", "inconclusive"), targets=("kilo",),
+          min_pass_rate=0.9, into=into)(lambda evidence, params: Verdict("pass", "fine"))
+    expect = [{"check": "no_secret_committed", "tokens": [TOKEN]}, {"check": "zz_strict", "strings": ["x"]}]
+    path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": expect[::-1] if strict_first else expect},
+                                  min_pass_rate=0.85))
 
     assert found(validate_evals(evals, checks=into.checks())) == [
-        f"{path}: min_pass_rate: 0.6 is below 0.8, the default minimum of no_secret_committed; a file can raise its bar, never lower it"
+        f"{path}: min_pass_rate: 0.85 is below 0.9, the default minimum of zz_strict; a file can raise its bar, never lower it"
     ]
 
 
