@@ -6,8 +6,11 @@ the report can read each check's minimum from the registry. report.py
 re-exports all three under their old names.
 
 The floor guard (scripts/floor_guard.py, EVAL_THRESHOLD_FILES) watches the
-MIN_* lines in this file, so a lowered or removed one is flagged. Keep each
-one as a plain `MIN_NAME = number` line, the form the guard matches.
+MIN_* lines in this file: lowering or removing its line is flagged. Keep each
+one as a plain `MIN_NAME = number` line, the form the guard matches, and don't
+assign these names anywhere else; import them from here instead, because the
+guard can't see a second assignment that shadows one
+(tests/test_thresholds.py checks for that).
 """
 
 # Most of the template's runs must be conclusive. Real runs have had 67-80%
