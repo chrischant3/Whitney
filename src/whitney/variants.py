@@ -27,7 +27,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from whitney.evalfile import EvalFile, Variant, location
+from whitney.evalfile import EvalFile, V1File, Variant, location, version_1_variants
 from whitney.project_files import CONFIG_PATHS
 from whitney.static_checks import parse_jsonc
 
@@ -68,14 +68,21 @@ def default_baseline(source: str) -> Variant:
     return Variant(role="baseline", remove=[skill.group(1) if skill else source])
 
 
-def declared_variants(eval_file: EvalFile) -> dict[str, Variant]:
+def declared_variants(eval_file: EvalFile | V1File) -> dict[str, Variant]:
     """The variants an eval file runs besides `template`: its own, or the default baseline if it leaves them out.
 
-    `"variants": {}` gives none, so only `template` runs.
+    `"variants": {}` gives none, so only `template` runs. A version 1 file as
+    read (not upgraded) gets the variants the upgrade would give it, so a
+    file the upgrade refuses, such as one with no token keys, still has them.
     """
-    if eval_file.variants is None:
+    if isinstance(eval_file, V1File):
+        upgraded = version_1_variants(eval_file)
+        declared = None if upgraded is None else {name: Variant.model_validate(v) for name, v in upgraded.items()}
+    else:
+        declared = eval_file.variants
+    if declared is None:
         return {"baseline": default_baseline(eval_file.source)}
-    return dict(eval_file.variants)
+    return dict(declared)
 
 
 def pointer_tokens(pointer: str) -> list[str]:

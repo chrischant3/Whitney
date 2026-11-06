@@ -159,6 +159,17 @@ def version_1_setup(metadata: dict) -> tuple[dict, ...]:
     return V1_COMMIT_SETUP if metadata.get("secret_tokens") is not None else DEFAULT_SETUP
 
 
+def version_1_variants(old: "V1File") -> dict[str, dict] | None:
+    """The variants a version 1 file upgrades to: today's allow_control if any scenario has a canary, else None.
+
+    None means the default baseline, which removes `source`.
+    """
+    if not any(scenario.metadata.get("canary") is not None for scenario in old.scenarios):
+        return None
+    # Today's kilo_jsonc control: external_directory set to allow, which should let access through.
+    return {"allow_control": {"role": "control", "set": {old.source: {"/permission/external_directory": "allow"}}}}
+
+
 def version_1_pending(files: dict[str, Any]) -> dict[str, Any]:
     """The pending files a version 1 commit fixture with no pending/ folder gets: app.py with refund() appended.
 
@@ -454,10 +465,10 @@ def _upgrade(old: V1File, path: Path) -> EvalFile:
         data["title"] = f"{old.source} rule followed"
         data["harness_permissions"] = V1_SECRET_TOKENS_PERMISSIONS
     if has_canary:
-        # Today's kilo_jsonc: kilo only, with a control that sets external_directory to allow, which should let access through.
+        # Today's kilo_jsonc: kilo only, with its allow_control.
         data["title"] = f"{old.source} permission held"
         data["targets"] = ["kilo"]
-        data["variants"] = {"allow_control": {"role": "control", "set": {old.source: {"/permission/external_directory": "allow"}}}}
+        data["variants"] = version_1_variants(old)
     upgraded_file = _validate(EvalFile, data, path)
     upgraded_file._path = path
     upgraded_file._version_read = 1

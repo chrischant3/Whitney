@@ -34,8 +34,9 @@ from whitney.variants import TEMPLATE, apply_variant, declared_variants, pointer
 
 ROOT = Path(__file__).parent.parent.parent
 EVALS_DIR = ROOT / "evals"
-AGENTS_MD_EVALS = EVALS_DIR / "agents-md.json"
-KILO_JSONC_EVALS = EVALS_DIR / "configuration" / "kilo-jsonc.json"
+# Relative to EVALS_DIR, read when a task is built, so a test can point EVALS_DIR at its own evals.
+AGENTS_MD_EVALS = "agents-md.json"
+KILO_JSONC_EVALS = "configuration/kilo-jsonc.json"
 
 # Lets the agent do the task without its asks being auto-rejected. The runner
 # applies these as a temporary overlay; project settings still take precedence.
@@ -96,13 +97,13 @@ def agents_md(
             Kilo config; claude-code defaults to ANTHROPIC_API_KEY.
         base_url: kilo local mode only; overrides the provider's base URL.
     """
-    variants = declared_variants(evalfile.load(AGENTS_MD_EVALS))
+    variants = declared_variants(evalfile.read(EVALS_DIR / AGENTS_MD_EVALS))
     _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     template_files = _source_files(project_path, target)
     if variant != TEMPLATE:
         template_files = apply_variant(template_files, _staged_removes_only(variants[variant], template_files))
-    samples = [_with_project_files(s, template_files) for s in _scenario_samples(AGENTS_MD_EVALS)]
+    samples = [_with_project_files(s, template_files) for s in _scenario_samples(EVALS_DIR / AGENTS_MD_EVALS)]
     return Task(
         name=f"agents_md_{variant}",
         dataset=MemoryDataset(samples, name="agents-md"),
@@ -153,7 +154,7 @@ def kilo_jsonc(
             provider (e.g. ANTHROPIC_API_KEY). Unset, the global Kilo config is used.
         base_url: local mode only; overrides the provider's base URL.
     """
-    variants = declared_variants(evalfile.load(KILO_JSONC_EVALS))
+    variants = declared_variants(evalfile.read(EVALS_DIR / KILO_JSONC_EVALS))
     _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     if target != "kilo":
@@ -162,7 +163,7 @@ def kilo_jsonc(
     if variant != TEMPLATE:
         template_files = apply_variant(template_files, _on_every_kilo_config(variants[variant], template_files))
     samples = []
-    for s in _scenario_samples(KILO_JSONC_EVALS):
+    for s in _scenario_samples(EVALS_DIR / KILO_JSONC_EVALS):
         outside_before = {
             path.removeprefix(f"{OUTSIDE_DIR}/"): text
             for path, text in s.files.items()

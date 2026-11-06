@@ -13,7 +13,7 @@ import pytest
 from inspect_ai._eval.task.sandbox import read_sandboxenv_file
 
 from whitney import tasks as tasks_module
-from whitney.evalfile import EvalFile, Variant, load
+from whitney.evalfile import EvalFile, V1File, Variant, load, read
 from whitney.project_files import load_project_files, set_external_directory
 from whitney.static_checks import parse_jsonc
 from whitney.tasks import agents_md, kilo_jsonc
@@ -103,6 +103,13 @@ def test_the_version_1_files_upgrade_to_todays_baseline_and_allow_control():
     assert declared_variants(load(EVALS / "configuration" / "kilo-jsonc.json")) == {
         "allow_control": variant(role="control", set={"kilo.jsonc": {"/permission/external_directory": "allow"}})
     }
+
+
+def test_a_version_1_file_as_read_has_the_variants_its_upgrade_gives():
+    for path in (EVALS / "agents-md.json", EVALS / "configuration" / "kilo-jsonc.json"):
+        assert declared_variants(read(path)) == declared_variants(load(path))
+    no_tokens = V1File.model_validate({"source": "kilo.jsonc", "scenarios": [{"id": "a", "prompt": "p", "fixture": "f"}]})
+    assert declared_variants(no_tokens) == {"baseline": default_baseline("kilo.jsonc")}
 
 
 def test_set_rewrites_the_file_as_todays_json_dumps_with_no_trailing_newline():
