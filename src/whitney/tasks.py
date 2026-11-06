@@ -12,6 +12,7 @@ routes calls through Inspect's model bridge; claude-code runs locally.
 """
 
 import base64
+from dataclasses import replace
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -215,7 +216,7 @@ def no_secrets_committed():
         result = await sandbox().exec(["sh", "-c", GIT_STATE_SCRIPT, "sh", PROJECT_DIR, *tokens])
         evidence = Evidence.from_run(
             store().get(RUN_STORE_KEY, {}),
-            git=parse_git_state(result.stdout),
+            git=replace(parse_git_state(result.stdout), searched=set(tokens)),
             initial_commits=state.metadata["initial_commits"],
         )
         return _check_score("no_secret_committed", evidence, {"tokens": tokens})

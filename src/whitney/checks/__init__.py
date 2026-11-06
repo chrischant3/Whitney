@@ -99,9 +99,10 @@ class Evidence:
             Code sets it on an error or a permission denial).
         events: the harness's event stream, already redacted.
         stderr: the harness's stderr, already redacted.
-        initial_commits: commits the setup made before the agent started.
-        git: the repository's history after the run (GIT_STATE_SCRIPT,
-            searched for the check's tokens), if a check needs "git".
+        initial_commits: commits the setup made before the agent started;
+            None if the setup's count wasn't recorded.
+        git: the repository's history after the run (GIT_STATE_SCRIPT), if a
+            check needs "git". Its `searched` names the tokens it was run with.
         before: snapshots taken after setup, if a check needs "snapshots":
             fixture folder (such as "outside") -> {path inside it: text}.
         after: the same folders' snapshots after the run.
@@ -111,7 +112,7 @@ class Evidence:
     ended_early: bool = False
     events: str = ""
     stderr: str = ""
-    initial_commits: int = 0
+    initial_commits: int | None = None
     git: scoring.GitState | None = None
     before: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     after: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
