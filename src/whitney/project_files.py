@@ -9,6 +9,7 @@ import fnmatch
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from whitney.static_checks import parse_jsonc
@@ -166,7 +167,7 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     if _under(root / source, evals):
         # Falling back to the next file would make the report's not-staged reasons wrong, so the run stops instead.
         raise ValueError(
-            f"{root / source} is the instruction file to stage, but it is under the evals path {evals}, "
+            f"{root / source} is the instruction file to stage, but it is under the evals path {evals.path}, "
             "whose files are never staged"
         )
     return {AGENTS_MD: _read_text(root / source)}
@@ -298,7 +299,7 @@ def not_staged_reason(
     full = root / relative
     if not _is_present(full):
         return "the project has no such file"
-    if evals_path is not None and _under(full, Path(evals_path).expanduser().resolve()):
+    if _under(full, _evals_folder(evals_path)):
         return "it is under the evals path, whose files are never staged"
     if _linked_below(root, full):
         return "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"
@@ -523,23 +524,54 @@ def _on_disk_name(names: list[str], wanted: str) -> str:
     return wanted if wanted in matches else matches[0]
 
 
-def _evals_root(root: Path, evals_path: Path | None) -> Path | None:
-    """`evals_path` resolved, or None.
+@dataclass(frozen=True)
+class _EvalsFolder:
+    """The evals path, resolved, and its identity on disk (device and inode)."""
+
+    path: Path
+    identity: tuple[int, int]
+
+
+def _evals_folder(evals_path: Path | None) -> _EvalsFolder | None:
+    """`evals_path` as an _EvalsFolder, or None if there is none: a folder that isn't there holds nothing."""
+    if evals_path is None:
+        return None
+    path = Path(evals_path).expanduser().resolve()
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    return _EvalsFolder(path, (info.st_dev, info.st_ino))
+
+
+def _evals_root(root: Path, evals_path: Path | None) -> _EvalsFolder | None:
+    """The evals path, for _under.
 
     Raises:
         ValueError: the project is inside it, so every file would be left out.
     """
-    if evals_path is None:
-        return None
-    evals = Path(evals_path).expanduser().resolve()
-    if root.is_relative_to(evals):
-        raise ValueError(f"project path {root} is inside the evals path {evals}, whose files are never staged")
+    evals = _evals_folder(evals_path)
+    if _under(root, evals):
+        raise ValueError(f"project path {root} is inside the evals path {evals.path}, whose files are never staged")
     return evals
 
 
-def _under(path: Path, evals: Path | None) -> bool:
-    # Staged paths are never symlinks, so the path as found is where the file is.
-    return evals is not None and path.is_relative_to(evals)
+def _under(path: Path, evals: _EvalsFolder | None) -> bool:
+    """True if `path` is the evals folder or inside it.
+
+    Folders are compared by identity, not by spelling: on a case-insensitive
+    disk Evals/ is evals/, and a project path may be spelled either way.
+    """
+    if evals is None:
+        return False
+    for folder in (path, *path.parents):
+        try:
+            info = folder.stat()
+        except OSError:  # not there, or can't be looked at: it can't be the evals folder
+            continue
+        if (info.st_dev, info.st_ino) == evals.identity:
+            return True
+    return False
 
 
 def _project_root(project_dir: Path) -> Path:

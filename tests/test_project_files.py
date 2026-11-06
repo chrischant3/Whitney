@@ -959,3 +959,31 @@ def test_a_root_instruction_file_in_a_symlinked_project_part_is_not_staged(tmp_p
     _kilo_project(tmp_path, {"real.md": "rule\n"})
     (tmp_path / "AGENTS.md").symlink_to(tmp_path / "real.md")
     assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+
+def test_the_evals_path_is_matched_by_the_folder_it_names_not_by_its_spelling(tmp_path, case_insensitive):
+    # On a case-insensitive disk, Evals/ is the evals/ folder; comparing spellings would stage it.
+    _kilo_project(tmp_path, {"evals/notes.md": "evals\n", "rules/a.md": "a\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+
+    staged = set(load_project_files(tmp_path, evals_path=tmp_path / "Evals"))
+
+    assert staged == ({"kilo.jsonc", "rules/a.md"} if case_insensitive else {"kilo.jsonc", "rules/a.md", "evals/notes.md"})
+
+
+def test_a_project_path_spelled_otherwise_is_still_matched_against_the_evals_path(tmp_path, case_insensitive):
+    project = tmp_path / "project"
+    project.mkdir()
+    _kilo_project(project, {"evals/notes.md": "evals\n"})
+    (project / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+    spelled = tmp_path / "PROJECT" if case_insensitive else project
+
+    staged = load_project_files(spelled, evals_path=project / "evals")
+
+    assert set(staged) == {"kilo.jsonc"}
+    assert not_staged_reason("kilo", spelled, "evals/notes.md", staged, evals_path=project / "evals") == (
+        "it is under the evals path, whose files are never staged"
+    )
+    if case_insensitive:
+        with pytest.raises(ValueError, match="inside the evals path"):
+            load_project_files(project / "evals", evals_path=tmp_path / "PROJECT")
