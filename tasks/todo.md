@@ -221,3 +221,7 @@ Results: `docs/results/2026-11-02-phase2.md`.
 **Dependencies:** MVP checkpoint
 **Files likely touched:** `.gitleaksignore`, `README.md` (clone URL)
 **Estimated scope:** S
+
+## Phase 5: your own evals, skills and agents
+
+The tasks are in [todo-phase5.md](todo-phase5.md).
