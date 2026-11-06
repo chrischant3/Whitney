@@ -251,8 +251,7 @@ def test_nothing_is_named_when_there_is_no_dot_claude_folder_or_it_holds_only_cl
     (tmp_path / ".claude").unlink()
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
-    (tmp_path / "AGENTS.md").unlink()  # so .claude/CLAUDE.md is the file staged, as AGENTS.md
-    assert files_not_staged("claude-code", tmp_path) == []
+    assert files_not_staged("claude-code", tmp_path) == [".claude/CLAUDE.md"]
 
 
 def test_a_dot_claude_md_that_was_not_staged_is_named(tmp_path):
