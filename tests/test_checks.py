@@ -41,6 +41,16 @@ def test_importing_the_checks_leaves_the_harness_code_unloaded():
     assert loaded.stdout.strip() == "[]"
 
 
+def test_importing_the_checks_leaves_the_report_unloaded():
+    # The report will read each check's minimum from the registry (Task 10), so the checks
+    # must take their minimums from whitney.thresholds, or the two modules would import each other.
+    loaded = subprocess.run(
+        [sys.executable, "-c", "import sys, whitney.checks; print('whitney.report' in sys.modules)"],
+        capture_output=True, text=True, check=True,
+    )
+    assert loaded.stdout.strip() == "False"
+
+
 def test_the_target_names_are_still_importable_from_whitney_targets():
     from whitney import target_names, targets
 
