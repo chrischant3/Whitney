@@ -182,7 +182,7 @@ class CheckSpec:
     def _declaration_problem(self) -> str | None:
         """What's wrong with the declaration, or None."""
         if not (isinstance(self.params, type) and issubclass(self.params, BaseModel)):
-            return f"params must be a pydantic model class, got {getattr(self.params, '__name__', self.params)}"
+            return f"params must be a pydantic model class, got {self.params!r}"
         if self.params.model_config.get("extra") != "forbid":
             return 'its parameters must forbid unknown fields: model_config = ConfigDict(extra="forbid")'
         if self.judges not in JUDGES:

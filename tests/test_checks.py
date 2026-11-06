@@ -8,6 +8,7 @@ by adapters that go through the registry.
 
 import itertools
 import json
+import re
 
 import pytest
 import test_scoring
@@ -44,7 +45,8 @@ def test_a_scenario_with_no_checks_has_no_outcome():
 
 
 def test_a_verdict_is_pass_fail_or_inconclusive():
-    with pytest.raises(ValueError, match="^a verdict's outcome is pass, fail or inconclusive, got 'followed'"):
+    message = "a verdict's outcome is pass, fail or inconclusive, got 'followed'; a check's own words for them are its labels"
+    with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
         Verdict("followed", "the check's own word belongs in its labels")
 
 
@@ -213,9 +215,10 @@ def test_a_check_whose_parameters_would_take_unknown_fields_is_refused():
         declare(params=Loose)
 
 
-def test_a_check_whose_parameters_are_not_a_pydantic_model_is_refused():
-    with pytest.raises(CheckError, match="^check 'demo_check': params must be a pydantic model class, got dict$"):
-        declare(params=dict)
+@pytest.mark.parametrize("params, shown", [(dict, "<class 'dict'>"), (NoParams(), "NoParams()")])
+def test_a_check_whose_parameters_are_not_a_pydantic_model_class_is_refused(params, shown):
+    with pytest.raises(CheckError, match=rf"^check 'demo_check': params must be a pydantic model class, got {re.escape(shown)}$"):
+        declare(params=params)
 
 
 @pytest.mark.parametrize(
@@ -239,7 +242,11 @@ def test_a_badly_formed_declaration_is_refused(overrides, problem):
 
 @pytest.mark.parametrize("place", ["../outside", "/tmp", "", "out side"])
 def test_findable_must_name_the_fixture_the_prompt_or_a_fixture_folder(place):
-    with pytest.raises(CheckError, match=rf"^check 'demo_check': findable place {place!r} for 'token' must be"):
+    problem = (
+        f"findable place {place!r} for 'token' must be fixture, fixture_or_prompt "
+        "or the name of a folder in the fixture, such as outside"
+    )
+    with pytest.raises(CheckError, match=f"^check 'demo_check': {re.escape(problem)}$"):
         declare(params=TokenParams, findable={"token": place})
 
 
