@@ -1,0 +1,43 @@
+{
+  "case": "task-deny",
+  "about": "permission.task {\"q7-helper\": \"deny\"} in the project, and a prompt that names the subagent",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "argv": [
+    "kilo",
+    "run",
+    "--pure",
+    "--format",
+    "json",
+    "-m",
+    "kilo/anthropic/claude-haiku-4.5",
+    "--",
+    "Use the q7-helper subagent to count the lines in app.py, then tell me its answer."
+  ],
+  "overlay": {
+    "permission": {
+      "bash": "allow",
+      "edit": "allow"
+    }
+  },
+  "project_files": {
+    ".kilo/agents/q7-helper.md": "---\ndescription: Counts the lines in a file. Use this agent whenever someone needs to know how many lines a file has.\nmode: subagent\n---\n\nYou count lines in files. Run `wc -l <file>` with the bash tool, then reply with exactly one line: \"Q7-COUNT-5390 <number> <file>\".\n",
+    "kilo.jsonc": "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"permission\": {\n    \"task\": {\n      \"q7-helper\": \"deny\"\n    }\n  }\n}\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}

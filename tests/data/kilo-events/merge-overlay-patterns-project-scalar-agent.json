@@ -1,0 +1,405 @@
+{
+  "name": "code",
+  "permission": [
+    {
+      "permission": "bash",
+      "pattern": "*",
+      "action": "ask"
+    },
+    {
+      "permission": "bash",
+      "pattern": "cat *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "head *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tail *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "less *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "ls *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tree *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "pwd *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "echo *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "wc *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "which *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "type *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "file *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "diff *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "du *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "df *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "date *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "uname *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "whoami *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "printenv *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "man *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "grep *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "rg *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "ag *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "sort *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "uniq *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "cut *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tr *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "jq *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "touch *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "mkdir *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "cp *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "mv *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tsc *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tsgo *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tar *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "unzip *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "gzip *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "gunzip *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "*",
+      "action": "ask"
+    },
+    {
+      "permission": "bash",
+      "pattern": "cat *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "head *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tail *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "less *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "ls *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tree *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "pwd *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "echo *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "wc *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "which *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "type *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "file *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "diff *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "du *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "df *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "date *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "uname *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "whoami *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "printenv *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "man *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "grep *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "rg *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "ag *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "sort *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "uniq *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "cut *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tr *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "jq *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "touch *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "mkdir *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "cp *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "mv *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tsc *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tsgo *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "tar *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "unzip *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "gzip *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "pattern": "gunzip *",
+      "action": "allow"
+    },
+    {
+      "permission": "bash",
+      "action": "ask",
+      "pattern": "*"
+    },
+    {
+      "permission": "bash",
+      "action": "ask",
+      "pattern": "*"
+    }
+  ]
+}

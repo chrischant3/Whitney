@@ -1,0 +1,40 @@
+{
+  "case": "merge-overlay-patterns-project-scalar-config",
+  "about": "No model: overlay permission {'bash': {'*': 'allow', 'touch *': 'allow'}, 'edit': 'allow'} with project permission {'bash': 'ask'}, resolved by `kilo debug config`",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": null,
+  "argv": [
+    "kilo",
+    "debug",
+    "config",
+    "--pure"
+  ],
+  "overlay": {
+    "permission": {
+      "bash": {
+        "*": "allow",
+        "touch *": "allow"
+      },
+      "edit": "allow"
+    }
+  },
+  "project_files": {
+    "kilo.jsonc": "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"permission\": {\n    \"bash\": \"ask\"\n  }\n}\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "trimmed": "strings over 1200 characters cut; event types kept: all; output keys kept: ['permission', 'permission_origins']",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}

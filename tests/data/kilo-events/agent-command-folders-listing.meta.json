@@ -1,0 +1,53 @@
+{
+  "case": "agent-command-folders-listing",
+  "about": "No model: which agent and command folders `kilo debug config` resolves, one canary file per folder",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": null,
+  "argv": [
+    "kilo",
+    "debug",
+    "config",
+    "--pure"
+  ],
+  "overlay": {
+    "permission": {
+      "bash": "allow",
+      "edit": "allow"
+    }
+  },
+  "project_files": {
+    ".kilo/agents/canary-agent-kilo.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-KILO-3307. Use only when asked for canary-agent-kilo by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-KILO-3307\n",
+    ".kilo/agent/canary-agent-kilo-singular.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-KILO-SINGULAR-3307. Use only when asked for canary-agent-kilo-singular by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-KILO-SINGULAR-3307\n",
+    ".kilocode/agents/canary-agent-kilocode.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-KILOCODE-3307. Use only when asked for canary-agent-kilocode by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-KILOCODE-3307\n",
+    ".kilocode/agent/canary-agent-kilocode-singular.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-KILOCODE-SINGULAR-3307. Use only when asked for canary-agent-kilocode-singular by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-KILOCODE-SINGULAR-3307\n",
+    ".claude/agents/canary-agent-claude.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-CLAUDE-3307. Use only when asked for canary-agent-claude by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-CLAUDE-3307\n",
+    ".opencode/agents/canary-agent-opencode.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-OPENCODE-3307. Use only when asked for canary-agent-opencode by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-OPENCODE-3307\n",
+    ".kilo/commands/canary-command-kilo.md": "---\ndescription: Canary command CANARY-CANARY-COMMAND-KILO-3307\n---\n\nReply with CANARY-CANARY-COMMAND-KILO-3307.\n",
+    ".kilo/command/canary-command-kilo-singular.md": "---\ndescription: Canary command CANARY-CANARY-COMMAND-KILO-SINGULAR-3307\n---\n\nReply with CANARY-CANARY-COMMAND-KILO-SINGULAR-3307.\n",
+    ".kilocode/commands/canary-command-kilocode.md": "---\ndescription: Canary command CANARY-CANARY-COMMAND-KILOCODE-3307\n---\n\nReply with CANARY-CANARY-COMMAND-KILOCODE-3307.\n",
+    ".claude/commands/canary-command-claude.md": "---\ndescription: Canary command CANARY-CANARY-COMMAND-CLAUDE-3307\n---\n\nReply with CANARY-CANARY-COMMAND-CLAUDE-3307.\n",
+    ".opencode/commands/canary-command-opencode.md": "---\ndescription: Canary command CANARY-CANARY-COMMAND-OPENCODE-3307\n---\n\nReply with CANARY-CANARY-COMMAND-OPENCODE-3307.\n"
+  },
+  "home_files": {
+    ".config/kilo/agents/canary-agent-global-xdg.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-GLOBAL-XDG-3307. Use only when asked for canary-agent-global-xdg by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-GLOBAL-XDG-3307\n",
+    ".kilo/agents/canary-agent-global-kilo.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-GLOBAL-KILO-3307. Use only when asked for canary-agent-global-kilo by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-GLOBAL-KILO-3307\n",
+    ".claude/agents/canary-agent-global-claude.md": "---\ndescription: Canary agent CANARY-CANARY-AGENT-GLOBAL-CLAUDE-3307. Use only when asked for canary-agent-global-claude by name.\nmode: subagent\n---\n\nMarker: CANARY-CANARY-AGENT-GLOBAL-CLAUDE-3307\n",
+    ".config/kilo/commands/canary-command-global-xdg.md": "---\ndescription: Canary command CANARY-CANARY-COMMAND-GLOBAL-XDG-3307\n---\n\nReply with CANARY-CANARY-COMMAND-GLOBAL-XDG-3307.\n",
+    ".claude/commands/canary-command-global-claude.md": "---\ndescription: Canary command CANARY-CANARY-COMMAND-GLOBAL-CLAUDE-3307\n---\n\nReply with CANARY-CANARY-COMMAND-GLOBAL-CLAUDE-3307.\n"
+  },
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "trimmed": "strings over 1200 characters cut; event types kept: all; output keys kept: ['agent', 'command']",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}

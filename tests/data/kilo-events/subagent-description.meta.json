@@ -1,0 +1,42 @@
+{
+  "case": "subagent-description",
+  "about": "A subagent in .kilo/agents/ and a prompt that matches its description without naming it",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "argv": [
+    "kilo",
+    "run",
+    "--pure",
+    "--format",
+    "json",
+    "-m",
+    "kilo/anthropic/claude-haiku-4.5",
+    "--",
+    "How many lines does app.py have? Hand the counting to a subagent, then tell me the answer."
+  ],
+  "overlay": {
+    "permission": {
+      "bash": "allow",
+      "edit": "allow"
+    }
+  },
+  "project_files": {
+    ".kilo/agents/q7-helper.md": "---\ndescription: Counts the lines in a file. Use this agent whenever someone needs to know how many lines a file has.\nmode: subagent\n---\n\nYou count lines in files. Run `wc -l <file>` with the bash tool, then reply with exactly one line: \"Q7-COUNT-5390 <number> <file>\".\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}

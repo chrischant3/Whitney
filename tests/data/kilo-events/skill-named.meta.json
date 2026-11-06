@@ -1,0 +1,42 @@
+{
+  "case": "skill-named",
+  "about": "The same skill, named in the prompt",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "argv": [
+    "kilo",
+    "run",
+    "--pure",
+    "--format",
+    "json",
+    "-m",
+    "kilo/anthropic/claude-haiku-4.5",
+    "--",
+    "Use the release-notes skill to write short release notes for the latest version of this project. Reply in chat only; don't create or change files."
+  ],
+  "overlay": {
+    "permission": {
+      "bash": "allow",
+      "edit": "allow"
+    }
+  },
+  "project_files": {
+    ".kilo/skills/release-notes/SKILL.md": "---\nname: release-notes\ndescription: Write release notes for this project. Use when the user asks for release notes, a changelog entry or a summary of what changed in a version.\n---\n\n# Release notes\n\nMarker: CANARY-SKILL-RN-4821\n\nWrite the notes as a bulleted list under the heading \"## What changed\". Start the reply with the line \"RN-FORMAT-4821\".\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}

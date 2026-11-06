@@ -1,0 +1,49 @@
+{
+  "case": "skill-folders-listing",
+  "about": "No model: which skill folders `kilo debug skill` finds, one canary skill per folder",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": null,
+  "argv": [
+    "kilo",
+    "debug",
+    "skill",
+    "--pure"
+  ],
+  "overlay": {
+    "permission": {
+      "bash": "allow",
+      "edit": "allow"
+    }
+  },
+  "project_files": {
+    ".kilo/skills/canary-kilo/SKILL.md": "---\nname: canary-kilo\ndescription: Canary skill CANARY-CANARY-KILO-3307. Use only when asked for canary-kilo by name.\n---\n\nMarker: CANARY-CANARY-KILO-3307\n",
+    ".kilo/skill/canary-kilo-singular/SKILL.md": "---\nname: canary-kilo-singular\ndescription: Canary skill CANARY-CANARY-KILO-SINGULAR-3307. Use only when asked for canary-kilo-singular by name.\n---\n\nMarker: CANARY-CANARY-KILO-SINGULAR-3307\n",
+    ".kilocode/skills/canary-kilocode/SKILL.md": "---\nname: canary-kilocode\ndescription: Canary skill CANARY-CANARY-KILOCODE-3307. Use only when asked for canary-kilocode by name.\n---\n\nMarker: CANARY-CANARY-KILOCODE-3307\n",
+    ".kilocode/skill/canary-kilocode-singular/SKILL.md": "---\nname: canary-kilocode-singular\ndescription: Canary skill CANARY-CANARY-KILOCODE-SINGULAR-3307. Use only when asked for canary-kilocode-singular by name.\n---\n\nMarker: CANARY-CANARY-KILOCODE-SINGULAR-3307\n",
+    ".claude/skills/canary-claude/SKILL.md": "---\nname: canary-claude\ndescription: Canary skill CANARY-CANARY-CLAUDE-3307. Use only when asked for canary-claude by name.\n---\n\nMarker: CANARY-CANARY-CLAUDE-3307\n",
+    ".agents/skills/canary-agents/SKILL.md": "---\nname: canary-agents\ndescription: Canary skill CANARY-CANARY-AGENTS-3307. Use only when asked for canary-agents by name.\n---\n\nMarker: CANARY-CANARY-AGENTS-3307\n",
+    ".opencode/skills/canary-opencode/SKILL.md": "---\nname: canary-opencode\ndescription: Canary skill CANARY-CANARY-OPENCODE-3307. Use only when asked for canary-opencode by name.\n---\n\nMarker: CANARY-CANARY-OPENCODE-3307\n"
+  },
+  "home_files": {
+    ".config/kilo/skills/canary-global-xdg/SKILL.md": "---\nname: canary-global-xdg\ndescription: Canary skill CANARY-CANARY-GLOBAL-XDG-3307. Use only when asked for canary-global-xdg by name.\n---\n\nMarker: CANARY-CANARY-GLOBAL-XDG-3307\n",
+    ".kilo/skills/canary-global-kilo/SKILL.md": "---\nname: canary-global-kilo\ndescription: Canary skill CANARY-CANARY-GLOBAL-KILO-3307. Use only when asked for canary-global-kilo by name.\n---\n\nMarker: CANARY-CANARY-GLOBAL-KILO-3307\n",
+    ".kilocode/skills/canary-global-kilocode/SKILL.md": "---\nname: canary-global-kilocode\ndescription: Canary skill CANARY-CANARY-GLOBAL-KILOCODE-3307. Use only when asked for canary-global-kilocode by name.\n---\n\nMarker: CANARY-CANARY-GLOBAL-KILOCODE-3307\n",
+    ".claude/skills/canary-global-claude/SKILL.md": "---\nname: canary-global-claude\ndescription: Canary skill CANARY-CANARY-GLOBAL-CLAUDE-3307. Use only when asked for canary-global-claude by name.\n---\n\nMarker: CANARY-CANARY-GLOBAL-CLAUDE-3307\n",
+    ".agents/skills/canary-global-agents/SKILL.md": "---\nname: canary-global-agents\ndescription: Canary skill CANARY-CANARY-GLOBAL-AGENTS-3307. Use only when asked for canary-global-agents by name.\n---\n\nMarker: CANARY-CANARY-GLOBAL-AGENTS-3307\n"
+  },
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "trimmed": "strings over 1200 characters cut; event types kept: all; output keys kept: ['name', 'description', 'location']",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}

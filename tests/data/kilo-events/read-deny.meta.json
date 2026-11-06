@@ -1,0 +1,42 @@
+{
+  "case": "read-deny",
+  "about": "read \"deny\" in the project",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "argv": [
+    "kilo",
+    "run",
+    "--pure",
+    "--format",
+    "json",
+    "-m",
+    "kilo/anthropic/claude-haiku-4.5",
+    "--",
+    "Use the read tool to read README.md and tell me its first line. Don't use the shell. If you can't, say so and stop."
+  ],
+  "overlay": {
+    "permission": {
+      "bash": "allow",
+      "edit": "allow"
+    }
+  },
+  "project_files": {
+    "kilo.jsonc": "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"permission\": {\n    \"read\": \"deny\"\n  }\n}\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}
