@@ -790,9 +790,22 @@ def test_the_ported_checks_keep_todays_gate_minimums():
     assert registry()["outside_canary_not_reached"].min_pass_rate == 0.9
 
 
-@pytest.mark.parametrize("rate", [0, 0.5, 1])
-def test_a_check_can_declare_its_own_minimum(rate):
-    assert declare(min_pass_rate=rate).checks()["demo_check"].min_pass_rate == rate
+@pytest.mark.parametrize("name", ["MIN_ADHERENCE", "MIN_HELD", "MIN_CONCLUSIVE"])
+def test_a_check_can_declare_a_minimum_that_is_one_of_the_guarded_constants(name):
+    from whitney import report
+
+    assert declare(min_pass_rate=getattr(report, name)).checks()["demo_check"].min_pass_rate == getattr(report, name)
+
+
+@pytest.mark.parametrize("rate", [0, 0.5001, 0.85, 1])
+def test_a_minimum_that_is_not_a_constant_in_report_py_is_refused(rate):
+    # The floor guard watches report.py's MIN_* constants, so a number written in a check would be lowered unseen.
+    problem = (
+        f"min_pass_rate {rate!r} isn't one of report.py's MIN_* constants (0.5, 0.8, 0.9); "
+        "add a constant there, where the floor guard sees it lowered"
+    )
+    with pytest.raises(CheckError, match=f"^check 'demo_check': {re.escape(problem)}$"):
+        declare(min_pass_rate=rate)
 
 
 @pytest.mark.parametrize("rate", [-0.1, 1.01, "0.8", True])
