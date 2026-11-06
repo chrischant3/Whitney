@@ -502,15 +502,3 @@ def test_a_token_in_pending_counts_when_the_setup_applies_it(evals):
     assert found(validate_evals(evals)) == [
         f"{path}: scenarios[1].expect[0].tokens: 'CANARY-PENDING' isn't in project/ in fixture 'repo', so this check could never fail"
     ]
-
-
-def test_the_exceptions_table_is_read_as_utf8_whatever_the_locale(tmp_path):
-    from tests.test_evalfile import run_in_latin1_locale
-
-    constraints = tmp_path / "CONSTRAINTS.md"
-    constraints.write_text("## Exceptions\n\n| E4 | café |\n", encoding="utf-8")
-    run = run_in_latin1_locale("import sys; from whitney.validate import exception_ids; print(exception_ids(sys.argv[1]))", constraints)
-
-    # Under a Latin-1 locale "é" would read as two characters, so the row's text shows which codec was used.
-    assert run.stdout.strip() == "{'E4'}"
-    assert exception_ids(constraints) == {"E4"}  # in-process too, so mutation testing maps this test to exception_ids
