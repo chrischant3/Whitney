@@ -56,7 +56,8 @@ NUMBER = re.compile(r"\d+(?:\.\d+)?")
 # A scenario marked known_gap is left out of the eval gate's thresholds (src/whitney/report.py).
 KNOWN_GAP = re.compile(r'"known_gap"\s*:')
 # The eval gate's thresholds outside CONSTRAINTS.md; lowering one passes runs the gate should fail.
-EVAL_THRESHOLD_FILES = {"scripts/run_evals.py", "src/whitney/report.py"}
+# The MIN_* constants live in thresholds.py; report.py held them first and stays watched.
+EVAL_THRESHOLD_FILES = {"scripts/run_evals.py", "src/whitney/report.py", "src/whitney/thresholds.py"}
 EVAL_THRESHOLD = re.compile(
     r"^\s*(?P<constant>MIN_[A-Z_]+)\s*=\s*(?P<value>\d+(?:\.\d+)?)\s*(?:#.*)?$"
     r'|"(?P<option>--min-[a-z-]+)".*\bdefault=(?P<default>\d+(?:\.\d+)?)'
