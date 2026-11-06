@@ -311,3 +311,14 @@ def test_a_claude_code_project_path_stages_its_claude_md_and_names_what_it_left_
     assert task.metadata["not_staged"] == [".claude/settings.json"]
     assert task.metadata["asset_source"] == "local project"
     assert load(dataset).metadata["not_staged"] == []
+
+
+def test_a_claude_code_baseline_names_no_rename(tmp_path):
+    dataset = tmp_path / "dataset"
+    write_task(dataset)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text("- Team rule\n")
+    task = load(dataset, target="claude-code", model="anthropic/claude-haiku-4-5", project_path=str(project), variant="baseline")
+    assert task.metadata["renamed"] == {}
+    assert task.metadata["not_staged_reasons"] == {}
