@@ -254,6 +254,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 **Description:** Add `src/whitney/cli.py` to `floor_guard.EVAL_THRESHOLD_FILES`, so a lowered `--min-*` default there is blocked. CONSTRAINTS.md requires a commit that changes the floor guard to be signed by an approver, so Christopher makes or signs this commit.
 
+**Added 2026-11-06 (Checkpoint A1, Christopher):** in the same signed commit, close the floor guard's older gap: it judges only removed or changed `MIN_*` lines, so an added duplicate (a second `MIN_HELD = 0.1` lower in the file), an indented decoy or a value written as an expression goes unflagged. Parse `src/whitney/thresholds.py` with `ast` at the base and at HEAD, and flag any module-level threshold whose value falls, is no longer a number, or is bound more than once.
+
 **Acceptance criteria:**
 - [ ] A floor guard test shows that a lowered default in `cli.py` is flagged (criterion 11).
 - [ ] The commit is signed by Christopher, and the `floor-guard` check passes on the pull request.
