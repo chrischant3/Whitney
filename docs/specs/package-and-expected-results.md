@@ -162,7 +162,7 @@ inspect eval whitney/scenario_eval -T target=kilo -T model=kilo/anthropic/claude
 
 - **`--project-path`** keeps its meaning and its safety rules (`project_files.py`): Whitney reads the project's config and instruction files into disposable scenario projects, never its source tree, and never writes to it. These are the **staged files**. There is now one loader per target:
   - `kilo`: today's `load_project_files` (Kilo config, root `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `.kilo`/`.kilocode` asset folders, files named by `instructions`).
-  - `claude-code`: root `AGENTS.md` and `CLAUDE.md`, and `.claude/CLAUDE.md`, which a canary run on 2026-11-06 showed Claude Code reads as project instructions (plan decision 5). The rest of `.claude/` isn't staged (open question 8); the report says so if one exists. The same runs showed Claude Code 2.1.318 ignoring root `AGENTS.md` when `.claude/CLAUDE.md` was there too.
+  - `claude-code`: root `AGENTS.md` and `CLAUDE.md`. `.claude/` isn't staged (open question 8); the report says so if one exists.
   - Whitney's own `template/<target>/` goes through the same loader, so every staged file obeys the same rules.
 - **`--evals-path`** is the evals root. Fixtures are always `<evals-path>/fixtures/<name>/`. The evals path may sit inside the project path. **Nothing under the evals path is ever staged**, even if an `instructions` glob matches it, so the agent never sees the scenarios, their expected results or their tokens in its workspace. (Local mode isn't OS-isolated, so an agent that goes looking can still read host files; use Docker mode when that matters, as today.)
 
