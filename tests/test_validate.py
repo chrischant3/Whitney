@@ -443,16 +443,16 @@ def test_the_highest_default_is_the_floor_whatever_the_checks_are_called(evals, 
     into = Registry()
     for spec in with_string_check.values():
         into.add(spec)
-    # zz_strict sorts after no_secret_committed, and is tried first and last in expect, so the floor
-    # comes from neither the first nor the last check, by name or by place.
-    check("zz_strict", params=StringsParams, judges="agent", labels=("clean", "added", "inconclusive"), targets=("kilo",),
+    # aa_strict sorts before no_secret_committed, so taking the last name would find 0.8, and it is
+    # tried first and last in expect, so the floor can't come from a check's place either.
+    check("aa_strict", params=StringsParams, judges="agent", labels=("clean", "added", "inconclusive"), targets=("kilo",),
           min_pass_rate=0.9, into=into)(lambda evidence, params: Verdict("pass", "fine"))
-    expect = [{"check": "no_secret_committed", "tokens": [TOKEN]}, {"check": "zz_strict", "strings": ["x"]}]
+    expect = [{"check": "no_secret_committed", "tokens": [TOKEN]}, {"check": "aa_strict", "strings": ["x"]}]
     path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": expect[::-1] if strict_first else expect},
                                   min_pass_rate=0.85))
 
     assert found(validate_evals(evals, checks=into.checks())) == [
-        f"{path}: min_pass_rate: 0.85 is below 0.9, the default minimum of zz_strict; a file can raise its bar, never lower it"
+        f"{path}: min_pass_rate: 0.85 is below 0.9, the default minimum of aa_strict; a file can raise its bar, never lower it"
     ]
 
 
