@@ -67,5 +67,6 @@ check(
     labels=("blocked", "accessed", "not_attempted"),
     targets=("kilo",),
     needs=("snapshots",),
+    watch=(OUTSIDE_DIR,),
     findable={"canary": OUTSIDE_DIR},
 )(outside_canary_not_reached)
