@@ -569,19 +569,34 @@ def test_scenario_eval_runs_a_version_2_set_as_written_and_does_not_spread_it(tm
     assert parse_jsonc(task.metadata["evaluation_assets"][".kilo/kilo.jsonc"])["permission"]["external_directory"] == "ask"
 
 
-def test_sample_setup_holds_no_secret_the_run_is_given(tmp_path, monkeypatch):
-    # Inspect logs Sample.setup, which holds the text of the fixture's pending/ files.
+def test_a_setup_holding_a_secret_the_run_is_given_is_refused(tmp_path, monkeypatch):
+    # Inspect logs Sample.setup, which holds the text of the fixture's pending/ files; redacting it
+    # would run a different script, so the task refuses to build instead.
     monkeypatch.setenv("TEAM_PROVIDER_VALUE", "pending-text-that-is-the-run-secret")
     evals = _consumer_evals(tmp_path, {**_one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]),
                                        "defaults": {"fixture": "repo", "setup": [{"step": "git_init"}, {"step": "apply_pending"}]}})
     (evals / "fixtures" / "repo" / "pending").mkdir()
     (evals / "fixtures" / "repo" / "pending" / "app.py").write_text("print('pending-text-that-is-the-run-secret')\n")
 
-    [sample] = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), api_key_env="TEAM_PROVIDER_VALUE").dataset
+    with pytest.raises(ValueError, match=r"rules.json: scenario 's': its setup holds the value of a secret this run is given; "):
+        tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), api_key_env="TEAM_PROVIDER_VALUE")
     [plain] = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals)).dataset
-
-    assert "pending-text-that-is-the-run-secret" not in sample.setup and "[redacted]" in sample.setup
     assert "pending-text-that-is-the-run-secret" in plain.setup
+
+
+def test_the_logged_staged_files_hold_no_secret_the_run_is_given(tmp_path, monkeypatch):
+    monkeypatch.setenv("TEAM_PROVIDER_VALUE", "agents-md-text-that-is-the-run-secret")
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "AGENTS.md").write_text("- key: agents-md-text-that-is-the-run-secret\n")
+    (project / "kilo.jsonc").write_text("{}")
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+
+    task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), project_path=str(project),
+                                      api_key_env="TEAM_PROVIDER_VALUE")
+
+    assert task.metadata["evaluation_assets"]["AGENTS.md"] == "- key: [redacted]\n"
+    assert _project_files(task.dataset[0])["AGENTS.md"] == "- key: agents-md-text-that-is-the-run-secret\n"  # the run gets the real file
 
 
 FAKE_RUNS = [
@@ -693,16 +708,15 @@ def test_scenario_eval_never_stages_its_own_evals_path_from_the_project(tmp_path
     assert task.metadata["not_staged_reasons"] == files_not_staged_reasons("kilo", project, evals_path=evals)
 
 
-def test_a_claude_code_samples_setup_holds_no_trace_of_its_api_key(tmp_path, monkeypatch):
+def test_a_claude_code_setup_holding_its_api_key_is_refused(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "pending-text-that-is-the-claude-key")
     evals = _consumer_evals(tmp_path, {**_one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]),
                                        "defaults": {"fixture": "repo", "setup": [{"step": "git_init"}, {"step": "apply_pending"}]}})
     (evals / "fixtures" / "repo" / "pending").mkdir()
     (evals / "fixtures" / "repo" / "pending" / "app.py").write_text("print('pending-text-that-is-the-claude-key')\n")
 
-    [sample] = tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(evals)).dataset
-
-    assert "pending-text-that-is-the-claude-key" not in sample.setup
+    with pytest.raises(ValueError, match="its setup holds the value of a secret"):
+        tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(evals))
 
 
 def _scenario_scorer_score(task, run, sample_id="s"):

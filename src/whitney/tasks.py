@@ -370,8 +370,10 @@ def _scenario_task(
     """The Inspect task for `plan` in `variant`: what scenario_eval, agents_md and kilo_jsonc each return.
 
     Each sample is a scenario with the staged files in project/, its fixture
-    beside them and its setup script, with the run's secrets redacted from
-    the script because Inspect logs it (pending/ text is in it). The task's
+    beside them and its setup script. Inspect logs the script, which carries
+    the fixture's pending/ text, so a script holding one of the run's
+    secrets is refused rather than run differently; the logged copy of the
+    staged files (evaluation_assets) has them redacted. The task's
     setup step snapshots the folders the scenario's checks watch; the agent
     runs through targets.build_agent; the scorer is scenario_checks.
 
@@ -401,8 +403,12 @@ def _scenario_task(
     secrets = evidence.run_secrets(target, execution, api_key_env)
     samples = []
     for sample in _scenario_samples(plan.path, plan.fixtures_dir):
-        sample = _with_project_files(sample, staged, **(sample_metadata(sample) if sample_metadata else {}))
-        samples.append(sample.model_copy(update={"setup": sample.setup and redact(sample.setup, secrets)}))
+        if sample.setup and redact(sample.setup, secrets) != sample.setup:
+            raise ValueError(
+                f"{plan.path}: scenario '{sample.id}': its setup holds the value of a secret this run is given; "
+                "Inspect logs the setup, which carries the fixture's pending/ text, so keep only fake values there"
+            )
+        samples.append(_with_project_files(sample, staged, **(sample_metadata(sample) if sample_metadata else {})))
     python = sys.executable if execution == "local" else "python3"  # the sandbox's own: the host's, or the image's
     folders = {
         scenario: list(evidence.plan((checks[name], params) for name, params in expect).folders)
@@ -415,7 +421,7 @@ def _scenario_task(
     return Task(
         name=f"{plan.eval_name}_{variant}",
         dataset=MemoryDataset(samples, name=plan.path.stem),
-        setup=solver(name="before_snapshots")(_before_snapshots)(folders, python),
+        setup=solver(name="before_snapshots")(_before_snapshots)(folders, python, target, execution, api_key_env),
         solver=targets.build_agent(
             target, model, {target: plan.harness_permissions[target]}, execution=execution,
             api_key_env=api_key_env, base_url=base_url,
@@ -430,7 +436,7 @@ def _scenario_task(
             "model": model,
             "model_access": targets.model_access(target, api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
-            "evaluation_assets": staged,
+            "evaluation_assets": {path: redact(text, secrets) for path, text in staged.items()},
             "renamed": files_renamed(target, project_path, staged) if project_path else {},
             "not_staged": files_not_staged(target, project_path, evals_path=plan.evals_dir) if project_path else [],
             "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=plan.evals_dir) if project_path else {},
@@ -471,29 +477,32 @@ def _named_checks(plan: _EvalPlan) -> dict[str, CheckSpec]:
     return named
 
 
-def _before_snapshots(folders: dict[str, list[str]], python: str):
+def _before_snapshots(folders: dict[str, list[str]], python: str, target: str, execution: str, api_key_env: str | None):
     """The task's setup step: snapshot each sample's watched folders after its setup script, before the agent runs.
 
     Args:
         folders: scenario id -> the fixture folders its checks watch.
         python: the sandbox's Python, for the snapshot script.
+        target, execution, api_key_env: the run's, so a snapshot error can
+            be redacted of the secrets the run is given (evidence.run_secrets).
     """
 
     async def solve(state: TaskState, generate) -> TaskState:
-        await _take_before(state, folders[str(state.sample_id)], python)
+        secrets = evidence.run_secrets(target, execution, api_key_env)
+        await _take_before(state, folders[str(state.sample_id)], python, secrets)
         return state
 
     return solve
 
 
-async def _take_before(state: TaskState, folders: list[str], python: str) -> None:
+async def _take_before(state: TaskState, folders: list[str], python: str, secrets: list[str]) -> None:
     """Snapshot `folders` in the sample's sandbox and keep them for its scorer, if its checks watch any.
 
     If keeping their text would pass MAX_HELD_BYTES, only their hashes and sizes are kept.
     """
     if not folders:
         return
-    taken = await evidence.snapshot(sandbox(), folders, python)
+    taken = await evidence.snapshot(sandbox(), folders, python, secrets=secrets)
     if _text_held(_BEFORE_SNAPSHOTS.values()) + _text_held([taken]) > MAX_HELD_BYTES:
         taken = {folder: _without_texts(snap) for folder, snap in taken.items()}
     _BEFORE_SNAPSHOTS[state.uuid] = taken
@@ -531,12 +540,13 @@ def _checks_scorer(
     async def score(state: TaskState, _target: Target) -> Score:
         checks = [(registry()[name], params) for name, params in expect[str(state.sample_id)]]
         run = store().get(RUN_STORE_KEY, {})
+        secrets = evidence.run_secrets(target, execution, api_key_env)
         found = await evidence.collect(
-            sandbox(), evidence.plan(checks), python, run,
-            initial_commits=state.metadata.get("initial_commits"), before=_BEFORE_SNAPSHOTS.pop(state.uuid, {}),
+            sandbox(), evidence.plan(checks), python, run, initial_commits=state.metadata.get("initial_commits"),
+            before=_BEFORE_SNAPSHOTS.pop(state.uuid, {}), secrets=secrets,
         )
         verdicts = [(spec, spec.run(found, params)) for spec, params in checks]
-        return _scenario_score(verdicts, labels, metrics, run, evidence.run_secrets(target, execution, api_key_env))
+        return _scenario_score(verdicts, labels, metrics, run, secrets)
 
     return score
 

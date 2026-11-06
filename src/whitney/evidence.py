@@ -177,7 +177,7 @@ def _strings(value: Any) -> list[str]:
 
 async def collect(
     sbox, evidence_plan: EvidencePlan, python: str, run: Mapping[str, Any], *, initial_commits: int | None,
-    before: Mapping[str, FolderSnapshot],
+    before: Mapping[str, FolderSnapshot], secrets: Iterable[str] = (),
 ) -> Evidence:
     """The Evidence for one run: the run record plus what `evidence_plan` asks for, collected in `sbox` now.
 
@@ -188,9 +188,10 @@ async def collect(
         run: the run record the agent stored under RUN_STORE_KEY.
         initial_commits: the commits the setup made.
         before: the snapshots taken after setup (snapshot), by folder.
+        secrets: the run's, to redact from a snapshot error (run_secrets).
     """
     git = await git_state(sbox, evidence_plan.tokens) if "git" in evidence_plan.needs else None
-    after = await snapshot(sbox, evidence_plan.folders, python)
+    after = await snapshot(sbox, evidence_plan.folders, python, secrets=secrets)
     return Evidence.from_run(
         run,
         initial_commits=initial_commits,
