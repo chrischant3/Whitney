@@ -21,14 +21,14 @@ from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox, store
 
-from whitney import targets
+from whitney import evalfile, setup_steps, targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
 from whitney.checks import Evidence, registry
-from whitney.evalfile import Variant, load
-from whitney.git_env import ISOLATED_GIT_SHELL
+from whitney.evalfile import DEFAULT_SETUP, V1_COMMIT_SETUP, Variant
 from whitney.project_files import CONFIG_PATHS, files_not_staged, load_project_files_for, load_template_files
 from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
+from whitney.setup_steps import SetupError, SetupStep
 from whitney.static_checks import parse_jsonc
 from whitney.variants import TEMPLATE, apply_variant, declared_variants, pointer_from, pointer_tokens, staged_matches
 
@@ -58,28 +58,14 @@ CLAUDE_CODE_HARNESS_PERMISSIONS = {"allow": ["Bash", "Edit", "Write", "Read"]}
 # Per target, for targets.build_agent.
 AGENTS_MD_PERMISSIONS = {"kilo": AGENTS_MD_HARNESS_PERMISSIONS, "claude-code": CLAUDE_CODE_HARNESS_PERMISSIONS}
 
-# One commit of everything except untracked secrets, then a pending change to
-# app.py, so "commit my work" has something real to commit. Git runs without
-# the user's config or inherited GIT_* variables, and `--template=` keeps their
-# hooks out of the repo, where they'd run on the agent's commit too. `set -e`:
-# a setup that can't commit must fail the sample, not leave initial_commits wrong.
-COMMIT_FIXTURE_SETUP = f"""
-set -e
-{ISOLATED_GIT_SHELL}cd {PROJECT_DIR}
-git init -q --template=
-git add README.md app.py
-git commit -qm "Initial version"
-cat >> app.py <<'PY'
-
-
-def refund(amount_pence: int) -> dict:
-    \"\"\"Pretend to refund a card.\"\"\"
-    return {{"amount": -amount_pence}}
-PY
-"""
-
-# An empty repo for the kilo.jsonc eval, which bounds where Kilo looks for config, set up the same way.
-REPO_FIXTURE_SETUP = f"set -e\n{ISOLATED_GIT_SHELL}cd {PROJECT_DIR}\ngit init -q --template=\n"
+# Kept for callers, and deprecated: build setups with whitney.setup_steps. These are the steps' versions
+# of the two setups the tasks used before them. COMMIT_FIXTURE_SETUP no longer appends refund() to
+# app.py: agents_md's samples get that change from each commit fixture's pending/app.py, through
+# apply_pending. kilo_jsonc's empty repository bounds where Kilo looks for config.
+COMMIT_FIXTURE_SETUP = setup_steps.build(
+    [SetupStep(**step) for step in V1_COMMIT_SETUP if step["step"] != "apply_pending"], {}
+).script
+REPO_FIXTURE_SETUP = setup_steps.build([SetupStep(**step) for step in DEFAULT_SETUP], {}).script
 
 
 @task
@@ -110,16 +96,13 @@ def agents_md(
             Kilo config; claude-code defaults to ANTHROPIC_API_KEY.
         base_url: kilo local mode only; overrides the provider's base URL.
     """
-    variants = declared_variants(load(AGENTS_MD_EVALS))
+    variants = declared_variants(evalfile.load(AGENTS_MD_EVALS))
     _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     template_files = _source_files(project_path, target)
     if variant != TEMPLATE:
         template_files = apply_variant(template_files, _staged_removes_only(variants[variant], template_files))
-    samples = [
-        _with_project_files(s, template_files, setup=COMMIT_FIXTURE_SETUP, initial_commits=1)
-        for s in load_scenarios(AGENTS_MD_EVALS)
-    ]
+    samples = [_with_project_files(s, template_files) for s in _scenario_samples(AGENTS_MD_EVALS)]
     return Task(
         name=f"agents_md_{variant}",
         dataset=MemoryDataset(samples, name="agents-md"),
@@ -170,7 +153,7 @@ def kilo_jsonc(
             provider (e.g. ANTHROPIC_API_KEY). Unset, the global Kilo config is used.
         base_url: local mode only; overrides the provider's base URL.
     """
-    variants = declared_variants(load(KILO_JSONC_EVALS))
+    variants = declared_variants(evalfile.load(KILO_JSONC_EVALS))
     _check_variant(variant, {TEMPLATE, *variants})
     targets.check_target(target, execution, base_url)
     if target != "kilo":
@@ -179,17 +162,13 @@ def kilo_jsonc(
     if variant != TEMPLATE:
         template_files = apply_variant(template_files, _on_every_kilo_config(variants[variant], template_files))
     samples = []
-    for s in load_scenarios(KILO_JSONC_EVALS):
+    for s in _scenario_samples(KILO_JSONC_EVALS):
         outside_before = {
             path.removeprefix(f"{OUTSIDE_DIR}/"): text
             for path, text in s.files.items()
             if path.startswith(f"{OUTSIDE_DIR}/")
         }
-        samples.append(
-            _with_project_files(
-                s, template_files, setup=REPO_FIXTURE_SETUP, outside_before=outside_before
-            )
-        )
+        samples.append(_with_project_files(s, template_files, outside_before=outside_before))
     return Task(
         name=f"kilo_jsonc_{variant}",
         dataset=MemoryDataset(samples, name="kilo-jsonc"),
@@ -279,10 +258,47 @@ def _run_summary() -> str:
     return f"agent exit={run.get('exit_code')}; stderr tail: {run.get('stderr', '')[-300:].strip()}"
 
 
-def _with_project_files(sample: Sample, extra: dict[str, str], setup: str, **metadata) -> Sample:
+def _scenario_samples(path: Path) -> list[Sample]:
+    """The eval file's Samples, each with its scenario's setup script and the initial_commits it makes.
+
+    The fixture's pending/ files leave Sample.files here: apply_pending
+    writes them from inside the script, so the agent never sees the folder.
+
+    Raises:
+        SetupError: a scenario's setup can't be built; the message names the scenario and its fixture.
+    """
+    setups, version_1 = _scenario_setups(path)
+    samples = []
+    for sample in load_scenarios(path):
+        files, pending = setup_steps.split_pending(sample.files)
+        steps = setups[str(sample.id)]
+        if version_1 and not pending and "apply_pending" in [step.step for step in steps]:
+            pending = evalfile.version_1_pending(files)
+        try:
+            setup = setup_steps.build(steps, pending)
+        except SetupError as e:
+            raise SetupError(f"{path}: scenario '{sample.id}' (fixture '{sample.metadata['fixture']}'): {e}") from e
+        metadata = {**sample.metadata, "initial_commits": setup.initial_commits}
+        samples.append(sample.model_copy(update={"files": files, "setup": setup.script, "metadata": metadata}))
+    return samples
+
+
+def _scenario_setups(path: Path) -> tuple[dict[str, tuple[SetupStep, ...]], bool]:
+    """Each scenario's setup steps by id, and whether the file is version 1.
+
+    A version 1 file is read as written, not upgraded, so a scenario with
+    neither token key still builds, as it always did; validation names it.
+    """
+    parsed = evalfile.read(path)
+    if isinstance(parsed, evalfile.V1File):
+        return {s.id: tuple(SetupStep(**step) for step in evalfile.version_1_setup(s.metadata)) for s in parsed.scenarios}, True
+    return {s.id: s.setup for s in parsed.resolved()}, False
+
+
+def _with_project_files(sample: Sample, extra: dict[str, str], **metadata) -> Sample:
     files = {**sample.files, **{f"{PROJECT_DIR}/{name}": text for name, text in extra.items()}}
     inlined = {path: _inline(text) for path, text in files.items()}
-    return sample.model_copy(update={"files": inlined, "setup": setup, "metadata": {**sample.metadata, **metadata}})
+    return sample.model_copy(update={"files": inlined, "metadata": {**sample.metadata, **metadata}})
 
 
 def _inline(text: str) -> str:

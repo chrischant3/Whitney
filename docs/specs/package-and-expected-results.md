@@ -270,7 +270,7 @@ These three reproduce today's `REPO_FIXTURE_SETUP` and `COMMIT_FIXTURE_SETUP` ex
 
 ### Fixtures
 
-Unchanged: `fixtures/<name>/project/` is where the agent runs; siblings such as `outside/` sit beyond the project. Fixture files may include `.env` files with fake tokens (the evals are trusted input); staged project files never can. Fixtures must not hold symlinks, must resolve inside `fixtures/`, and are UTF-8 text, as `scenarios.py` checks today. New: an optional `pending/` folder, used by `apply_pending`.
+Unchanged: `fixtures/<name>/project/` is where the agent runs; siblings such as `outside/` sit beyond the project. Fixture files may include `.env` files with fake tokens (the evals are trusted input); staged project files never can. Fixtures must not hold symlinks, must resolve inside `fixtures/`, and are UTF-8 text, as `scenarios.py` checks today. New: an optional `pending/` folder, used by `apply_pending`. Its contents are written to the eval log in the setup script, so they must hold only fake values.
 
 ### Worked example: a rule in a consumer project
 

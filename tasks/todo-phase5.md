@@ -110,13 +110,13 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Add the `git_init`, `git_commit` and `apply_pending` setup steps. They run with today's isolated git (`ISOLATED_GIT_SHELL`, `git init --template=`, `set -e`). Move the `refund()` that `COMMIT_FIXTURE_SETUP` appends today into `pending/app.py` in the three commit fixtures. Version 1 files upgrade to these steps.
 
 **Acceptance criteria:**
-- [ ] The equivalence test from Task 4 still passes, and `pending/` never appears in the agent's workspace.
-- [ ] Today's setup isolation tests, `test_the_commit_fixture_keeps_the_users_git_config_out` and the rest, pass unchanged.
-- [ ] A step that can't complete fails the sample, and `initial_commits` comes from the steps.
+- [x] The equivalence test from Task 4 still passes, and `pending/` never appears in the agent's workspace.
+- [x] Today's setup isolation tests, `test_the_commit_fixture_keeps_the_users_git_config_out` and the rest, pass unchanged.
+- [x] A step that can't complete fails the sample, and `initial_commits` comes from the steps.
 
 **Verification:**
-- [ ] `pytest -q tests/test_setup_steps.py tests/test_equivalence.py tests/test_tasks.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_setup_steps.py tests/test_equivalence.py tests/test_tasks.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 4.
 
@@ -198,6 +198,7 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 - [ ] With the fake `kilo` from `tests/test_agent_local_run.py`, the wrappers give today's score answers on the same runs.
 - [ ] A fake agent that prints its API key and writes it to a file leaves no trace of the key in the log (criterion 15).
 - [ ] A file over the size cap, or a folder over the file cap, makes a check that needs it inconclusive.
+- [ ] (Added 2026-11-06, Task 5 review.) `Sample.setup` holds the text of the fixture's `pending/` files, and Inspect logs it. Either run `Sample.setup` through `agent.redact` before it's logged, or stage `pending/` so the setup holds paths, not text.
 
 **Verification:**
 - [ ] `pytest -q tests/test_tasks.py tests/test_evidence.py tests/test_agent_local_run.py`
@@ -253,6 +254,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 ### Task 12: Floor guard covers `cli.py`
 
 **Description:** Add `src/whitney/cli.py` to `floor_guard.EVAL_THRESHOLD_FILES`, so a lowered `--min-*` default there is blocked. CONSTRAINTS.md requires a commit that changes the floor guard to be signed by an approver, so Christopher makes or signs this commit.
+
+**Added 2026-11-06 (Checkpoint A1, Christopher):** in the same signed commit, close the floor guard's older gap: it judges only removed or changed `MIN_*` lines, so an added duplicate (a second `MIN_HELD = 0.1` lower in the file), an indented decoy or a value written as an expression goes unflagged. Parse `src/whitney/thresholds.py` with `ast` at the base and at HEAD, and flag any module-level threshold whose value falls, is no longer a number, or is bound more than once.
 
 **Acceptance criteria:**
 - [ ] A floor guard test shows that a lowered default in `cli.py` is flagged (criterion 11).

@@ -603,3 +603,52 @@ def test_a_token_in_pending_counts_when_the_setup_applies_it(evals):
     assert found(validate_evals(evals)) == [
         f"{path}: scenarios[1].expect[0].tokens: 'CANARY-PENDING' isn't in project/ in fixture 'repo', so this check could never fail"
     ]
+
+
+# --- Setup steps that couldn't run as written ------------------------------------------------
+
+
+def test_a_git_commit_before_any_git_init_is_named(evals):
+    path = write(evals, eval_file({"id": "a", "prompt": "p", "setup": [{"step": "git_commit", "files": ["."]}]}))
+
+    assert found(validate_evals(evals)) == [
+        f"{path}: scenarios[0].setup[0].step: git_commit before any git_init would commit into whatever repository "
+        'holds the sandbox; put {"step": "git_init"} first'
+    ]
+
+
+def test_apply_pending_with_no_pending_files_is_named_where_the_setup_is(evals):
+    setup = [{"step": "git_init"}, {"step": "apply_pending"}]
+    path = write(evals, eval_file(defaults={"fixture": "repo", "expect": [{"check": "no_secret_committed", "tokens": [TOKEN]}], "setup": setup}))
+
+    assert found(validate_evals(evals)) == [
+        f"{path}: defaults.setup[1]: apply_pending has nothing to apply: add pending/<file> holding the change "
+        "to apply after the commit, or remove apply_pending from setup (scenario 'commit-all')"
+    ]
+
+
+def test_a_version_1_commit_fixture_needs_no_pending_folder(evals):
+    write(evals, {"source": "AGENTS.md", "scenarios": [{"id": "a", "prompt": "p", "fixture": "repo", "metadata": {"secret_tokens": [TOKEN]}}]})
+
+    assert found(validate_evals(evals)) == []
+
+
+@pytest.mark.parametrize("name, text, message", [
+    (".git/hooks/post-commit", "#!/bin/sh\n", "pending/.git/hooks/post-commit: a pending/.git/ file would change the repository setup made"),
+    ("app.py", "a\0b", "pending/app.py: holds a NUL character, which the setup script can't write"),
+])
+def test_a_pending_file_that_cannot_be_applied_is_named(evals, name, text, message):
+    (evals / "fixtures" / "repo" / "pending" / name).parent.mkdir(parents=True, exist_ok=True)
+    (evals / "fixtures" / "repo" / "pending" / name).write_text(text)
+    path = write(evals, eval_file())
+
+    [problem] = found(validate_evals(evals))
+
+    assert problem.startswith(f"{path}: defaults.fixture: fixture 'repo': {message}")
+
+
+def test_apply_pending_in_a_scenarios_own_setup_is_named_there(evals):
+    path = write(evals, eval_file({"id": "a", "prompt": "p", "setup": [{"step": "git_init"}, {"step": "apply_pending"}]}))
+
+    assert found(validate_evals(evals)) == [f"{path}: scenarios[0].setup[1]: apply_pending has nothing to apply: add "
+                                            "pending/<file> holding the change to apply after the commit, or remove apply_pending from setup"]
