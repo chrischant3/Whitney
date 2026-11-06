@@ -69,10 +69,15 @@ def touched_function_prefixes(path: Path, lines: set[int], src_root: Path = SRC)
 def mutmut_patterns(prefixes: Iterable[str]) -> list[str]:
     """`mutmut run` arguments that select every mutant of the functions with these name prefixes.
 
-    mutmut matches each argument against mutant names with fnmatch, whole name only, so a
-    prefix plus `*` selects that function's mutants and nothing in another module.
+    mutmut 3.8 matches each argument against mutant names with fnmatch, whole name only, so a
+    prefix plus `*` selects that function's mutants and nothing in another module. It also
+    matches each argument containing `*` against function names (a prefix without its
+    `__mutmut_`) to choose the tests of its clean run; when none match it runs the whole suite,
+    which took most of the stage's time. So each function also gets `*` plus its name: that
+    matches the function itself and, since every mutant name ends in `__mutmut_<n>`, no mutant.
     """
-    return sorted(f"{prefix}*" for prefix in prefixes)
+    functions = {prefix.removesuffix("__mutmut_") for prefix in prefixes}
+    return sorted({f"{prefix}*" for prefix in prefixes} | {f"*{function}" for function in functions})
 
 
 def _spans(node: ast.AST, lines: set[int]) -> bool:

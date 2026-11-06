@@ -215,3 +215,12 @@ def test_a_mutmut_run_that_fails_for_another_reason_is_an_error():
 
     assert _result(checks, "mutation testing")[1] == "ERROR"
     assert checks.exit_code() == 2
+
+
+def test_the_mutmut_patterns_also_name_the_touched_functions_so_mutmut_picks_their_tests():
+    # mutmut's clean test run before the mutants runs the tests it finds by matching the patterns
+    # against function names; with none it runs the whole suite, which is most of the stage's time.
+    patterns = _check["mutmut_patterns"](TOUCHED)
+
+    functions = ["whitney.mod.x_touched", "whitney.mod.xǁThingǁmethod", "whitney.mod.x_touched_too", "whitney.mod.x_other"]
+    assert [f for f in functions if any(fnmatch.fnmatchcase(f, p) for p in patterns)] == functions[:2]
