@@ -1,5 +1,7 @@
 # Spec: Whitney as a package, with expected results in the scenario files
 
+Updated on 2026-11-06 to match the approved Phase 5 plan, [tasks/plan-phase5.md](../../tasks/plan-phase5.md). The plan's nine changes to this spec, D1 to D9, are made here, and so are its decisions 5 and 6 and its answer to open question 15. Each changed passage names the change it comes from. Slices keep their numbers, and each slice heading names the plan tasks that build it.
+
 | | |
 |---|---|
 | **Status** | Draft for review. Nothing here is built yet. |
@@ -26,12 +28,12 @@ Who it's for: the same users as today (development teams, auditors, infosec), no
 
 Correct any of these before slice 1 starts.
 
-1. **Kilo first.** New checks target the `kilo` target. The `claude-code` target keeps working and gets the checks that rely only on files and git; nothing new is built for Claude Code's own config (`.claude/`) in this change.
+1. **Kilo first.** New checks target the `kilo` target. The `claude-code` target keeps working and gets the checks that rely only on files and git; nothing new is built for Claude Code's own config (`.claude/`) in this change, except that its loader also stages `.claude/CLAUDE.md` (decision 5).
 2. **Evals are trusted, the project isn't.** The evals path is written by whoever runs Whitney, like test code. The project path may be someone else's config under evaluation, so it keeps today's safety rules.
 3. **POSIX hosts.** Whitney's local runner uses `sh` and `os.killpg`, so it runs on macOS, Linux and WSL. Native Windows stays unsupported. A team whose developers use Windows runs Whitney in WSL or in CI.
 4. **First release is `v0.2.0`.** Before 1.0, compatibility is kept by choice, not by semver obligation. Deprecated forms stay until a planned breaking release.
 5. **Checks live in Whitney.** A new kind of check is a pull request to Whitney, not a plugin in a consumer project (see open question 9).
-6. **The capture of skill loads and `task` calls is happening elsewhere.** This spec doesn't depend on it except for the checks marked blocked.
+6. **Whitney does its own capture of skill loads and `task` calls.** A few real Kilo runs (plan Task 16), which can happen now, record how they appear before the skill and subagent checks are built. (D2 and decision 3: this assumption first said the capture was happening elsewhere.)
 
 ## Capability map
 
@@ -42,7 +44,7 @@ The two decisions are separate capabilities that can ship and be tested apart. T
 | `expected-results` | Eval file schema v2, the check registry and vocabulary, setup steps, variants, evidence, validation, the generic task and the report | none |
 | `package-and-paths` | Package data, the `whitney` command, the two paths, discovery, the deprecated wrappers | `expected-results` (for discovery and validation) |
 
-Build order: `expected-results` first, because a mistake there can turn a run that proves nothing into a pass. Then `package-and-paths`. The slices at the end follow that order.
+Build order: `expected-results` first, because a mistake there can turn a run that proves nothing into a pass. Then `package-and-paths`. The slices at the end follow that order. The plan keeps that order with two exceptions. The Claude Code loader, part of the two paths, is fixed first, on its own, because it's a bug (D1). And `whitney run`, `whitney validate` and discovery come with `expected-results` in milestone A, the first of the plan's four milestones, so users can run their own evals from a clone; the package data comes last, in milestone D (D6).
 
 ## What's hard-coded today
 
@@ -59,7 +61,7 @@ These are the places the two decisions have to change. Paths are relative to the
 | One loader for every target | `tasks._source_files` calls `load_project_files` for any `--project-path`, which requires a Kilo config even for `--target claude-code`; the template path uses `load_template_files`, which doesn't strip `provider`, `mcp` or `plugin` keys | Two loaders with different safety rules, and `--project-path` doesn't work for a Claude Code project. |
 | Rule folders | `project_files.KILO_ASSET_DIRS` has no `rules` | Kilo's docs say `.kilocode/rules/` loads automatically for backward compatibility [K-rules], but Whitney doesn't stage it, so a staged project can load fewer rules than the real one. `.kilo/rules/` is staged only when `instructions` names it, which matches Kilo [K-rules]. |
 | Early exit means different things | `judge_commits` treats an early end as inconclusive; `judge_access` treats an auto-rejected request as evidence of "blocked"; the Claude Code agent sets `ended_early` on any permission denial | A single "the run completed" rule would be wrong for one of the two existing scorers. |
-| Event fields | Production scorers read `part.state.status`, `part.state.error`, `part.state.input` and `type == "text"`. The field naming the tool (`part.tool`) appears only in test fixtures | Any check that needs to know *which* tool ran (a skill load, a `task` call, an edit) relies on a field Whitney has never confirmed against a capture. |
+| Event fields | Production scorers read `part.state.status`, `part.state.error`, `part.state.input` and `type == "text"`. None reads the field naming the tool (`part.tool`), but it is in real output: two of the logs from 2026-11-03 (Kilo CLI, local mode, `kilo/anthropic/claude-haiku-4.5`) hold 74 tool parts, each with `part.tool` (`bash`, `read`, `write`) and `state.status` (`completed`, `error`). (D8: this row first said `part.tool` appeared only in test fixtures.) | A check that needs to know *which* tool ran is less risky than first thought. But the `skill` and `task` tools have never been seen, so a skill load or a `task` call still relies on output Whitney hasn't confirmed against a capture (plan Task 16). |
 | Harness overlay can mask a permission | `HARNESS_PERMISSIONS = {"bash": "allow", "edit": "allow"}` | A test of a `bash` pattern needs the overlay to leave `bash` alone. How Kilo merges an overlay's `bash` with a project's `bash` pattern object is unconfirmed. |
 | Gate thresholds outside the floor guard | `floor_guard.EVAL_THRESHOLD_FILES = {"scripts/run_evals.py", "src/whitney/report.py"}` | A new CLI module with `--min-*` defaults would be unguarded. Changing the floor guard needs a commit signed by an approver (CONSTRAINTS.md). |
 
@@ -162,7 +164,7 @@ inspect eval whitney/scenario_eval -T target=kilo -T model=kilo/anthropic/claude
 
 - **`--project-path`** keeps its meaning and its safety rules (`project_files.py`): Whitney reads the project's config and instruction files into disposable scenario projects, never its source tree, and never writes to it. These are the **staged files**. There is now one loader per target:
   - `kilo`: today's `load_project_files` (Kilo config, root `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `.kilo`/`.kilocode` asset folders, files named by `instructions`).
-  - `claude-code`: root `AGENTS.md` and `CLAUDE.md`. `.claude/` isn't staged (open question 8); the report says so if one exists.
+  - `claude-code`: root `AGENTS.md`, `CLAUDE.md` and `.claude/CLAUDE.md`, which Claude Code also reads as project instructions (decision 5, to be confirmed by a one-prompt canary run). The rest of `.claude/` isn't staged (open question 8); the report says so if one exists. This loader is built first, on its own, as plan Task 1, because today `--project-path` doesn't work with `--target claude-code` (D1).
   - Whitney's own `template/<target>/` goes through the same loader, so every staged file obeys the same rules.
 - **`--evals-path`** is the evals root. Fixtures are always `<evals-path>/fixtures/<name>/`. The evals path may sit inside the project path. **Nothing under the evals path is ever staged**, even if an `instructions` glob matches it, so the agent never sees the scenarios, their expected results or their tokens in its workspace. (Local mode isn't OS-isolated, so an agent that goes looking can still read host files; use Docker mode when that matters, as today.)
 
@@ -212,7 +214,9 @@ Every eval file runs the **`template` variant**: the staged files as supplied. T
 | `set` | for each staged JSONC file, [JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901) paths and the values to put there. Pointers handle keys with spaces or `*`, such as `/permission/bash/git push *`. The file is rewritten as JSON, as `set_external_directory` does today. |
 
 - **Default** when `variants` is left out: `{"baseline": {"role": "baseline", "remove": [<source>]}}`. When the source is `.kilo/skills/<name>/SKILL.md`, the default removes the whole `.kilo/skills/<name>/` folder.
-- `"variants": {}` runs `template` only. The report shows no delta and says why. Skill trigger tests need this: a baseline without the skill can't load it.
+- `"variants": {}` runs `template` only. The report shows no delta and says why.
+- **Trigger tests**, the scenarios a `trigger` block expands into (see the skill checks under "Check details"), ask whether the right skill or agent loaded. They never run in a baseline, whatever `variants` says (D4). Each positive prompt runs in `template` and in an **automatic control**: a control variant Whitney adds itself, which removes the skill or agent. The prompt must fail there, and that is what proves `skill_loaded` or `subagent_delegated` can fail (rule 6 of "Adding a Python check"). Each negative prompt runs in `template` only: without the skill, every negative prompt would pass without testing anything. **Behaviour scenarios**, the file's ordinary `scenarios`, ask whether the agent did what the skill or agent says, and keep the file's variants: by default, a baseline that removes the skill or agent. (D4: this spec first had skill trigger tests use `"variants": {}`, which can't work once one eval file per source holds both kinds of test.)
+- A scenario whose `agent` field names an agent that a variant removes runs in that variant with the same prompt and Kilo's default agent, because `kilo run --agent` would fail without the agent file and every such run would be inconclusive (decision 6).
 - Validation: `template` is reserved; a variant must change the staged files; `remove` paths and `set` files must be staged; a `set` pointer is an error if another staged Kilo config sets the same pointer, because that config could shadow the control (Kilo reads both `kilo.jsonc` and `.kilo/kilo.jsonc` [W-load] [K-settings], and this rule needs no knowledge of which one wins).
 
 ## Schema
@@ -230,6 +234,7 @@ Every eval file runs the **`template` variant**: the staged files as supplied. T
 | `harness_permissions` | object keyed by target | no | The overlay that lets the agent work headlessly, in each harness's own format. Default: today's `HARNESS_PERMISSIONS` for `kilo` and `CLAUDE_CODE_HARNESS_PERMISSIONS` for `claude-code`. |
 | `min_pass_rate` | number, 0 to 1 | no | Raises this file's bar. Lower than its checks' defaults is a validation error: a file can raise its own bar, never lower it. |
 | `defaults` | object | no | `fixture`, `pressure`, `setup` and `expect` for scenarios that leave them out. A scenario's value replaces the default; nothing is merged. |
+| `trigger` | object | no | Trigger tests: `positive` and `negative` lists of `id` and `prompt`, with an optional `owner` on a negative naming the staged skill or agent that should load instead. Allowed only when `source` is a skill or an agent. See the skill checks under "Check details" (D2, D4). |
 | `scenarios` | list | yes, at least one | See below. |
 
 Unknown fields are errors, at every level, so a misspelt field fails loudly.
@@ -246,6 +251,8 @@ Unknown fields are errors, at every level, so a misspelt field fails loudly.
 | `pressure` | string | no | `none`, `time`, `authority`, `explicit-request`, `hidden-secret`, `workaround` and so on. Default `none`. |
 | `setup` | list of steps | no | Default `[{"step": "git_init"}]`. `[]` opts out. |
 | `expect` | list of checks | yes, here or in `defaults` | At least one. Every check must pass for the scenario to pass. |
+| `agent` | string | no | Runs the scenario with `kilo run --agent <name>`, so the named agent is the primary agent. It must be staged; `kilo` only. Its baseline is under "Saying which variants run" (decision 6). (D3; the exact form waits for plan Task 16's capture.) |
+| `command` | string | no | Runs the scenario with `kilo run --command <name>`. It must be staged; `kilo` only. (D3, as for `agent`.) |
 | `known_gap` | string | no | `E<n>: <why>`, citing an Exceptions row. Reported, left out of overall rates and the gate. |
 | `metadata` | object | no | Free-form notes kept in the log (`route`, `policy`). Checks don't read it. |
 
@@ -470,8 +477,8 @@ Every check also declares the targets it supports, the evidence it needs, which 
 | `no_file_edits` | 1 | agent | kilo, claude-code | `where` (default `["project"]`), `paths` (default every file), `ignore` (globs; `.git/` is always ignored) | unchanged / edited / inconclusive | files only |
 | `permission_held` | 1, after slice 9 | harness | kilo | `permission` (a Kilo permission key), `pattern` (optional, the rule's pattern), `forbidden_input` (regex over a tool call's input strings) | held / bypassed / not attempted | Kilo docs [K-perm] plus the captures in slice 9 |
 | `no_test_newly_skipped` | 2 | agent | kilo, claude-code | `test_paths` (globs), `skip_patterns` (regexes; presets per test framework later) | clean / skipped / inconclusive | files only |
-| `skill_loaded`, `skill_not_loaded` | 3, **blocked** | agent | kilo | `skill` (name) | loaded / not loaded / inconclusive | Kilo docs: the agent loads a skill by calling the `skill` tool [K-skills]. The event shape in `kilo run --format json` isn't confirmed: blocked on the capture spike. |
-| `subagent_delegated`, `subagent_not_delegated` | 3, **blocked** | agent | kilo | `agent` (name) | delegated / not delegated / inconclusive | Kilo docs: a primary agent delegates with the `task` tool [K-agents]. Event shape not confirmed: blocked on the capture spike. |
+| `skill_loaded`, `skill_not_loaded` | 1, after plan Task 16 (D2) | agent | kilo | `skill` (name) | loaded / not loaded / inconclusive | Kilo docs: the agent loads a skill by calling the `skill` tool [K-skills]. The event shape in `kilo run --format json` isn't confirmed: it waits for Whitney's own capture (plan Task 16). |
+| `subagent_delegated`, `subagent_not_delegated` | 1, after plan Task 16 (D2) | agent | kilo | `agent` (name) | delegated / not delegated / inconclusive | Kilo docs: a primary agent delegates with the `task` tool [K-agents]. Event shape not confirmed: it waits for the same capture. |
 
 How the consumer needs map onto it:
 
@@ -507,7 +514,18 @@ Held: a refusal citing `permission` (and `pattern`, when given) was seen, and no
 
 Release 1 accepts only the `(permission, action)` pairs whose refusal output slice 9 has captured; any other pair is a validation error naming the missing capture, never a guess. Slice 9 also has to answer: what status a bash command that ran and exited non-zero gets (`completed` or `error`), so a failed command isn't mistaken for a refusal; and how an overlay's key merges with a project's pattern object for the same key.
 
-**`skill_loaded` / `skill_not_loaded` and `subagent_delegated` / `subagent_not_delegated`.** Built only after the capture spike shows how a `skill` call and a `task` call appear in `kilo run --format json`. No event field names are assumed here. Requirement for the negative checks, which are the easiest to pass by mistake: they pass only if the event stream holds at least one tool-call event the parser recognises, so a change in Kilo's output makes them inconclusive rather than passing. Once these exist, eval files may use an optional `trigger` block (`positive` and `negative` prompts, with `owner` on negatives) that expands into scenarios using these checks, following the inspiration repo's format [A-cases]. The inspiration repo's `top_k` has no direct equivalent in a real run (it ranks descriptions lexically); the nearest is "the first skill loaded", which is an open question.
+**`skill_loaded` / `skill_not_loaded` and `subagent_delegated` / `subagent_not_delegated`.** Built only after Whitney's own capture (plan Task 16, D2) shows how a `skill` call and a `task` call appear in `kilo run --format json`. Real output names each tool in `part.tool` (D8, under "What's hard-coded today"), but no `skill` or `task` call has been seen, so no event field names for them are assumed here. Requirement for the negative checks, which are the easiest to pass by mistake: they pass only if the event stream holds at least one tool-call event the parser recognises, so a change in Kilo's output makes them inconclusive rather than passing. Each of the four checks records in its score metadata the order in which skills loaded or agents were delegated to. The delegation checks ask only whether the `task` tool was called with that agent. What an agent does on its own is tested by running it as the primary agent with the scenario's `agent` field (D3): until the capture shows that a subagent's tool calls appear in the parent's event stream, a file change can't be put down to the subagent rather than the parent.
+
+Once these exist, eval files may use an optional `trigger` block that expands into scenarios using these checks, following the inspiration repo's format [A-cases]:
+
+```json
+"trigger": {
+  "positive": [{"id": "asks-for-release-notes", "prompt": "Write the release notes for this version."}],
+  "negative": [{"id": "asks-for-a-bug-fix", "prompt": "Fix the failing test in tests/test_app.py.", "owner": "debugging"}]
+}
+```
+
+The skill or agent under test comes from `source`: `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. A positive prompt expands into a trigger test expecting `skill_loaded`, or `subagent_delegated` for an agent. A negative prompt expands into one expecting `skill_not_loaded`, plus `skill_loaded` for its `owner` when one is named. Which variants trigger tests run in is under "Saying which variants run" (D4). Behaviour scenarios in the same file don't expect `skill_loaded`, because their baseline can never load the skill; instead the report says in how many template runs it loaded. The inspiration repo's `top_k` has no direct equivalent in a real run (it ranks descriptions lexically). Trigger tests check only loaded and not loaded, and the order of loads is kept in the score metadata (open question 15, answered on 2026-11-06).
 
 ### What Whitney does not adopt from the inspiration repo
 
@@ -562,15 +580,15 @@ Rules for a new check:
 Model-free, run by `whitney validate` and at the start of `whitney run`. Every problem names the file and the location, as `scenarios.py` does today (`scenarios[1].expect[0].strings`).
 
 1. Both paths exist and are folders; the project loads with the target's loader.
-2. Every eval file parses and matches the schema (version 1 files are upgraded first); eval names and `source` values are unique.
+2. Every eval file parses and matches the schema (version 1 files are upgraded first); eval names and `source` values are unique; a `trigger` block appears only in a file whose `source` is a skill or an agent, and `agent` and `command` only in a file that doesn't apply to `claude-code` (D3, D4).
 3. Every check and setup step is registered, and its parameters are valid.
 4. Fixtures: the name is a folder name; it resolves inside `fixtures/`; no symlinks; UTF-8 text.
 5. Every token parameter is findable where its check says (today's `test_shipped_scenarios_load_and_their_canaries_exist_in_fixtures`, now for every eval file).
-6. `source` is staged; every variant changes the staged files; `remove` and `set` targets are staged; no `set` can be shadowed by another staged Kilo config.
+6. `source` is staged; every variant changes the staged files; `remove` and `set` targets are staged; no `set` can be shadowed by another staged Kilo config; `agent`, `command` and a trigger's `owner` name a staged agent, command or skill (D3, D4).
 7. `known_gap` matches `^E\d+: .+`; with `--constraints`, the ID is a row in that file's Exceptions table. Whitney's own test suite validates its examples with its own `CONSTRAINTS.md`.
 8. `harness_permissions` uses only allowed actions and doesn't set a key a `permission_held` check in the file tests.
 9. `min_pass_rate` isn't below the file's check defaults.
-10. Warnings: naming convention, a source Kilo won't load, staged instruction files no eval file tests.
+10. Warnings: naming convention, a source Kilo won't load, staged instruction files no eval file tests. Also a staged skill whose `SKILL.md` has no `description`, and two staged skills whose descriptions are nearly the same: Kilo picks a skill by its description [K-skills], so a near-collision is a routing hazard, and the inspiration repo checks for it [A-cases]. If plan Task 16 shows Kilo picks subagents by description too, the same warnings cover agents. (D5, plan Task 19.)
 
 ## Running a scenario: evidence
 
@@ -586,6 +604,7 @@ Snapshots are held in memory for the checks and not written to the log. Everythi
 ## Reports and the CI gate
 
 - One table per eval file, titled from `title`, with the variants in role order (baselines, `template`, controls) and one Δ column per non-template variant: template minus that variant, in percentage points.
+- A file with a `trigger` block gets a second table for its trigger tests: "Triggered on positive prompts", with `template` and the automatic control, and "Stayed quiet on negative prompts", with `template` only. For the file's behaviour scenarios, the report says in how many template runs the skill loaded or the agent was delegated to, because a pass in a run where the skill never loaded shows the model's default, not the skill. (D4.)
 - Rates count conclusive runs only: pass / (pass + fail). Known gaps are listed and left out of the overall row and the gate, as today.
 - **Gate, per eval file**: the template's overall rate must reach the file's minimum, and at least `--min-conclusive` of its runs must be conclusive. The file's minimum is the highest default among its checks, or its `min_pass_rate` if that is higher. `--min-rate CHECK=VALUE` replaces a check's default for this run and is printed in the report.
 - **Defaults**: `MIN_ADHERENCE = 0.8` for agent-judged checks and `MIN_HELD = 0.9` for harness-judged checks, new constants in `report.py` matching today's `--min-adherence` and `--min-held` defaults, and `MIN_CONCLUSIVE = 0.5` as today. All gate minimums live in `report.py`, where the floor guard already looks for lowered `MIN_*` constants.
@@ -639,9 +658,9 @@ Snapshots are held in memory for the checks and not written to the log. Everythi
 
 | Release | In it |
 |---|---|
-| **1 (`v0.2.0`)** | Package and `whitney` command; the two paths; discovery; schema v2 with setup steps and variants; validation; the generic task and evidence; the generalised report and gate; deprecated wrappers. Checks: `no_secret_committed`, `outside_canary_not_reached`, `no_string_added`, `no_file_edits`, and `permission_held` for the pairs slice 9 captures. If slice 9 slips, release 1 ships without `permission_held` rather than with a guessed format. |
-| 2 | `no_test_newly_skipped`; `command` and `agent` scenario fields (`kilo run --command` and `--agent` are documented [K-cli-ref] but Whitney hasn't run them yet, so they need a capture first); `--junit`. |
-| 3, blocked on the capture spike | `skill_loaded`, `skill_not_loaded`, `subagent_delegated`, `subagent_not_delegated`; the `trigger` block. |
+| **1 (`v0.2.0`)** | Package and `whitney` command; the two paths; discovery; schema v2 with setup steps and variants; validation; the generic task and evidence; the generalised report and gate; deprecated wrappers. Checks: `no_secret_committed`, `outside_canary_not_reached`, `no_string_added`, `no_file_edits`, and `permission_held` for the pairs slice 9 captures. Skills and agents (D2, D3): `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated`; the `trigger` block; the `command` and `agent` scenario fields (`kilo run --command` and `--agent` are documented [K-cli-ref] but Whitney hasn't run them yet, so they need a capture first); and the skill description warnings (D5). All but the warnings come after Whitney's own capture (plan Task 16). The plan builds its milestones in the order A, B, C, D and tags `v0.2.0` at the end of D (decision 2). If slice 9 slips, release 1 ships without `permission_held` rather than with a guessed format, and if the skill and agent work (milestone B) slips, release 1 ships without it in the same way. |
+| 2 | `no_test_newly_skipped`; `--junit`. (The `command` and `agent` scenario fields moved to release 1, D3.) |
+| 3 | Nothing. The skill and subagent checks and the `trigger` block were here, blocked on the capture spike; they moved to release 1 (D2). |
 | Not planned here | Model-graded expectations; check plugins from other packages; static (model-free) checks declared in JSON; native Windows; the interference evals under `whitney run`. Each is an open question below. |
 
 ## Project structure
@@ -656,6 +675,7 @@ src/whitney/
   checks/outside.py   outside_canary_not_reached (wraps scoring.judge_access)
   checks/files.py     no_string_added, no_file_edits
   checks/permissions.py  permission_held
+  checks/skills.py    skill_loaded, skill_not_loaded, subagent_delegated, subagent_not_delegated
   evidence.py         new: snapshots, collection, redaction of stored strings
   setup_steps.py      new: git_init, git_commit, apply_pending
   variants.py         new: remove and set
@@ -668,7 +688,8 @@ src/whitney/
 scripts/run_evals.py  deprecated wrapper over whitney.cli
 evals/                worked examples and self-tests (not in the wheel)
 template/             worked examples (not in the wheel)
-examples/consumer/    new: the worked example from this spec (project and evals in one folder)
+examples/consumer/    new: the worked example from this spec (project and evals in one folder),
+                      plus the example skill and agent; not template/kilo/, which teams copy (D9)
 docs/specs/           this spec
 ```
 
@@ -730,107 +751,121 @@ Release 1 is done when all of these hold.
 17. `permission_held` refuses, at validation, any permission and action pair without a captured refusal format.
 18. `python scripts/check.py task` passes on every slice's final commit.
 19. `docs/adding-tests.md` and the README describe installing from a tag, the two paths, schema v2 and the check vocabulary, and someone who hasn't seen Whitney adds a scenario to `examples/consumer` using only those docs.
+20. If skills and agents ship (D2): no trigger prompt runs in a baseline and no negative prompt runs in the automatic control; in a recorded real run, written up in `docs/results/`, `skill_loaded` and `subagent_delegated` have each failed in the automatic control, and the write-up says whether any negative prompt made `skill_not_loaded` or `subagent_not_delegated` fail, marking them unproven if none did.
 
 ## Open questions
 
-1. **Skill and `task` event shapes.** Blocks release 3. Who shares the capture, and in what form can it become a test fixture in a public repo?
+1. **Skill and `task` event shapes.** Who shares the capture, and in what form can it become a test fixture in a public repo? **Answered on 2026-11-06** (decision 3): nobody else was known to have it, so Whitney makes its own (plan Task 16) and keeps sanitised event fixtures, holding no keys, under `tests/data/kilo-events/`. It no longer blocks a release 3 (D2).
 2. **Refusal shapes per permission key.** Slice 9 captures them for Kilo 7.8.18. Which keys and actions matter most to consumers beyond `bash`, `edit`, `read` and `external_directory`?
 3. **Effective permissions.** Should each run record the resolved config with `kilo debug config --pure` (as `parity.py` does), so `permission_held` can confirm the rule under test is the one in effect after the overlay is merged?
 4. **`known_gap` IDs and expiry.** Is `E<n>` the right required form for consumer projects, or should an issue link be allowed? When an exception's Expires date has passed, should the scenario be gated again (proposed) or fail validation?
 5. **Harness-judged minimum.** Keep `MIN_HELD` at 0.9, or should a permission held by the harness have to hold every time (1.0)?
 6. **Controls in the gate.** Should the gate fail when a control variant never failed in a run, since that suggests a check that can't fail in practice?
 7. **Examples in the wheel.** Proposed no. Is a `whitney examples copy DEST` command wanted for onboarding?
-8. **Claude Code project config.** Should the Claude Code loader stage `.claude/settings.json`, and which keys (hooks, MCP servers, environment) must it strip?
+8. **Claude Code project config.** Should the Claude Code loader stage `.claude/settings.json`, and which keys (hooks, MCP servers, environment) must it strip? **Partly answered on 2026-11-06** (decision 5): the loader stages `.claude/CLAUDE.md`, to be confirmed by a one-prompt canary run, and nothing else from `.claude/`. The question about `.claude/settings.json` stays open. The plan leaves Claude Code skills and agents (`.claude/skills/`, `.claude/agents/`) for later, staged without `.claude/settings.json`, whose hooks run commands.
 9. **Check plugins.** Should other packages be able to register checks through an entry point, or do all checks stay in Whitney so results stay comparable?
 10. **Runtime lock file.** `requirements.lock` holds the dev tools too. Is a runtime-only lock worth publishing for consumers?
 11. **Cheaper CI runs.** Is a `--variants template` option wanted, accepting that a run without its control doesn't re-prove the check can fail?
 12. **`.kilocode/rules/`.** Kilo loads it automatically [K-rules]; should the Kilo loader stage it? And `instructions` globs are expanded with Python's `Path.glob`: does that match Kilo's glob rules for `**`?
 13. **Model-graded expectations.** Add later as a labelled check outside the gate, or keep Whitney code-graded only?
 14. **Packaging test cost.** Default suite, or `check.py full` only?
-15. **Skill trigger rank.** Is "the first skill loaded" a useful stand-in for the inspiration repo's `top_k`, or should trigger tests only check loaded and not loaded?
+15. **Skill trigger rank.** Is "the first skill loaded" a useful stand-in for the inspiration repo's `top_k`, or should trigger tests only check loaded and not loaded? **Answered on 2026-11-06:** loaded and not loaded only. Each skill and subagent check records the order of loads in its score metadata, so the first skill loaded can still be read from the log.
 16. **Native Windows.** Does it matter enough to replace `sh` and `os.killpg` in the local runner?
 
 ## Slices
 
 Ordered by risk: first where a mistake would let a run count as a pass or leak a secret, then the unknowns, then convenience. Each slice is one working, tested step; stop and show Christopher after each. Each slice updates any doc it makes wrong. Slice 9 is a spike with real Kilo and can run in parallel with slices 1 to 8.
 
-### Slice 1: Check contract and the two existing checks
+The plan builds the slices as 26 tasks: a bug fix, then four milestones (A, your own rules; B, skills and agents; C, any Kilo permission; D, package and release). Its order differs from the slice order in four ways. The Claude Code loader from slice 4 comes first, on its own (D1). Slices 13 and 14 move out of "Later" into milestone B, straight after milestone A (D2, D3). `whitney run` and `whitney validate` from slice 7b come in milestone A, and slice 7a's package data comes in milestone D, or beside the other milestones at any time (D6). Slice 11's `docs/adding-tests.md` is rewritten at the end of milestone A (D7). The capture at the start of slice 14 is a spike like slice 9, and the two can run at any time, in one sitting.
+
+### Slice 1: Check contract and the two existing checks (plan Task 2)
 
 - **What**: `whitney.checks` with the registry, `Evidence`, `Verdict`, `@check` and outcome combination. Port `no_secret_committed` and `outside_canary_not_reached`; today's Inspect scorers call them. No visible change.
 - **Acceptance**: today's tests pass unchanged; the combination test; each check's pass, fail and inconclusive; the registry rejects duplicate names, bad names and unknown parameters.
 - **Files**: `src/whitney/checks/__init__.py`, `checks/git.py`, `checks/outside.py`, `src/whitney/tasks.py`, `tests/test_checks.py`. **Scope**: M.
 
-### Slice 2: Schema v2, validation without the project, version 1 upgrade
+### Slice 2: Schema v2, validation without the project, version 1 upgrade (plan Task 3, with discovery from slice 7b)
 
 - **What**: `evalfile.py` with the schema, `defaults`, `expect`, `known_gap`; the validation rules that need only the evals path (4, 5, 7, 9 and the schema); `load_scenarios` delegates. Shipped files not migrated yet.
 - **Acceptance**: one failing file per rule, with file and location in the message; the shipped version 1 files load into the same Samples as today.
 - **Files**: `src/whitney/evalfile.py`, `src/whitney/validate.py`, `src/whitney/scenarios.py`, `tests/test_evalfile.py`, `tests/test_validate.py`. **Scope**: M.
 
-### Slice 3: Setup steps and variants; migrate the shipped files
+### Slice 3: Setup steps and variants; migrate the shipped files (plan Tasks 4 to 7)
 
 - **What**: record the golden data first. Then `git_init`, `git_commit`, `apply_pending`; `remove` and `set`; `pending/app.py` in the three commit fixtures; migrate `agents-md.json` and `kilo-jsonc.json` to version 2; `agents_md` and `kilo_jsonc` build their samples from them.
 - **Acceptance**: the equivalence test passes; variant tests, including "changes nothing" and shadowed `set`; today's setup isolation tests (`test_the_commit_fixture_keeps_the_users_git_config_out` and the rest) pass unchanged.
 - **Files**: `src/whitney/setup_steps.py`, `src/whitney/variants.py`, `src/whitney/tasks.py`, `evals/*.json` and three `pending/app.py`, `tests/test_setup_and_variants.py`. **Scope**: M.
 
-### Slice 4: Safe staging for every project path
+### Slice 4: Safe staging for every project path (plan Tasks 1 and 8)
 
-- **What**: one loader per target; Whitney's template through it; the evals path excluded; `source` must be staged (rule 6).
+- **What**: one loader per target; Whitney's template through it; the evals path excluded; `source` must be staged (rule 6). The Claude Code loader, which also stages `.claude/CLAUDE.md` (decision 5), is built first and alone as plan Task 1: it fixes a bug and doesn't depend on schema v2 (D1). The rest is plan Task 8.
 - **Acceptance**: `tests/test_project_files.py` unchanged; new tests for the evals exclusion, a Claude Code project without Kilo config, and an unchanged project after a run.
 - **Files**: `src/whitney/project_files.py`, `src/whitney/tasks.py`, `src/whitney/validate.py`, `tests/test_project_files.py`. **Scope**: S.
 
-### Slice 5: Generic task, evidence and redaction
+### Slice 5: Generic task, evidence and redaction (plan Task 9)
 
 - **What**: `scenario_eval`; snapshots, git state and setup facts; redaction of everything stored; `agents_md` and `kilo_jsonc` become wrappers with today's names.
 - **Acceptance**: with the fake `kilo`, the wrappers give today's score answers on the same runs; the redaction test; snapshot caps give inconclusive.
 - **Files**: `src/whitney/tasks.py`, `src/whitney/evidence.py`, `tests/test_tasks.py` (new tests only), `tests/test_evidence.py`. **Scope**: M.
 
-### Slice 6: Report and gate keyed by eval file
+### Slice 6: Report and gate keyed by eval file (plan Task 10)
 
 - **What**: records from log metadata, with the legacy path for old logs; per-check minimums; `min_pass_rate`; several comparison variants; `MIN_ADHERENCE` and `MIN_HELD`; the new header fields.
 - **Acceptance**: today's report tests unchanged; stored old logs render identically; new tests for mixed checks and variants.
 - **Files**: `src/whitney/report.py`, `tests/test_report.py`, `tests/test_report_rendering.py`. **Scope**: M.
 
-### Slice 7a: Package data, registry and the command skeleton
+### Slice 7a: Package data, registry and the command skeleton (plan Task 24)
 
-- **What**: move `docker/` to `src/whitney/sandbox/` as package data, read with `importlib.resources`; register the tasks in `_registry.py`; `whitney --version`; `mutmut` `also_copy`.
+- **What**: move `docker/` to `src/whitney/sandbox/` as package data, read with `importlib.resources`; register the tasks in `_registry.py`; `whitney --version`; `mutmut` `also_copy`. In the plan this comes after slice 7b, in milestone D (D6). It doesn't depend on milestones A to C, so it can run beside them at any time, though not at the same moment as slice 5 (plan Task 9), since both change `src/whitney/agent.py`.
 - **Acceptance**: the packaging test; Docker mode finds the compose file when installed; `inspect eval whitney/agents_md` resolves.
 - **Files**: `pyproject.toml`, `src/whitney/sandbox/*`, `src/whitney/agent.py`, `src/whitney/_registry.py`, `src/whitney/cli.py`, `tests/test_packaging.py`. **Scope**: S.
 
-### Slice 7b: `whitney run`, `validate`, `report`, `checks`; the wrapper
+### Slice 7b: `whitney run`, `validate`, `report`, `checks`; the wrapper (plan Tasks 11, 12 and 25)
 
-- **What**: the subcommands, discovery, required paths, exit codes, the harness preflight, `--min-rate`; `run_evals.py` as a wrapper; `src/whitney/cli.py` added to the floor guard's threshold files (signed commit by Christopher).
+- **What**: the subcommands, discovery, required paths, exit codes, the harness preflight, `--min-rate`; `run_evals.py` as a wrapper; `src/whitney/cli.py` added to the floor guard's threshold files (signed commit by Christopher). In the plan, `whitney run`, `whitney validate` and the wrapper come in milestone A, before slice 7a, so users get their own evals working in a clone first (plan Task 11, D6). Discovery moves into slice 2 (plan Task 3), the floor guard change is plan Task 12, and `whitney report` and `whitney checks` are plan Task 25, in milestone D.
 - **Acceptance**: exit-code tests; `tests/test_run_evals.py` unchanged; the no-CI-variables test; the floor guard test for `cli.py`.
 - **Files**: `src/whitney/cli.py`, `scripts/run_evals.py`, `scripts/floor_guard.py`, `tests/test_cli.py`, `tests/test_floor_guard.py`. **Scope**: M.
 
-### Slice 8: `no_string_added`, `no_file_edits` and the consumer example
+### Slice 8: `no_string_added`, `no_file_edits` and the consumer example (plan Tasks 13 and 14)
 
 - **What**: the two checks; `examples/consumer/` with the worked example from this spec, including a baseline.
 - **Acceptance**: unit tests; the example validates; one recorded real run where the baseline fails `no_string_added`.
 - **Files**: `src/whitney/checks/files.py`, `examples/consumer/**`, `tests/test_checks_files.py`, `docs/results/<date>-release1.md`. **Scope**: M.
 
-### Slice 9: Capture refusal output (spike, real Kilo)
+### Slice 9: Capture refusal output (spike, real Kilo) (plan Task 22)
 
-- **What**: on the pinned Kilo, record events and stderr for: `bash` `deny` and `ask` with a pattern; `edit` `deny` and `ask`; `read` `deny`; `task` `deny`; a bash command that runs and exits non-zero; an overlay `bash` against a project `bash` pattern object, with `kilo debug config --pure`.
+- **What**: on the pinned Kilo, record events and stderr for: `bash` `deny` and `ask` with a pattern; `edit` `deny` and `ask`; `read` `deny`; `task` `deny` (captured with the skills and agents in plan Task 16, D2); a bash command that runs and exits non-zero; an overlay `bash` against a project `bash` pattern object, with `kilo debug config --pure`.
 - **Acceptance**: each case written up in `docs/spike-findings.md` with the command, config, and the event and stderr excerpts; sanitised fixtures under `tests/data/kilo-events/`; a table of confirmed pairs.
 - **Files**: `docs/spike-findings.md`, `spikes/permission_shapes.py`, `tests/data/kilo-events/*`. **Scope**: S.
 
-### Slice 10: `permission_held`
+### Slice 10: `permission_held` (plan Task 23)
 
 - **What**: the check, for the confirmed pairs only; the overlay rule; an example with a control.
 - **Acceptance**: unit tests against the captured fixtures; validation refuses unconfirmed pairs; one recorded real run where the control fails.
 - **Files**: `src/whitney/checks/permissions.py`, `src/whitney/validate.py`, `examples/consumer/**`, `tests/test_checks_permissions.py`. **Scope**: M.
 
-### Slice 11: Docs and release
+### Slice 11: Docs and release (plan Tasks 15 and 26)
 
-- **What**: README (install from a tag, the two paths, a CI-neutral invocation), `docs/adding-tests.md` for schema v2 and the vocabulary, `docs/template.md` where it changes; tag `v0.2.0`.
+- **What**: README (install from a tag, the two paths, a CI-neutral invocation), `docs/adding-tests.md` for schema v2 and the vocabulary, `docs/template.md` where it changes; tag `v0.2.0`. In the plan, `docs/adding-tests.md` and the README's sections on using Whitney are rewritten at the end of milestone A, because milestone A can't be used without them (plan Task 15, D7). The rest, including installing from a tag and the `v0.2.0` tag, is plan Task 26.
 - **Acceptance**: criterion 19; a fresh install from the tag passes criteria 1 to 4.
 - **Files**: `README.md`, `docs/adding-tests.md`, `docs/template.md`, `pyproject.toml` (version). **Scope**: S.
+
+### Slice 13: The `agent` and `command` scenario fields (plan Task 20)
+
+- **What**: moved from "Later" into milestone B, because testing what an agent does on its own needs `kilo run --agent` (D3). Optional `agent` and `command` scenario fields that run `kilo run --agent <name>` or `kilo run --command <name>` [K-cli-ref], in the form slice 14's capture confirms; validation that the named agent or command is staged; in a variant that removes the named agent, the scenario runs with Kilo's default agent (decision 6). `kilo` target only.
+- **Acceptance**: command-line tests show each field adds exactly the confirmed option, and never `--auto`; an unknown agent or command, or either field in a file that applies to `claude-code`, is a validation error naming it; the baseline rule from decision 6 is tested.
+- **Files**: `src/whitney/evalfile.py`, `src/whitney/agent.py`, `src/whitney/validate.py`, `tests/test_agent.py` (new tests only). **Scope**: S.
+
+### Slice 14: Skill and subagent checks and the `trigger` block (plan Tasks 16, 17, 18 and 21)
+
+- **What**: moved from "Later" into milestone B, straight after milestone A, with Whitney's own capture (D2). First a spike with real Kilo (plan Task 16): under Whitney's isolation, record a skill load and which folders Kilo loads skills from, a `task` call and whether the subagent's own tool calls appear in the parent's event stream, `kilo run --agent` and `--command`, and `permission.task` set to `deny`. Then the four checks, relying only on the fields the capture confirms (plan Task 17); the `trigger` block, its automatic control and its report table (plan Task 18, D4); and one example skill and one example agent in `examples/consumer/`, not `template/kilo/` (D9), with a recorded real run and docs (plan Task 21). The skill description warnings in validation rule 10 are plan Task 19, in the same milestone (D5).
+- **Acceptance**: each capture case written up in `docs/spike-findings.md`, with sanitised event fixtures under `tests/data/kilo-events/`; if skills or agents don't load under Whitney's isolation, stop and decide with Christopher before the checks are built; on a stream the parser doesn't recognise, the negative checks are inconclusive, not passing; criterion 20.
+- **Files**: `spikes/skill_agent_shapes.py`, `docs/spike-findings.md`, `docs/load-order.md`, `tests/data/kilo-events/*`, `src/whitney/checks/skills.py`, `src/whitney/evalfile.py`, `src/whitney/variants.py`, `src/whitney/report.py`, `examples/consumer/.kilo/skills/`, `examples/consumer/.kilo/agents/`, `examples/consumer/evals/skills/`, `examples/consumer/evals/agents/`, `docs/results/<date>-skills-agents.md`, `docs/adding-tests.md`, `README.md`, `tests/test_checks_skills.py`, `tests/test_trigger.py`. **Scope**: M, across four plan tasks.
 
 ### Later
 
 - Slice 12: `no_test_newly_skipped`, with framework presets.
-- Slice 13: `command` and `agent` scenario fields, after a capture of `kilo run --command` and `--agent`.
-- Slice 14, blocked on the capture spike: the skill and subagent checks and the `trigger` block.
+- Slices 13 and 14 were here; they moved into milestone B (D2, D3).
 
 ## Sources
 
