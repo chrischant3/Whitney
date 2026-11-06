@@ -16,7 +16,7 @@ naming the checks that must pass in `expect`:
 A scenario's own `fixture`, `pressure`, `setup` or `expect` replaces the
 default; nothing is merged. Unknown fields are errors at every level, so a
 misspelt field fails loudly. A file without `version` is version 1, today's
-format, and is upgraded in memory with a DeprecationWarning.
+format, and is upgraded in memory with a FutureWarning, which Python shows by default.
 
 This module checks the shape of a file. Whether its checks are registered,
 its fixtures exist and its tokens can be found is whitney.validate's job.
@@ -24,6 +24,7 @@ its fixtures exist and its tokens can be found is whitney.validate's job.
 """
 
 import json
+import re
 import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ FIXTURE_NAME = r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
 # Eval and variant names go into Inspect task names, <eval name>_<variant>.
 NAME = r"^[a-z0-9_]+$"
 FIXTURES_FOLDER = "fixtures"
+PLAIN_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 VERSION_1_DEPRECATED = (
     "version 1 eval file, upgraded in memory; add \"version\": 2 and name each scenario's checks in expect, "
     "because version 1 goes in a later breaking release"
@@ -82,7 +84,15 @@ class EvalFileError(ValueError):
         problems: one Problem per offending field.
     """
 
-    def __init__(self, path: Path, problems: Iterable[tuple[str, str]]) -> None:
+    def __init__(self, path: Path | str, problems: Iterable[tuple[str, str]] | None = None) -> None:
+        """Args:
+            path: the eval file; or, given alone, the whole message, as ScenarioError("...") always took.
+            problems: (location, message) for each offending field.
+        """
+        if problems is None:
+            self.problems: list[Problem] = []
+            super().__init__(str(path))
+            return
         self.problems = [Problem(Path(path), location, message) for location, message in problems]
         listed = "; ".join(f"{p.location}: {p.message}" if p.location else p.message for p in self.problems)
         super().__init__(f"{path}: {listed}")
@@ -149,6 +159,14 @@ SETUP_STEPS: dict[str, type[BaseModel]] = {
 }
 DEFAULT_SETUP = ({"step": "git_init"},)
 # Today's COMMIT_FIXTURE_SETUP in tasks.py, as steps: what a version 1 secret_tokens scenario upgrades to.
+# Today's AGENTS_MD_PERMISSIONS in tasks.py, which a version 1 secret_tokens file upgrades to. Kilo asks before
+# reading .env files unless the patterns are named, and headless that ask would end the run before the agent decides.
+V1_SECRET_TOKENS_PERMISSIONS = {
+    "kilo": {"bash": "allow", "edit": "allow", "read": {"*": "allow", "*.env": "allow", "*.env.*": "allow"}},
+    "claude-code": {"allow": ["Bash", "Edit", "Write", "Read"]},
+}
+# Where version 1 keeps each upgraded check's parameter, so validation can name the place its author wrote.
+V1_PARAMETER_KEYS = {"no_secret_committed": {"tokens": "secret_tokens"}, "outside_canary_not_reached": {"canary": "canary"}}
 V1_COMMIT_SETUP = (
     {"step": "git_init"},
     {"step": "git_commit", "files": ["README.md", "app.py"], "message": "Initial version"},
@@ -345,7 +363,7 @@ class V1File(BaseModel):
 
 
 def read(path: Path) -> V1File | EvalFile:
-    """An eval file as written: a V1File for version 1 (with a DeprecationWarning), else an EvalFile.
+    """An eval file as written: a V1File for version 1 (with a FutureWarning), else an EvalFile.
 
     Raises:
         EvalFileError: not valid JSON, not a JSON object, a field that breaks
@@ -360,8 +378,13 @@ def read(path: Path) -> V1File | EvalFile:
         raise EvalFileError(path, [("", f"not valid JSON ({e})")]) from e
     if not isinstance(raw, dict) or not {"source", "scenarios"} & raw.keys():
         raise EvalFileError(path, [("", NOT_AN_EVAL_FILE)])
-    if raw.get("version", 1) == 1:
-        warnings.warn(f"{path}: {VERSION_1_DEPRECATED}", DeprecationWarning)
+    version = raw.get("version", 1)
+    # type() rather than ==, because True == 1 and 2.0 == 2 would pass as versions.
+    if type(version) is not int or version not in (1, 2):
+        raise EvalFileError(path, [("version", f"must be 1 or 2, as a whole number, got {version!r}")])
+    if version == 1:
+        # FutureWarning, not DeprecationWarning: Python's default filters hide the latter from run_evals.py's users.
+        warnings.warn(f"{path}: {VERSION_1_DEPRECATED}", FutureWarning)
         parsed: V1File | EvalFile = _validate(V1File, raw, path)
     else:
         parsed = _validate(EvalFile, raw, path)
@@ -378,9 +401,10 @@ def load(path: Path) -> EvalFile:
     """An eval file as version 2, upgrading a version 1 file in memory (see read).
 
     The upgrade turns metadata.secret_tokens into no_secret_committed with
-    today's commit setup, metadata.canary into outside_canary_not_reached
-    with one git_init step and today's allow_control variant, and
-    metadata.known_gap into known_gap.
+    today's commit setup, title and agents_md overlays; metadata.canary into
+    outside_canary_not_reached with one git_init step, today's title, kilo
+    as the only target and the allow_control variant; and metadata.known_gap
+    into known_gap. A file with both kinds takes kilo_jsonc's title.
 
     Raises:
         EvalFileError: as read, or a version 1 scenario with neither token key.
@@ -393,13 +417,14 @@ def load(path: Path) -> EvalFile:
 
 
 def _upgrade(old: V1File, path: Path) -> EvalFile:
-    scenarios, problems, has_canary = [], [], False
+    scenarios, problems, has_tokens, has_canary = [], [], False, False
     for index, scenario in enumerate(old.scenarios):
         metadata = dict(scenario.metadata)
         tokens, canary, known_gap = (metadata.pop(key, None) for key in ("secret_tokens", "canary", "known_gap"))
         expect = []
         if tokens is not None:
             expect.append({"check": "no_secret_committed", "tokens": tokens})
+            has_tokens = True
         if canary is not None:
             expect.append({"check": "outside_canary_not_reached", "canary": canary})
             has_canary = True
@@ -424,8 +449,14 @@ def _upgrade(old: V1File, path: Path) -> EvalFile:
     if problems:
         raise EvalFileError(path, problems)
     data: dict[str, Any] = {"version": 2, "source": old.source, "scenarios": scenarios}
+    if has_tokens:
+        # Today's agents_md: its title, and overlays that let the agent read the fixture's .env files.
+        data["title"] = f"{old.source} rule followed"
+        data["harness_permissions"] = V1_SECRET_TOKENS_PERMISSIONS
     if has_canary:
-        # Today's kilo_jsonc control: external_directory set to allow, which should let access through.
+        # Today's kilo_jsonc: kilo only, with a control that sets external_directory to allow, which should let access through.
+        data["title"] = f"{old.source} permission held"
+        data["targets"] = ["kilo"]
         data["variants"] = {"allow_control": {"role": "control", "set": {old.source: {"/permission/external_directory": "allow"}}}}
     upgraded_file = _validate(EvalFile, data, path)
     upgraded_file._path = path
@@ -453,13 +484,20 @@ def _duplicate_ids(scenarios: list[Scenario] | list[V1Scenario]) -> list[tuple[s
 def location(loc: Iterable[Any], prefix: str = "") -> str:
     """A pydantic error location as a field path: ('scenarios', 1, 'prompt') -> 'scenarios[1].prompt'.
 
+    A key that isn't a plain name is quoted: ('variants', 'Allow-Control') -> 'variants["Allow-Control"]'.
+
     Args:
         prefix: where the validated value sits, such as `scenarios[0].expect[1]`,
             so a check's own parameter errors name their place in the file.
     """
     out = prefix
     for part in loc:
-        out += f"[{part}]" if isinstance(part, int) else (f".{part}" if out else str(part))
+        if isinstance(part, int) or part == "[key]":  # "[key]" is pydantic's mark for a bad dictionary key
+            out += f"[{part}]" if isinstance(part, int) else part
+        elif not PLAIN_NAME.fullmatch(part):
+            out += f'["{part}"]'
+        else:
+            out += f".{part}" if out else part
     return out
 
 
