@@ -447,3 +447,36 @@ def test_the_cap_never_hides_a_dot_claude_md(tmp_path):
 
     assert names[:2] == ["CLAUDE.md", ".claude/CLAUDE.md"]
     assert names[2:] == [*(f".claude/0{number:02d}.md" for number in range(50)), "and 10 more"]
+
+
+def test_a_dot_claude_md_reached_through_a_symlinked_dot_claude_folder_is_not_staged(tmp_path):
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared/CLAUDE.md").write_text("folder rule\n")
+    (tmp_path / ".claude").symlink_to(tmp_path / "shared")  # inside the project, but still a symlink
+
+    with pytest.raises(ValueError, match="^project has no Claude Code instructions"):
+        load_claude_code_project_files(tmp_path)
+    assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+
+
+def test_the_dot_claude_entries_are_named_even_when_nothing_could_be_staged(tmp_path):
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/settings.json").write_text("{}")
+    assert files_not_staged("claude-code", tmp_path) == [".claude/settings.json"]
+
+
+def test_a_dot_claude_md_that_cannot_be_checked_is_never_staged_as_agents_md(tmp_path, monkeypatch):
+    # With no root file to stage, .claude/CLAUDE.md is checked; 3.11 and 3.12 raise inside a mode-000 folder.
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
+    real_is_file = Path.is_file
+
+    def is_file(path):
+        if path.parent.name == ".claude":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", is_file)
+
+    with pytest.raises(ValueError, match="^project has no Claude Code instructions"):
+        load_claude_code_project_files(tmp_path)
