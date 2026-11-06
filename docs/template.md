@@ -7,7 +7,7 @@
 | `AGENTS.md` | Rules for every Kilo session. Core rules first, then a section for your team's own rules. | Static check: the core rule is still a list item. Eval `agents_md`: Kilo doesn't commit `.env` files or secrets. |
 | `kilo.jsonc` | Kilo config: permissions, and later approved models. | Static check: `permission.external_directory` is `ask` or `deny`. Eval `kilo_jsonc`: tool calls outside the project are blocked. |
 
-The Claude Code starter is the same `AGENTS.md`, with "every Claude Code session" in its heading. Claude Code loads a root `AGENTS.md` as well as `CLAUDE.md`, so no other file is needed; the `kilo_jsonc` eval doesn't apply to it. `python -m whitney.static_checks` checks both templates.
+The Claude Code starter is the same `AGENTS.md`, with "every Claude Code session" in its heading. Claude Code loads a root `AGENTS.md` when it's the project's only instruction file, so no other file is needed. Adding a `.claude/CLAUDE.md` makes it ignore `AGENTS.md`, as a run on 2026-11-06 showed (see [Evaluating a local project](adding-tests.md#evaluating-a-local-project)), so put any `CLAUDE.md` rules in `AGENTS.md` instead. The `kilo_jsonc` eval doesn't apply to the Claude Code starter. `python -m whitney.static_checks` checks both templates.
 
 ## Using it in a project
 
