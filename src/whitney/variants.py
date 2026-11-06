@@ -279,11 +279,12 @@ def _covers(entry: str, path: str) -> bool:
 def spread_over_kilo_configs(variant: Variant, files: Mapping[str, str], source: str) -> Variant:
     """`variant` with the pointers it sets in `source` also set in every other staged Kilo config it doesn't name.
 
-    Kilo reads every config in a project, so a version 1 control on
-    kilo.jsonc (today's allow_control) is put in each one, as
+    Kilo reads every config in a project, so the kilo_jsonc wrapper's control
+    on kilo.jsonc (allow_control) is put in each one, as
     set_external_directory always did: a project with only .kilo/kilo.jsonc,
-    or both, gets it in each. The tasks' wrapper and validation both use
-    this, so validation checks what actually runs.
+    or both, gets it in each. The wrapper and validation both use this, for
+    the shipped kilo-jsonc.json and any version 1 file, so validation checks
+    what actually runs.
 
     Entries for other files, and for Kilo configs the variant names itself,
     are kept as declared. `source` is dropped only if it isn't staged and

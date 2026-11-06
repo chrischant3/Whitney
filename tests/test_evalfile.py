@@ -17,6 +17,7 @@ from whitney.scenarios import ScenarioError, load_scenarios
 
 ROOT = Path(__file__).parent.parent
 EVALS = ROOT / "evals"
+VERSION_1 = ROOT / "tests" / "data" / "version-1"  # the shipped files as they were in version 1
 
 
 def write(root, data, name="agents-md.json"):
@@ -406,13 +407,11 @@ def test_an_evals_path_that_is_not_a_folder_is_an_error(tmp_path):
 
 
 def test_the_shipped_files_are_discovered_with_todays_eval_names():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        found = discover(EVALS)
+    found = discover(EVALS)
 
     assert [(f.path.relative_to(EVALS).as_posix(), f.eval_name, f.version_read) for f in found] == [
-        ("agents-md.json", "agents_md", 1),
-        ("configuration/kilo-jsonc.json", "kilo_jsonc", 1),
+        ("agents-md.json", "agents_md", 2),
+        ("configuration/kilo-jsonc.json", "kilo_jsonc", 2),
     ]
 
 
@@ -450,10 +449,12 @@ SHIPPED = sorted(EVALS.rglob("*.json"))
 
 @pytest.mark.parametrize("path", SHIPPED, ids=lambda p: p.name)
 def test_the_shipped_version_1_files_load_into_todays_samples(path):
-    with pytest.warns(FutureWarning):
+    # The shipped files are version 2 now, so loading them must give no deprecation warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
         samples = load_scenarios(path)
 
-    today = todays_load_scenarios(path, EVALS / "fixtures")
+    today = todays_load_scenarios(VERSION_1 / path.relative_to(EVALS), EVALS / "fixtures")
     assert [s.model_dump() for s in samples] == [s.model_dump() for s in today]
     assert len(samples) == 6
 
@@ -464,7 +465,9 @@ def test_the_shipped_tasks_build_todays_samples(task_name, variant, monkeypatch)
     from whitney import tasks
 
     task = getattr(tasks, task_name)(variant, target="kilo", model="kilo/anthropic/claude-haiku-4.5")
-    monkeypatch.setattr(tasks, "load_scenarios", lambda path: todays_load_scenarios(path, EVALS / "fixtures"))
+    monkeypatch.setattr(
+        tasks, "load_scenarios", lambda path: todays_load_scenarios(VERSION_1 / Path(path).relative_to(EVALS), EVALS / "fixtures")
+    )
     today = getattr(tasks, task_name)(variant, target="kilo", model="kilo/anthropic/claude-haiku-4.5")
 
     assert [s.model_dump() for s in task.dataset] == [s.model_dump() for s in today.dataset]

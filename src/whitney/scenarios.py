@@ -2,7 +2,8 @@
 
 Reading and checking a file is whitney.evalfile's job; this module turns its
 scenarios into Samples with the metadata keys the tasks and scorers read
-today. A version 1 file (no `version`), the format both shipped files still use:
+today. A version 1 file (no `version`), the format a fork's files may still use
+(Whitney's own are version 2):
 
     {
       "source": "AGENTS.md",

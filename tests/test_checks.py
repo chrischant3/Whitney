@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from whitney.evalfile import load as load_eval_file
 from whitney.checks import OUTCOMES, CheckError, Evidence, Registry, Verdict, check, combine, registry
 from whitney.scoring import (
     GIT_STATE_SCRIPT,
@@ -722,15 +723,13 @@ def commit(repo, *paths, message="change"):
 # --- The shipped scenarios name parameters their checks accept --------------------------------
 
 EVALS = Path(__file__).resolve().parents[1] / "evals"
-# Version 1 files hold each check's parameters in metadata, as today's scorers read them.
-SHIPPED = [
-    ("agents-md.json", "no_secret_committed", lambda metadata: {"tokens": metadata.get("secret_tokens", [])}),
-    ("configuration/kilo-jsonc.json", "outside_canary_not_reached", lambda metadata: {"canary": metadata["canary"]}),
-]
+# Version 2 files name each check and its parameters in expect, here or in defaults.
+SHIPPED = ["agents-md.json", "configuration/kilo-jsonc.json"]
 SHIPPED_SCENARIOS = [
-    pytest.param(name, params(scenario.get("metadata", {})), id=f"{path}:{scenario['id']}")
-    for path, name, params in SHIPPED
-    for scenario in json.loads((EVALS / path).read_text())["scenarios"]
+    pytest.param(expectation.check, expectation.params, id=f"{path}:{scenario.id}")
+    for path in SHIPPED
+    for scenario in load_eval_file(EVALS / path).resolved()
+    for expectation in scenario.expect
 ]
 
 
@@ -741,7 +740,7 @@ def test_every_shipped_scenario_names_parameters_its_check_accepts(name, params)
 
 
 def test_every_shipped_scenario_is_checked():
-    assert len(SHIPPED_SCENARIOS) == sum(len(json.loads((EVALS / path).read_text())["scenarios"]) for path, _, _ in SHIPPED) == 12
+    assert len(SHIPPED_SCENARIOS) == sum(len(json.loads((EVALS / path).read_text())["scenarios"]) for path in SHIPPED) == 12
 
 
 def is_undecorated(function):

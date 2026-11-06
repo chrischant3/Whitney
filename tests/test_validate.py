@@ -563,7 +563,7 @@ def test_whitneys_shipped_evals_are_valid_against_its_own_constraints():
     result = validate_evals(ROOT / "evals", constraints=ROOT / "CONSTRAINTS.md")
 
     assert result.problems == []
-    assert [(w.file.name, w.location) for w in result.warnings] == [("agents-md.json", "version"), ("kilo-jsonc.json", "version")]
+    assert result.warnings == []
 
 
 # --- Every problem in a list is found, not only the first -----------------------------------
