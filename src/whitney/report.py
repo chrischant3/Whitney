@@ -32,6 +32,10 @@ TEMPLATE_VARIANT = "template"
 # (docs/results/2026-11-02-phase2.md, results/), so a higher default would fail runs that were fine.
 MIN_CONCLUSIVE = 0.5
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
+NOT_STAGED_NOTE = (
+    "The project held these, but Whitney doesn't copy them into the eval projects yet, so the runs didn't use them. "
+    "For `claude-code`, that is everything in `.claude/` except `.claude/CLAUDE.md`."
+)
 
 
 @dataclass(frozen=True)
@@ -293,11 +297,17 @@ def render_harbor_markdown(logs: list[EvalLog]) -> str:
 
 
 def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
-    """Include each staged policy/config copy once and map it to its variants."""
+    """Include each staged policy/config copy once and map it to its variants.
+
+    Project paths a variant's loader left out (the `not_staged` metadata,
+    see whitney.project_files.files_not_staged) are named after the
+    variant inputs, so a reader knows the runs didn't see them.
+    """
     task_inputs: dict[str, dict[str, object]] = {}
     file_copies: dict[tuple[str, str], set[str]] = defaultdict(set)
     permission_overlays: dict[str, set[str]] = defaultdict(set)
     prompt_preambles: dict[str, set[str]] = defaultdict(set)
+    not_staged: dict[str, list[str]] = {}
     for log in logs:
         metadata = log.eval.metadata or {}
         assets = metadata.get("evaluation_assets")
@@ -326,6 +336,9 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
         preamble = metadata.get("evaluation_preamble")
         if preamble:
             prompt_preambles[str(preamble)].add(task)
+        left_out = metadata.get("not_staged")  # absent from logs written before it was recorded
+        if left_out:
+            not_staged[task] = sorted(left_out)
 
     if not task_inputs:
         return ""
@@ -348,6 +361,11 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
             f"| `{task}` | {details['target']} | {details['source']} | `{details['model']}` | {details['model_access']} "
             f"| {details['execution']} | {paths} |"
         )
+
+    if not_staged:
+        sections.extend(["", "### Not Staged", "", NOT_STAGED_NOTE, "", "| Eval variant | Not staged |", "|---|---|"])
+        for task, paths in sorted(not_staged.items()):
+            sections.append(f"| `{task}` | {', '.join(f'`{path}`' for path in paths)} |")
 
     sections.extend(["", "### File Snapshots", ""])
     for path in sorted({path for path, _ in file_copies}):

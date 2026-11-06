@@ -9,7 +9,7 @@ from inspect_ai.dataset import MemoryDataset
 
 from whitney import targets
 from whitney.harbor_cache import check_cache
-from whitney.project_files import load_project_files, load_template_files
+from whitney.project_files import files_not_staged, load_project_files_for, load_template_files
 
 DEFAULT_HARBOR_DATASET = Path(__file__).resolve().parents[2] / "dataset/harbor/bigcodebench-hard-complete"
 HARBOR_OUTPUT_PATH = "/workspace/solution.py"
@@ -63,7 +63,8 @@ def bigcodebench_hard_complete(
     The cache is checked against its manifest's digests first (see
     whitney.harbor_cache), and a task whose sandbox asks for privileged
     mode, added capabilities, devices or a bind mount is refused.
-    target picks the harness and template, and api_key_env and base_url the
+    target picks the harness and template, project_path a project to read
+    instead with that target's loader, and api_key_env and base_url the
     provider key, as in whitney.tasks.agents_md.
     """
     if variant not in {"baseline", "template"}:
@@ -85,7 +86,9 @@ def bigcodebench_hard_complete(
     if not harbor_tasks:
         raise ValueError(f"No Harbor tasks found in {local_dataset}")
 
-    project_files = load_project_files(project_path) if project_path else load_template_files(targets.template_dir(target))
+    project_files = (
+        load_project_files_for(target, project_path) if project_path else load_template_files(targets.template_dir(target))
+    )
     if variant == "baseline":
         project_files.pop("AGENTS.md", None)
 
@@ -151,6 +154,7 @@ def bigcodebench_hard_complete(
             "execution": "local",
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": project_files,
+            "not_staged": files_not_staged(target, project_path) if project_path else [],
             "harness_permissions": HARBOR_PERMISSIONS[target],
             "evaluation_preamble": HARBOR_OUTPUT_ADAPTATION,
             "dataset_source": str(local_dataset),

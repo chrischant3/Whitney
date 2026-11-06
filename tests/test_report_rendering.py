@@ -433,3 +433,36 @@ def test_logs_from_before_the_model_rename_still_show_the_model():
         if line.startswith("| `")
     ]
     assert "kilo/old-model" in row
+
+
+def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant_inputs():
+    left_out = [".claude/skills/", ".claude/settings.json"]
+    logs = [
+        _asset_log("agents_md_template", {"AGENTS.md": "x"}, target="claude-code", not_staged=left_out),
+        _asset_log("agents_md_baseline", {}, target="claude-code", not_staged=left_out),
+        _asset_log("kilo_run", {"AGENTS.md": "x"}, not_staged=[]),
+        _asset_log("older_log", {"AGENTS.md": "x"}),
+    ]
+
+    report = render_asset_provenance_markdown(logs)
+
+    assert (
+        "| `older_log` | kilo | unknown | `unknown` | unknown | unknown | `AGENTS.md` |\n"
+        "\n"
+        "### Not Staged\n"
+        "\n"
+        "The project held these, but Whitney doesn't copy them into the eval projects yet, so the runs didn't use them. "
+        "For `claude-code`, that is everything in `.claude/` except `.claude/CLAUDE.md`.\n"
+        "\n"
+        "| Eval variant | Not staged |\n"
+        "|---|---|\n"
+        "| `agents_md_baseline` | `.claude/settings.json`, `.claude/skills/` |\n"
+        "| `agents_md_template` | `.claude/settings.json`, `.claude/skills/` |\n"
+        "\n"
+        "### File Snapshots\n"
+    ) in report
+
+
+def test_there_is_no_not_staged_section_when_nothing_was_left_out():
+    logs = [_asset_log("kilo_run", {"AGENTS.md": "x"}, not_staged=[]), _asset_log("older_log", {"AGENTS.md": "x"})]
+    assert "Not Staged" not in render_asset_provenance_markdown(logs)

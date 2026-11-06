@@ -196,3 +196,19 @@ def test_the_dataset_is_read_as_utf8_whatever_the_locale(tmp_path, fake_ifevalco
     path = _dataset(tmp_path, [row])
     [sample] = list(ifevalcode(target="kilo", model=MODEL, dataset_path=path).dataset)
     assert sample.input.endswith("Écris une fonction.")
+
+
+def test_a_claude_code_project_path_stages_its_claude_md_and_names_what_it_left_out(tmp_path, fake_ifevalcode):
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / "CLAUDE.md").write_text("- Team rule\n")
+    (project / ".claude/settings.json").write_text("{}")
+
+    task = ifevalcode(
+        target="claude-code", model="anthropic/claude-haiku-4-5", project_path=str(project), samples_per_language=1
+    )
+
+    assert task.metadata["evaluation_assets"] == {"CLAUDE.md": "- Team rule\n"}
+    assert task.metadata["not_staged"] == [".claude/settings.json"]
+    assert task.metadata["asset_source"] == "local project"
+    assert ifevalcode(target="kilo", model=MODEL, samples_per_language=1).metadata["not_staged"] == []
