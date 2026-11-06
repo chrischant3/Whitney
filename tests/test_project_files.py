@@ -1,8 +1,12 @@
+import json
 import os
+import re
+import sys
 from pathlib import Path
 
 import pytest
 
+from whitney import project_files
 from whitney.project_files import (
     files_not_staged,
     files_not_staged_reasons,
@@ -11,6 +15,7 @@ from whitney.project_files import (
     load_project_files,
     load_project_files_for,
     load_template_files,
+    not_staged_reason,
     set_external_directory,
 )
 from whitney.static_checks import parse_jsonc
@@ -605,3 +610,581 @@ def test_a_dot_claude_md_in_a_folder_that_cannot_be_listed_is_renamed_under_its_
 
     assert files_renamed("claude-code", tmp_path, staged) == {".claude/CLAUDE.md": "AGENTS.md"}
     assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+
+
+# Phase 5 Task 8: the Kilo loader stages what Kilo 7.8.18 reads without being told to, checked
+# with `kilo debug config --pure` and `kilo debug skill --pure` (docs/load-order.md, "Rules" and
+# "Skills, agents and commands"), under the same safety rules as everything else it stages.
+
+
+def _kilo_project(root, files):
+    (root / "kilo.jsonc").write_text("{}")
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text)
+    return root
+
+
+def test_rules_kilo_reads_without_an_instructions_entry_are_staged(tmp_path):
+    _kilo_project(tmp_path, {
+        ".kilo/rules/a.md": "a\n",
+        ".kilocode/rules/b.md": "b\n",
+        ".kilocode/rules/.hidden.md": "hidden\n",
+        ".kilo/rules-code/c.md": "c\n",
+        ".kilocode/rules-orchestrator/d.md": "d\n",
+        ".kilocoderules": "legacy\n",
+        ".kilocoderules-architect": "legacy architect\n",
+    })
+
+    files = load_project_files(tmp_path)
+
+    assert set(files) == {
+        "kilo.jsonc", ".kilo/rules/a.md", ".kilocode/rules/b.md", ".kilocode/rules/.hidden.md",
+        ".kilo/rules-code/c.md", ".kilocode/rules-orchestrator/d.md", ".kilocoderules", ".kilocoderules-architect",
+    }
+    assert files[".kilocode/rules/b.md"] == "b\n"
+
+
+def test_only_the_rules_kilo_reads_are_staged_and_never_an_unsafe_one(tmp_path):
+    # Kilo reads the .md files directly in a rules folder, with a lowercase suffix, and only for its five modes.
+    _kilo_project(tmp_path, {
+        ".kilocode/rules/nested/deep.md": "nested\n",
+        ".kilocode/rules/notes.txt": "not markdown\n",
+        ".kilocode/rules/UPPER.MD": "upper case suffix\n",
+        ".kilocode/rules-review/r.md": "not one of Kilo's modes\n",
+        ".kilocode/rules/.env.md": "SECRET=x\n",
+        ".kilocoderules-review": "not one of Kilo's modes\n",
+        "elsewhere/real.md": "linked to\n",
+    })
+    (tmp_path / ".kilocode/rules/folder.md").mkdir()
+    (tmp_path / ".kilocode/rules/linked.md").symlink_to(tmp_path / "elsewhere/real.md")
+    (tmp_path / ".kilocoderules").symlink_to(tmp_path / "elsewhere/real.md")
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+
+def test_skills_kilo_reads_from_dot_claude_and_dot_agents_are_staged_and_nothing_else_there(tmp_path):
+    _kilo_project(tmp_path, {
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/skills/review/scripts/check.sh": "echo check\n",
+        ".agents/skills/release/SKILL.md": "release skill\n",
+        ".claude/skills/review/.env": "SECRET=x\n",
+        ".claude/settings.json": '{"hooks": {}}',
+        ".claude/agents/helper.md": "not read by Kilo\n",
+        ".claude/CLAUDE.md": "not read by Kilo from .claude/\n",
+        ".agents/notes.md": "not a skill\n",
+    })
+
+    assert set(load_project_files(tmp_path)) == {
+        "kilo.jsonc", ".claude/skills/review/SKILL.md", ".claude/skills/review/scripts/check.sh", ".agents/skills/release/SKILL.md",
+    }
+
+
+@pytest.mark.parametrize("linked", [".claude", ".agents/skills", ".kilocode", ".kilocode/rules", ".kilo/skills"])
+def test_a_folder_reached_through_a_symlink_stages_nothing_even_inside_the_project(tmp_path, linked):
+    _kilo_project(tmp_path, {
+        "real/skills/x/SKILL.md": "skill\n", "real/x/SKILL.md": "skill\n", "real/rules/r.md": "rule\n", "real/r.md": "rule\n",
+    })
+    (tmp_path / linked).parent.mkdir(parents=True, exist_ok=True)
+    target = {".claude": "real", ".kilocode": "real", ".agents/skills": "real", ".kilo/skills": "real", ".kilocode/rules": "real"}[linked]
+    (tmp_path / linked).symlink_to(tmp_path / target)
+
+    assert not [name for name in load_project_files(tmp_path) if name.startswith(linked.split("/")[0])]
+
+
+# `instructions` patterns are expanded as Kilo 7.8.18 expands them: node-glob with dot files
+# matched, symlinked folders not followed, files only, and names compared without regard to case
+# on macOS and Windows (docs/load-order.md, "Instructions globs"). Each expected set below is what
+# that expansion gave for the same tree.
+GLOB_TREE = (
+    "top.md", "docs/d.md", ".hidden/h.md", "rules/a.md", "rules/.dot.md", "rules/x.txt", "rules/sub/b.md", "rules/sub/deep/c.md",
+)
+CASE_BLIND = sys.platform in ("darwin", "win32")
+
+
+def _glob_project(root, pattern):
+    _kilo_project(root, {name: f"{name}\n" for name in GLOB_TREE})
+    (root / "kilo.jsonc").write_text(json.dumps({"instructions": [pattern]}))
+    return {name for name in load_project_files(root) if name != "kilo.jsonc"}
+
+
+@pytest.mark.parametrize("pattern, expected", [
+    ("rules/*.md", {"rules/a.md", "rules/.dot.md"}),
+    ("rules/**/*.md", {"rules/a.md", "rules/.dot.md", "rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("**/*.md", {"top.md", "docs/d.md", ".hidden/h.md", "rules/a.md", "rules/.dot.md", "rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("**", set(GLOB_TREE)),
+    ("rules/**", {"rules/a.md", "rules/.dot.md", "rules/x.txt", "rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("rules/sub/**", {"rules/sub/b.md", "rules/sub/deep/c.md"}),
+    ("rules/*", {"rules/a.md", "rules/.dot.md", "rules/x.txt"}),
+    ("rules", set()),
+    ("*.md", {"top.md"}),
+    ("top.md", {"top.md"}),
+    ("rules/sub/b.md", {"rules/sub/b.md"}),
+    ("./top.md", {"top.md"}),
+    ("rules//a.md", {"rules/a.md"}),
+    ("rules/?.md", {"rules/a.md"}),
+    ("rules/[a-c].md", {"rules/a.md"}),
+    ("rules/[!a].md", set()),
+    ("rules/{a,x}.*", {"rules/a.md", "rules/x.txt"}),
+    ("{top,rules/{a,sub/b}}.md", {"top.md", "rules/a.md", "rules/sub/b.md"}),
+    ("rules/{,sub/}*.md", {"rules/a.md", "rules/.dot.md", "rules/sub/b.md"}),
+    ("rules/{a,b.md", set()),
+    ("rules/a}.md", set()),
+    ("rules/a}{.md,.txt}", set()),
+    ("missing/*.md", set()),
+    ("RULES/*.MD", {"rules/a.md", "rules/.dot.md"} if CASE_BLIND else set()),
+    ("Top.md", {"top.md"} if CASE_BLIND else set()),
+])
+def test_instruction_patterns_match_the_files_kilo_matches(tmp_path, pattern, expected):
+    assert _glob_project(tmp_path, pattern) == expected
+
+
+@pytest.mark.parametrize("pattern", [
+    "rules/!(a).md", "rules/@(a).md", "rules/+(a).md", "rules/*(a).md", "rules/?(a).md",
+    "rules/{1..3}.md", "rules/{a}.md", "rules/[^a].md", "rules/[[:alpha:]].md", "rules/\\*.md", "!rules/a.md",
+])
+def test_glob_syntax_whitney_does_not_expand_as_kilo_does_is_refused_by_name(tmp_path, pattern):
+    with pytest.raises(ValueError) as raised:
+        _glob_project(tmp_path, pattern)
+    assert str(raised.value) == (
+        f"project instruction pattern {pattern!r} uses glob syntax Whitney doesn't expand as Kilo does; "
+        "use *, ?, **, [...], [!...] and {a,b} only"
+    )
+
+
+@pytest.mark.parametrize("pattern", ["~/rules.md", "{rules,..}/a.md", "rules/{../x,a}.md"])
+def test_a_pattern_that_reaches_outside_the_project_after_expansion_is_refused(tmp_path, pattern):
+    with pytest.raises(ValueError, match=f"^project instruction path must stay inside the project: {re.escape(repr(pattern))}$"):
+        _glob_project(tmp_path, pattern)
+
+
+def test_double_star_does_not_follow_a_symlinked_folder_and_a_named_one_is_not_staged(tmp_path):
+    _kilo_project(tmp_path, {"elsewhere/inner/t.md": "t\n", "rules/a.md": "a\n"})
+    (tmp_path / "rules" / "linked").symlink_to(tmp_path / "elsewhere")
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["rules/**/*.md", "rules/linked/inner/t.md"]}))
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc", "rules/a.md"}
+
+
+def test_a_file_matched_by_two_patterns_is_staged_once_as_spelled_on_disk(tmp_path):
+    _kilo_project(tmp_path, {"rules/a.md": "a\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["rules/*.md", "rules/a.md", "**/a.md"]}))
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc", "rules/a.md"}
+
+
+# Nothing under the evals path is staged, even when an instructions pattern matches it, so the
+# agent never sees the scenarios, their expected results or their tokens (spec, "The two paths").
+
+
+def test_nothing_under_the_evals_path_is_staged_even_when_an_instructions_pattern_matches_it(tmp_path):
+    _kilo_project(tmp_path, {
+        "AGENTS.md": "rule\n",
+        "evals/agents-md.json": '{"secret": "CANARY-1"}',
+        "evals/README.md": "how the evals work\n",
+        "evals/fixtures/repo/project/AGENTS.md": "fixture rule\n",
+        "evals/.kilo/skills/x/SKILL.md": "a skill under the evals path\n",
+        "evals/bad.md": "",
+    })
+    (tmp_path / "evals/bad.md").write_bytes(b"\xff not UTF-8, and never read")
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", "evals/*.json"]}))
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / "evals")) == {"kilo.jsonc", "AGENTS.md"}
+
+
+def test_the_evals_path_is_compared_after_resolving_it(tmp_path, monkeypatch):
+    _kilo_project(tmp_path, {"checks/README.md": "how the evals work\n", "rules/a.md": "a\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+    monkeypatch.chdir(tmp_path / "rules")
+
+    assert set(load_project_files(tmp_path, evals_path=Path("../checks"))) == {"kilo.jsonc", "rules/a.md"}
+
+
+@pytest.mark.parametrize("load", [load_project_files, load_claude_code_project_files])
+def test_a_project_inside_the_evals_path_is_refused(tmp_path, load):
+    project = tmp_path / "evals" / "project"
+    project.mkdir(parents=True)
+    _kilo_project(project, {"AGENTS.md": "rule\n"})
+
+    for evals in (tmp_path / "evals", project):
+        with pytest.raises(ValueError) as raised:
+            load(project, evals_path=evals)
+        assert str(raised.value) == (
+            f"project path {project.resolve()} is inside the evals path {evals.resolve()}, whose files are never staged"
+        )
+
+
+def test_a_claude_code_instruction_file_under_the_evals_path_is_refused_by_name(tmp_path):
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/CLAUDE.md").write_text("rule\n")
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(tmp_path, evals_path=tmp_path / ".claude")
+
+    assert str(raised.value) == (
+        f"{tmp_path.resolve() / '.claude/CLAUDE.md'} is the instruction file to stage, but it is under the evals path "
+        f"{(tmp_path / '.claude').resolve()}, whose files are never staged"
+    )
+
+
+def test_the_loader_for_a_target_passes_the_evals_path_on(tmp_path):
+    _kilo_project(tmp_path, {"AGENTS.md": "rule\n", "evals/x.md": "x\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["evals/*.md"]}))
+
+    assert "evals/x.md" in load_project_files_for("kilo", tmp_path)
+    assert "evals/x.md" not in load_project_files_for("kilo", tmp_path, evals_path=tmp_path / "evals")
+    with pytest.raises(ValueError, match="inside the evals path"):
+        load_project_files_for("claude-code", tmp_path, evals_path=tmp_path)
+
+
+def test_a_kilo_config_under_the_evals_path_is_neither_staged_nor_read(tmp_path):
+    _kilo_project(tmp_path, {".kilo/kilo.jsonc": '{"instructions": ["rules/*.md"]}', "rules/a.md": "a\n"})
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".kilo")) == {"kilo.jsonc"}
+    (tmp_path / "kilo.jsonc").unlink()
+    with pytest.raises(ValueError, match="^project has no Kilo config"):
+        load_project_files(tmp_path, evals_path=tmp_path / ".kilo")
+
+
+# Why a file isn't staged, for validation rule 6: an eval file's `source` must be staged, and if the
+# safety rules left it out, validation says which rule.
+
+
+@pytest.fixture
+def unsafe_project(tmp_path):
+    (tmp_path / "project").mkdir()
+    root = _kilo_project(tmp_path / "project", {
+        "AGENTS.md": "rule\n", ".env": "SECRET=x\n", "app.py": "source\n", "node_modules/pkg/README.md": "dependency\n",
+        "evals/README.md": "evals\n", "real/rules.md": "rule\n",
+    })
+    (tmp_path / "outside.md").write_text("outside\n")
+    (root / "linked.md").symlink_to(tmp_path / "outside.md")
+    (root / "linked").symlink_to(root / "real")
+    (root / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", "**/README.md"]}))
+    return root
+
+
+@pytest.mark.parametrize("source, reason", [
+    ("../outside.md", "it isn't a path inside the project"),
+    ("/etc/hosts", "it isn't a path inside the project"),
+    ("~/notes.md", "it isn't a path inside the project"),
+    ("missing.md", "the project has no such file"),
+    ("evals/README.md", "it is under the evals path, whose files are never staged"),
+    ("linked.md", "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"),
+    ("linked/rules.md", "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"),
+    ("real", "it is a folder, not a file"),
+    ("node_modules/pkg/README.md", "it is inside node_modules/, which is never staged"),
+    (".env", ".env files are never staged, except .env.example, .env.sample and .env.template"),
+    ("app.py", (
+        "the kilo loader stages only Kilo config, root AGENTS.md, CLAUDE.md and CONTEXT.md, the .kilo and "
+        ".kilocode asset, rules and workflows folders, .claude/skills/, .agents/skills/, .kilocodemodes, the legacy "
+        ".kilocoderules files, and files an instructions pattern matches"
+    )),
+])
+def test_the_reason_a_file_is_not_staged_names_the_rule(unsafe_project, source, reason):
+    staged = load_project_files(unsafe_project, evals_path=unsafe_project / "evals")
+    assert source not in staged
+
+    assert not_staged_reason("kilo", unsafe_project, source, staged, evals_path=unsafe_project / "evals") == reason
+
+
+def test_a_staged_file_has_no_reason(unsafe_project):
+    staged = load_project_files(unsafe_project)
+    assert not_staged_reason("kilo", unsafe_project, "AGENTS.md", staged) is None
+    assert not_staged_reason("kilo", unsafe_project, "evals/README.md", staged) is None  # no evals path given
+
+
+@pytest.mark.parametrize("present, source, reason", [
+    (["AGENTS.md", "CLAUDE.md"], "CLAUDE.md", "the claude-code loader stages one instruction file, and this one is beside AGENTS.md"),
+    (["AGENTS.md", ".claude/settings.json"], ".claude/settings.json", "the claude-code loader stages one instruction file, and this one is rest of .claude/"),
+    (["AGENTS.md", "notes.md"], "notes.md", "the claude-code loader stages only one of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md, as AGENTS.md"),
+])
+def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reason):
+    for name in present:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x\n")
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert not_staged_reason("claude-code", tmp_path, source, staged) == reason
+
+
+def test_a_claude_code_file_staged_under_another_name_has_no_reason(tmp_path):
+    (tmp_path / "CLAUDE.md").write_text("rule\n")
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert not_staged_reason("claude-code", tmp_path, "CLAUDE.md", staged) is None
+    assert not_staged_reason("claude-code", tmp_path, "AGENTS.md", staged) is None
+
+
+@pytest.mark.parametrize("case_blind, expected", [(True, {"rules/a.md", "rules/.dot.md"}), (False, set())])
+def test_names_match_whatever_their_case_only_where_kilos_glob_does(tmp_path, monkeypatch, case_blind, expected):
+    # Kilo's node-glob is case-blind on macOS and Windows and case-sensitive elsewhere, whatever the disk.
+    monkeypatch.setattr(project_files, "GLOB_CASE_BLIND", case_blind)
+    assert _glob_project(tmp_path, "RULES/*.MD") == expected
+    assert _glob_project(tmp_path, "rules/*.md") == {"rules/a.md", "rules/.dot.md"}
+
+
+def test_a_symlink_loop_does_not_stop_the_expansion(tmp_path):
+    _kilo_project(tmp_path, {"rules/a.md": "a\n"})
+    (tmp_path / "rules" / "loop").symlink_to(tmp_path)
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", "rules/loop/rules/*.md"]}))
+
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc", "rules/a.md"}
+
+
+def test_nothing_in_a_staged_folder_under_the_evals_path_is_staged(tmp_path):
+    _kilo_project(tmp_path, {".agents/skills/x/SKILL.md": "skill\n", ".claude/skills/y/SKILL.md": "skill\n"})
+    (tmp_path / ".agents/skills/x/bad.md").write_bytes(b"\xff not UTF-8, and never read")
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".agents")) == {"kilo.jsonc", ".claude/skills/y/SKILL.md"}
+
+
+# Review of Task 8 (2026-11-06): fixes and the decisions that came with it.
+
+
+@pytest.mark.parametrize("linked", [".kilo", ".kilocode"])
+def test_a_kilo_config_in_a_symlinked_folder_is_not_staged_even_into_the_evals_path(tmp_path, linked):
+    _kilo_project(tmp_path, {"real/kilo.jsonc": '{"permission": {"bash": "deny"}}', "evals/kilo.jsonc": '{"secret": "CANARY-1"}'})
+    (tmp_path / linked).symlink_to(tmp_path / "real")
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+    (tmp_path / linked).unlink()
+    (tmp_path / linked).symlink_to(tmp_path / "evals")
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / "evals")) == {"kilo.jsonc"}
+
+
+def test_a_root_instruction_file_in_a_symlinked_project_part_is_not_staged(tmp_path):
+    # .kilocodemodes and the legacy rules files sit at the root, so only the file itself can be a link; a linked
+    # .kilo/ is the folder case above. This pins that the root files keep the same rule as the folders.
+    _kilo_project(tmp_path, {"real.md": "rule\n"})
+    (tmp_path / "AGENTS.md").symlink_to(tmp_path / "real.md")
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+
+def test_the_evals_path_is_matched_by_the_folder_it_names_not_by_its_spelling(tmp_path, case_insensitive):
+    # On a case-insensitive disk, Evals/ is the evals/ folder; comparing spellings would stage it.
+    _kilo_project(tmp_path, {"evals/notes.md": "evals\n", "rules/a.md": "a\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+
+    staged = set(load_project_files(tmp_path, evals_path=tmp_path / "Evals"))
+
+    assert staged == ({"kilo.jsonc", "rules/a.md"} if case_insensitive else {"kilo.jsonc", "rules/a.md", "evals/notes.md"})
+
+
+def test_a_project_path_spelled_otherwise_is_still_matched_against_the_evals_path(tmp_path, case_insensitive):
+    project = tmp_path / "project"
+    project.mkdir()
+    _kilo_project(project, {"evals/notes.md": "evals\n"})
+    (project / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+    spelled = tmp_path / "PROJECT" if case_insensitive else project
+
+    staged = load_project_files(spelled, evals_path=project / "evals")
+
+    assert set(staged) == {"kilo.jsonc"}
+    assert not_staged_reason("kilo", spelled, "evals/notes.md", staged, evals_path=project / "evals") == (
+        "it is under the evals path, whose files are never staged"
+    )
+    if case_insensitive:
+        with pytest.raises(ValueError, match="inside the evals path"):
+            load_project_files(project / "evals", evals_path=tmp_path / "PROJECT")
+
+
+def test_a_file_in_a_skill_folder_that_is_not_utf8_is_left_out_and_named(tmp_path):
+    # Skills can carry fonts and images; one such file mustn't stop every run of the project.
+    _kilo_project(tmp_path, {
+        ".claude/skills/x/SKILL.md": "skill x\n", ".agents/skills/y/SKILL.md": "skill y\n", ".kilo/skills/z/SKILL.md": "skill z\n",
+    })
+    for name in (".claude/skills/x/font.ttf", ".agents/skills/y/logo.png", ".kilo/skills/z/data.bin"):
+        (tmp_path / name).write_bytes(b"\xff\xd8 binary")
+
+    assert set(load_project_files(tmp_path)) == {
+        "kilo.jsonc", ".claude/skills/x/SKILL.md", ".agents/skills/y/SKILL.md", ".kilo/skills/z/SKILL.md",
+    }
+    assert files_not_staged("kilo", tmp_path) == [".agents/skills/y/logo.png", ".claude/skills/x/font.ttf", ".kilo/skills/z/data.bin"]
+    assert set(files_not_staged_reasons("kilo", tmp_path).values()) == {"not UTF-8 text"}
+
+
+def test_an_instruction_file_that_is_not_utf8_still_stops_a_kilo_run(tmp_path):
+    _kilo_project(tmp_path, {})
+    (tmp_path / "AGENTS.md").write_bytes(b"\xff rules")
+    with pytest.raises(ValueError, match="must be UTF-8 text"):
+        load_project_files(tmp_path)
+
+
+def test_workflows_and_kilocodemodes_kilo_reads_are_staged(tmp_path):
+    # kilo debug config shows each workflow's .md as a command, and .kilocodemodes's modes as agents.
+    _kilo_project(tmp_path, {
+        ".kilo/workflows/release.md": "release\n",
+        ".kilocode/workflows/review.md": "review\n",
+        ".kilo/workflows/.hidden.md": "hidden\n",
+        ".kilo/workflows/nested/deep.md": "not read\n",
+        ".kilo/workflows/notes.txt": "not read\n",
+        ".kilocode/workflows/UP.MD": "not read\n",
+        ".kilocodemodes": "customModes:\n  - slug: reviewer\n    name: Reviewer\n    roleDefinition: You review.\n",
+    })
+
+    assert set(load_project_files(tmp_path)) == {
+        "kilo.jsonc", ".kilo/workflows/release.md", ".kilocode/workflows/review.md", ".kilo/workflows/.hidden.md", ".kilocodemodes",
+    }
+
+
+def test_a_symlinked_kilocodemodes_is_not_staged(tmp_path):
+    _kilo_project(tmp_path, {"real.yaml": "customModes: []\n"})
+    (tmp_path / ".kilocodemodes").symlink_to(tmp_path / "real.yaml")
+    assert set(load_project_files(tmp_path)) == {"kilo.jsonc"}
+
+
+@pytest.mark.parametrize("config", ["kilo.jsonc", ".kilo/kilo.json"])
+def test_skills_paths_is_stripped_like_the_connection_keys_and_named(tmp_path, config):
+    _kilo_project(tmp_path, {})
+    (tmp_path / "kilo.jsonc").unlink()
+    (tmp_path / config).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / config).write_text(json.dumps({
+        "skills": {"paths": ["../shared-skills"], "urls": ["https://example.invalid/skills/"]}, "permission": {"bash": "ask"},
+    }))
+
+    staged = parse_jsonc(load_project_files(tmp_path)[config])
+
+    assert staged == {"skills": {"urls": ["https://example.invalid/skills/"]}, "permission": {"bash": "ask"}}
+    assert files_not_staged("kilo", tmp_path) == [f"{config}: skills.paths"]
+    assert files_not_staged_reasons("kilo", tmp_path) == {
+        f"{config}: skills.paths": "left out of the staged config: its folders can be outside the project"
+    }
+
+
+def test_a_skills_block_holding_only_paths_is_left_out_whole(tmp_path):
+    _kilo_project(tmp_path, {})
+    (tmp_path / "kilo.jsonc").write_text('{"skills": {"paths": ["./my-skills"]}}')
+    assert parse_jsonc(load_project_files(tmp_path)["kilo.jsonc"]) == {}
+
+
+def test_a_kilo_project_with_nothing_left_out_names_nothing(tmp_path):
+    _kilo_project(tmp_path, {"AGENTS.md": "rule\n", "app.py": "source\n"})
+    assert files_not_staged("kilo", tmp_path) == []
+    assert files_not_staged_reasons("kilo", tmp_path) == {}
+
+
+@pytest.fixture
+def unreadable(tmp_path):
+    """Folders made unreadable by the test, given back their permissions afterwards."""
+    folders = []
+
+    def make(path):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "x.md").write_text("x\n")
+        path.chmod(0)
+        folders.append(path)
+
+    yield make
+    for path in folders:
+        path.chmod(0o755)
+
+
+@pytest.mark.parametrize("evals", ["evals", ".claude/skills/evals-inside"])
+def test_the_evals_path_and_the_excluded_folders_are_never_looked_in(tmp_path, unreadable, evals):
+    # An unreadable folder can't be listed, so the walk would fail if it looked in one.
+    _kilo_project(tmp_path, {"rules/a.md": "a\n", ".claude/skills/x/SKILL.md": "x\n"})
+    for folder in (evals, "node_modules/pkg", ".claude/skills/node_modules", ".git/objects"):
+        unreadable(tmp_path / folder)
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+
+    staged = set(load_project_files(tmp_path, evals_path=tmp_path / evals))
+
+    assert staged == {"kilo.jsonc", "rules/a.md", ".claude/skills/x/SKILL.md"}
+
+
+def test_a_pattern_that_expands_to_too_many_alternatives_is_refused_by_name(tmp_path):
+    pattern = "{a,b}" * 11 + ".md"  # 2,048 alternatives
+    with pytest.raises(ValueError) as raised:
+        _glob_project(tmp_path, pattern)
+    assert str(raised.value) == f"project instruction pattern {pattern!r} expands to more than 1024 patterns; split it into smaller ones"
+    assert _glob_project(tmp_path, "{a,b}" * 10 + "x.md") == set()  # 1,024 is allowed
+
+
+def test_repeated_double_stars_match_what_one_does(tmp_path):
+    assert _glob_project(tmp_path, "rules/**/**/**/*.md") == _glob_project(tmp_path, "rules/**/*.md")
+
+
+def test_a_path_outside_the_root_is_walked_up_to_the_top_and_found_unlinked(tmp_path):
+    assert project_files._linked_below(tmp_path / "root", tmp_path / "elsewhere" / "file.md") is False
+
+
+@pytest.mark.parametrize("source", [
+    ".kilocode/rules/nested/deep.md", ".kilo/rules/notes.txt", ".kilo/workflows/nested/w.md", ".kilocode/rules-code/UP.MD",
+])
+def test_a_file_in_a_rules_or_workflows_folder_that_kilo_does_not_read_is_told_which_ones_it_does(tmp_path, source):
+    _kilo_project(tmp_path, {source: "x\n"})
+    staged = load_project_files(tmp_path)
+
+    assert not_staged_reason("kilo", tmp_path, source, staged) == (
+        "Kilo reads only the .md files directly in the rules and workflows folders"
+    )
+
+
+@pytest.mark.parametrize("source", ["./AGENTS.md", "AGENTS.md", ".//AGENTS.md"])
+def test_a_source_spelled_with_dots_or_double_slashes_is_the_same_file(tmp_path, source):
+    _kilo_project(tmp_path, {"AGENTS.md": "rule\n"})
+    assert not_staged_reason("kilo", tmp_path, source, load_project_files(tmp_path)) is None
+
+
+def test_a_skill_file_left_out_as_not_utf8_says_so(tmp_path):
+    _kilo_project(tmp_path, {".agents/skills/y/SKILL.md": "skill\n"})
+    (tmp_path / ".agents/skills/y/logo.png").write_bytes(b"\x89PNG\xff")
+
+    assert not_staged_reason("kilo", tmp_path, ".agents/skills/y/logo.png", load_project_files(tmp_path)) == "it is not UTF-8 text"
+
+
+def test_rules_and_workflows_under_the_evals_path_are_not_staged(tmp_path):
+    _kilo_project(tmp_path, {".kilocode/rules/r.md": "rule\n", ".kilocode/workflows/w.md": "workflow\n", ".kilo/rules/k.md": "k\n"})
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".kilocode")) == {"kilo.jsonc", ".kilo/rules/k.md"}
+
+
+def test_a_file_that_is_not_utf8_outside_the_skill_folders_still_stops_the_run(tmp_path):
+    _kilo_project(tmp_path, {})
+    (tmp_path / ".kilo/agents").mkdir(parents=True)
+    (tmp_path / ".kilo/agents/helper.md").write_bytes(b"\xff agent")
+    with pytest.raises(ValueError, match="must be UTF-8 text"):
+        load_project_files(tmp_path)
+
+
+def test_skill_files_are_read_as_utf8_whatever_the_locale(tmp_path, ascii_locale):
+    _kilo_project(tmp_path, {})
+    (tmp_path / ".agents/skills/x").mkdir(parents=True)
+    (tmp_path / ".agents/skills/x/SKILL.md").write_text("- Règle\n", encoding="utf-8")
+    assert load_project_files(tmp_path)[".agents/skills/x/SKILL.md"] == "- Règle\n"
+
+
+def test_a_symlink_in_a_skill_folder_is_skipped_and_the_files_after_it_are_staged(tmp_path):
+    _kilo_project(tmp_path, {"real.md": "x\n", ".claude/skills/x/SKILL.md": "skill\n", ".claude/skills/x/z.md": "z\n"})
+    (tmp_path / ".claude/skills/x/A-link.md").symlink_to(tmp_path / "real.md")
+    assert {name for name in load_project_files(tmp_path) if name.startswith(".claude/")} == {
+        ".claude/skills/x/SKILL.md", ".claude/skills/x/z.md",
+    }
+
+
+@pytest.mark.parametrize("evals, pattern", [
+    (".claude/skills/x/deep/evals", None),
+    ("docs/a/evals", "**/*.md"),
+    ("docs/evals", "docs/**/evals/*.md"),
+    ("docs/a/evals", "docs/*/*/*.md"),
+])
+def test_an_evals_path_deep_in_a_walked_folder_is_never_looked_in(tmp_path, unreadable, evals, pattern):
+    _kilo_project(tmp_path, {".claude/skills/x/SKILL.md": "x\n", "docs/a/d.md": "d\n"})
+    unreadable(tmp_path / evals)
+    if pattern:
+        (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": [pattern]}))
+
+    assert ".claude/skills/x/SKILL.md" in load_project_files(tmp_path, evals_path=tmp_path / evals)
+
+
+def test_a_binary_skill_file_under_the_evals_path_is_not_named(tmp_path):
+    _kilo_project(tmp_path, {".claude/skills/x/SKILL.md": "x\n"})
+    (tmp_path / ".claude/skills/x/logo.png").write_bytes(b"\x89PNG\xff")
+    evals = tmp_path / ".claude/skills/x"
+
+    assert files_not_staged("kilo", tmp_path, evals_path=evals) == []
+    assert files_not_staged_reasons("kilo", tmp_path, evals_path=evals) == {}
+    assert not_staged_reason("kilo", tmp_path, ".claude/skills/x/logo.png", {}, evals_path=evals) == (
+        "it is under the evals path, whose files are never staged"
+    )
+    assert files_not_staged("kilo", tmp_path) == [".claude/skills/x/logo.png"]

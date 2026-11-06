@@ -223,3 +223,18 @@ def test_a_claude_code_baseline_names_no_rename(tmp_path, fake_ifevalcode):
     )
     assert task.metadata["renamed"] == {}
     assert task.metadata["not_staged_reasons"] == {}
+
+
+def test_a_project_path_never_stages_the_evals_path(tmp_path, fake_ifevalcode, monkeypatch):
+    from whitney import shipped_evals
+
+    project = tmp_path / "project"
+    (project / "evals").mkdir(parents=True)
+    (project / "kilo.jsonc").write_text('{"instructions": ["**/*.md"]}')
+    (project / "AGENTS.md").write_text("- Team rule\n")
+    (project / "evals" / "notes.md").write_text("the evals and their tokens\n")
+    monkeypatch.setattr(shipped_evals, "EVALS_DIR", project / "evals")
+
+    task = ifevalcode(target="kilo", model=MODEL, project_path=str(project), samples_per_language=1)
+
+    assert set(task.metadata["evaluation_assets"]) == {"kilo.jsonc", "AGENTS.md"}

@@ -21,7 +21,7 @@ from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox, store
 
-from whitney import evalfile, setup_steps, targets
+from whitney import evalfile, setup_steps, shipped_evals, targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
 from whitney.checks import Evidence, registry
 from whitney.evalfile import DEFAULT_SETUP, V1_COMMIT_SETUP, Variant
@@ -39,10 +39,10 @@ from whitney.setup_steps import SetupError, SetupStep
 from whitney.variants import TEMPLATE, apply_variant, declared_variants, spread_over_kilo_configs, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
-EVALS_DIR = ROOT / "evals"
-# Relative to EVALS_DIR, read when a task is built, so a test can point EVALS_DIR at its own evals.
-AGENTS_MD_EVALS = "agents-md.json"
-KILO_JSONC_EVALS = "configuration/kilo-jsonc.json"
+# Read when a task is built, so a test can point EVALS_DIR at its own evals. The files are relative to it.
+EVALS_DIR = shipped_evals.EVALS_DIR
+AGENTS_MD_EVALS = shipped_evals.AGENTS_MD_EVALS
+KILO_JSONC_EVALS = shipped_evals.KILO_JSONC_EVALS
 
 # Lets the agent do the task without its asks being auto-rejected. The runner
 # applies these as a temporary overlay; project settings still take precedence.
@@ -98,6 +98,7 @@ def agents_md(
         execution: kilo only: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
         project_path: optional local project supplying config and instruction
             assets, read by the target's loader (whitney.project_files).
+            Nothing under EVALS_DIR is staged, even if it is inside the project.
         api_key_env: local mode only; env var holding the API key for model's
             provider (e.g. ANTHROPIC_API_KEY). For kilo, unset means the global
             Kilo config; claude-code defaults to ANTHROPIC_API_KEY.
@@ -127,8 +128,8 @@ def agents_md(
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": template_files,
             "renamed": files_renamed(target, project_path, template_files) if project_path else {},
-            "not_staged": files_not_staged(target, project_path) if project_path else [],
-            "not_staged_reasons": files_not_staged_reasons(target, project_path) if project_path else {},
+            "not_staged": files_not_staged(target, project_path, evals_path=EVALS_DIR) if project_path else [],
+            "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=EVALS_DIR) if project_path else {},
             "harness_permissions": AGENTS_MD_PERMISSIONS[target],
             **_docker_model_names(model, execution),
         },
@@ -157,7 +158,8 @@ def kilo_jsonc(
         target: must be "kilo": this eval tests kilo.jsonc, which only Kilo reads.
         model: the model under evaluation, as provider/model.
         execution: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
-        project_path: optional local project supplying Kilo config and instruction assets.
+        project_path: optional local project supplying Kilo config and instruction
+            assets. Nothing under EVALS_DIR is staged, even if it is inside the project.
         api_key_env: local mode only; env var holding the API key for model's
             provider (e.g. ANTHROPIC_API_KEY). Unset, the global Kilo config is used.
         base_url: local mode only; overrides the provider's base URL.
@@ -195,6 +197,8 @@ def kilo_jsonc(
             "model_access": model_access(api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": template_files,
+            "not_staged": files_not_staged(target, project_path, evals_path=EVALS_DIR) if project_path else [],
+            "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=EVALS_DIR) if project_path else {},
             "harness_permissions": HARNESS_PERMISSIONS,
             **_docker_model_names(model, execution),
         },
@@ -324,8 +328,9 @@ def _docker_model_names(model: str, execution: str) -> dict[str, str]:
 
 
 def _source_files(project_path: str | None, target: str) -> dict[str, str]:
+    """The files the target's loader stages from `project_path`, leaving out EVALS_DIR, or else Whitney's template."""
     if project_path:
-        return load_project_files_for(target, Path(project_path))
+        return load_project_files_for(target, Path(project_path), evals_path=EVALS_DIR)
     return load_template_files(targets.template_dir(target))
 
 

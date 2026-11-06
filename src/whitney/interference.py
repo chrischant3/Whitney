@@ -6,7 +6,7 @@ from pathlib import Path
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
 
-from whitney import targets
+from whitney import shipped_evals, targets
 from whitney.harbor_tasks import HARBOR_PERMISSIONS
 from whitney.project_files import (
     files_not_staged,
@@ -79,7 +79,9 @@ def ifevalcode(
         raise ValueError("No local IFEvalCode samples match the selected languages")
 
     project_files = (
-        load_project_files_for(target, project_path) if project_path else load_template_files(targets.template_dir(target))
+        load_project_files_for(target, project_path, evals_path=shipped_evals.EVALS_DIR)
+        if project_path
+        else load_template_files(targets.template_dir(target))
     )
     if variant == "baseline":
         project_files.pop("AGENTS.md", None)
@@ -125,8 +127,8 @@ def ifevalcode(
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": project_files,
             "renamed": files_renamed(target, project_path, project_files) if project_path else {},
-            "not_staged": files_not_staged(target, project_path) if project_path else [],
-            "not_staged_reasons": files_not_staged_reasons(target, project_path) if project_path else {},
+            "not_staged": files_not_staged(target, project_path, evals_path=shipped_evals.EVALS_DIR) if project_path else [],
+            "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=shipped_evals.EVALS_DIR) if project_path else {},
             "harness_permissions": IFEVALCODE_PERMISSIONS[target],
             "evaluation_preamble": IFEVALCODE_SYSTEM_PROMPT,
             "dataset_source": "local sanitised IFEvalCode JSONL",

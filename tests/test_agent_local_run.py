@@ -637,3 +637,63 @@ def test_global_config_and_outputs_are_read_as_utf8_whatever_the_locale(tmp_path
     sbox = FakeSandbox(tmp_path)
     asyncio.run(copy_outputs(sbox, tmp_path, {"solution.py": "/workspace/solution.py"}))
     assert sbox.writes == [("/workspace/solution.py", "print('déjà vu')\n")]
+
+
+@pytest.mark.parametrize("planted", [".claude/skills", ".agents/skills"])
+def test_a_skills_folder_kilo_reads_above_the_project_stops_the_run(fake_kilo, user_home, planted):
+    # Kilo 7.8.18 reads these from every folder up to the git worktree root when the project
+    # isn't a repository of its own, and GIT_CEILING_DIRECTORIES doesn't stop it (docs/load-order.md).
+    above = fake_kilo.sandbox.project.parent / planted
+    above.mkdir(parents=True)
+    (fake_kilo.sandbox.project.parent / ".git").mkdir()
+
+    with pytest.raises(RuntimeError) as raised:
+        _run(kilo(model=MODEL, timeout=30))
+
+    assert str(raised.value) == (
+        f"{above.resolve()} is above the project, where the harness would read it as instructions or "
+        "config the eval never declared. Set TMPDIR to a folder with none above it, or remove the folder "
+        "if it isn't your own skills."
+    )
+    assert not (fake_kilo.sandbox.project / "args.txt").exists()
+
+
+@pytest.mark.parametrize("planted", [".claude/skills", ".agents/skills"])
+def test_a_skills_folder_above_the_project_with_no_repository_above_it_does_not_stop_the_run(fake_kilo, user_home, planted):
+    # Without a .git in that folder or above it, Kilo has no worktree root to walk up to and reads none of them.
+    (fake_kilo.sandbox.project.parent / planted).mkdir(parents=True)
+
+    _run(kilo(model=MODEL, timeout=30))
+
+    assert (fake_kilo.sandbox.project / "args.txt").exists()
+
+
+def test_a_skills_folder_is_refused_when_the_repository_starts_further_up(tmp_path):
+    from whitney.agent import check_no_inherited_instructions
+
+    (tmp_path / "repo" / ".git").mkdir(parents=True)
+    (tmp_path / "repo" / "mid" / ".agents" / "skills").mkdir(parents=True)
+    (tmp_path / "repo" / "mid" / "project").mkdir()
+
+    with pytest.raises(RuntimeError, match=r"\.agents/skills is above the project"):
+        check_no_inherited_instructions(tmp_path / "repo" / "mid" / "project")
+    (tmp_path / "repo" / ".git").rmdir()
+    check_no_inherited_instructions(tmp_path / "repo" / "mid" / "project")  # no repository: nothing Kilo would read
+
+
+def test_a_folder_whose_repository_can_not_be_checked_counts_as_one(tmp_path, monkeypatch):
+    # Python 3.11 and 3.12 raise inside an unreadable folder; refusing is the safe answer.
+    from whitney.agent import check_no_inherited_instructions
+
+    (tmp_path / ".claude" / "skills").mkdir(parents=True)
+    (tmp_path / "project").mkdir()
+    real_exists = Path.exists
+
+    def exists(path, *args, **kwargs):
+        if path.name == ".git":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_exists(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
+    with pytest.raises(RuntimeError, match=r"\.claude/skills is above the project"):
+        check_no_inherited_instructions(tmp_path / "project")

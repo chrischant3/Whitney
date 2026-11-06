@@ -159,3 +159,5 @@ Not planned in detail:
 - Claude Code skills and agents: its own capture of `--output-format stream-json`, and staging `.claude/skills/` and `.claude/agents/` without `.claude/settings.json`, whose hooks run commands.
 - `--junit` output; model-graded checks (spec open question 13); check plugins (spec open question 9).
 - The proposal's other future work: instruction hierarchy, `REVIEW.md`, hooks.
+- A fake `claude` for `tests/test_safe_staging.py::test_the_project_is_unchanged_after_a_run`, so the claude-code target's run is checked too, not only its staging (from the Task 8 review).
+- Whether `_is_safe_file` should also refuse `.envrc` and similar files that hold secrets without the `.env` name (from the Task 8 review).

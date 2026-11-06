@@ -171,13 +171,15 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 **Added 2026-11-06 (Task 16):** Kilo also loads skills from `.claude/skills/` and `.agents/skills/` in the project, which Whitney doesn't stage. Stage them for `kilo`, or name them in the report as not staged, and decide whether `check_no_inherited_instructions` should look for them above the project.
 
+**Done 2026-11-06, apart from the template** (branch `p5-t08-safe-staging`): open question 12 answered as Christopher decided (`kilo debug` findings in `docs/load-order.md`, "Rules, skill folders and instructions globs"); the Kilo loader stages the rules Kilo reads on its own and `.claude/skills/` and `.agents/skills/`; `instructions` patterns expand as Kilo's node-glob does; nothing under the evals path is staged; `validate.validate_project` does rule 6's project half; `check_no_inherited_instructions` looks for both skill folders above the project. **Not done, waiting for Christopher:** sending `template/<target>/` through the target's loader re-serialises `template/kilo/kilo.jsonc`, which changes `project/kilo.jsonc`'s hash in three golden files (`agents_md-kilo-template`, `agents_md-kilo-baseline`, `kilo_jsonc-kilo-template`), so it needs a re-recording he agrees to. No test pins the template's comments.
+
 **Acceptance criteria:**
-- [ ] A project holding a `.env`, a symlink, source files, provider, MCP and plugin settings, and an `evals/` folder matched by an `instructions` glob stages none of them, and is unchanged after a run (criterion 14).
-- [ ] `tests/test_project_files.py` passes without edits. The template's `kilo.jsonc` is now re-serialised, so its comments leave the report's file snapshot; if a test pins those comments, name it and confirm with Christopher first.
-- [ ] A `source` that isn't staged fails validation with the reason.
+- [x] A project holding a `.env`, a symlink, source files, provider, MCP and plugin settings, and an `evals/` folder matched by an `instructions` glob stages none of them, and is unchanged after a run (criterion 14).
+- [ ] `tests/test_project_files.py` passes without edits. The template's `kilo.jsonc` is now re-serialised, so its comments leave the report's file snapshot; if a test pins those comments, name it and confirm with Christopher first. (The first half holds; the template half waits for the re-recording above.)
+- [x] A `source` that isn't staged fails validation with the reason.
 
 **Verification:**
-- [ ] `pytest -q tests/test_project_files.py tests/test_validate.py`
+- [x] `pytest -q tests/test_project_files.py tests/test_validate.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 1 and 7.

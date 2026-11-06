@@ -322,3 +322,20 @@ def test_a_claude_code_baseline_names_no_rename(tmp_path):
     task = load(dataset, target="claude-code", model="anthropic/claude-haiku-4-5", project_path=str(project), variant="baseline")
     assert task.metadata["renamed"] == {}
     assert task.metadata["not_staged_reasons"] == {}
+
+
+def test_a_project_path_never_stages_the_evals_path(tmp_path, monkeypatch):
+    from whitney import shipped_evals
+
+    dataset = tmp_path / "dataset"
+    write_task(dataset)
+    project = tmp_path / "project"
+    (project / "evals").mkdir(parents=True)
+    (project / "kilo.jsonc").write_text('{"instructions": ["**/*.md"]}')
+    (project / "AGENTS.md").write_text("- Team rule\n")
+    (project / "evals" / "notes.md").write_text("the evals and their tokens\n")
+    monkeypatch.setattr(shipped_evals, "EVALS_DIR", project / "evals")
+
+    task = load(dataset, project_path=str(project))
+
+    assert set(task.metadata["evaluation_assets"]) == {"kilo.jsonc", "AGENTS.md"}
