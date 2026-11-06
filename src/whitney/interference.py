@@ -6,9 +6,15 @@ from pathlib import Path
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
 
-from whitney import targets
+from whitney import shipped_evals, targets
 from whitney.harbor_tasks import HARBOR_PERMISSIONS
-from whitney.project_files import load_project_files, load_template_files
+from whitney.project_files import (
+    files_not_staged,
+    files_not_staged_reasons,
+    files_renamed,
+    load_project_files_for,
+    load_template_files,
+)
 from whitney.prompt_injection import scan_record
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,7 +50,8 @@ def ifevalcode(
     row it loads with the same checks and leaves flagged rows out, recording
     their ids as injection_scan_excluded, so data that skipped the audit
     can't reach the agent either. The agent gets no shell
-    (IFEVALCODE_PERMISSIONS). target picks the harness and template, and
+    (IFEVALCODE_PERMISSIONS). target picks the harness and template,
+    project_path a project to read instead with that target's loader, and
     api_key_env and base_url the provider key, as in whitney.tasks.agents_md.
     """
     if variant not in {"baseline", "template"}:
@@ -71,7 +78,11 @@ def ifevalcode(
     if not records:
         raise ValueError("No local IFEvalCode samples match the selected languages")
 
-    project_files = load_project_files(project_path) if project_path else load_template_files(targets.template_dir(target))
+    project_files = (
+        load_project_files_for(target, project_path, evals_path=shipped_evals.EVALS_DIR)
+        if project_path
+        else load_template_files(targets.template_dir(target))
+    )
     if variant == "baseline":
         project_files.pop("AGENTS.md", None)
 
@@ -115,6 +126,9 @@ def ifevalcode(
             "model_access": targets.model_access(target, api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": project_files,
+            "renamed": files_renamed(target, project_path, project_files) if project_path else {},
+            "not_staged": files_not_staged(target, project_path, evals_path=shipped_evals.EVALS_DIR) if project_path else [],
+            "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=shipped_evals.EVALS_DIR) if project_path else {},
             "harness_permissions": IFEVALCODE_PERMISSIONS[target],
             "evaluation_preamble": IFEVALCODE_SYSTEM_PROMPT,
             "dataset_source": "local sanitised IFEvalCode JSONL",

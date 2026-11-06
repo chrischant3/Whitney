@@ -100,3 +100,7 @@ a harness with its own template and its own route to the model.
 | Claude Code loads instructions from places the eval doesn't control (user settings, parent `CLAUDE.md`, auto-memory) | High | `--setting-sources project`, staged project under a temp dir with no parent `CLAUDE.md`; a test asserts the command line. |
 | Claude Code's headless permission prompts end runs early | Med | Grant harness permissions via `--settings`; record early exits as inconclusive, not as passes. |
 | Kilo provider format through the bridge differs from the Gateway's | Med | T16 spike before relying on Docker for the `kilo` target. |
+
+# Phase 5: your own evals, skills and agents
+
+Approved 2026-11-06. The plan is [plan-phase5.md](plan-phase5.md) and the tasks are [todo-phase5.md](todo-phase5.md).

@@ -12,8 +12,7 @@ from inspect_ai.agent import Agent
 
 from whitney.agent import kilo
 from whitney.claude_code import claude_code
-
-TARGETS = ("kilo", "claude-code")
+from whitney.target_names import TARGETS
 TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "template"
 
 
