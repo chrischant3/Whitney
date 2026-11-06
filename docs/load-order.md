@@ -98,9 +98,27 @@ env -i PATH=/opt/homebrew/bin:/usr/bin:/bin HOME=$SCRATCH/home XDG_CONFIG_HOME=$
 | `.kilocoderules`, `.kilocoderules-code` (files at the project root) | **yes** |
 | `.kilo/rules/`, `.kilocode/rules/` in a folder above the project | no, in each of the three layouts below |
 
-Kilo's bundled code gives the full list: the folders `.kilo/rules` and `.kilocode/rules`, a `rules-<mode>` folder in each for the modes `code`, `architect`, `ask`, `debug` and `orchestrator`, and the files `.kilocoderules` and `.kilocoderules-<mode>`, all in the working folder only. The same code also turns `.kilo/workflows/` and `.kilocode/workflows/` into commands, and `.kilocodemodes` into agents. Whitney doesn't stage those two yet.
+Kilo's bundled code gives the full list: the folders `.kilo/rules` and `.kilocode/rules`, a `rules-<mode>` folder in each for the modes `code`, `architect`, `ask`, `debug` and `orchestrator`, and the files `.kilocoderules` and `.kilocoderules-<mode>`, all in the working folder only. The same code also turns workflows into commands and `.kilocodemodes` into agents ([below](#workflows-and-custom-modes)).
 
 **What Whitney does:** the Kilo loader stages every one of these rules files that Kilo loads (`project_files.KILO_RULE_DIRS` and `KILO_LEGACY_RULE_FILES`), under the same safety rules as everything else. It stages both `same.md` files, and Kilo, reading the staged copy, again keeps only the `.kilo/` one.
+
+### Workflows and custom modes
+
+Read from `kilo debug config --pure`, keys `command` and `agent`:
+
+| File in the project | What Kilo makes of it |
+|---|---|
+| `.kilo/workflows/<name>.md`, `.kilocode/workflows/<name>.md` | a command named `<name>`, the file's text as its template |
+| `.kilo/workflows/.hidden.md` | a command, `.hidden` |
+| `.kilo/workflows/nested/<name>.md`, `.kilo/workflows/notes.txt`, `.kilo/workflows/UP.MD` | nothing |
+| the same name in both folders | only the `.kilo/` one |
+| `.kilocodemodes` (YAML, `customModes:` with `slug`, `name`, `roleDefinition`, `groups`) | an agent per mode, named by its `slug`, `mode: primary`, `roleDefinition` as its prompt, and permissions from `groups` (`groups: [read]` gave `read: allow`, `edit`, `bash` and `mcp` `deny`) |
+
+**What Whitney does:** the Kilo loader stages the `.md` files directly in both workflows folders and a root `.kilocodemodes` (`KILO_WORKFLOW_DIRS`, `KILO_MODES_FILE`), under the same safety rules.
+
+### `skills.paths`
+
+With `"skills": {"paths": ["./my-skills", "<a folder outside the project>"]}` in `kilo.jsonc`, `kilo debug skill --pure` listed the skill in `./my-skills/`. The outside folder's skill wasn't listed in this run, but the key can name any folder on the machine. **What Whitney does:** the Kilo loader strips `skills.paths` from each staged config, as it strips the connection keys, and the report's "Not Staged" table names it as `<config>: skills.paths`.
 
 ### Skill folders
 
