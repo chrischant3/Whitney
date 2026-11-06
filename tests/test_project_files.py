@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -1188,3 +1189,63 @@ def test_a_binary_skill_file_under_the_evals_path_is_not_named(tmp_path):
         "it is under the evals path, whose files are never staged"
     )
     assert files_not_staged("kilo", tmp_path) == [".claude/skills/x/logo.png"]
+
+
+def test_an_evals_path_that_names_a_root_file_leaves_that_file_out(tmp_path):
+    _kilo_project(tmp_path, {"AGENTS.md": "rules\n", "CONTEXT.md": "context\n", ".kilocoderules": "legacy\n"})
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / "CONTEXT.md")) == {"kilo.jsonc", "AGENTS.md", ".kilocoderules"}
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".kilocoderules")) == {"kilo.jsonc", "AGENTS.md", "CONTEXT.md"}
+
+
+def test_the_reason_for_a_kilo_file_ignores_what_lies_under_the_evals_path(tmp_path):
+    # The loader never reads the evals folder, so a file there that isn't UTF-8 can't stop the reason being given.
+    _kilo_project(tmp_path, {"app.py": "source\n"})
+    (tmp_path / "evals").mkdir()
+    (tmp_path / "evals/bad.md").write_bytes(b"\xff not UTF-8")
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+    evals = tmp_path / "evals"
+    staged = load_project_files(tmp_path, evals_path=evals)
+
+    assert not_staged_reason("kilo", tmp_path, "app.py", staged, evals_path=evals).startswith("the kilo loader stages only")
+
+
+def test_a_broken_symlink_is_named_as_a_symlink_when_an_evals_path_is_given(tmp_path):
+    _kilo_project(tmp_path, {"evals/x.md": "x\n"})
+    (tmp_path / "broken.md").symlink_to(tmp_path / "missing.md")
+    evals = tmp_path / "evals"
+    staged = load_project_files(tmp_path, evals_path=evals)
+
+    assert not_staged_reason("kilo", tmp_path, "broken.md", staged, evals_path=evals) == (
+        "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"
+    )
+
+
+def test_many_repeated_double_stars_are_expanded_as_one_without_walking_each(tmp_path):
+    # Walked one by one, 40 "**" in a row try every way of sharing 7 folders between them (hundreds of
+    # millions); folded into one, the walk is a single pass. A first segment pair keeps the fold honest
+    # about where the run of "**" starts.
+    _kilo_project(tmp_path, {"docs/rules/a/b/c/d/e/x.md": "x\n", "docs/rules/top.md": "top\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["docs/rules/" + "**/" * 40 + "*.md"]}))
+
+    started = time.monotonic()
+    staged = set(load_project_files(tmp_path))
+
+    assert staged == {"kilo.jsonc", "docs/rules/a/b/c/d/e/x.md", "docs/rules/top.md"}
+    assert time.monotonic() - started < 5
+
+
+def test_on_a_case_sensitive_disk_the_exact_spelling_is_named_over_another_case(tmp_path):
+    # A case-sensitive folder can hold both CLAUDE.md and claude.md; the file found by its exact name is the one named.
+    # Such a folder can't be made on a case-insensitive disk, so the listing is given directly.
+    assert project_files._on_disk_name(["claude.md", "CLAUDE.md"], "CLAUDE.md") == "CLAUDE.md"
+    assert project_files._on_disk_name(["claude.md"], "CLAUDE.md") == "claude.md"
+
+
+def test_a_project_inside_a_folder_named_like_an_excluded_one_still_never_stages_env(tmp_path):
+    project = tmp_path / "node_modules" / "proj"
+    project.mkdir(parents=True)
+    _kilo_project(project, {"AGENTS.md": "rules\n", ".env": "SECRET=1\n"})
+    (project / "kilo.jsonc").write_text(json.dumps({"instructions": [".env"]}))
+
+    assert ".env" not in load_project_files(project)
