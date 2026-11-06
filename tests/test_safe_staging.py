@@ -126,3 +126,16 @@ def test_a_skill_file_that_is_not_utf8_and_skills_paths_are_named_as_not_staged(
 
     assert task.metadata["not_staged"] == [".claude/skills/x/logo.png", "kilo.jsonc: skills.paths"]
     assert ".claude/skills/x/SKILL.md" in task.metadata["evaluation_assets"]
+
+
+@pytest.mark.parametrize("build, target, variant", [case for case in CASES if case[2] == "template"], ids=lambda v: getattr(v, "__name__", v))
+def test_whitneys_own_template_goes_through_the_targets_safe_loader(build, target, variant):
+    from whitney import targets
+    from whitney.project_files import load_project_files_for
+
+    task = build(target=target, model=MODEL, variant=variant)
+
+    assert task.metadata["evaluation_assets"] == load_project_files_for(target, targets.template_dir(target))
+    assert task.metadata["asset_source"] == "template"
+    if target == "kilo":  # re-serialised as the loader writes every staged config: the comments are gone
+        assert "//" not in task.metadata["evaluation_assets"]["kilo.jsonc"].replace("https://", "")
