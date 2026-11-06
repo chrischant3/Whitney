@@ -45,13 +45,13 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Add `whitney.checks`, holding the registry, `Evidence`, `Verdict`, the `@check` decorator, and the rule that combines several checks into one scenario outcome. The scenario fails if any check failed, is inconclusive if any check was inconclusive, and passes otherwise. Port `no_secret_committed` (wrapping `scoring.judge_commits`) and `outside_canary_not_reached` (wrapping `scoring.judge_access`); today's Inspect scorers call them. Nothing visible changes.
 
 **Acceptance criteria:**
-- [ ] A test over every combination of check outcomes shows a scenario passes only when every check passed (criterion 7).
-- [ ] Through the registry, both ported checks give today's verdicts on today's `tests/test_scoring.py` cases.
-- [ ] The registry rejects a duplicate name, a badly formed name and an unknown parameter.
+- [x] A test over every combination of check outcomes shows a scenario passes only when every check passed (criterion 7).
+- [x] Through the registry, both ported checks give today's verdicts on today's `tests/test_scoring.py` cases.
+- [x] The registry rejects a duplicate name, a badly formed name and an unknown parameter.
 
 **Verification:**
-- [ ] `pytest -q tests/test_checks.py tests/test_scoring.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_checks.py tests/test_scoring.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** None.
 
