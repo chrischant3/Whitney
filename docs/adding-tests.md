@@ -19,11 +19,11 @@ Skills and agents will follow the same pattern, as `evals/skills/<skill-name>.js
 
 ## Adding files to the template
 
-Put shared Kilo instruction/config assets under `template/kilo/`, preserving the paths Kilo expects. The loader copies nested files automatically; no Python changes are needed for a new text asset.
+Put shared Kilo instruction/config assets under `template/kilo/`, preserving the paths Kilo expects. The template is staged by the Kilo loader, as a project passed with `--project-path` is, so only the files that loader stages reach a run ([Evaluating a local project](#evaluating-a-local-project)); a file anywhere else in `template/kilo/` is left out. The loader writes `kilo.jsonc` again as plain JSON, so its comments aren't in the staged copy. No Python changes are needed for a new text asset in one of those places.
 
 1. Add root-wide instructions such as `CLAUDE.md` or `CONTEXT.md` at `template/kilo/`'s root, or add skills/agents/commands under their `.kilo/` subdirectories.
 2. If `kilo.jsonc` references additional files with `instructions`, keep those files in `template/kilo/` at the referenced relative paths.
-3. Do not put real credentials, `.env` or `.env.*` files in the template. Those files are excluded from staging; only `.env.example`, `.env.sample` and `.env.template` are included. Template assets must be UTF-8 text.
+3. Do not put real credentials, `.env` or `.env.*` files in the template. The Kilo loader never stages them. Template assets must be UTF-8 text.
 4. Run `pytest -q` and `python -m whitney.static_checks`, then add a scenario for any new behaviour that should be measured.
 
 ## Evaluating a local project

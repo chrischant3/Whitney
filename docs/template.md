@@ -1,6 +1,6 @@
 # The template
 
-`template/kilo/` is what a team using Kilo copies into their project; `template/claude-code/` holds the Claude Code template, which is just `AGENTS.md` with the same core rules. Files are staged recursively, preserving relative paths. The Kilo starter contains two root files:
+`template/kilo/` is what a team using Kilo copies into their project; `template/claude-code/` holds the Claude Code template, which is just `AGENTS.md` with the same core rules. Each eval run stages a template through the same loader as a project you pass with `--project-path`, so the same rules apply to it ([Evaluating a local project](adding-tests.md#evaluating-a-local-project) lists what each target's loader stages). The staged `kilo.jsonc` is written again as plain indented JSON, so the template's comments aren't in the staged copy or in the report's snapshot of it; the file in `template/kilo/` keeps them. The Kilo starter contains two root files:
 
 | File | What it's for | What the evals check |
 |---|---|---|
