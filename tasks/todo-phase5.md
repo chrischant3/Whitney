@@ -66,13 +66,13 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Added 2026-11-06 (Task 2 review):** add each check's default minimum pass rate here, with `MIN_ADHERENCE` and `MIN_HELD` in `report.py`, because validation rule 9 needs them. Task 10 then uses them for the gate.
 
 **Acceptance criteria:**
-- [ ] One failing file per rule, each giving a message that names the file and the location, such as `scenarios[1].expect[0].strings`.
-- [ ] A scenario whose token isn't in its fixture fails validation, for any evals path and not only Whitney's (criterion 6).
-- [ ] The shipped version 1 files load into the same Samples as today. Discovery finds every `*.json` outside `fixtures/` and hidden folders, and a JSON file that isn't an eval file is an error.
+- [x] One failing file per rule, each giving a message that names the file and the location, such as `scenarios[1].expect[0].strings`.
+- [x] A scenario whose token isn't in its fixture fails validation, for any evals path and not only Whitney's (criterion 6).
+- [x] The shipped version 1 files load into the same Samples as today. Discovery finds every `*.json` outside `fixtures/` and hidden folders, and a JSON file that isn't an eval file is an error.
 
 **Verification:**
-- [ ] `pytest -q tests/test_evalfile.py tests/test_validate.py tests/test_scenarios.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_evalfile.py tests/test_validate.py tests/test_scenarios.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 2.
 
