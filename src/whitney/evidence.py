@@ -330,10 +330,20 @@ def _quietly(sbox) -> contextlib.AbstractContextManager:
 
     The proxy's `no_events()` is what Inspect's own sandbox service uses
     (inspect_ai.util._sandbox.events.without_sandbox_events, which isn't
-    public); any other sandbox, such as a test's, records nothing anyway.
+    public). Any other sandbox, such as a test's, records nothing anyway.
+
+    Raises:
+        RuntimeError: a proxy without no_events(), as an Inspect older or newer
+            than this code knows would have; its log would get the files' text.
     """
-    no_events = getattr(sbox, "no_events", None)
-    return no_events() if no_events else contextlib.nullcontext()
+    if not isinstance(sbox, SandboxEnvironmentProxy):
+        return contextlib.nullcontext()
+    if not callable(getattr(sbox, "no_events", None)):
+        raise RuntimeError(
+            "this Inspect's sandbox can't turn off its event log, so a snapshot would write the files' text "
+            "into the eval log; use the Inspect version in requirements.lock"
+        )
+    return sbox.no_events()
 
 
 def run_secrets(target: str, execution: str, api_key_env: str | None, environ: Mapping[str, str] = os.environ) -> list[str]:

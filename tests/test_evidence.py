@@ -18,6 +18,8 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from inspect_ai.util._sandbox.events import SandboxEnvironmentProxy
+
 from whitney import evidence
 from whitney.checks import Evidence, FileSnapshot, FolderSnapshot, Registry, Verdict, check, registry
 
@@ -40,30 +42,16 @@ class HostSandbox:
         return SimpleNamespace(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
-class QuietSandbox(HostSandbox):
-    """A HostSandbox that, like Inspect's event-recording proxy, can be told to record nothing."""
+class RecordingProxy(SandboxEnvironmentProxy):
+    """Inspect's event-recording proxy around a HostSandbox, noting for each command whether it would be logged."""
 
     def __init__(self, root: Path) -> None:
-        super().__init__(root)
-        self.quiet = False
-        self.loud_commands: list[list[str]] = []
-
-    def no_events(self):
-        sandbox = self
-
-        class Quiet:
-            def __enter__(self):
-                sandbox.quiet = True
-
-            def __exit__(self, *exc):
-                sandbox.quiet = False
-
-        return Quiet()
+        super().__init__(HostSandbox(root))
+        self.logged: list[bool] = []
 
     async def exec(self, cmd, **kwargs):
-        if not self.quiet:
-            self.loud_commands.append(cmd)
-        return await super().exec(cmd, **kwargs)
+        self.logged.append(self._events_enabled())
+        return await self._sandbox.exec(cmd, **kwargs)
 
 
 def _write(root: Path, files: dict[str, str | bytes]) -> None:
@@ -343,12 +331,20 @@ def test_snapshot_and_git_commands_record_no_sandbox_events(tmp_path, home_with_
     # Inspect logs every sandbox command's output; these hold the text of files the agent wrote.
     _write(tmp_path, {"project/app.py": "x\n"})
     subprocess.run(["git", "init", "-q"], cwd=tmp_path / "project", check=True)
-    sandbox = QuietSandbox(tmp_path)
+    sandbox = RecordingProxy(tmp_path)
 
     asyncio.run(evidence.snapshot(sandbox, ["project"], PYTHON))
     asyncio.run(evidence.git_state(sandbox, ["token-1"]))
 
-    assert len(sandbox.commands) == 3 and sandbox.loud_commands == []
+    assert sandbox.logged == [False, False, False]
+
+
+def test_a_proxy_that_cant_turn_its_events_off_is_refused(tmp_path):
+    class OldProxy(RecordingProxy):
+        no_events = None
+
+    with pytest.raises(RuntimeError, match="can't turn off its event log"):
+        asyncio.run(evidence.snapshot(OldProxy(tmp_path), ["project"], PYTHON))
 
 
 def test_git_state_records_the_tokens_it_searched_for(tmp_path, home_with_blocking_git_hooks):
