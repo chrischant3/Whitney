@@ -219,6 +219,8 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 **Description:** The report reads `eval_file`, `eval_name`, `variant` and the outcome labels from log metadata, and reads old logs the way it does today. It shows one table per eval file, variants in role order, and one Δ for each variant other than `template`. The gate runs per eval file and uses per-check minimums and `min_pass_rate`, which can only raise the bar. `MIN_ADHERENCE` and `MIN_HELD` are new constants in `report.py`. The header shows the Whitney version, harness version, evals path and each eval file's SHA-256. Answer spec open question 6 (controls in the gate) before starting.
 
+**Decided 2026-11-06 (spec open question 6):** controls don't affect the gate. When a control variant has no failing run, the report says so beside that file's table, for example "`allow_control` never failed in 3 runs, so the template's result may not show the rule holding". Test the warning and that the gate result is unchanged.
+
 **Acceptance criteria:**
 - [ ] Today's report tests pass without edits, and the logs in `logs/` render exactly as they do today.
 - [ ] New tests cover a file with several checks and a file with several comparison variants.
