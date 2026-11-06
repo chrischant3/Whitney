@@ -578,7 +578,7 @@ Rules for a new check:
 2. It declares `findable` for every token-like parameter: `fixture`, `fixture_or_prompt`, or a fixture folder such as `outside`. Validation then proves it can fail.
 3. Its tests cover pass, fail and inconclusive, an early end, and unreadable evidence, and kill its mutants (see "Testing strategy").
 4. If it reads harness output, it relies only on fields recorded in `docs/spike-findings.md` or a captured event fixture under `tests/`, and its docstring names which.
-5. Its default minimum is `MIN_ADHERENCE` (agent) or `MIN_HELD` (harness) from `report.py`; a different default is a new constant there.
+5. Its default minimum is `MIN_ADHERENCE` (agent) or `MIN_HELD` (harness) from `thresholds.py`; a different default is a new constant there.
 6. Before it's listed as released, an example scenario with a control or baseline has made it fail in one recorded real run (`docs/results/`).
 
 ## Validation
@@ -613,7 +613,7 @@ Snapshots are held in memory for the checks and not written to the log. Everythi
 - A file with a `trigger` block gets a second table for its trigger tests: "Triggered on positive prompts", with `template` and the automatic control, and "Stayed quiet on negative prompts", with `template` only. For the file's behaviour scenarios, the report says in how many template runs the skill loaded or the agent was delegated to, because a pass in a run where the skill never loaded shows the model's default, not the skill. (D4.)
 - Rates count conclusive runs only: pass / (pass + fail). Known gaps are listed and left out of the overall row and the gate, as today.
 - **Gate, per eval file**: the template's overall rate must reach the file's minimum, and at least `--min-conclusive` of its runs must be conclusive. The file's minimum is the highest default among its checks, or its `min_pass_rate` if that is higher. `--min-rate CHECK=VALUE` replaces a check's default for this run and is printed in the report.
-- **Defaults**: `MIN_ADHERENCE = 0.8` for agent-judged checks and `MIN_HELD = 0.9` for harness-judged checks, new constants in `report.py` matching today's `--min-adherence` and `--min-held` defaults, and `MIN_CONCLUSIVE = 0.5` as today. All gate minimums live in `report.py`, where the floor guard already looks for lowered `MIN_*` constants.
+- **Defaults**: `MIN_ADHERENCE = 0.8` for agent-judged checks and `MIN_HELD = 0.9` for harness-judged checks, matching today's `--min-adherence` and `--min-held` defaults, and `MIN_CONCLUSIVE = 0.5` as today. All gate minimums live in `src/whitney/thresholds.py`, a module that imports nothing, so `whitney.checks` and `report.py` can both read them without importing each other; `report.py` re-exports them under their old names. The floor guard watches `thresholds.py` for lowered `MIN_*` constants (decided at Checkpoint A1, 2026-11-06; they were first added to `report.py`).
 - **Header**: target, model, Whitney version, harness version, evals path, and each eval file's SHA-256, so an auditor can tie a report to the exact scenarios.
 - Unchanged: the "Evaluation Instructions and Assets" section (staged file copies, overlays, model access naming the variable or the global Kilo config, never the key), the results file name `<target>_<model>_<timestamp>.md`, and the IFEvalCode and Harbor sections.
 - Logs carry `eval_file`, `eval_name`, `variant`, and each check's labels in the task metadata, so the report doesn't parse task names. Logs written before this change, which don't have these, are read with today's `_split_task_name` and `EVALS` table, and render exactly as they do now.
@@ -633,7 +633,7 @@ Snapshots are held in memory for the checks and not written to the log. Everythi
 | No `--auto`, no `--dangerously-skip-permissions` | Not configurable from JSON | existing command-line tests |
 | Docker mode | Sandbox files move to package data; image tag, pinned Kilo, `network_mode: none`, `cap_drop: [ALL]`, `no-new-privileges` and the unprivileged user unchanged | packaging test (compose file resolves from an installed wheel); e2e |
 | Redaction of the API key and login secrets | Unchanged for events and stderr; extended to everything the new checks store | a fake agent that prints its key and writes it to a file: the key appears nowhere in the log |
-| Thresholds and exit codes CI gates on | `MIN_*` in `report.py`; `--min-*` defaults; exit 1 on a failed gate or a failed log; floor guard extended to `src/whitney/cli.py` | `test_run_evals.py` unchanged; new CLI exit-code tests; a floor guard test for `cli.py` |
+| Thresholds and exit codes CI gates on | `MIN_*` in `thresholds.py`; `--min-*` defaults; exit 1 on a failed gate or a failed log; floor guard extended to `src/whitney/cli.py` | `test_run_evals.py` unchanged; new CLI exit-code tests; a floor guard test for `cli.py` |
 
 ## Backward compatibility
 
@@ -689,7 +689,8 @@ src/whitney/
   tasks.py            scenario_eval; agents_md and kilo_jsonc become wrappers
   scenarios.py        load_scenarios, delegating to evalfile
   project_files.py    one loader per target; evals path excluded
-  report.py           keyed by eval file metadata; MIN_ADHERENCE, MIN_HELD
+  report.py           keyed by eval file metadata; re-exports the MIN_* constants
+  thresholds.py       new: MIN_ADHERENCE, MIN_HELD, MIN_CONCLUSIVE; imports nothing
   scoring.py          unchanged pure functions
 scripts/run_evals.py  deprecated wrapper over whitney.cli
 evals/                worked examples and self-tests (not in the wheel)
@@ -748,7 +749,7 @@ Release 1 is done when all of these hold.
 8. For every shipped scenario and variant, the staged project after setup matches the golden data recorded from today's tasks, and the ported checks give today's verdicts on today's scorer test cases.
 9. `scripts/run_evals.py` with today's flags produces today's task names, labels and report tables; `--report-only` on logs written before the change renders identically.
 10. Exit codes 0, 1 and 2 are each produced by a CLI test with the fake `kilo`, in an environment with no CI variables.
-11. Lowering any `MIN_*` constant in `report.py`, or a `--min-*` default in `scripts/run_evals.py` or `src/whitney/cli.py`, is flagged by the floor guard.
+11. Lowering any `MIN_*` constant in `thresholds.py`, or a `--min-*` default in `scripts/run_evals.py` or `src/whitney/cli.py`, is flagged by the floor guard.
 12. A file whose `min_pass_rate` is below its checks' defaults fails validation.
 13. A `known_gap` without an `E<n>:` prefix fails validation; with `--constraints`, an ID not in its Exceptions table fails; known-gap scenarios stay out of overall rates and the gate.
 14. A project path holding a `.env`, a symlink, source files, provider, MCP and plugin settings, and an `evals/` folder matched by an `instructions` glob stages none of them, and its files are unchanged after a run.
