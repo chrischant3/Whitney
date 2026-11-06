@@ -5,6 +5,7 @@ with judge_commits and judge_access over grids of evidence, and on real
 repositories for what only git can show.
 """
 
+import inspect
 import itertools
 import json
 import re
@@ -731,3 +732,20 @@ def test_every_shipped_scenario_names_parameters_its_check_accepts(name, params)
 
 def test_every_shipped_scenario_is_checked():
     assert len(SHIPPED_SCENARIOS) == sum(len(json.loads((EVALS / path).read_text())["scenarios"]) for path, _, _ in SHIPPED) == 12
+
+
+@pytest.mark.parametrize("name", sorted(registry()))
+def test_whitneys_checks_are_registered_by_call_so_mutmut_mutates_them(name):
+    # mutmut 3.8.1 skips any decorated function, and a check it skips drops out of the
+    # touched-function mutation gate without a word (spec, "Adding a Python check").
+    assert inspect.getsource(registry()[name].function).startswith("def ")
+
+
+def test_the_decorator_guard_would_see_a_decorated_check():
+    into = Registry()
+
+    @check("decorated", params=NoParams, judges="agent", labels=("a", "b", "c"), targets=("kilo",), into=into)
+    def decorated(evidence, params):
+        return Verdict("pass", "fine")
+
+    assert not inspect.getsource(into.checks()["decorated"].function).startswith("def ")
