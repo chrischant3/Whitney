@@ -160,7 +160,7 @@ def _load_kilo(root: Path, evals_path: Path | None) -> tuple[dict[str, str], lis
         # _instruction_matches never looks in the evals folder or through a symlinked one.
         for match in _instruction_matches(root, pattern, evals):
             relative = match.relative_to(root).as_posix()
-            if _is_project_file(root, relative) and _is_safe_file(match):
+            if _is_project_file(root, relative) and _is_safe_file(root, match):
                 files[relative] = _read_text(match)
 
     return files, sorted(left_out)
@@ -348,7 +348,7 @@ def not_staged_reason(
     excluded = next((part for part in path.parts if part in EXCLUDED_DIRS), None)
     if excluded:
         return f"it is inside {excluded}/, which is never staged"
-    if not _is_safe_file(full):
+    if not _is_safe_file(root, full):
         return f".env files are never staged, except {', '.join(sorted(SAFE_ENV_FILES)[:-1])} and {sorted(SAFE_ENV_FILES)[-1]}"
     if target == "claude-code":
         reasons = files_not_staged_reasons(target, root)
@@ -392,7 +392,7 @@ def _walk_files(root: Path, allowed_root: Path, evals: "_EvalsFolder | None" = N
     if not root.resolve().is_relative_to(allowed_root):
         return
     for path in sorted(_tree_files(root, evals)):
-        if _is_safe_file(path) and path.resolve().is_relative_to(allowed_root):
+        if _is_safe_file(allowed_root, path) and path.resolve().is_relative_to(allowed_root):
             yield path.relative_to(root).as_posix(), path
 
 
@@ -512,7 +512,7 @@ def _direct_md_files(root: Path, folder: str, evals: "_EvalsFolder | None") -> l
     return [
         f"{folder}/{path.name}"
         for path in sorted(directory.iterdir())
-        if path.name.endswith(".md") and _is_project_file(root, f"{folder}/{path.name}") and _is_safe_file(path)
+        if path.name.endswith(".md") and _is_project_file(root, f"{folder}/{path.name}") and _is_safe_file(root, path)
     ]
 
 
@@ -684,8 +684,13 @@ def _is_project_file(root: Path, relative: str) -> bool:
     return path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(root)
 
 
-def _is_safe_file(path: Path) -> bool:
-    if any(part in EXCLUDED_DIRS for part in path.parts):
+def _is_safe_file(root: Path, path: Path) -> bool:
+    """False for a .env file (except SAFE_ENV_FILES) or a file inside an excluded folder of the project under `root`.
+
+    Only the folders between `root` and `path` count: a project inside a folder named node_modules
+    or .venv stages what any other project stages.
+    """
+    if any(part in EXCLUDED_DIRS for part in path.relative_to(root).parts):
         return False
     name = path.name.lower()
     return not (name == ".env" or name.startswith(".env.")) or name in SAFE_ENV_FILES

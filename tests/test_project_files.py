@@ -1249,3 +1249,35 @@ def test_a_project_inside_a_folder_named_like_an_excluded_one_still_never_stages
     (project / "kilo.jsonc").write_text(json.dumps({"instructions": [".env"]}))
 
     assert ".env" not in load_project_files(project)
+
+
+PROJECT_UNDER_TEST = {
+    "AGENTS.md": "rules\n",
+    ".kilo/rules/a.md": "rule a\n",
+    ".kilo/skills/x/SKILL.md": "skill\n",
+    "docs/notes.md": "notes\n",
+    "node_modules/pkg/x.md": "a dependency's file\n",
+    ".env": "SECRET=1\n",
+}
+STAGED_FROM_PROJECT_UNDER_TEST = {"kilo.jsonc", "AGENTS.md", ".kilo/rules/a.md", ".kilo/skills/x/SKILL.md", "docs/notes.md"}
+
+
+@pytest.mark.parametrize("parent", ["plain", "node_modules", ".venv", ".git"])
+def test_a_project_stages_the_same_files_whatever_the_folders_above_it_are_called(tmp_path, parent):
+    # Only folders inside the project are excluded; the name of a folder above it says nothing about its files.
+    project = tmp_path / parent / "proj"
+    project.mkdir(parents=True)
+    _kilo_project(project, PROJECT_UNDER_TEST)
+    (project / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", ".env"]}))
+
+    staged = load_project_files(project)
+
+    assert set(staged) == STAGED_FROM_PROJECT_UNDER_TEST
+    assert set(load_template_files(project)) == STAGED_FROM_PROJECT_UNDER_TEST
+    assert not_staged_reason("kilo", project, "docs/notes.md", staged) is None
+    assert not_staged_reason("kilo", project, "node_modules/pkg/x.md", staged) == (
+        "it is inside node_modules/, which is never staged"
+    )
+    assert not_staged_reason("kilo", project, ".env", staged) == (
+        ".env files are never staged, except .env.example, .env.sample and .env.template"
+    )
