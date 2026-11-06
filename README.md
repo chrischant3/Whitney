@@ -67,7 +67,7 @@ Whitney is at its first milestone. A scorer is the code that decides whether a r
 
 Not supported yet:
 
-- **A new kind of rule.** A rule such as "run the tests before you commit" needs a new scorer and task in Python, in `src/whitney/scoring.py` and `src/whitney/tasks.py`. The runner reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new scenario file on its own isn't run.
+- **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, and a task and scorer in `src/whitney/tasks.py` that use it. The runner reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new scenario file on its own isn't run.
 - **Skills and agents.** Files under `.kilo/skills/` and `.kilo/agents/` are copied into each Kilo run, so the agent has them, but no eval checks whether a skill is triggered or followed.
 - **Claude Code projects with `--project-path`.** It needs a Kilo config and copies only Kilo's files, so a project's `.claude/` folder is left out. Put Claude Code configuration in `template/claude-code/` instead.
 - **Which instruction wins** when two files disagree.
