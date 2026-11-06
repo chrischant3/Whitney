@@ -28,9 +28,25 @@ Put shared Kilo instruction/config assets under `template/kilo/`, preserving the
 
 ## Evaluating a local project
 
-Pass `--project-path /path/to/project` to `run_evals.py`. The source directory is read-only. Its root `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, Kilo config, `.kilo`/`.kilocode` instruction assets and files referenced by the config's `instructions` setting are staged into the disposable scenario projects.
+Pass `--project-path /path/to/project` to `run_evals.py`. The source directory is read-only. Whitney copies the project's configuration and instruction files into the disposable scenario projects, the temporary folders each scenario runs in. These copies are the **staged files**, and which files they are depends on `--target`:
 
-Project source code and `.env` files are not copied. Provider connections, MCP servers and plugins are omitted from the copied config: Kilo uses the user's global connection details, and runtime integrations from a target repo are not executed. The `agents_md` baseline removes the root `AGENTS.md`; `kilo_jsonc`'s allow-control changes the copied external-directory permission to `allow`.
+| Target | Staged files |
+|---|---|
+| `kilo` | Root `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md`; the Kilo config (`kilo.jsonc` or `kilo.json`, at the root or in `.kilo/` or `.kilocode/`), which must exist; the `agent`, `agents`, `command`, `commands`, `instructions`, `mode`, `modes`, `skill` and `skills` folders in `.kilo/` and `.kilocode/`; and files the config's `instructions` setting names |
+| `claude-code` | Root `AGENTS.md` and `CLAUDE.md`, and `.claude/CLAUDE.md`. At least one must exist; no Kilo config is needed |
+
+For both targets, project source code, `.env` files (other than `.env.example`, `.env.sample` and `.env.template`), symlinks and anything that resolves outside the project are not copied. A staged file that isn't UTF-8 text stops the run with a message naming it. Provider connections, MCP servers and plugins are omitted from the copied Kilo config: Kilo uses the user's global connection details, and runtime integrations from a target repo are not executed.
+
+For `claude-code`, nothing else in `.claude/` is copied: not `settings.json`, whose hooks run commands, and not skills, agents or commands. A `.claude` folder that is itself a symlink isn't followed, so nothing in it is copied. The report's "Not Staged" table lists any root `AGENTS.md` or `CLAUDE.md` skipped because it isn't a regular file inside the project, then up to 50 of the `.claude/` entries left out, so you can see what the runs didn't use. Files a `CLAUDE.md` imports with `@path` aren't copied either, unless they are one of the staged files above.
+
+Claude Code may not read root `AGENTS.md`. In one run on 2026-11-06 with Claude Code 2.1.318, it read `AGENTS.md` when that was the project's only instruction file. In another run that day, it ignored `AGENTS.md` when the project also had `.claude/CLAUDE.md`. Each was a single sample, and a root `CLAUDE.md` beside `AGENTS.md` wasn't tried ([canary record](results/2026-11-06-claude-code-canary.md)). Whitney stages both files anyway, so the report can list `AGENTS.md` as staged when Claude Code didn't read it.
+
+The `agents_md` baseline removes the root `AGENTS.md` only, so its Δ (template rate minus baseline rate) measures the rules in `AGENTS.md` and nothing else. What that means for an existing project:
+
+- **Rules in root `AGENTS.md`, and no `CLAUDE.md` or `.claude/CLAUDE.md`.** The Δ shows what the rules change. This is how the shipped `template/claude-code/` is set up ([docs/template.md](template.md)).
+- **The project has a `CLAUDE.md` or `.claude/CLAUDE.md`.** Both variants keep it, so the Δ doesn't measure the rules in it, and the `AGENTS.md` it does measure may not have been read at all. A Δ near zero then says nothing about your rules. Read the template column instead: how often the agent followed the rule with all of the project's instructions in place.
+
+`kilo_jsonc`'s allow-control changes the copied external-directory permission to `allow`.
 
 Reports contain exact copies of staged instruction/config text for reproducibility. Do not store secrets in those files; global provider credentials are deliberately excluded.
 

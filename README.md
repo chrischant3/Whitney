@@ -14,7 +14,7 @@ What an agent does depends on the harness as well as the model. A harness is the
 2. Follow [Setup](#setup) for the harness you're testing.
 3. Put your configuration in that harness's template, `template/kilo/` or `template/claude-code/`, at the paths the harness loads it from. [docs/template.md](docs/template.md) says what goes where.
 
-   To test a Kilo project you already have, leave its files where they are. You'll point the runner at it in step 5.
+   To test a Kilo or Claude Code project you already have, leave its files where they are. You'll point the runner at it in step 5.
 4. Add scenarios for the behaviour you expect to the scenario file for that configuration, such as `evals/agents-md.json` for `AGENTS.md`. A scenario is a prompt, the starting project the agent works in, and the pressure it puts on the rule, such as a deadline or a direct request to break it. [docs/adding-tests.md](docs/adding-tests.md) shows the format.
 
    A scenario can only test a behaviour Whitney already knows how to score. [What you can test today](#what-you-can-test-today) lists them.
@@ -24,7 +24,7 @@ What an agent does depends on the harness as well as the model. A harness is the
    python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3
    ```
 
-   To test an existing Kilo project, add `--project-path /path/to/project`. The runner copies its configuration into temporary projects and never writes to it.
+   To test an existing project, add `--project-path /path/to/project`. The runner copies the project's configuration for that target into temporary projects and never writes to the project. [Evaluating a local project](docs/adding-tests.md#evaluating-a-local-project) lists the files it copies for each target.
 
    If the runner stops before it calls the model, its message names what's missing, such as `--target`, `--model` or an API key. [Setup](#setup) covers each one.
 6. Open the report the runner writes to `results/`. Read the Δ column first: it's the difference between running with your configuration and without it.
@@ -69,7 +69,7 @@ Not supported yet:
 
 - **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, and a task and scorer in `src/whitney/tasks.py` that use it. The runner reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new scenario file on its own isn't run.
 - **Skills and agents.** Files under `.kilo/skills/` and `.kilo/agents/` are copied into each Kilo run, so the agent has them, but no eval checks whether a skill is triggered or followed.
-- **Claude Code projects with `--project-path`.** It needs a Kilo config and copies only Kilo's files, so a project's `.claude/` folder is left out. Put Claude Code configuration in `template/claude-code/` instead.
+- **Claude Code settings, skills and agents.** With `--project-path`, the `claude-code` target copies only the instruction files: root `AGENTS.md` and `CLAUDE.md`, and `.claude/CLAUDE.md`. The rest of `.claude/`, such as `settings.json`, skills and agents, isn't copied, and the report lists what was left out. Files a `CLAUDE.md` imports with `@path` aren't copied either.
 - **Which instruction wins** when two files disagree.
 
 Skills, agents and instruction order are planned: see Future work in [docs/proposal.md](docs/proposal.md). Gaps found in what is tested: [docs/findings/](docs/findings/).
@@ -191,7 +191,7 @@ Claude Code runs on your machine and calls the Anthropic API with your key.
    python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --epochs 3
    ```
 
-Each run gets an empty temporary home folder and `--setting-sources project`, so your own Claude settings, `CLAUDE.md`, memory, plugins and MCP servers stay out of it; the only instructions it sees are the template's. It runs locally only, without `--dangerously-skip-permissions`.
+Each run gets an empty temporary home folder and `--setting-sources project`, so your own Claude settings, `CLAUDE.md`, memory, plugins and MCP servers stay out of it; the only instructions it sees are the template's, or the project's with `--project-path`. It runs locally only, without `--dangerously-skip-permissions`.
 
 ## Running the evals
 
@@ -219,6 +219,7 @@ python scripts/run_evals.py --target kilo --execution docker --model kilo/anthro
 
 # Test a different local project's config and instructions (source is not modified)
 python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path /path/to/project --epochs 3
+python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --project-path /path/to/project --epochs 3
 
 # Re-render a report from existing logs, no model calls
 python scripts/run_evals.py --report-only logs
@@ -288,7 +289,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 - The target's template is what's under test. Harness permissions let the eval tasks run headlessly (Kilo: a temporary config overlay that project-level permissions override; Claude Code: `--settings`). Neither harness runs with a blanket approve-all: Kilo runs without `--auto`, because `--auto` approves every `ask`, and Claude Code without `--dangerously-skip-permissions`.
 - A run that ends before the agent decides (Kilo exiting non-zero, or Claude Code reporting an error or a permission denial) counts as inconclusive in `agents_md`, not as followed.
 - In `agents_md`, a run whose git history may have been erased also counts as inconclusive, unless a committed `.env` or secret was still found. That covers a HEAD reflog that was emptied, has a gap or stops short of HEAD, and a tool call that expires or deletes reflog entries, runs `git filter-repo`, edits `.git/logs` or `.git/objects`, or deletes `.git`.
-- `--project-path` reads the target project's config and instruction assets into temporary eval projects. It does not copy project source code or `.env` files, does not copy provider/MCP/plugin connection settings, and never writes to the target directory. Kilo's provider details still come from the user's global Kilo config.
+- `--project-path` reads the target project's config and instruction assets into temporary eval projects; which files depends on the target. It does not copy project source code or `.env` files, does not copy provider/MCP/plugin connection settings, and never writes to the target directory. Kilo's provider details still come from the user's global Kilo config. For `claude-code` it copies only the instruction files, so `.claude/settings.json`, with its hooks, permissions and MCP servers, never reaches a run; the report lists the `.claude/` entries it left out.
 - The optional IFEvalCode task uses the official scorer against the sanitised local JSONL output; it makes no Hugging Face calls. The audit script removes only the `chinese_question` column (all English-question rows remain) and scans original text fields for injection indicators. Review `dataset/ifevalcode_prompt_injection_audit.md` before running. The task also scans every row it loads with the same checks and leaves flagged rows out, listing their ids as `injection_scan_excluded` in the log, and the agent gets no shell (as in the Harbor eval). Correctness checks run in IFEvalCode's Docker sandbox.
 - Harbor's `bigcode/bigcodebench-hard-complete` package is synced once at a pinned digest into `dataset/harbor/` and prompt-audited. Subsequent runs use the stored task directories. The sync script does not execute Harbor tasks, build Docker images, or call a model.
 - `bigcodebench_hard_complete` compares baseline/template on local Harbor tasks. The agent writes `solution.py` in a temporary host project, with shell commands denied, and the harness copies it into the Harbor sandbox; task containers have runtime networking disabled. A task whose sandbox could reach the host is refused before it runs. That covers privileged mode, added capabilities or devices, bind mounts, `env_file`, security options other than `no-new-privileges`, the host's cgroup, a build context outside the task folder, and top-level volumes with driver options. It also covers any variable that inspect-harbor or Docker Compose would fill from the host's environment, which could otherwise copy an API key into the container. The first run builds the Harbor image and may download its declared build dependencies.

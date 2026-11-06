@@ -24,7 +24,7 @@ from whitney import targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model
 from whitney.checks import Evidence, registry
 from whitney.git_env import ISOLATED_GIT_SHELL
-from whitney.project_files import load_project_files, load_template_files, set_external_directory
+from whitney.project_files import files_not_staged, load_project_files_for, load_template_files, set_external_directory
 from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
 
@@ -96,7 +96,8 @@ def agents_md(
         target: the harness under test, "kilo" or "claude-code" (see whitney.targets).
         model: the model under evaluation, as provider/model.
         execution: kilo only: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
-        project_path: optional local project supplying config and instruction assets.
+        project_path: optional local project supplying config and instruction
+            assets, read by the target's loader (whitney.project_files).
         api_key_env: local mode only; env var holding the API key for model's
             provider (e.g. ANTHROPIC_API_KEY). For kilo, unset means the global
             Kilo config; claude-code defaults to ANTHROPIC_API_KEY.
@@ -127,6 +128,7 @@ def agents_md(
             "model_access": targets.model_access(target, api_key_env, base_url),
             "asset_source": "local project" if project_path else "template",
             "evaluation_assets": template_files,
+            "not_staged": files_not_staged(target, project_path) if project_path else [],
             "harness_permissions": AGENTS_MD_PERMISSIONS[target],
             **_docker_model_names(model, execution),
         },
@@ -286,7 +288,7 @@ def _docker_model_names(model: str, execution: str) -> dict[str, str]:
 
 def _source_files(project_path: str | None, target: str) -> dict[str, str]:
     if project_path:
-        return load_project_files(Path(project_path))
+        return load_project_files_for(target, Path(project_path))
     return load_template_files(targets.template_dir(target))
 
 

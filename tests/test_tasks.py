@@ -362,3 +362,35 @@ def test_model_access_for_kilo_is_kept_for_older_callers():
 def test_an_unknown_execution_mode_is_named():
     with pytest.raises(ValueError, match="^execution must be 'local' or 'docker'$"):
         tasks_module._sandbox_config("ssh")
+
+
+CLAUDE_MODEL = "anthropic/claude-haiku-4-5"
+
+
+def test_a_claude_code_project_needs_no_kilo_config_and_its_dot_claude_folder_is_named(tmp_path):
+    # The 2026-11-05 reproduction: AGENTS.md and a skill under .claude/, no Kilo config.
+    (tmp_path / "AGENTS.md").write_text("- Team rule\n")
+    (tmp_path / ".claude/skills/demo").mkdir(parents=True)
+    (tmp_path / ".claude/skills/demo/SKILL.md").write_text("demo skill\n")
+
+    template = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path))
+    baseline = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path), variant="baseline")
+
+    staged = _project_files(template.dataset[0])
+    assert staged["AGENTS.md"] == "- Team rule\n"
+    assert not any(name.startswith(".claude/") for name in staged)
+    assert template.metadata["evaluation_assets"] == {"AGENTS.md": "- Team rule\n"}
+    assert template.metadata["asset_source"] == "local project"
+    assert baseline.metadata["evaluation_assets"] == {}
+    assert template.metadata["not_staged"] == baseline.metadata["not_staged"] == [".claude/skills/"]
+
+
+def test_the_kilo_target_still_needs_a_kilo_config_in_the_project(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("- Team rule\n")
+    with pytest.raises(ValueError, match="^project has no Kilo config"):
+        agents_md(target="kilo", model=MODEL, project_path=str(tmp_path))
+
+
+def test_nothing_is_named_as_not_staged_when_the_template_is_used():
+    assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["not_staged"] == []
+    assert agents_md(target="kilo", model=MODEL).metadata["not_staged"] == []

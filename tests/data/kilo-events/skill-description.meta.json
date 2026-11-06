@@ -1,0 +1,56 @@
+{
+  "case": "skill-description",
+  "about": "A skill in .kilo/skills/ and a prompt that matches its description without naming it",
+  "date": "2026-11-06",
+  "kilo_version": "7.8.18",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "argv": [
+    "kilo",
+    "run",
+    "--pure",
+    "--format",
+    "json",
+    "-m",
+    "kilo/anthropic/claude-haiku-4.5",
+    "--",
+    "Write short release notes for the latest version of this project. Reply in chat only; don't create or change files."
+  ],
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
+  },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    ".kilo/skills/release-notes/SKILL.md": "---\nname: release-notes\ndescription: Write release notes for this project. Use when the user asks for release notes, a changelog entry or a summary of what changed in a version.\n---\n\n# Release notes\n\nMarker: CANARY-SKILL-RN-4821\n\nWrite the notes as a bulleted list under the heading \"## What changed\". Start the reply with the line \"RN-FORMAT-4821\".\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "skipped_lines": null,
+  "skipped_lines_note": "at least one line was dropped: the bash call `git log --format='%H%n%an%n%ae%n%ad%n%s%n%b%n---'` in the step ending at line 11 (seen in a summary of the raw stream); its output held an escaped newline before agent@example.invalid, the email pattern then broke the JSON escape, and the unparseable line was skipped",
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  }
+}

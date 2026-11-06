@@ -21,14 +21,14 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** With `--target claude-code`, `--project-path` stops with "project has no Kilo config". Every project path goes through `load_project_files`, which is the Kilo loader. Reproduced on 2026-11-05 with a folder holding only `AGENTS.md` and `.claude/skills/demo/SKILL.md`. Add a Claude Code loader, and pick the loader by target in the three places that load a project.
 
 **Acceptance criteria:**
-- [ ] With `--target claude-code`, a project holding only `AGENTS.md`, or only `CLAUDE.md`, stages that file and needs no Kilo config. The safety rules still hold: no `.env` files, symlinks, non-UTF-8 files or anything that resolves outside the project. A project with neither file stops with a message naming the files it looked for.
-- [ ] If the project has a `.claude/` folder, the report says its contents weren't staged. The exception is `.claude/CLAUDE.md`, if decision 5 approves staging it.
-- [ ] `--target kilo` is unchanged, and `tests/test_project_files.py` passes without edits.
+- [x] With `--target claude-code`, a project holding only `AGENTS.md`, or only `CLAUDE.md`, stages that file and needs no Kilo config. The safety rules still hold: no `.env` files, symlinks, non-UTF-8 files or anything that resolves outside the project. A project with neither file stops with a message naming the files it looked for.
+- [x] If the project has a `.claude/` folder, the report says its contents weren't staged. The exception is `.claude/CLAUDE.md`, if decision 5 approves staging it.
+- [x] `--target kilo` is unchanged, and `tests/test_project_files.py` passes without edits.
 
 **Verification:**
-- [ ] New tests in `tests/test_project_files.py` fail before the change and pass after it.
-- [ ] `python scripts/check.py task` passes.
-- [ ] Manual, optional, a few cents: `python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --project-path <folder with AGENTS.md> --evals agents_md --limit 1 --epochs 1` completes, and its report lists `AGENTS.md` among the staged files.
+- [x] New tests in `tests/test_project_files.py` fail before the change and pass after it.
+- [x] `python scripts/check.py task` passes.
+- [x] Manual, optional, a few cents: `python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --project-path <folder with AGENTS.md> --evals agents_md --limit 1 --epochs 1` completes, and its report lists `AGENTS.md` among the staged files.
 
 **Dependencies:** None.
 
@@ -584,5 +584,5 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 ### Checkpoint D: release
 
-- [ ] The spec's acceptance criteria 1 to 19 hold for everything in the release.
+- [ ] The spec's acceptance criteria 1 to 20 hold for everything in the release.
 - [ ] Review with Christopher before the tag is pushed.
