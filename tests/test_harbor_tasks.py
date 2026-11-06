@@ -294,3 +294,19 @@ def test_a_manifest_is_read_as_utf8_whatever_the_locale(tmp_path, ascii_locale):
     task = load(tmp_path)
 
     assert task.metadata["cache_integrity"] == "verified"
+
+
+def test_a_claude_code_project_path_stages_its_claude_md_and_names_what_it_left_out(tmp_path):
+    dataset = tmp_path / "dataset"
+    write_task(dataset)
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / "CLAUDE.md").write_text("- Team rule\n")
+    (project / ".claude/settings.json").write_text("{}")
+
+    task = load(dataset, target="claude-code", model="anthropic/claude-haiku-4-5", project_path=str(project))
+
+    assert task.metadata["evaluation_assets"] == {"CLAUDE.md": "- Team rule\n"}
+    assert task.metadata["not_staged"] == [".claude/settings.json"]
+    assert task.metadata["asset_source"] == "local project"
+    assert load(dataset).metadata["not_staged"] == []
