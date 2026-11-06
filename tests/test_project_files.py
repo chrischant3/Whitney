@@ -585,11 +585,9 @@ def test_a_case_variant_dot_claude_md_stays_ahead_of_the_cap(tmp_path, case_inse
 
     names = files_not_staged("claude-code", tmp_path)
 
-    if case_insensitive:
-        assert names[0] == ".claude/claude.md"
-        assert files_not_staged_reasons("claude-code", tmp_path)[".claude/claude.md"] == "beside AGENTS.md"
-    else:  # on Linux it isn't Claude Code's file, so it is an ordinary entry, past the cap
-        assert ".claude/claude.md" not in names
+    assert names[0] == ".claude/claude.md"
+    expected = "beside AGENTS.md" if case_insensitive else "rest of .claude/"  # on Linux it isn't Claude Code's file
+    assert files_not_staged_reasons("claude-code", tmp_path)[".claude/claude.md"] == expected
 
 
 def test_a_dot_claude_md_in_a_folder_that_cannot_be_listed_is_renamed_under_its_looked_up_name(tmp_path, monkeypatch):

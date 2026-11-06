@@ -33,8 +33,9 @@ CONNECTION_CONFIG_KEYS = {"provider", "enabled_providers", "disabled_providers",
 # which run commands, and which of its keys are safe to copy is still open (spec open question 8).
 CLAUDE_CODE_DIR = ".claude"
 AGENTS_MD = "AGENTS.md"
-DOT_CLAUDE_MD = f"{CLAUDE_CODE_DIR}/CLAUDE.md"
-CLAUDE_CODE_ROOT_INSTRUCTIONS = (AGENTS_MD, "CLAUDE.md")
+CLAUDE_MD = "CLAUDE.md"
+DOT_CLAUDE_MD = f"{CLAUDE_CODE_DIR}/{CLAUDE_MD}"
+CLAUDE_CODE_ROOT_INSTRUCTIONS = (AGENTS_MD, CLAUDE_MD)
 CLAUDE_CODE_INSTRUCTIONS = (*CLAUDE_CODE_ROOT_INSTRUCTIONS, DOT_CLAUDE_MD)
 # files_not_staged names this many paths and counts the rest, so a large .claude/
 # (Claude Code can keep whole worktrees there) can't swell the log or the report.
@@ -269,9 +270,9 @@ def _not_staged(target: str, project_dir: Path) -> tuple[list[str], dict[str, st
         if relative != source and _is_present(root / relative)
     ]
     others = []
-    for name, reason, is_instruction in sorted(_unstaged_claude_entries(root, source)):
-        # .claude/CLAUDE.md goes ahead of the cap: it is the file the report most needs to name.
-        (first if is_instruction else others).append((name, reason))
+    for name, reason in sorted(_unstaged_claude_entries(root, source)):
+        # .claude/CLAUDE.md, in any spelling, goes ahead of the cap: the report most needs to name it.
+        (first if name.casefold() == DOT_CLAUDE_MD.casefold() else others).append((name, reason))
     shown = first + others[:NOT_STAGED_LIMIT]
     names = [name for name, _ in shown]
     if len(others) > NOT_STAGED_LIMIT:
@@ -281,7 +282,7 @@ def _not_staged(target: str, project_dir: Path) -> tuple[list[str], dict[str, st
 
 def _instruction_reason(root: Path, relative: str, source: str | None) -> str:
     # Only reached for a file that isn't a symlinked .claude's: those are named as the folder.
-    if _is_staged_claude_code_file(root, relative, linked=False):
+    if _is_staged_claude_code_file(root, relative):
         return BESIDE_REASON.format(staged=_spelled(root, source))
     return UNSAFE_REASON
 
@@ -293,7 +294,7 @@ def _claude_code_source(root: Path) -> str | None:
     return next(usable, None)  # lazily, so .claude/ is only looked in when no root file will do
 
 
-def _is_staged_claude_code_file(root: Path, relative: str, linked: bool) -> bool:
+def _is_staged_claude_code_file(root: Path, relative: str, linked: bool = False) -> bool:
     if not relative.startswith(f"{CLAUDE_CODE_DIR}/"):
         return _is_project_file(root, relative)
     if linked:
@@ -304,9 +305,9 @@ def _is_staged_claude_code_file(root: Path, relative: str, linked: bool) -> bool
         return False
 
 
-def _unstaged_claude_entries(root: Path, source: str | None) -> list[tuple[str, str, bool]]:
+def _unstaged_claude_entries(root: Path, source: str | None) -> list[tuple[str, str]]:
     folder = root / CLAUDE_CODE_DIR
-    whole = [(f"{CLAUDE_CODE_DIR}/", WHOLE_REASON, False)]
+    whole = [(f"{CLAUDE_CODE_DIR}/", WHOLE_REASON)]
     if folder.is_symlink():
         return whole
     if not folder.is_dir():
@@ -314,14 +315,14 @@ def _unstaged_claude_entries(root: Path, source: str | None) -> list[tuple[str, 
     try:  # an unreadable folder or entry is named, not allowed to stop the task being built
         entries = list(folder.iterdir())
         names = [entry.name for entry in entries]
-        instruction = _on_disk_name(names, "CLAUDE.md") if _is_present(folder / "CLAUDE.md") else None
+        instruction = _on_disk_name(names, CLAUDE_MD) if _is_present(folder / CLAUDE_MD) else None
         items = []
         for entry in entries:
             if entry.name != instruction:
                 suffix = "/" if not entry.is_symlink() and entry.is_dir() else ""
-                items.append((f"{CLAUDE_CODE_DIR}/{entry.name}{suffix}", REST_REASON, False))
+                items.append((f"{CLAUDE_CODE_DIR}/{entry.name}{suffix}", REST_REASON))
             elif source != DOT_CLAUDE_MD:
-                items.append((f"{CLAUDE_CODE_DIR}/{entry.name}", _instruction_reason(root, DOT_CLAUDE_MD, source), True))
+                items.append((f"{CLAUDE_CODE_DIR}/{entry.name}", _instruction_reason(root, DOT_CLAUDE_MD, source)))
         return items
     except OSError:
         return whole
