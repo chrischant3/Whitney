@@ -7,6 +7,7 @@ couldn't run. The runs here use a fake `kilo` on PATH, so no model is called.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -209,7 +210,9 @@ def test_a_source_the_project_does_not_stage_exits_2(consumer, monkeypatch, caps
 
     assert cli.main(_run_args(consumer)) == 2
 
-    assert f"error: {consumer.evals / 'team-rules-md.json'}: source: 'AGENTS.md' isn't staged" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert f"error: {consumer.evals / 'team-rules-md.json'}: source: 'AGENTS.md' isn't staged" in err
+    assert err.endswith("whitney: error: the evals don't fit the project; `whitney validate` lists the same problems\n")
 
 
 def test_a_task_that_cannot_be_built_exits_2(consumer, monkeypatch, capsys):
@@ -343,12 +346,12 @@ def recorded(consumer, monkeypatch):
 
 
 def test_each_variant_runs_in_role_order_with_the_runs_options(consumer, recorded):
-    variants = {"zz_control": {"role": "control", "remove": ["AGENTS.md"]}, "no_rules": {"role": "baseline", "remove": ["AGENTS.md"]}}
+    variants = {"aa_control": {"role": "control", "remove": ["AGENTS.md"]}, "zz_no_rules": {"role": "baseline", "remove": ["AGENTS.md"]}}
     (consumer.evals / "team-rules-md.json").write_text(_eval_file(variants=variants))
 
     assert cli.main(_run_args(consumer, "--limit", "2", "--sample-shuffle", "--max-samples", "4", "--log-dir", "here")) == 0
 
-    assert [task.name for task, _ in recorded.calls] == ["team_rules_md_no_rules", "team_rules_md_template", "team_rules_md_zz_control"]
+    assert [task.name for task, _ in recorded.calls] == ["team_rules_md_zz_no_rules", "team_rules_md_template", "team_rules_md_aa_control"]
     assert recorded.calls[0][1] == {
         "model": None, "epochs": 1, "limit": 2, "sample_shuffle": 42, "max_samples": 4, "log_dir": "here", "display": "plain",
     }
@@ -507,7 +510,9 @@ def test_min_conclusive_sets_the_share_of_runs_that_must_be_conclusive(consumer,
 @pytest.mark.parametrize("flags, message", [
     (["--min-rate", "nothing=0.5"], "--min-rate names no registered check 'nothing'"),
     (["--min-conclusive", "2"], "argument --min-conclusive: needs a number from 0 to 1, got '2'"),
-    (["--limit", "0"], "--limit must be positive"),
+    (["--limit", "0"], "error: --limit must be positive\n"),
+    (["--execution", "weird"], "argument --execution: invalid choice: 'weird'"),
+    (["--min-rate", "no_secret_committed=0.5=1"], "--min-rate needs a number from 0 to 1 for no_secret_committed, got '0.5=1'"),
 ])
 def test_a_bad_option_value_is_a_usage_error(consumer, monkeypatch, capsys, flags, message):
     _no_model_calls(monkeypatch)
@@ -662,14 +667,20 @@ def test_why_not_run_lists_every_unsupported_check():
 def test_filename_model_strips_only_dots_dashes_and_underscores():
     assert cli.filename_model("v/Xbox.") == "xbox"
     assert cli.filename_model("v/_-.") == "model"
+    assert cli.filename_model("my-proxy/a/GPT 6  Luna") == "gpt-6-luna"
+    assert cli.result_filename("t", "m/x") == "x_t.md"
+    assert cli.result_filename("t", "m/x", "kilo") == "kilo_x_t.md"
 
 
 def _log(task, status="success"):
     return SimpleNamespace(eval=SimpleNamespace(task=task, metadata={}, task_args={}), samples=[], status=status)
 
 
-def test_the_report_is_its_parts_in_order(tmp_path, monkeypatch, capsys):
-    logs = [_log("agents_md_template"), _log("ifevalcode_template"), _log("bigcodebench_hard_complete_template", "error")]
+def test_the_report_is_its_parts_in_order(tmp_path, monkeypatch, capsys, ascii_locale):
+    logs = [
+        _log("agents_md_template"), _log("ifevalcode_template"), _log("bigcodebench_hard_complete_template"),
+        _log("agents_md_baseline", "error"), _log("kilo_jsonc_template", "cancelled"),
+    ]
     seen = {}
     for name in ("render_markdown", "render_ifevalcode_markdown", "render_harbor_markdown", "render_asset_provenance_markdown"):
         monkeypatch.setattr(cli, name, lambda given, name=name: (seen.setdefault(name, given), f"<{name}>\n")[1])
@@ -686,12 +697,109 @@ def test_the_report_is_its_parts_in_order(tmp_path, monkeypatch, capsys):
         "\n<render_ifevalcode_markdown>\n\n<render_harbor_markdown>\n"
         "\n## Not run for this target\n\n- `x.json`: why\n"
         "\n<render_asset_provenance_markdown>\n"
-        "\n## Problems\n\n- bigcodebench_hard_complete_template: error\n"
+        "\n## Problems\n\n- agents_md_baseline: error\n- kilo_jsonc_template: cancelled\n"
     )
     [out] = (tmp_path / "a" / "b").iterdir()
     assert code == 1
     assert out.read_text(encoding="utf-8") == expected
-    assert out.name.startswith("kilo_model_") and out.name.endswith(".md")
+    assert re.fullmatch(r"kilo_model_\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.md", out.name)
     assert capsys.readouterr().out == f"{expected}\nReport written to {out}\n"
     assert seen["render_ifevalcode_markdown"] == [logs[1]] and seen["render_harbor_markdown"] == [logs[2]]
     assert seen["render_asset_provenance_markdown"] == logs
+
+
+def test_the_help_shows_every_options_help(capsys):
+    def shown(argv):
+        assert cli.main(argv) == 0
+        return " ".join(capsys.readouterr().out.split())
+
+    def text(key):
+        return " ".join(cli.HELP[key].split())
+
+    top = shown(["--help"])
+    assert text("run") in top and text("validate") in top
+    run = shown(["run", "--help"])
+    assert text("run") in run and "{local,docker}" in run and "{kilo,claude-code}" in run
+    for key in [k for k in cli.HELP if k.startswith("--")]:
+        assert text(key) in run, key
+    validate = shown(["validate", "--help"])
+    assert text("validate") in validate and "{kilo,claude-code}" in validate
+    assert text("--target") + "; left out, every target a file applies to" in validate
+    for key in ("--project-path", "--evals-path", "--constraints"):
+        assert text(key) in validate, key
+
+
+@pytest.mark.parametrize("command", ["run", "validate"])
+def test_an_unknown_target_is_a_usage_error(consumer, monkeypatch, capsys, command):
+    _no_model_calls(monkeypatch)
+    args = ["--target", "nope", "--model", "m/x"] if command == "run" else ["--target", "nope"]
+    assert cli.main([command, *args, "--project-path", str(consumer.project), "--evals-path", str(consumer.evals)]) == 2
+    assert "argument --target: invalid choice: 'nope'" in capsys.readouterr().err
+
+
+def test_local_execution_can_be_named(consumer, recorded):
+    assert cli.main(_run_args(consumer, "--execution", "local")) == 0
+    assert recorded.calls[0][0].metadata["execution"] == "local"
+
+
+def test_the_base_url_reaches_the_task_and_claude_code_refuses_one(consumer, monkeypatch, recorded, capsys):
+    assert cli.main(_run_args(consumer, "--base-url", "https://proxy.example/v1")) == 0
+    assert recorded.calls[0][0].metadata["model_access"] == {"api_key_env": None, "base_url": "https://proxy.example/v1"}
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-used")
+    assert cli.main(_for_claude_code(_run_args(consumer, "--base-url", "https://proxy.example/v1"))) == 2
+    assert "whitney: error: base_url applies to the kilo target only\n" in capsys.readouterr().err
+
+
+def test_every_tasks_logs_reach_the_report(consumer, monkeypatch):
+    (consumer.evals / "team-rules-md.json").write_text(_eval_file(variants={"no_rules": {"role": "baseline", "remove": ["AGENTS.md"]}}))
+    statuses = iter(["error", "success"])
+    monkeypatch.setattr(cli, "inspect_eval", lambda task, **options: [_log(task.name, next(statuses))])
+    monkeypatch.setattr(cli, "harness_version", lambda target: "1")
+    monkeypatch.setattr(cli, "records_from_log", lambda log: [])
+
+    assert cli.main(_run_args(consumer)) == 1
+    assert "- team_rules_md_no_rules: error\n" in _report(consumer)
+
+
+def test_the_harness_version_is_read_as_utf_8_whatever_the_locale(tmp_path, monkeypatch, ascii_locale):
+    _harness(tmp_path, monkeypatch, "#!/bin/sh\nprintf '7.8-\\303\\251\\n'\n")
+    assert cli.harness_version("kilo") == "7.8-é"
+
+
+def test_a_registered_check_list_names_them_all(capsys):
+    from whitney.checks import registry
+
+    with pytest.raises(SystemExit):
+        cli.min_rates(cli.parser(), ["nothing=0.5"])
+    assert f"the checks are {', '.join(sorted(registry()))}\n" in capsys.readouterr().err
+
+
+def _evals_inside_the_project(consumer) -> list[str]:
+    """The evals path inside the project, holding the file an eval file tests, which Kilo's instructions match."""
+    inside = consumer.project / "evals"
+    shutil.copytree(consumer.evals, inside)
+    (inside / "rules.md").write_text("- a rule\n")
+    (inside / "team-rules-md.json").write_text(_eval_file(source="evals/rules.md"))
+    (consumer.project / "kilo.jsonc").write_text('{"instructions": ["evals/*.md"], "permission": {"external_directory": "ask"}}')
+    return ["--project-path", str(consumer.project), "--evals-path", str(inside)]
+
+
+def test_nothing_under_the_evals_path_counts_as_staged(consumer, monkeypatch, capsys):
+    paths = _evals_inside_the_project(consumer)
+    assert cli.main(["validate", "--target", "kilo", *paths]) == 1
+    assert "source: 'evals/rules.md' isn't staged" in capsys.readouterr().out
+
+    _no_model_calls(monkeypatch)
+    assert cli.main(["run", "--target", "kilo", "--model", "m/x", *paths]) == 2
+    assert "source: 'evals/rules.md' isn't staged" in capsys.readouterr().err
+
+
+def test_validate_checks_known_gaps_against_the_constraints_file(consumer, capsys):
+    (consumer.evals / "team-rules-md.json").write_text(_eval_file(scenarios=[{"id": "a", "prompt": "Commit.", "known_gap": "E9: why"}]))
+    (consumer.root / "CONSTRAINTS.md").write_text("## Exceptions\n\n| ID |\n|---|\n| E1 | x |\n")
+    args = ["validate", "--project-path", str(consumer.project), "--evals-path", str(consumer.evals), "--target", "kilo"]
+
+    assert cli.main(args) == 0
+    assert cli.main([*args, "--constraints", "CONSTRAINTS.md"]) == 1
+    assert "E9 isn't a row in CONSTRAINTS.md's Exceptions table" in capsys.readouterr().out

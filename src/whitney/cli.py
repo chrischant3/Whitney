@@ -117,7 +117,8 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="whitney", description=__doc__.split("\n")[0])
     commands = p.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help=HELP["run"], description=HELP["run"])
-    _add_paths(run, target_required=True)
+    run.add_argument("--target", choices=TARGETS, required=True, help=HELP["--target"])
+    _add_paths(run)
     run.add_argument("--model", required=True, help=HELP["--model"])
     run.add_argument("--only", nargs="+", metavar="FILE_OR_NAME", help=HELP["--only"])
     run.add_argument("--execution", choices=("local", "docker"), default="local", help=HELP["--execution"])
@@ -135,14 +136,14 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--min-held", type=rate, help=HELP["--min-held"])
     run.set_defaults(handler=_run, parser=run)
     validate = commands.add_parser("validate", help=HELP["validate"], description=HELP["validate"])
-    _add_paths(validate, target_required=False)
-    validate.set_defaults(handler=_validate, parser=validate)
+    validate.add_argument("--target", choices=TARGETS, help=HELP["--target"] + "; left out, every target a file applies to")
+    _add_paths(validate)
+    validate.set_defaults(handler=_validate)
     return p
 
 
-def _add_paths(p: argparse.ArgumentParser, *, target_required: bool) -> None:
-    """The options both subcommands take: the two paths, the target and the constraints file."""
-    p.add_argument("--target", choices=TARGETS, required=target_required, help=HELP["--target"])
+def _add_paths(p: argparse.ArgumentParser) -> None:
+    """The options both subcommands take besides --target: the two paths and the constraints file."""
     p.add_argument("--project-path", required=True, help=HELP["--project-path"])
     p.add_argument("--evals-path", required=True, help=HELP["--evals-path"])
     p.add_argument("--constraints", help=HELP["--constraints"])
@@ -175,7 +176,7 @@ def _validate(args: argparse.Namespace) -> int:
         applicable = [f for f in result.files if why_not_run(f, target, checks) is None]
         if applicable:
             result.problems += validate_project(applicable, Path(args.project_path), target, evals_path=evals)
-    _print_findings(result, sys.stdout)
+    _print_findings(result)
     print(f"{evals}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
     return 1 if result.problems else 0
 
@@ -255,7 +256,8 @@ def _constraints(args: argparse.Namespace) -> Path | None:
     return Path(args.constraints) if args.constraints else None
 
 
-def _print_findings(result: ValidationResult, stream) -> None:
+def _print_findings(result: ValidationResult, stream=None) -> None:
+    """Print each problem and warning, one a line, to `stream` (default: standard output)."""
     for problem in result.problems:
         print(f"error: {problem}", file=stream)
     for warning in result.warnings:
@@ -346,7 +348,7 @@ def harness_version(target: str) -> str:
     command = HARNESS_COMMANDS[target]
     try:
         done = subprocess.run(
-            [command, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+            [command, "--version"], capture_output=True, encoding="utf-8", errors="replace",
             stdin=subprocess.DEVNULL, timeout=VERSION_TIMEOUT,
         )
     except FileNotFoundError as e:
