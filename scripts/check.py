@@ -5,7 +5,8 @@
     python scripts/check.py full    # before a pull request: + every mutant, dependency vulnerabilities
 
 `task` judges the touched functions' mutants fresh and the rest from mutmut's cache;
-`full` reruns every mutant against the current tests. A new worktree starts warm
+`full` reruns every mutant against the current tests, after deleting mutmut's map of which
+tests reach which function so that mutmut rebuilds it. A new worktree starts warm
 from a copy of the main checkout's mutants/ (CONSTRAINTS.md, "How to run").
 
 CONSTRAINTS.md is the source of truth; this script mirrors it. The floor and
@@ -222,6 +223,11 @@ class Checks:
         # cached verdict, so a weaker test would never be measured. "*" selects every mutant
         # and, for mutmut's clean run, every test.
         selection = mutmut_patterns(prefixes) if stage == "task" else ["*"]
+        if stage == "full":
+            # mutmut 3.8.1 adds a test to its map of which tests reach which function only when
+            # the test is new, so an existing test that starts reaching a function is never run
+            # against that function's mutants. Deleting the map makes mutmut rebuild all of it.
+            (self.mutants / "mutmut-stats.json").unlink(missing_ok=True)
         if selection:
             run = self.run([PYTHON, "-m", "mutmut", "run", *selection])
             output = run.stdout + run.stderr

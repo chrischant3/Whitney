@@ -140,8 +140,11 @@ fresh ones and every other function's last one, labelled as cached. It still
 enforces the ratchet, since each of those results was measured; mutants not
 checked since their function changed are left out and counted, and when they
 are more than 5% of all mutants, or there are no cached results, a score that
-holds only warns. `full` reruns every mutant against the current tests and
-judges the ratchet from that, so a weakened test is measured too.
+holds only warns. `full` deletes mutmut's map of which tests reach which
+function (`mutants/mutmut-stats.json`), because mutmut 3.8.1 adds a test to it
+only when the test is new, then reruns every mutant against the current tests
+and judges the ratchet from that, so a weakened or newly reaching test is
+measured too.
 
 A new worktree starts cold: its first `full` runs every mutant, and until
 then `task`'s cached project score covers only the mutants run so far. To start
