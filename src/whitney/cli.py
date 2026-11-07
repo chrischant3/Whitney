@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         _check_args(args)
         return args.handler(args)
     except SystemExit as e:  # argparse: --help (0) or a usage error, already printed (2)
-        return e.code if isinstance(e.code, int) else 2
+        return e.code
     except CannotRun as e:
         print(f"whitney: error: {e}", file=sys.stderr)
         return 2
