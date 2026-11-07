@@ -343,7 +343,7 @@ def missing_credential(
     api_key_env: str | None,
     environ: Mapping[str, str] = os.environ,
     *,
-    model: str = "",
+    model: str,
     auth_path: Path | None = None,
 ) -> str | None:
     """Why the run's credentials aren't usable, or None.
