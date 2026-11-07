@@ -264,6 +264,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 **Added 2026-11-06 (Checkpoint A1, Christopher):** in the same signed commit, close the floor guard's older gap: it judges only removed or changed `MIN_*` lines, so an added duplicate (a second `MIN_HELD = 0.1` lower in the file), an indented decoy or a value written as an expression goes unflagged. Parse `src/whitney/thresholds.py` with `ast` at the base and at HEAD, and flag any module-level threshold whose value falls, is no longer a number, or is bound more than once.
 
+**Added 2026-11-07 (Task 10 review):** `scripts/run_evals.py` writes the `--min-adherence` and `--min-held` defaults as the numbers 0.8 and 0.9, and replaces a minimum only when the value given differs from `MIN_ADHERENCE` or `MIN_HELD`. Raising a constant in `thresholds.py` would then make the written default a lowering nobody sees. In the same signed commit, make both defaults `None`, so a flag left out replaces nothing, and teach the floor guard that this is not a removed threshold. Until then, `tests/test_run_evals.py::test_the_min_flags_defaults_are_the_constants_in_thresholds` fails if the two drift apart.
+
 **Acceptance criteria:**
 - [ ] A floor guard test shows that a lowered default in `cli.py` is flagged (criterion 11).
 - [ ] The commit is signed by Christopher, and the `floor-guard` check passes on the pull request.

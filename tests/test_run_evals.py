@@ -268,7 +268,7 @@ def test_min_rate_replaces_a_checks_minimum_and_is_printed(tmp_path, monkeypatch
     code, report = _report_only(tmp_path, monkeypatch, logs, "--min-rate", "no_secret_committed=0.9")
 
     assert code == 1
-    assert "Minimum pass rates replaced for this run (--min-rate): `no_secret_committed=0.9`." in report
+    assert "Minimum pass rates replaced for this run: `no_secret_committed=0.9`." in report
     assert "- team_rules: template 80% is below the minimum 90%" in report
 
 
@@ -301,3 +301,52 @@ def test_min_rate_can_be_given_for_several_checks_and_at_either_end_of_the_range
     args = _parse(["--report-only", "logs", "--min-rate", "no_secret_committed=0", "--min-rate", "outside_canary_not_reached=1"])
     assert args.min_rate == {"no_secret_committed": 0.0, "outside_canary_not_reached": 1.0}
     assert _parse(["--report-only", "logs"]).min_rate == {}
+
+
+def test_min_adherence_and_min_held_set_their_checks_minimum_and_the_report_says_so(tmp_path, monkeypatch):
+    logs = [_file_log("template", "template", ["followed"] * 3 + ["violated"])]  # 75%
+
+    code, report = _report_only(tmp_path / "flags", monkeypatch, logs, "--min-adherence", "0.7", "--min-held", "0.95")
+    assert code == 0
+    assert "Minimum pass rates replaced for this run: `no_secret_committed=0.7`, " in report
+    assert "`outside_canary_not_reached=0.95` (no eval file in these logs uses it)." in report
+
+    code, report = _report_only(tmp_path / "both", monkeypatch, logs, "--min-adherence", "0.7", "--min-rate", "no_secret_committed=0.9")
+    assert code == 1  # --min-rate wins over the alias for the same check
+    assert "Minimum pass rates replaced for this run: `no_secret_committed=0.9`.\n" in report
+
+
+def test_left_at_their_defaults_the_flags_replace_no_minimum(tmp_path, monkeypatch):
+    _, report = _report_only(tmp_path, monkeypatch, [_file_log("template", "template", ["followed"])])
+    assert "Minimum pass rates replaced" not in report
+
+
+def test_the_min_flags_defaults_are_the_constants_in_thresholds():
+    # The defaults are written as numbers the floor guard watches; Task 12 makes them None, so they can't drift.
+    from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
+
+    args = _parse(["--report-only", "logs"])
+    assert (args.min_adherence, args.min_held, args.min_conclusive) == (MIN_ADHERENCE, MIN_HELD, MIN_CONCLUSIVE)
+
+
+@pytest.mark.parametrize("flag", ["--min-adherence", "--min-held", "--min-conclusive"])
+@pytest.mark.parametrize("value", ["nan", "1.01", "-0.5", "high"])
+def test_a_min_flag_that_is_not_a_rate_from_0_to_1_is_refused(flag, value, capsys):
+    with pytest.raises(SystemExit):
+        _parse(["--report-only", "logs", flag, value])
+
+    assert f"argument {flag}: needs a number from 0 to 1, got {value!r}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("flag", ["--min-adherence", "--min-held", "--min-conclusive"])
+def test_a_min_flag_takes_either_end_of_the_range(flag):
+    attribute = flag.removeprefix("--").replace("-", "_")
+    assert getattr(_parse(["--report-only", "logs", flag, "0"]), attribute) == 0.0
+    assert getattr(_parse(["--report-only", "logs", flag, "1"]), attribute) == 1.0
+
+
+def test_min_rate_refuses_nan():
+    import argparse
+
+    with pytest.raises(SystemExit):
+        _runner["_min_rates"](argparse.ArgumentParser(), ["no_secret_committed=nan"])
