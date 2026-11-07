@@ -150,6 +150,7 @@ def scenario_eval(
     project_path: str | None = None,
     api_key_env: str | None = None,
     base_url: str | None = None,
+    harness_version: str | None = None,
 ) -> Task:
     """One eval file's scenarios in one variant, each scored by the checks it names.
 
@@ -172,6 +173,9 @@ def scenario_eval(
             provider. For kilo, unset means the global Kilo config;
             claude-code defaults to ANTHROPIC_API_KEY.
         base_url: kilo local mode only; overrides the provider's base URL.
+        harness_version: what the harness's `--version` printed, recorded in
+            the metadata for the report's header; `whitney run` checks it
+            before the first sample. None when nobody checked.
 
     The task is named <eval name>_<variant> and its metadata names the eval
     file, its title, the variant's role and each check's labels (see
@@ -206,7 +210,7 @@ def scenario_eval(
     )
     return _scenario_task(
         plan, variant, target=target, model=model, execution=execution, project_path=project_path,
-        api_key_env=api_key_env, base_url=base_url,
+        api_key_env=api_key_env, base_url=base_url, harness_version=harness_version,
     )
 
 
@@ -372,6 +376,7 @@ def _scenario_task(
     api_key_env: str | None,
     base_url: str | None,
     sample_metadata: Callable[[Sample], dict] | None = None,
+    harness_version: str | None = None,
 ) -> Task:
     """The Inspect task for `plan` in `variant`: what scenario_eval, agents_md and kilo_jsonc each return.
 
@@ -385,10 +390,11 @@ def _scenario_task(
 
     Args:
         sample_metadata: extra metadata for each sample, from the sample as loaded.
+        harness_version: as scenario_eval's, recorded as harness_version.
 
     The metadata holds, besides the run's settings and staged files:
     eval_file (relative to the evals root), eval_file_sha256 (of the bytes
-    the plan was read from), whitney_version, eval_name, title, source, variant_role
+    the plan was read from), whitney_version, harness_version, eval_name, title, source, variant_role
     ("template", "baseline" or "control"), labels (the score's words for
     pass, fail and inconclusive), checks (each check's labels, what it
     judges and its default minimum pass rate) and min_pass_rate (the file's
@@ -452,6 +458,7 @@ def _scenario_task(
             "eval_file": plan.path.relative_to(plan.evals_dir).as_posix(),
             "eval_file_sha256": plan.sha256,
             "whitney_version": _whitney_version(),
+            "harness_version": harness_version,
             "eval_name": plan.eval_name,
             "title": plan.title,
             "source": plan.source,
