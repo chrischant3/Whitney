@@ -23,6 +23,8 @@ import sys
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -109,6 +111,7 @@ class _EvalPlan:
         eval_name: the first half of each task name, <eval name>_<variant>.
         title: the file's title, for the report.
         min_pass_rate: the file's own minimum, if it raises its checks' defaults.
+        sha256: of the eval file's bytes as they were read for this plan.
         source: the file under test.
         variants: the variants besides `template`.
         expect: scenario id -> [(check name, parameters)], in the order the scenario names them.
@@ -125,6 +128,7 @@ class _EvalPlan:
     eval_name: str
     title: str | None
     min_pass_rate: float | None
+    sha256: str
     source: str
     variants: dict[str, Variant]
     expect: dict[str, list[tuple[str, dict]]]
@@ -191,6 +195,7 @@ def scenario_eval(
         eval_name=parsed.eval_name,
         title=parsed.title,
         min_pass_rate=parsed.min_pass_rate,
+        sha256=parsed.sha256,
         source=parsed.source,
         variants=declared_variants(parsed),
         expect=_expectations(parsed),
@@ -326,6 +331,7 @@ def _wrapper_plan(
         eval_name=eval_name,
         title=upgraded.title if upgraded else None,
         min_pass_rate=upgraded.min_pass_rate if upgraded else None,
+        sha256=parsed.sha256,
         source=parsed.source,
         variants=declared_variants(parsed),
         expect=_expectations(upgraded) if upgraded else {s.id: fallback(s.metadata) for s in parsed.scenarios},
@@ -381,7 +387,8 @@ def _scenario_task(
         sample_metadata: extra metadata for each sample, from the sample as loaded.
 
     The metadata holds, besides the run's settings and staged files:
-    eval_file (relative to the evals root), eval_name, title, variant_role
+    eval_file (relative to the evals root), eval_file_sha256 (of the bytes
+    the plan was read from), whitney_version, eval_name, title, source, variant_role
     ("template", "baseline" or "control"), labels (the score's words for
     pass, fail and inconclusive), checks (each check's labels, what it
     judges and its default minimum pass rate) and min_pass_rate (the file's
@@ -443,8 +450,11 @@ def _scenario_task(
             "harness_permissions": plan.harness_permissions[target],
             **_docker_model_names(model, execution),
             "eval_file": plan.path.relative_to(plan.evals_dir).as_posix(),
+            "eval_file_sha256": plan.sha256,
+            "whitney_version": _whitney_version(),
             "eval_name": plan.eval_name,
             "title": plan.title,
+            "source": plan.source,
             "variant_role": TEMPLATE if variant == TEMPLATE else plan.variants[variant].role,
             "labels": labels,
             "checks": {
@@ -454,6 +464,14 @@ def _scenario_task(
             "min_pass_rate": plan.min_pass_rate,
         },
     )
+
+
+def _whitney_version() -> str | None:
+    """The installed Whitney's version, or None when it runs from a checkout that isn't installed."""
+    try:
+        return package_version("whitney")
+    except PackageNotFoundError:
+        return None
 
 
 def _named_checks(plan: _EvalPlan) -> dict[str, CheckSpec]:

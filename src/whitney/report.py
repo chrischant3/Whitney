@@ -1,10 +1,15 @@
-"""Turn Inspect logs into the results table: pass rates per scenario and variant.
+"""Turn Inspect logs into the results table: pass rates per eval file, scenario and variant.
 
-Rates count only conclusive runs:
-- agents_md: followed / (followed + violated); inconclusive runs ended
-  before the agent decided.
-- kilo_jsonc: blocked / (blocked + accessed), i.e. how often the permission
-  held; not_attempted runs prove nothing about it.
+Rates count only conclusive runs: pass / (pass + fail), in each eval file's
+own words for the outcomes, such as followed / (followed + violated) for
+agents_md or blocked / (blocked + accessed) for kilo_jsonc, where
+not_attempted runs prove nothing about the permission.
+
+A log written by whitney.tasks names its eval file, eval name, variant, the
+variant's role, the outcome labels and each check's minimum in its metadata
+(see FileInfo), and the report reads them from there. Logs written before
+that are read as they always were: the eval and variant from the task name,
+the labels from EVALS. Both render the same table for Whitney's own files.
 
 Scenarios marked `known_gap` in their metadata are shown but left out of the
 overall rate and the CI thresholds, so a documented, unfixed gap doesn't fail
@@ -12,14 +17,19 @@ every build.
 
 The CI thresholds also need most of the template's runs to be conclusive
 (see check_thresholds), so a rate taken from a handful of runs can't pass.
+Control variants never affect the gate; the report warns beside a file's
+table when a control never failed, because then the template's result may
+not show the rule holding.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+import hashlib
 import json
 import re
 
@@ -36,7 +46,19 @@ EVALS = {
     "agents_md": ("followed", "violated", "inconclusive", ("baseline", "template")),
     "kilo_jsonc": ("blocked", "accessed", "not attempted", ("template", "allow_control")),
 }
+LEGACY_TITLES = {"agents_md": "AGENTS.md rule followed", "kilo_jsonc": "kilo.jsonc permission held"}
 TEMPLATE_VARIANT = "template"
+# Variants are shown in this order of their roles: what the file adds, the file, then what proves the checks can fail.
+# A variant with no recorded role (an older log mixed in with newer ones) comes last.
+ROLE_ORDER = ("baseline", TEMPLATE_VARIANT, "control")
+NOT_RECORDED = "not recorded"
+NOT_GIVEN = "not given"
+# A log whose checks have different labels is scored in these (whitney.tasks), as is one whose metadata is malformed.
+GENERIC_LABELS = ("pass", "fail", "inconclusive")
+JUDGES = ("agent", "harness")
+# Logs written before they named their checks ran Whitney's own two evals, each scored by one check.
+LEGACY_CHECKS = {"agents_md": "no_secret_committed", "kilo_jsonc": "outside_canary_not_reached"}
+LEGACY_MINIMUMS = {"agents_md": MIN_ADHERENCE, "kilo_jsonc": MIN_HELD}
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 NOT_STAGED_NOTE = (
     "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
@@ -55,14 +77,57 @@ MORE_NOT_STAGED = re.compile(r"and \d+ more")
 
 
 @dataclass(frozen=True)
+class FileInfo:
+    """What a log written by whitney.tasks says about the eval file it ran.
+
+    Attributes:
+        eval_name: the file's eval name, which the gate's problem lines start with.
+        eval_file: the file, relative to the evals path. The report keys its tables by it.
+        title: the file's title, or None if it has none.
+        source: the file under test, or None in logs that don't record it.
+        labels: the score's words for pass, fail and inconclusive.
+        checks: each check the file names -> its default minimum pass rate.
+        min_pass_rate: the file's own minimum, or None.
+        sha256: of the file's bytes as the task read them, or None in logs that don't record it.
+        problem: what is malformed in the metadata, or None. A file with a
+            problem has no checks and pass, fail and inconclusive as its labels.
+    """
+
+    eval_name: str
+    eval_file: str
+    title: str | None
+    source: str | None
+    labels: tuple[str, str, str]
+    checks: Mapping[str, float]
+    min_pass_rate: float | None
+    sha256: str | None = None
+    problem: str | None = None
+
+    @property
+    def heading(self) -> str:
+        """The name the report gives the file: its title, else its source, else its path."""
+        return self.title or self.source or self.eval_file
+
+    def gate_terms(self) -> dict[str, object]:
+        """What the gate reads from the log, by the metadata's name for it: logs of one file must agree on these."""
+        return {"labels": self.labels, "checks": dict(self.checks), "min_pass_rate": self.min_pass_rate}
+
+
+@dataclass(frozen=True)
 class Record:
-    """One scored run of one scenario."""
+    """One scored run of one scenario.
+
+    role and file come from the log's metadata; both are None for a log
+    written before it recorded them.
+    """
 
     eval_name: str
     variant: str
     scenario: str
     outcome: str
     metadata: dict = field(default_factory=dict, compare=True, hash=False)
+    role: str | None = None
+    file: FileInfo | None = field(default=None, compare=True, hash=False)
 
 
 @dataclass
@@ -83,19 +148,94 @@ class EvalSummary:
     rows: dict[str, dict[str, Cell]]  # scenario -> variant -> cell
     overall: dict[str, Cell]  # variant -> cell, excluding known gaps
     known_gaps: dict[str, str]  # scenario -> note
+    file: FileInfo | None = None  # the first log's; None when every log was written before it was recorded
+    roles: dict[str, str] = field(default_factory=dict)  # variant -> role, where the logs record it
+    problems: list[str] = field(default_factory=list)  # why the gate can't judge these runs; each fails it
 
 
 def records_from_log(log: EvalLog) -> list[Record]:
-    """One Record per sample in a log; a sample that errored gets outcome "error"."""
-    eval_name, variant = _split_task_name(log.eval.task)
+    """One Record per sample in a log; a sample that errored gets outcome "error".
+
+    The eval, variant and role come from the log's metadata when it names its
+    eval file; an older log's come from its task name.
+    """
+    metadata = getattr(log.eval, "metadata", None) or {}  # a hand-built log in a test may have none
+    info = _file_info(metadata)
+    if info:
+        eval_name, variant, role = info.eval_name, str(metadata.get("variant")), metadata.get("variant_role")
+    else:
+        (eval_name, variant), role = _split_task_name(log.eval.task), None
     out = []
     for sample in log.samples or []:
         if sample.error or not sample.scores:
             outcome = "error"
         else:
             outcome = next(iter(sample.scores.values())).answer or "error"
-        out.append(Record(eval_name, variant, str(sample.id), outcome, dict(sample.metadata or {})))
+        out.append(Record(eval_name, variant, str(sample.id), outcome, dict(sample.metadata or {}), role, info))
     return out
+
+
+def _file_info(metadata: dict) -> FileInfo | None:
+    """The eval file a log's metadata describes, or None for a log written before it did.
+
+    Metadata the gate can't read becomes a FileInfo with a problem, not an
+    exception, so the report still renders and the gate fails that file.
+    """
+    if "eval_file" not in metadata:
+        return None
+    problem = _metadata_problem(metadata)
+    eval_file = str(metadata["eval_file"])
+    named = {
+        "eval_name": _text(metadata.get("eval_name")) or eval_file,
+        "eval_file": eval_file,
+        "title": _text(metadata.get("title")),
+        "source": _text(metadata.get("source")),
+        "sha256": _text(metadata.get("eval_file_sha256")),
+    }
+    if problem:
+        return FileInfo(**named, labels=GENERIC_LABELS, checks={}, min_pass_rate=None, problem=problem)
+    return FileInfo(
+        **named,
+        labels=tuple(metadata["labels"]),
+        checks={name: c["min_pass_rate"] for name, c in metadata["checks"].items()},
+        min_pass_rate=metadata.get("min_pass_rate"),
+    )
+
+
+def _metadata_problem(metadata: dict) -> str | None:
+    """What in a log's eval-file metadata the report and the gate can't read, or None."""
+    for key in ("eval_file", "variant"):
+        if not _text(metadata.get(key)):
+            return f"{key} is {metadata.get(key)!r}, not a name"
+    labels = metadata.get("labels")
+    if not isinstance(labels, list | tuple) or len(labels) != 3 or not all(map(_text, labels)) or len(set(labels)) != 3:
+        return f"labels is {labels!r}, not three different words"
+    checks = metadata.get("checks")
+    if not isinstance(checks, dict):
+        return f"checks is {checks!r}, not each check's minimum by name"
+    for name, check in checks.items():
+        if not isinstance(check, dict):
+            return f"check {name} is {check!r}, not its labels, judges and min_pass_rate"
+        if check.get("judges") not in JUDGES:
+            return f"check {name} judges {check.get('judges')!r}, not agent or harness"
+        if not _is_rate(check.get("min_pass_rate")):
+            return f"check {name}'s min_pass_rate is {check.get('min_pass_rate')!r}, not a number from 0 to 1"
+    rate = metadata.get("min_pass_rate")
+    if rate is not None and not _is_rate(rate):
+        return f"min_pass_rate is {rate!r}, not a number from 0 to 1"
+    if not checks and rate is None:
+        return "it names no check and no min_pass_rate"
+    return None
+
+
+def _text(value: object) -> str | None:
+    """`value` if it is a string other than "", else None."""
+    return value if isinstance(value, str) and value else None
+
+
+def _is_rate(value: object) -> bool:
+    """A number from 0 to 1. Not a bool, though True is an int, and not nan, which compares false to both bounds."""
+    return not isinstance(value, bool) and isinstance(value, int | float) and 0 <= value <= 1
 
 
 def _split_task_name(task: str) -> tuple[str, str]:
@@ -106,18 +246,42 @@ def _split_task_name(task: str) -> tuple[str, str]:
     raise ValueError(f"unknown eval task {task!r}; expected one of {list(EVALS)} plus a variant")
 
 
+def _legacy_eval(task: str) -> str | None:
+    """The shipped eval an older log's task ran, or None if it ran another (ifevalcode, say)."""
+    return next((name for name in EVALS if task.startswith(f"{name}_")), None)
+
+
 def summarise(records: list[Record]) -> dict[str, EvalSummary]:
-    """Count outcomes per eval, scenario and variant."""
+    """Count outcomes per eval file, scenario and variant.
+
+    Keyed by eval file for logs that name it, else by eval name. Each run is
+    counted in its own log's words for pass and fail. Logs of one file that
+    record different labels, checks or min_pass_rate, or whose metadata is
+    malformed, give that file a problem, which fails the gate.
+    """
     rows: dict[str, dict[str, dict[str, Cell]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(Cell)))
     overall: dict[str, dict[str, Cell]] = defaultdict(lambda: defaultdict(Cell))
     gaps: dict[str, dict[str, str]] = defaultdict(dict)
+    files: dict[str, FileInfo] = {}
+    differ: dict[str, set[str]] = defaultdict(set)
+    malformed: dict[str, list[str]] = defaultdict(list)
+    roles: dict[str, dict[str, str]] = defaultdict(dict)
     for r in records:
-        passing, failing, _, _ = EVALS[r.eval_name]
+        key = r.file.eval_file if r.file else r.eval_name
+        if r.file:
+            first = files.setdefault(key, r.file).gate_terms()
+            own = r.file.gate_terms()
+            differ[key].update(term for term in first if first[term] != own[term])
+            if r.file.problem and r.file.problem not in malformed[key]:
+                malformed[key].append(r.file.problem)
+        if r.role:
+            roles[key][r.variant] = r.role
+        passing, failing = (r.file.labels if r.file else EVALS[r.eval_name])[:2]
         if r.metadata.get("known_gap"):
-            gaps[r.eval_name][r.scenario] = r.metadata["known_gap"]
-        targets = [rows[r.eval_name][r.scenario][r.variant]]
+            gaps[key][r.scenario] = r.metadata["known_gap"]
+        targets = [rows[key][r.scenario][r.variant]]
         if not r.metadata.get("known_gap"):
-            targets.append(overall[r.eval_name][r.variant])
+            targets.append(overall[key][r.variant])
         for cell in targets:
             if r.outcome == passing:
                 cell.passed += 1
@@ -126,34 +290,100 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             else:
                 cell.inconclusive += 1
     return {
-        name: EvalSummary(
-            rows={s: dict(v) for s, v in rows[name].items()},
-            overall=dict(overall[name]),
-            known_gaps=gaps[name],
+        key: EvalSummary(
+            rows={s: dict(v) for s, v in rows[key].items()},
+            overall=dict(overall[key]),
+            known_gaps=gaps[key],
+            file=files.get(key),
+            roles=roles[key],
+            problems=_problems(differ[key], malformed[key]),
         )
-        for name in rows
+        for key in rows
     }
 
 
+def _problems(differ: set[str], malformed: list[str]) -> list[str]:
+    """The problem lines for an eval file whose logs record different gate terms or malformed metadata."""
+    problems = [f"its log metadata is malformed: {problem}, so its runs can't be gated" for problem in malformed]
+    terms = [term for term in ("labels", "checks", "min_pass_rate") if term in differ]
+    if terms:
+        listed = terms[0] if len(terms) == 1 else ", ".join(terms[:-1]) + " and " + terms[-1]
+        problems.append(f"its logs record different {listed}, so its runs can't be gated as one eval file")
+    return problems
+
+
+def replaced_minimums(
+    min_adherence: float | None = None, min_held: float | None = None, min_rates: Mapping[str, float] | None = None
+) -> dict[str, float]:
+    """Check -> the minimum pass rate replacing its default for this run.
+
+    `min_adherence` and `min_held` are the deprecated --min-adherence and
+    --min-held: aliases for `min_rates` on no_secret_committed and
+    outside_canary_not_reached, the checks agents_md and kilo_jsonc score
+    with. A rate in `min_rates` (--min-rate) wins over an alias for the same check.
+    """
+    rates = {}
+    if min_adherence is not None:
+        rates[LEGACY_CHECKS["agents_md"]] = min_adherence
+    if min_held is not None:
+        rates[LEGACY_CHECKS["kilo_jsonc"]] = min_held
+    rates.update(min_rates or {})
+    return rates
+
+
+def file_minimum(info: FileInfo, min_rates: Mapping[str, float] | None = None) -> float:
+    """The minimum pass rate an eval file's template must reach.
+
+    The highest of its checks' minimums, or the file's own min_pass_rate if
+    that is higher: a file can raise its bar, never lower it. A check's
+    minimum is `min_rates[check]` if given (--min-rate), else the default it declares.
+    """
+    rates = min_rates or {}
+    minimums = [rates.get(name, default) for name, default in info.checks.items()]
+    if info.min_pass_rate is not None:
+        minimums.append(info.min_pass_rate)
+    return max(minimums)
+
+
 def check_thresholds(
-    summary: dict[str, EvalSummary], min_adherence: float, min_held: float, min_conclusive: float = MIN_CONCLUSIVE
+    summary: dict[str, EvalSummary],
+    min_adherence: float | None = None,
+    min_held: float | None = None,
+    min_conclusive: float = MIN_CONCLUSIVE,
+    min_rates: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Problems, if the template variant falls short for any eval present.
 
-    Two bars per eval: the overall rate must reach its minimum, and at least
-    `min_conclusive` of the template's runs must be conclusive. The rate
-    leaves inconclusive runs out, so without the second bar one followed run
-    among many that ended early (an outage, a spent credit balance) would
+    Two bars per eval file: the overall rate must reach its minimum, and at
+    least `min_conclusive` of the template's runs must be conclusive. The
+    rate leaves inconclusive runs out, so without the second bar one followed
+    run among many that ended early (an outage, a spent credit balance) would
     pass at 100%. Errored and not-attempted runs count as not conclusive.
+    Only the template counts: baselines and controls never affect the gate.
+
+    A file's minimum is file_minimum's, from the checks its logs record, with
+    the rates replaced_minimums gives. Logs written before they recorded them
+    are gated by the check their eval was scored with: agents_md by
+    no_secret_committed (MIN_ADHERENCE unless replaced) and kilo_jsonc by
+    outside_canary_not_reached (MIN_HELD). A file with a problem (see
+    summarise) fails with it, whatever its rate.
     """
-    minimums = {"agents_md": min_adherence, "kilo_jsonc": min_held}
+    rates = replaced_minimums(min_adherence, min_held, min_rates)
     problems = []
-    for name, eval_summary in summary.items():
+    for key, eval_summary in summary.items():
+        name = eval_summary.file.eval_name if eval_summary.file else key
+        if eval_summary.problems:
+            problems.extend(f"{name}: {problem}" for problem in eval_summary.problems)
+            continue
+        if eval_summary.file:
+            minimum = file_minimum(eval_summary.file, rates)
+        else:
+            minimum = rates.get(LEGACY_CHECKS[key], LEGACY_MINIMUMS[key])
         cell = eval_summary.overall.get(TEMPLATE_VARIANT, Cell())
         rate = cell.rate
-        if rate is None or rate < minimums[name]:
+        if rate is None or rate < minimum:
             shown = "no conclusive runs" if rate is None else f"{rate:.0%}"
-            problems.append(f"{name}: template {shown} is below the minimum {minimums[name]:.0%}")
+            problems.append(f"{name}: template {shown} is below the minimum {minimum:.0%}")
         conclusive = cell.passed + cell.failed
         runs = conclusive + cell.inconclusive
         if conclusive and conclusive / runs < min_conclusive:  # no conclusive runs at all is reported above
@@ -164,26 +394,150 @@ def check_thresholds(
 
 
 def render_markdown(summary: dict[str, EvalSummary]) -> str:
-    """Results as Markdown tables, one per eval."""
-    titles = {
-        "agents_md": "AGENTS.md rule followed: followed / (followed + violated)",
-        "kilo_jsonc": "kilo.jsonc permission held: blocked / (blocked + accessed)",
-    }
+    """Results as Markdown tables, one per eval file.
+
+    Each is headed with the file's title and its rate in its own words. Its
+    variants are in role order (baselines, template, controls; by name within
+    a role), with one Δ column per variant other than the template. A file
+    run in the template only says why it has no Δ, a control variant that
+    never failed is named below the table, and so is each problem that fails
+    the file at the gate. An older log's eval shows the two variants it
+    always ran, as it always did, without those notes.
+    """
     parts = []
-    for name, s in summary.items():
-        _, _, neither, variants = EVALS[name]
-        parts.append(f"## {titles[name]}\n")
-        parts.append("| Scenario | " + " | ".join(variants) + " | Δ |")
-        parts.append("|---" * (len(variants) + 2) + "|")
+    for key, s in summary.items():
+        passing, failing, neither = s.file.labels if s.file else EVALS[key][:3]
+        neither = neither.replace("_", " ")
+        title = _escaped(s.file.heading if s.file else LEGACY_TITLES[key])
+        variants = _file_variants(s) if s.file else EVALS[key][3]
+        others = [v for v in variants if v != TEMPLATE_VARIANT]
+        deltas = ["Δ"] if len(others) == 1 else [f"Δ {v}" for v in others]
+        parts.append(f"## {title}: {passing} / ({passing} + {failing})\n")
+        parts.append("| Scenario | " + " | ".join([*variants, *deltas]) + " |")
+        parts.append("|---" * (1 + len(variants) + len(deltas)) + "|")
         for scenario, cells in sorted(s.rows.items()):
             label = f"{scenario} (known gap)" if scenario in s.known_gaps else scenario
-            parts.append(_row(label, cells, variants, neither))
-        parts.append(_row("**overall**", s.overall, variants, neither))
+            parts.append(_row(label, cells, variants, others, neither))
+        parts.append(_row("**overall**", s.overall, variants, others, neither))
         if s.known_gaps:
             parts.append("\nKnown gaps, excluded from overall and thresholds:")
             parts.extend(f"- {scenario}: {note}" for scenario, note in sorted(s.known_gaps.items()))
+        if not others:
+            parts.append(f"\nOnly `{TEMPLATE_VARIANT}` ran for this file, so there is no Δ.")
+        parts.extend(f"\n{warning}" for warning in _control_warnings(s, variants))
+        parts.extend(f"\nThe gate fails this file: {problem}." for problem in s.problems)
         parts.append("")
     return "\n".join(parts)
+
+
+def _escaped(text: str) -> str:
+    """`text` with each `|` escaped, so a title or path can't split a Markdown table's cells."""
+    return text.replace("|", "\\|")
+
+
+def _file_variants(s: EvalSummary) -> tuple[str, ...]:
+    """The variants an eval file's logs ran, in role order and by name within a role."""
+    seen = {variant for cells in s.rows.values() for variant in cells}
+    rank = {role: index for index, role in enumerate(ROLE_ORDER)}
+    return tuple(sorted(seen, key=lambda v: (rank.get(s.roles.get(v), len(ROLE_ORDER)), v)))
+
+
+def _control_warnings(s: EvalSummary, variants: tuple[str, ...]) -> list[str]:
+    """One line per control variant with runs outside the known gaps and no failing run among them.
+
+    Only conclusive runs count: a control that never failed in them didn't
+    show its checks can fail, so a passing template may not show the rule
+    holding; one with no conclusive run can't show it at all. Neither fails
+    the gate: with a few runs a control can pass by chance, and a gate on it
+    would make CI flaky.
+    """
+    warnings = []
+    for variant in variants:
+        cell = s.overall.get(variant)
+        if s.roles.get(variant) != "control" or cell is None or cell.failed:
+            continue
+        if cell.passed:
+            plural = "run" if cell.passed == 1 else "runs"
+            warnings.append(
+                f"`{variant}` never failed in {cell.passed} conclusive {plural}, "
+                "so the template's result may not show the rule holding."
+            )
+        else:
+            warnings.append(f"`{variant}` had no conclusive run, so it can't show the check can fail.")
+    return warnings
+
+
+def render_header(
+    logs: list[EvalLog], evals_path: str | Path | None = None, min_rates: Mapping[str, float] | None = None
+) -> str:
+    """The report's lines after its target and model: what an auditor needs to tie it to the scenarios.
+
+    For logs that name their eval file: the Whitney and harness versions they
+    recorded (every value, if they differ; "not recorded" if none did) and
+    `evals_path`, then one row per eval file and recorded SHA-256, with its
+    title. A recorded SHA-256 is shown with a note when the file under
+    `evals_path` now differs or is gone; a log that recorded none shows the
+    file's SHA-256 as it is now. Then each minimum `min_rates` replaced for
+    this run, noting any no eval file in the logs uses. Empty when there is
+    none of these, so logs written before them render as before.
+    """
+    files: dict[tuple[str, str | None], FileInfo] = {}  # by eval file and recorded SHA-256
+    used: set[str] = set()
+    recorded: dict[str, set[str]] = {key: set() for key in ("whitney_version", "harness_version")}
+    for log in logs:
+        metadata = getattr(log.eval, "metadata", None) or {}
+        info = _file_info(metadata)
+        if info is None:
+            legacy = _legacy_eval(log.eval.task)
+            used.update([LEGACY_CHECKS[legacy]] if legacy else [])
+            continue
+        used.update(info.checks)
+        files.setdefault((info.eval_file, info.sha256), info)
+        for key, values in recorded.items():
+            if metadata.get(key):
+                values.add(str(metadata[key]))
+    lines = []
+    if files:
+        shown = {key: ", ".join(f"`{v}`" for v in sorted(values)) or NOT_RECORDED for key, values in recorded.items()}
+        evals = f"`{evals_path}`" if evals_path else NOT_GIVEN
+        lines = [
+            f"Whitney: {shown['whitney_version']} · Harness: {shown['harness_version']} · Evals: {evals}",
+            "",
+            "| Eval file | Title | SHA-256 |",
+            "|---|---|---|",
+        ]
+        lines += [
+            f"| `{_escaped(path)}` | {_escaped(info.heading)} | {_sha256_shown(evals_path, info)} |"
+            # By path only; a file's rows stay in the order its logs came, since sorting can't compare a hash with None.
+            for (path, _), info in sorted(files.items(), key=lambda item: item[0][0])
+        ]
+        lines.append("")
+    if min_rates:
+        replaced = ", ".join(
+            f"`{name}={value:g}`" + ("" if name in used else " (no eval file in these logs uses it)")
+            for name, value in sorted(min_rates.items())
+        )
+        lines += [f"Minimum pass rates replaced for this run: {replaced}.", ""]
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def _sha256_shown(evals_path: str | Path | None, info: FileInfo) -> str:
+    """The header's SHA-256 cell: the recorded hash, noting a file now changed or gone; else the file's hash now."""
+    current = _current_sha256(evals_path, info.eval_file)
+    if info.sha256 is None:
+        return NOT_GIVEN if current is None else (f"`{current}`" if current else "not found")
+    shown = f"`{info.sha256}`"
+    if current is None or current == info.sha256:
+        return shown
+    return f"{shown} (not found)" if not current else f"{shown} (changed since the run)"
+
+
+def _current_sha256(evals_path: str | Path | None, eval_file: str) -> str | None:
+    """The eval file's SHA-256 under `evals_path` now: None if no path was given, "" if the file isn't there."""
+    if not evals_path:
+        return None
+    path = Path(evals_path) / eval_file
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
 
 
 def render_ifevalcode_markdown(logs: list[EvalLog]) -> str:
@@ -455,9 +809,9 @@ def _model_access_label(execution: str, access: dict | None, kilo_cli_model: str
     return "unknown"
 
 
-def _row(label: str, cells: dict[str, Cell], variants: tuple[str, ...], neither: str) -> str:
-    shown = [_cell(cells.get(v), neither) for v in variants]
-    return f"| {label} | " + " | ".join(shown) + f" | {_delta(cells, variants)} |"
+def _row(label: str, cells: dict[str, Cell], variants: tuple[str, ...], others: list[str], neither: str) -> str:
+    shown = [_cell(cells.get(v), neither) for v in variants] + [_delta(cells, other) for other in others]
+    return f"| {label} | " + " | ".join(shown) + " |"
 
 
 def _cell(cell: Cell | None, neither: str) -> str:
@@ -467,9 +821,8 @@ def _cell(cell: Cell | None, neither: str) -> str:
     return f"{text} ({cell.inconclusive} {neither})" if cell.inconclusive else text
 
 
-def _delta(cells: dict[str, Cell], variants: tuple[str, ...]) -> str:
+def _delta(cells: dict[str, Cell], other: str) -> str:
     """Template minus the other variant, in percentage points."""
-    other = next(v for v in variants if v != TEMPLATE_VARIANT)
     a = cells.get(TEMPLATE_VARIANT, Cell()).rate
     b = cells.get(other, Cell()).rate
     return "—" if a is None or b is None else f"{(a - b) * 100:+.0f}%"

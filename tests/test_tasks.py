@@ -940,3 +940,34 @@ def test_the_not_staged_list_leaves_out_the_evals_path_wherever_it_is(tmp_path):
     task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), project_path=str(project))
 
     assert task.metadata["not_staged"] == [] and task.metadata["not_staged_reasons"] == {}
+
+
+def test_the_task_metadata_names_the_source_and_the_whitney_version_for_the_reports_header(tmp_path):
+    from importlib.metadata import version
+
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+    generic = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals)).metadata
+    wrapper = kilo_jsonc(target="kilo", model=MODEL).metadata
+
+    assert (generic["source"], generic["whitney_version"]) == ("AGENTS.md", version("whitney"))
+    assert wrapper["source"] == "kilo.jsonc"
+
+
+def test_a_whitney_that_is_not_installed_records_no_version(monkeypatch):
+    from importlib.metadata import PackageNotFoundError
+
+    def not_installed(name):
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(tasks_module, "package_version", not_installed)
+    assert agents_md(target="kilo", model=MODEL).metadata["whitney_version"] is None
+
+
+def test_the_task_metadata_records_the_sha256_of_the_eval_file_it_read():
+    import hashlib
+
+    generic = tasks_module.scenario_eval("configuration/kilo-jsonc.json", target="kilo", model=MODEL, evals_path=str(EVALS)).metadata
+    wrapper = agents_md(target="kilo", model=MODEL).metadata
+
+    assert generic["eval_file_sha256"] == hashlib.sha256((EVALS / "configuration" / "kilo-jsonc.json").read_bytes()).hexdigest()
+    assert wrapper["eval_file_sha256"] == hashlib.sha256((EVALS / "agents-md.json").read_bytes()).hexdigest()
