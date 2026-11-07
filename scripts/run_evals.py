@@ -45,7 +45,7 @@ from whitney.report import (
     summarise,
 )
 from whitney.targets import TARGETS
-from whitney.tasks import agents_md, kilo_jsonc
+from whitney.tasks import EVALS_DIR, agents_md, kilo_jsonc
 
 ROOT = Path(__file__).parent.parent
 
@@ -134,7 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     report += "\n" + render_asset_provenance_markdown(logs)
     report_model = _report_model_name(logs, args)
     report_target = _report_target_name(logs, args)
-    report = f"Target: `{report_target}` · Model: `{report_model}`\n\n" + render_header(logs, args.min_rate) + report
+    # EVALS_DIR: the eval files agents_md and kilo_jsonc read, so the header's SHA-256s are theirs.
+    header = render_header(logs, EVALS_DIR, args.min_rate)
+    report = f"Target: `{report_target}` · Model: `{report_model}`\n\n" + header + report
     if problems:
         report += "\n## Problems\n\n" + "\n".join(f"- {p}" for p in problems) + "\n"
     print(report)

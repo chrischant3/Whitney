@@ -706,7 +706,7 @@ def test_the_header_names_the_versions_the_evals_path_and_each_eval_files_sha256
     (tmp_path / "rules").mkdir()
     (tmp_path / "rules" / "team.json").write_text('{"version": 2}\n')
     (tmp_path / "agents-md.json").write_text("{}\n")
-    common = {"evals_path": str(tmp_path), "whitney_version": "0.1.0", "harness_version": "kilo 7.8.18"}
+    common = {"whitney_version": "0.1.0", "harness_version": "kilo 7.8.18"}
     logs = [
         _file_log("template", "template", {}, **common),
         _file_log("baseline", "baseline", {}, **common),
@@ -716,7 +716,7 @@ def test_the_header_names_the_versions_the_evals_path_and_each_eval_files_sha256
     team = hashlib.sha256(b'{"version": 2}\n').hexdigest()
     agents = hashlib.sha256(b"{}\n").hexdigest()
 
-    assert render_header(logs) == (
+    assert render_header(logs, tmp_path) == (
         f"Whitney: `0.1.0` · Harness: `kilo 7.8.18` · Evals: `{tmp_path}`\n"
         "\n"
         "| Eval file | Title | SHA-256 |\n"
@@ -733,17 +733,22 @@ def test_the_header_says_what_the_logs_did_not_record_and_lists_every_value_they
 
     logs = [
         _file_log("template", "template", {}, title=None, whitney_version="0.1.0"),
-        _file_log("baseline", "baseline", {}, title=None, whitney_version="0.2.0", evals_path=str(tmp_path)),
+        _file_log("baseline", "baseline", {}, title=None, whitney_version="0.2.0"),
     ]
-    assert render_header(logs).splitlines()[:5] == [
+    assert render_header(logs, str(tmp_path)).splitlines()[:5] == [
         f"Whitney: `0.1.0`, `0.2.0` · Harness: not recorded · Evals: `{tmp_path}`",
         "",
         "| Eval file | Title | SHA-256 |",
         "|---|---|---|",
         "| `rules/team.json` | AGENTS.md | not found |",
     ]
-    assert render_header([_file_log("template", "template", {})]).startswith(
-        "Whitney: not recorded · Harness: not recorded · Evals: not recorded\n"
+    assert render_header([_file_log("template", "template", {})]) == (
+        "Whitney: not recorded · Harness: not recorded · Evals: not given\n"
+        "\n"
+        "| Eval file | Title | SHA-256 |\n"
+        "|---|---|---|\n"
+        "| `rules/team.json` | Team rule followed | not given |\n"
+        "\n"
     )
 
 

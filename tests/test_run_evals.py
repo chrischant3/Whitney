@@ -224,13 +224,13 @@ def test_reports_can_go_to_another_folder(tmp_path, monkeypatch):
     assert not (tmp_path / "repo" / "results").exists()
 
 
-def _file_log(variant, role, answers, evals_path, **metadata):
+def _file_log(variant, role, answers, **metadata):
     """A log as scenario_eval writes it, holding one scenario's answers."""
     from types import SimpleNamespace as NS
 
     task_metadata = {
         "variant": variant, "variant_role": role, "eval_name": "team_rules", "eval_file": "team.json",
-        "evals_path": str(evals_path), "whitney_version": "0.1.0", "title": "Team rule", "source": "AGENTS.md",
+        "whitney_version": "0.1.0", "title": "Team rule", "source": "AGENTS.md",
         "labels": ["followed", "violated", "inconclusive"], "target": "kilo", "model": "m/x", "execution": "local",
         "checks": {"no_secret_committed": {"labels": ["followed", "violated", "inconclusive"], "judges": "agent", "min_pass_rate": 0.8}},
         "min_pass_rate": None, **metadata,
@@ -243,6 +243,7 @@ def _report_only(tmp_path, monkeypatch, logs, *flags):
     script_globals = _runner["main"].__globals__
     monkeypatch.setitem(script_globals, "list_eval_logs", lambda folder: [SimpleNamespace(name=i) for i in range(len(logs))])
     monkeypatch.setitem(script_globals, "read_eval_log", lambda i: logs[i])
+    monkeypatch.setitem(script_globals, "EVALS_DIR", tmp_path)
     code = _runner["main"](["--report-only", "logs", "--results-dir", str(tmp_path / "results"), *flags])
     [report] = (tmp_path / "results").iterdir()
     return code, report.read_text()
@@ -250,7 +251,7 @@ def _report_only(tmp_path, monkeypatch, logs, *flags):
 
 def test_the_report_header_follows_the_target_and_each_file_is_gated_on_its_checks_minimum(tmp_path, monkeypatch):
     (tmp_path / "team.json").write_text("{}")
-    logs = [_file_log("template", "template", ["followed"] * 4 + ["violated"], tmp_path)]  # 80%
+    logs = [_file_log("template", "template", ["followed"] * 4 + ["violated"])]  # 80%
 
     code, report = _report_only(tmp_path, monkeypatch, logs)
 
@@ -262,7 +263,7 @@ def test_the_report_header_follows_the_target_and_each_file_is_gated_on_its_chec
 
 
 def test_min_rate_replaces_a_checks_minimum_and_is_printed(tmp_path, monkeypatch):
-    logs = [_file_log("template", "template", ["followed"] * 4 + ["violated"], tmp_path)]
+    logs = [_file_log("template", "template", ["followed"] * 4 + ["violated"])]
 
     code, report = _report_only(tmp_path, monkeypatch, logs, "--min-rate", "no_secret_committed=0.9")
 
@@ -273,7 +274,7 @@ def test_min_rate_replaces_a_checks_minimum_and_is_printed(tmp_path, monkeypatch
 
 def test_min_adherence_still_sets_the_bar_for_agent_judged_checks_and_its_default_leaves_theirs(tmp_path, monkeypatch):
     raised = {"checks": {"no_secret_committed": {"labels": ["followed", "violated", "inconclusive"], "judges": "agent", "min_pass_rate": 0.9}}}
-    logs = [_file_log("template", "template", ["followed"] * 4 + ["violated"], tmp_path, **raised)]  # 80%
+    logs = [_file_log("template", "template", ["followed"] * 4 + ["violated"], **raised)]  # 80%
 
     assert _report_only(tmp_path / "default", monkeypatch, logs)[0] == 1  # the check's own 90%, not --min-adherence's default
     assert _report_only(tmp_path / "lowered", monkeypatch, logs, "--min-adherence", "0.7")[0] == 0

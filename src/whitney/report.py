@@ -52,6 +52,7 @@ TEMPLATE_VARIANT = "template"
 # A variant with no recorded role (an older log mixed in with newer ones) comes last.
 ROLE_ORDER = ("baseline", TEMPLATE_VARIANT, "control")
 NOT_RECORDED = "not recorded"
+NOT_GIVEN = "not given"
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 NOT_STAGED_NOTE = (
     "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
@@ -93,7 +94,6 @@ class FileInfo:
         labels: the score's words for pass, fail and inconclusive.
         checks: each check the file names -> its CheckMinimum.
         min_pass_rate: the file's own minimum, or None.
-        evals_path: the evals root the run read the file from, or None.
     """
 
     eval_file: str
@@ -102,7 +102,6 @@ class FileInfo:
     labels: tuple[str, str, str]
     checks: Mapping[str, CheckMinimum]
     min_pass_rate: float | None
-    evals_path: str | None = None
 
     @property
     def heading(self) -> str:
@@ -182,7 +181,6 @@ def _file_info(metadata: dict) -> FileInfo | None:
         labels=tuple(metadata["labels"]),
         checks={name: CheckMinimum(c["judges"], c["min_pass_rate"]) for name, c in metadata["checks"].items()},
         min_pass_rate=metadata.get("min_pass_rate"),
-        evals_path=metadata.get("evals_path"),
     )
 
 
@@ -366,38 +364,40 @@ def _control_warnings(s: EvalSummary, variants: tuple[str, ...]) -> list[str]:
     return warnings
 
 
-def render_header(logs: list[EvalLog], min_rates: Mapping[str, float] | None = None) -> str:
+def render_header(
+    logs: list[EvalLog], evals_path: str | Path | None = None, min_rates: Mapping[str, float] | None = None
+) -> str:
     """The report's lines after its target and model: what an auditor needs to tie it to the scenarios.
 
-    For logs that name their eval file: the Whitney and harness versions and
-    the evals path they recorded (every value, if they differ; "not
-    recorded" if none did), then each eval file with its title and the
-    SHA-256 of the file as it is now under that evals path. Then each
-    minimum `min_rates` replaced for this run. Empty when there is none of
-    these, so logs written before them render as before.
+    For logs that name their eval file: the Whitney and harness versions they
+    recorded (every value, if they differ; "not recorded" if none did) and
+    `evals_path`, then each eval file with its title and the SHA-256 of the
+    file as it is now under `evals_path`. Then each minimum `min_rates`
+    replaced for this run. Empty when there is none of these, so logs
+    written before them render as before.
     """
     files: dict[str, FileInfo] = {}
-    recorded: dict[str, set[str]] = {key: set() for key in ("whitney_version", "harness_version", "evals_path")}
+    recorded: dict[str, set[str]] = {key: set() for key in ("whitney_version", "harness_version")}
     for log in logs:
         metadata = log.eval.metadata or {}
         info = _file_info(metadata)
         if info is None:
             continue
-        if info.eval_file not in files or not files[info.eval_file].evals_path:
-            files[info.eval_file] = info
+        files.setdefault(info.eval_file, info)
         for key, values in recorded.items():
             if metadata.get(key):
                 values.add(str(metadata[key]))
     lines = []
     if files:
         shown = {key: ", ".join(f"`{v}`" for v in sorted(values)) or NOT_RECORDED for key, values in recorded.items()}
+        evals = f"`{evals_path}`" if evals_path else NOT_GIVEN
         lines += [
-            f"Whitney: {shown['whitney_version']} · Harness: {shown['harness_version']} · Evals: {shown['evals_path']}",
+            f"Whitney: {shown['whitney_version']} · Harness: {shown['harness_version']} · Evals: {evals}",
             "",
             "| Eval file | Title | SHA-256 |",
             "|---|---|---|",
         ]
-        lines += [f"| `{path}` | {info.heading} | {_sha256(info)} |" for path, info in sorted(files.items())]
+        lines += [f"| `{path}` | {info.heading} | {_sha256(evals_path, path)} |" for path, info in sorted(files.items())]
         lines.append("")
     if min_rates:
         replaced = ", ".join(f"`{name}={value:g}`" for name, value in sorted(min_rates.items()))
@@ -405,11 +405,11 @@ def render_header(logs: list[EvalLog], min_rates: Mapping[str, float] | None = N
     return "\n".join(lines) + "\n" if lines else ""
 
 
-def _sha256(info: FileInfo) -> str:
+def _sha256(evals_path: str | Path | None, eval_file: str) -> str:
     """The eval file's SHA-256 as it is now, for the header; says so if it can't be read."""
-    if not info.evals_path:
-        return NOT_RECORDED
-    path = Path(info.evals_path) / info.eval_file
+    if not evals_path:
+        return NOT_GIVEN
+    path = Path(evals_path) / eval_file
     if not path.is_file():
         return "not found"
     return f"`{hashlib.sha256(path.read_bytes()).hexdigest()}`"
