@@ -222,14 +222,14 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Decided 2026-11-06 (spec open question 6):** controls don't affect the gate. When a control variant has no failing run, the report says so beside that file's table, for example "`allow_control` never failed in 3 runs, so the template's result may not show the rule holding". Test the warning and that the gate result is unchanged.
 
 **Acceptance criteria:**
-- [ ] Today's report tests pass without edits, and the logs in `logs/` render exactly as they do today.
-- [ ] New tests cover a file with several checks and a file with several comparison variants.
-- [ ] A `min_pass_rate` below its checks' defaults fails validation (criterion 12).
+- [x] Today's report tests pass without edits, and the logs in `logs/` render exactly as they do today.
+- [x] New tests cover a file with several checks and a file with several comparison variants.
+- [x] A `min_pass_rate` below its checks' defaults fails validation (criterion 12).
 
 **Verification:**
-- [ ] `pytest -q tests/test_report.py tests/test_report_rendering.py`
-- [ ] `python scripts/run_evals.py --report-only logs` gives the same output before and after.
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_report.py tests/test_report_rendering.py`
+- [x] `python scripts/run_evals.py --report-only logs` gives the same output before and after.
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 9.
 
