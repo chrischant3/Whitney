@@ -28,7 +28,7 @@ Put shared Kilo instruction/config assets under `template/kilo/`, preserving the
 
 ## Evaluating a local project
 
-Pass `--project-path /path/to/project` to `run_evals.py`. The source directory is read-only. Whitney copies the project's configuration and instruction files into the disposable scenario projects, the temporary folders each scenario runs in. These copies are the **staged files**, and which files they are depends on `--target`:
+Pass `--project-path /path/to/project` to `whitney run` (or to the deprecated `run_evals.py`). The source directory is read-only. Whitney copies the project's configuration and instruction files into the disposable scenario projects, the temporary folders each scenario runs in. These copies are the **staged files**, and which files they are depends on `--target`:
 
 | Target | Staged files |
 |---|---|
@@ -52,7 +52,7 @@ The `agents_md` baseline removes the copied `AGENTS.md`, so its Δ (template rat
 Reports contain exact copies of staged instruction/config text for reproducibility. Do not store secrets in those files; global provider credentials are deliberately excluded.
 
 ```bash
-python scripts/run_evals.py --target <kilo|claude-code> --model <provider>/<model> --project-path /path/to/project --epochs 3
+whitney run --target <kilo|claude-code> --model <provider>/<model> --project-path /path/to/project --evals-path evals --epochs 3
 ```
 
 ## Optional IFEvalCode check
