@@ -229,9 +229,12 @@ def _run(args: argparse.Namespace) -> int:
 
 
 def _check_target(args: argparse.Namespace) -> None:
-    """Raise CannotRun, with targets.check_target's message, if the target can't use the run's options."""
+    """Raise CannotRun, with targets.check_target's message, if the target can't run in the run's execution mode.
+
+    A base URL the target can't use is refused when its tasks are built (_task).
+    """
     try:
-        targets.check_target(args.target, args.execution, args.base_url)
+        targets.check_target(args.target, args.execution)
     except ValueError as e:
         raise CannotRun(str(e)) from e
 
@@ -426,7 +429,7 @@ def _benchmark(task: str) -> bool:
 
 def filename_model(model: str) -> str:
     """The model's last segment as a file-name part: my-proxy/GPT 6 Luna -> gpt-6-luna."""
-    model_name = model.rsplit("/", 1)[-1]
+    model_name = model.rpartition("/")[2]
     return re.sub(r"[^A-Za-z0-9._-]+", "-", model_name).strip(".-_").lower() or "model"
 
 
