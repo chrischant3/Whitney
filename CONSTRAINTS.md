@@ -102,13 +102,14 @@ in `tasks._loaded`, whose block can raise no warning but version 1's
 `tasks._whitney_version`, which finds the same installed package, since
 `importlib.metadata` matches a package's name whatever its case. None of
 these depends on the platform.
-Two more survive here but are not equivalent: `re` flag `1` in place of `0`
+One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
 and 3.12 it is `re.TEMPLATE`, matching raises `re.error`, and
-`test_names_match_whatever_their_case_only_where_kilos_glob_does` kills it;
-and `harbor_tasks._host_variables` opening `DOCKER-COMPOSE.YAML` finds the
-same file on a case-insensitive disk such as macOS's, but is killed on a
-case-sensitive one (Linux).
+`test_names_match_whatever_their_case_only_where_kilos_glob_does` kills it.
+`harbor_tasks._host_variables` opening `DOCKER-COMPOSE.YAML`, which finds the
+same file on a case-insensitive disk such as macOS's, survived here too until
+2026-11-07; `test_the_compose_file_is_read_by_its_exact_name_on_a_case_sensitive_disk`
+now kills it on every disk by simulating a case-sensitive one.
 
 ## Not covered, on purpose
 
