@@ -15,7 +15,7 @@ Skills and agents will follow the same pattern, as `evals/skills/<skill-name>.js
 1. Make the change in `template/kilo/`.
 2. Run the free checks: `pytest -q` and `python -m whitney.static_checks`.
 3. Ask whether the existing scenarios still test what the file now says. If you reworded a rule, keep the old scenarios: they show whether the new wording still holds.
-4. Run the evals: `python scripts/run_evals.py --target <kilo|claude-code> --model <provider>/<model> --epochs 3`. Compare with the previous report in `results/`. Look at the **delta** column, not just the template column; a rule that passes in the baseline too isn't doing anything.
+4. Run the evals: `whitney run --target <kilo|claude-code> --model <provider>/<model> --project-path template/<kilo|claude-code> --evals-path evals --epochs 3`. If your clone doesn't have the `whitney` command yet, run `pip install --no-deps -e .` again. Compare with the previous report in `results/`. Look at the **delta** column, not just the template column; a rule that passes in the baseline too isn't doing anything.
 
 ## Adding files to the template
 

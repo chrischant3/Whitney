@@ -248,6 +248,8 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 An invalid scenario file now exits 2 instead of ending in a traceback with exit 1. Confirm this with Christopher first, and name any test that pins the old exit code.
 
+**Decided 2026-11-07 (Task 11 review, Christopher):** an invalid eval file exits 2, from `whitney run` and from `run_evals.py`; no existing test pinned the old exit code. `whitney run` loads a `.env` file with Inspect's own `init_dotenv` (from `inspect_ai._util.dotenv`, which isn't public) before it checks credentials, so the check sees what the run will see.
+
 **Verification:**
 - [ ] `pytest -q tests/test_cli.py tests/test_run_evals.py`
 - [ ] `python scripts/check.py task`
