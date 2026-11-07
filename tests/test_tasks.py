@@ -984,3 +984,12 @@ def test_why_not_applies_names_unsupported_checks_first_then_the_files_targets()
     assert why_not_applies("claude-code", ("kilo",), [both]) == "it applies to kilo"
     assert why_not_applies("kilo", ("kilo", "claude-code"), [kilo_only, both]) is None
     assert why_not_applies("kilo", iter(("kilo",)), []) is None
+
+
+def test_why_not_applies_names_every_unsupported_check():
+    from types import SimpleNamespace
+
+    from whitney.tasks import why_not_applies
+
+    checks = [SimpleNamespace(name=name, targets=("kilo",)) for name in ("first", "second")]
+    assert why_not_applies("claude-code", ("kilo", "claude-code"), checks) == "its checks first, second don't support it"

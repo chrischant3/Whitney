@@ -343,7 +343,7 @@ def missing_credential(
     api_key_env: str | None,
     environ: Mapping[str, str] = os.environ,
     *,
-    model: str | None = None,
+    model: str = "",
     auth_path: Path | None = None,
 ) -> str | None:
     """Why the run's credentials aren't usable, or None.
@@ -362,14 +362,14 @@ def missing_credential(
         name = api_key_env or "ANTHROPIC_API_KEY"
     elif execution == "local":
         name = api_key_env
-    elif model is not None and model.startswith("kilo/"):
+    elif model.startswith("kilo/"):
         try:
             resolve_gateway_credentials(environ, auth_path)
         except CredentialsError as e:
             return str(e)
         return None
     else:
-        name = DOCKER_KEY_VARIABLES.get((model or "").partition("/")[0])
+        name = DOCKER_KEY_VARIABLES.get(model.partition("/")[0])
     if name is None:
         return None
     return None if environ.get(name) else f"{name} is not set; put it in .env or the environment"

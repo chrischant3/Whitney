@@ -268,6 +268,7 @@ def test_a_credential_in_the_current_folders_env_file_counts(consumer, monkeypat
     ("kilo", "docker", None, "anthropic/claude-haiku-4-5", {}, "ANTHROPIC_API_KEY is not set; put it in .env or the environment"),
     ("kilo", "docker", None, "openai/gpt-5.1", {}, "OPENAI_API_KEY is not set; put it in .env or the environment"),
     ("kilo", "docker", None, "openai/gpt-5.1", {"OPENAI_API_KEY": "k"}, None),
+    ("kilo", "docker", None, "openai/a/b", {}, "OPENAI_API_KEY is not set; put it in .env or the environment"),
     ("kilo", "docker", None, "other/m", {}, None),  # refused when the task is built: the bridge serves Anthropic and OpenAI only
     ("claude-code", "local", None, "anthropic/m", {"ANTHROPIC_API_KEY": "k"}, None),
     ("claude-code", "local", None, "anthropic/m", {}, "ANTHROPIC_API_KEY is not set; put it in .env or the environment"),
@@ -282,6 +283,8 @@ def test_docker_mode_with_a_kilo_gateway_model_needs_gateway_credentials(tmp_pat
     message = cli.missing_credential("kilo", "docker", None, environ, model="kilo/anthropic/claude-haiku-4.5", auth_path=login)
     assert message.startswith("No Kilo Gateway credentials. Either set KILO_API_KEY in .env")
     assert cli.missing_credential("kilo", "docker", None, {"KILO_API_KEY": "k"}, model="kilo/anthropic/claude-haiku-4.5", auth_path=login) is None
+    login.write_text(json.dumps({"kilo": {"type": "api", "key": "kilo-key-not-real"}}))
+    assert cli.missing_credential("kilo", "docker", None, environ, model="kilo/anthropic/claude-haiku-4.5", auth_path=login) is None
 
 
 # The harness check
@@ -856,9 +859,12 @@ def test_the_harness_checks_quote_is_redacted_and_its_version_cut_to_200_charact
 def test_the_harness_check_is_given_the_runs_secrets(consumer, monkeypatch, recorded):
     given = {}
     monkeypatch.setenv("TEAM_PROVIDER_KEY", "sk-team-value")
-    monkeypatch.setattr(cli, "harness_version", lambda target, secrets=(): given.setdefault("secrets", secrets) and "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-anthropic-value")
+    monkeypatch.setattr(cli, "harness_version", lambda target, secrets=(): given.setdefault(target, secrets) and "1")
     cli.main(_run_args(consumer, "--api-key-env", "TEAM_PROVIDER_KEY"))
-    assert "sk-team-value" in given["secrets"]
+    cli.main(_for_claude_code(_run_args(consumer)))
+    assert "sk-team-value" in given["kilo"]
+    assert given["claude-code"] == ["sk-anthropic-value"]
 
 
 def test_docker_mode_without_gateway_credentials_exits_2(consumer, monkeypatch, capsys):
@@ -877,6 +883,7 @@ def test_a_changed_min_conclusive_is_printed_and_the_default_is_not(consumer, mo
     answers = ["followed", "inconclusive", "inconclusive"]
     _, report = _gated(monkeypatch, consumer, answers, "--min-conclusive", "0.3")
     assert "\nMinimum conclusive share for this run: 0.3 (default 0.5).\n" in report
+    assert "Whitney: `0.1.0` · Harness: `1`" in report
     _, report = _gated(monkeypatch, consumer, answers)
     assert "Minimum conclusive share" not in report
 
@@ -915,11 +922,17 @@ def test_a_run_that_stops_partway_still_reports_what_it_collected(consumer, monk
 
 
 def test_files_left_out_by_only_are_listed(consumer, recorded):
-    _write(consumer.evals, {"more/other-md.json": _eval_file(source="kilo.jsonc", name="other")})
+    _write(consumer.evals, {
+        "more/other-md.json": _eval_file(source="kilo.jsonc", name="other"),
+        "third-md.json": _eval_file(source="CLAUDE.md", targets=["kilo"]),
+    })
+    (consumer.project / "CLAUDE.md").write_text("rules\n")
 
     assert cli.main(_run_args(consumer, "--only", "other")) == 0
 
-    assert "\n## Left out by --only\n\n- `team-rules-md.json`\n" in _report(consumer)
+    report = _report(consumer)
+    assert "\n## Left out by --only\n\n- `team-rules-md.json`\n- `third-md.json`\n" in report
+    assert "## Team rule: followed / (followed + violated)\n" in report
 
 
 def test_the_wrapper_refuses_epochs_and_max_samples_below_1(capsys):
@@ -940,3 +953,16 @@ def test_the_installed_whitney_command_runs(tmp_path):
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert done.stdout.endswith("2 eval file(s), 0 problem(s), 0 warning(s)\n")
+
+
+def test_a_log_written_before_eval_files_were_recorded_counts_as_read(tmp_path, capsys):
+    sample = SimpleNamespace(id="a", error=None, scores={"s": SimpleNamespace(answer="followed")}, metadata={})
+    old = SimpleNamespace(eval=SimpleNamespace(task="agents_md_template", metadata={}, task_args={}), samples=[sample], status="success")
+
+    code = cli.write_report(
+        [old], target="kilo", model="m/x", evals_path=None, min_rates={}, min_conclusive=0.5,
+        results_dir=tmp_path, expected=["agents_md", "kilo_jsonc"],
+    )
+
+    assert code == 1
+    assert capsys.readouterr().out.count("no log of its runs was read") == 1
