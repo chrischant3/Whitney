@@ -2,6 +2,7 @@ import fnmatch
 import json
 import subprocess
 import tempfile
+import tomllib
 from datetime import date
 from pathlib import Path
 from runpy import run_path
@@ -70,6 +71,37 @@ def test_ratchet_holds_within_tolerance_and_fails_below_it():
     assert holds(today=77.0, recorded=77.4)  # within 0.5 points
     assert not holds(today=76.8, recorded=77.4)
     assert holds(today=80.0, recorded=77.4)
+
+
+def test_the_test_step_runs_pytest_on_every_core_with_coverage():
+    commands = []
+
+    def run(cmd, **kwargs):
+        commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 1, "1 failed, 9 passed in 1.00s\n", "")
+
+    checks = _checks(run)
+
+    assert checks.tests_and_coverage() is None
+    [command] = commands
+    assert command[1:3] == ["-m", "pytest"]
+    assert command[command.index("-n") + 1] == "auto"
+    assert {"--cov=whitney", "--cov-report=xml:coverage.xml"} <= set(command)
+    assert _result(checks, "tests")[1:] == ("FAIL", "1 failed, 9 passed in 1.00s")
+
+
+def test_mutmut_and_a_plain_pytest_run_stay_on_one_process():
+    # mutmut runs its own workers, so its pytest runs must not start xdist ones too;
+    # only check.py's test step asks for -n.
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    mutmut = pyproject["tool"]["mutmut"]
+    arguments = [
+        *pyproject["tool"]["pytest"]["ini_options"]["addopts"],
+        *mutmut["pytest_add_cli_args_test_selection"],
+        *mutmut.get("pytest_add_cli_args", []),
+    ]
+
+    assert not [a for a in arguments if a.startswith(("-n", "--numprocesses", "--dist"))]
 
 
 # Mutation stages: `task` mutates only the touched functions, `full` the whole suite. --------
