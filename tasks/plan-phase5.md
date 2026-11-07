@@ -155,6 +155,8 @@ Spec open questions that block a task here, so they need an answer before that t
 
 Not planned in detail:
 
+- **The Python API (found in the Task 11 review, 2026-11-07):** the spec's `whitney.run`, `whitney.validate` and `whitney.discover`, which the CLI should be a thin layer over. Task 11's `cli._run` takes an argparse Namespace and prints its findings, so it needs splitting into a library call that returns results and a CLI that prints them. Plan it with Task 25 or before the `v0.2.0` release.
+
 - **Security, found in the Task 9 review (2026-11-06), do before a release:** a literal `apiKey` in the user's global Kilo `provider` settings is copied into the `KILO_CONFIG` overlay, which the agent can read, and neither the agent nor `evidence.run_secrets` redacts it; the same goes for proxy credentials passed through `LOCAL_ENV_PASSTHROUGH` (for example `HTTP_PROXY=user:pass@...`). Refuse literal keys in the overlay (use `{env:NAME}`), or redact them, with a test.
 
 - `no_test_newly_skipped`, with presets for each test framework (spec slice 12).
