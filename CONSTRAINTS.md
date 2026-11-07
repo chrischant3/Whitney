@@ -19,8 +19,9 @@ and a human reviewer, never the same commit as the change that was failing.
 - This file does not get weakened to make a change pass
 
 Checked by `python scripts/floor_guard.py` (diff since the merge base with
-`origin/main`, including uncommitted and untracked files) and gitleaks, and
-again by CI on every pull request into main (below).
+`origin/main`, including uncommitted and untracked files) and gitleaks. CI
+runs the floor guard again on every pull request into main (below); gitleaks
+runs only locally, in `check.py`.
 
 Human decisions are recorded as commit-message trailers, so they show up in review:
 - `Skip-reason: <test file> <why>` allows the skips added in that test file.
@@ -120,7 +121,7 @@ case-sensitive one (Linux).
 ```bash
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
-python scripts/check.py task       # before handing work back, about a minute (mutmut runs only the touched functions' mutants)
+python scripts/check.py task       # before handing work back: a minute or two for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants)
 python scripts/check.py full       # before opening a pull request: reruns every mutant, and the dependency scan
 ```
 
