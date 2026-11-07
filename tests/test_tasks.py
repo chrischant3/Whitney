@@ -971,3 +971,16 @@ def test_the_task_metadata_records_the_sha256_of_the_eval_file_it_read():
 
     assert generic["eval_file_sha256"] == hashlib.sha256((EVALS / "configuration" / "kilo-jsonc.json").read_bytes()).hexdigest()
     assert wrapper["eval_file_sha256"] == hashlib.sha256((EVALS / "agents-md.json").read_bytes()).hexdigest()
+
+
+def test_why_not_applies_names_unsupported_checks_first_then_the_files_targets():
+    from types import SimpleNamespace
+
+    from whitney.tasks import why_not_applies
+
+    kilo_only = SimpleNamespace(name="kilo_only", targets=("kilo",))
+    both = SimpleNamespace(name="both", targets=("kilo", "claude-code"))
+    assert why_not_applies("claude-code", ("kilo",), [kilo_only, both]) == "its checks kilo_only don't support it"
+    assert why_not_applies("claude-code", ("kilo",), [both]) == "it applies to kilo"
+    assert why_not_applies("kilo", ("kilo", "claude-code"), [kilo_only, both]) is None
+    assert why_not_applies("kilo", iter(("kilo",)), []) is None

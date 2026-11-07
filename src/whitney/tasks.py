@@ -21,7 +21,7 @@ routes calls through Inspect's model bridge; claude-code runs locally.
 import base64
 import sys
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
@@ -406,9 +406,8 @@ def _scenario_task(
     _check_variant(variant, {TEMPLATE, *plan.variants})
     targets.check_target(target)  # build_agent checks the target's options below
     checks = _named_checks(plan)
-    unsupported = [spec.name for spec in checks.values() if target not in spec.targets]
-    if target not in plan.targets or unsupported:
-        why = f"its checks {', '.join(unsupported)} don't support it" if unsupported else f"it applies to {', '.join(plan.targets)}"
+    why = why_not_applies(target, plan.targets, checks.values())
+    if why:
         raise ValueError(f"{plan.eval_name} doesn't apply to the {target} target: {why}")
     staged = _source_files(project_path, target, plan.evals_dir)
     if variant != TEMPLATE:
@@ -471,6 +470,22 @@ def _scenario_task(
             "min_pass_rate": plan.min_pass_rate,
         },
     )
+
+
+def why_not_applies(target: str, file_targets: Iterable[str], checks: Iterable[CheckSpec]) -> str | None:
+    """Why an eval file doesn't apply to `target`, or None if it does; whitney run uses it too.
+
+    A file applies when `target` is one of `file_targets` (the file's
+    `targets`, or every target when it names none) and every one of its
+    `checks` supports it. Unsupported checks are named first, in the order given.
+    """
+    file_targets = tuple(file_targets)
+    unsupported = [spec.name for spec in checks if target not in spec.targets]
+    if unsupported:
+        return f"its checks {', '.join(unsupported)} don't support it"
+    if target not in file_targets:
+        return f"it applies to {', '.join(file_targets)}"
+    return None
 
 
 def _whitney_version() -> str | None:
