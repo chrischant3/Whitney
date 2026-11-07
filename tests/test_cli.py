@@ -216,7 +216,7 @@ def test_a_source_the_project_does_not_stage_exits_2(consumer, monkeypatch, caps
 
 
 def test_a_task_that_cannot_be_built_exits_2(consumer, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "harness_version", lambda target: "1")
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
     monkeypatch.setattr(cli, "inspect_eval", lambda *a, **k: pytest.fail("ran a task"))
 
     assert cli.main(_run_args(consumer, "--execution", "docker", "--api-key-env", "SOME_KEY")) == 2
@@ -252,19 +252,36 @@ def test_a_credential_variable_that_is_not_set_exits_2(consumer, monkeypatch, ca
 def test_a_credential_in_the_current_folders_env_file_counts(consumer, monkeypatch):
     monkeypatch.delenv("TEAM_PROVIDER_KEY", raising=False)
     (consumer.root / ".env").write_text("TEAM_PROVIDER_KEY=from-dotenv\n")
-    monkeypatch.setattr(cli, "harness_version", lambda target: "1")
-    monkeypatch.setattr(cli, "inspect_eval", lambda *a, **k: [])
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
+    monkeypatch.setattr(cli, "inspect_eval", lambda task, **k: [_passing_log(task)])
     try:
-        assert cli.main(_run_args(consumer, "--api-key-env", "TEAM_PROVIDER_KEY")) == 0  # the fake eval gave no logs to gate
+        assert cli.main(_run_args(consumer, "--api-key-env", "TEAM_PROVIDER_KEY")) == 0
     finally:
         os.environ.pop("TEAM_PROVIDER_KEY", None)
 
 
-@pytest.mark.parametrize("execution, expected", [("local", None), ("docker", "kilo")])
-def test_kilo_needs_no_named_variable_and_docker_mode_checks_no_host_harness(execution, expected):
-    assert cli.missing_credential("kilo", execution, None, {}) is None
-    assert cli.missing_credential("kilo", "docker", "UNSET", {}) is None  # refused when the task is built
-    assert cli.missing_credential("claude-code", "local", None, {"ANTHROPIC_API_KEY": "k"}) is None
+@pytest.mark.parametrize("target, execution, api_key_env, model, environ, expected", [
+    ("kilo", "local", None, "p/m", {}, None),  # the global Kilo config, which can't be checked without a model call
+    ("kilo", "local", "KEY", "p/m", {"KEY": "k"}, None),
+    ("kilo", "local", "KEY", "p/m", {}, "KEY is not set; put it in .env or the environment"),
+    ("kilo", "docker", "UNSET", "anthropic/claude-haiku-4-5", {"ANTHROPIC_API_KEY": "k"}, None),  # api_key_env: refused when built
+    ("kilo", "docker", None, "anthropic/claude-haiku-4-5", {}, "ANTHROPIC_API_KEY is not set; put it in .env or the environment"),
+    ("kilo", "docker", None, "openai/gpt-5.1", {}, "OPENAI_API_KEY is not set; put it in .env or the environment"),
+    ("kilo", "docker", None, "openai/gpt-5.1", {"OPENAI_API_KEY": "k"}, None),
+    ("kilo", "docker", None, "other/m", {}, None),  # refused when the task is built: the bridge serves Anthropic and OpenAI only
+    ("claude-code", "local", None, "anthropic/m", {"ANTHROPIC_API_KEY": "k"}, None),
+    ("claude-code", "local", None, "anthropic/m", {}, "ANTHROPIC_API_KEY is not set; put it in .env or the environment"),
+])
+def test_which_credential_variable_a_run_needs(target, execution, api_key_env, model, environ, expected):
+    assert cli.missing_credential(target, execution, api_key_env, environ, model=model) == expected
+
+
+def test_docker_mode_with_a_kilo_gateway_model_needs_gateway_credentials(tmp_path):
+    login = tmp_path / "auth.json"
+    environ = {"HOME": str(tmp_path / "home")}
+    message = cli.missing_credential("kilo", "docker", None, environ, model="kilo/anthropic/claude-haiku-4.5", auth_path=login)
+    assert message.startswith("No Kilo Gateway credentials. Either set KILO_API_KEY in .env")
+    assert cli.missing_credential("kilo", "docker", None, {"KILO_API_KEY": "k"}, model="kilo/anthropic/claude-haiku-4.5", auth_path=login) is None
 
 
 # The harness check
@@ -327,21 +344,27 @@ def test_the_harness_version_reaches_the_task_metadata_and_is_none_unless_given(
 
 
 class _Recorder:
-    """Stands in for Inspect's eval: records each task and its options, returns no logs."""
+    """Stands in for Inspect's eval: records each task and its options, returns a log of one passing run."""
 
     def __init__(self):
         self.calls = []
 
     def __call__(self, task, **options):
         self.calls.append((task, options))
-        return []
+        return [_passing_log(task)]
+
+
+def _passing_log(task):
+    """A log of `task` as Inspect would return it, holding one run its checks passed."""
+    sample = SimpleNamespace(id="a", error=None, scores={"s": SimpleNamespace(answer=task.metadata["labels"][0])}, metadata={})
+    return SimpleNamespace(eval=SimpleNamespace(task=task.name, metadata=task.metadata, task_args={}), samples=[sample], status="success")
 
 
 @pytest.fixture
 def recorded(consumer, monkeypatch):
     recorder = _Recorder()
     monkeypatch.setattr(cli, "inspect_eval", recorder)
-    monkeypatch.setattr(cli, "harness_version", lambda target: f"{target}-1.0")
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: f"{target}-1.0")
     return recorder
 
 
@@ -371,7 +394,7 @@ def test_the_run_defaults(consumer, recorded):
 
 
 def test_docker_mode_hands_inspect_the_model_and_checks_no_host_harness(consumer, monkeypatch, recorded):
-    monkeypatch.setattr(cli, "harness_version", lambda target: pytest.fail("checked the host's harness"))
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: pytest.fail("checked the host's harness"))
 
     args = _run_args(consumer, "--execution", "docker")
     args[args.index("test-provider/test-model")] = "kilo/anthropic/claude-haiku-4.5"
@@ -481,7 +504,7 @@ def _gated(monkeypatch, consumer, answers, *flags) -> tuple[int, str]:
         return [SimpleNamespace(eval=SimpleNamespace(task=task.name, metadata=task.metadata, task_args={}), samples=samples, status="success")]
 
     monkeypatch.setattr(cli, "inspect_eval", fake_eval)
-    monkeypatch.setattr(cli, "harness_version", lambda target: "1")
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
     code = cli.main(_run_args(consumer, *flags))
     report = _report(consumer)
     (consumer.root / "results").rename(consumer.root / f"results-{len(list(consumer.root.glob('results-*')))}")
@@ -511,6 +534,10 @@ def test_min_conclusive_sets_the_share_of_runs_that_must_be_conclusive(consumer,
     (["--min-rate", "nothing=0.5"], "--min-rate names no registered check 'nothing'"),
     (["--min-conclusive", "2"], "argument --min-conclusive: needs a number from 0 to 1, got '2'"),
     (["--limit", "0"], "error: --limit must be positive\n"),
+    (["--epochs", "0"], "error: --epochs must be positive\n"),
+    (["--epochs", "-1"], "error: --epochs must be positive\n"),
+    (["--max-samples", "0"], "error: --max-samples must be positive\n"),
+    (["--min-rate", "no_secret_committed=0.5", "--min-rate", "no_secret_committed=0.6"], "error: --min-rate gives no_secret_committed twice\n"),
     (["--execution", "weird"], "argument --execution: invalid choice: 'weird'"),
     (["--min-rate", "no_secret_committed=0.5=1"], "--min-rate needs a number from 0 to 1 for no_secret_committed, got '0.5=1'"),
 ])
@@ -525,7 +552,7 @@ def test_a_log_that_did_not_succeed_fails_the_gate(consumer, monkeypatch):
         return [SimpleNamespace(eval=SimpleNamespace(task=task.name, metadata=task.metadata, task_args={}), samples=[], status="error")]
 
     monkeypatch.setattr(cli, "inspect_eval", fake_eval)
-    monkeypatch.setattr(cli, "harness_version", lambda target: "1")
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
 
     assert cli.main(_run_args(consumer)) == 1
     assert "- team_rules_md_template: error\n" in _report(consumer)
@@ -635,7 +662,7 @@ def test_a_limit_of_1_is_allowed(consumer, recorded):
 
 def test_the_harness_version_check_gives_the_harness_no_stdin(tmp_path, monkeypatch, stdin_is_a_pipe):
     _harness(tmp_path, monkeypatch, '#!/bin/sh\nif read line; then echo "read stdin"; else echo "1.0"; fi\n')
-    monkeypatch.setattr(cli, "VERSION_TIMEOUT", 2)
+    monkeypatch.setattr(cli, "VERSION_TIMEOUT", 10)
     assert cli.harness_version("kilo") == "1.0"
 
 
@@ -657,10 +684,10 @@ def test_why_not_run_lists_every_unsupported_check():
     eval_file = EvalFile.model_validate(json.loads(_eval_file(defaults={
         "fixture": "repo", "expect": [{"check": "b_check"}, {"check": "a_check"}, {"check": "unregistered"}, {"check": "c_check"}],
     })))
-    checks = {"a_check": SimpleNamespace(targets=("kilo",)), "b_check": SimpleNamespace(targets=("kilo",)),
-              "c_check": SimpleNamespace(targets=("kilo", "claude-code"))}
+    checks = {"a_check": SimpleNamespace(name="a_check", targets=("kilo",)), "b_check": SimpleNamespace(name="b_check", targets=("kilo",)),
+              "c_check": SimpleNamespace(name="c_check", targets=("kilo", "claude-code"))}
 
-    assert cli.why_not_run(eval_file, "claude-code", checks) == "its checks a_check, b_check don't support it"
+    assert cli.why_not_run(eval_file, "claude-code", checks) == "its checks b_check, a_check don't support it"
     assert cli.why_not_run(eval_file, "kilo", checks) is None
 
 
@@ -755,7 +782,7 @@ def test_every_tasks_logs_reach_the_report(consumer, monkeypatch):
     (consumer.evals / "team-rules-md.json").write_text(_eval_file(variants={"no_rules": {"role": "baseline", "remove": ["AGENTS.md"]}}))
     statuses = iter(["error", "success"])
     monkeypatch.setattr(cli, "inspect_eval", lambda task, **options: [_log(task.name, next(statuses))])
-    monkeypatch.setattr(cli, "harness_version", lambda target: "1")
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
     monkeypatch.setattr(cli, "records_from_log", lambda log: [])
 
     assert cli.main(_run_args(consumer)) == 1
@@ -803,3 +830,113 @@ def test_validate_checks_known_gaps_against_the_constraints_file(consumer, capsy
     assert cli.main(args) == 0
     assert cli.main([*args, "--constraints", "CONSTRAINTS.md"]) == 1
     assert "E9 isn't a row in CONSTRAINTS.md's Exceptions table" in capsys.readouterr().out
+
+
+# Review fixes: what still exited 1 when it couldn't run, and what the report didn't say
+
+
+def test_a_harness_that_cannot_be_executed_cannot_run(tmp_path, monkeypatch):
+    bin_dir = _fake_kilo(tmp_path, "#!/bin/sh\necho 1\n")
+    (bin_dir / "kilo").chmod(0o644)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    with pytest.raises(cli.CannotRun, match=r"^`kilo --version` couldn't start: .*Permission denied"):
+        cli.harness_version("kilo")
+
+
+def test_the_harness_checks_quote_is_redacted_and_its_version_cut_to_200_characters(tmp_path, monkeypatch):
+    _harness(tmp_path, monkeypatch, "#!/bin/sh\necho 'key sk-secret-123 refused' >&2\nexit 1\n")
+    with pytest.raises(cli.CannotRun) as raised:
+        cli.harness_version("kilo", secrets=["sk-secret-123"])
+    assert str(raised.value) == "`kilo --version` exited 1: key [redacted] refused"
+
+    _harness(tmp_path, monkeypatch, "#!/bin/sh\nprintf 'v%.0s' $(seq 1 300)\n")
+    assert cli.harness_version("kilo") == "v" * 200
+
+
+def test_the_harness_check_is_given_the_runs_secrets(consumer, monkeypatch, recorded):
+    given = {}
+    monkeypatch.setenv("TEAM_PROVIDER_KEY", "sk-team-value")
+    monkeypatch.setattr(cli, "harness_version", lambda target, secrets=(): given.setdefault("secrets", secrets) and "1")
+    cli.main(_run_args(consumer, "--api-key-env", "TEAM_PROVIDER_KEY"))
+    assert "sk-team-value" in given["secrets"]
+
+
+def test_docker_mode_without_gateway_credentials_exits_2(consumer, monkeypatch, capsys):
+    _no_model_calls(monkeypatch)
+    monkeypatch.delenv("KILO_API_KEY", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(consumer.root / "no-login"))
+    args = _run_args(consumer, "--execution", "docker")
+    args[args.index("test-provider/test-model")] = "kilo/anthropic/claude-haiku-4.5"
+
+    assert cli.main(args) == 2
+
+    assert "whitney: error: No Kilo Gateway credentials." in capsys.readouterr().err
+
+
+def test_a_changed_min_conclusive_is_printed_and_the_default_is_not(consumer, monkeypatch):
+    answers = ["followed", "inconclusive", "inconclusive"]
+    _, report = _gated(monkeypatch, consumer, answers, "--min-conclusive", "0.3")
+    assert "\nMinimum conclusive share for this run: 0.3 (default 0.5).\n" in report
+    _, report = _gated(monkeypatch, consumer, answers)
+    assert "Minimum conclusive share" not in report
+
+
+def test_a_selected_file_with_no_logs_fails_the_gate(consumer, monkeypatch):
+    monkeypatch.setattr(cli, "inspect_eval", lambda task, **options: [])
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
+
+    assert cli.main(_run_args(consumer)) == 1
+
+    assert "- team_rules_md: no conclusive runs: no log of its runs was read\n" in _report(consumer)
+
+
+@pytest.mark.parametrize("error, code", [(RuntimeError("the bridge fell over"), 1), (cli.CannotRun("the bridge fell over"), 2)])
+def test_a_run_that_stops_partway_still_reports_what_it_collected(consumer, monkeypatch, capsys, error, code):
+    (consumer.evals / "team-rules-md.json").write_text(_eval_file(variants={"no_rules": {"role": "baseline", "remove": ["AGENTS.md"]}}))
+    calls = []
+
+    def stops_on_the_second(task, **options):
+        calls.append(task.name)
+        if len(calls) == 2:
+            raise error
+        return [_passing_log(task)]
+
+    monkeypatch.setattr(cli, "inspect_eval", stops_on_the_second)
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
+
+    assert cli.main(_run_args(consumer)) == code
+
+    report = _report(consumer)
+    assert report.endswith(
+        "\n## Problems\n\n- team_rules_md: template no conclusive runs is below the minimum 80%\n"
+        f"- stopped after 1 of 2 tasks: {type(error).__name__}: the bridge fell over\n"
+    )
+    assert "## Team rule: followed / (followed + violated)\n" in report  # the first task's log, collected before it stopped
+
+
+def test_files_left_out_by_only_are_listed(consumer, recorded):
+    _write(consumer.evals, {"more/other-md.json": _eval_file(source="kilo.jsonc", name="other")})
+
+    assert cli.main(_run_args(consumer, "--only", "other")) == 0
+
+    assert "\n## Left out by --only\n\n- `team-rules-md.json`\n" in _report(consumer)
+
+
+def test_the_wrapper_refuses_epochs_and_max_samples_below_1(capsys):
+    parse = _wrapper()["_parse"]
+    for flag in ("--epochs", "--max-samples"):
+        with pytest.raises(SystemExit):
+            parse(["--target", "kilo", "--model", "m/x", flag, "0"])
+        assert f"error: {flag} must be positive\n" in capsys.readouterr().err
+
+
+def test_the_installed_whitney_command_runs(tmp_path):
+    command = Path(sys.executable).parent / "whitney"
+    assert command.exists(), "no whitney command beside this Python: run `pip install --no-deps -e .` again"
+    args = [str(command), "validate", "--project-path", str(ROOT / "template/kilo"), "--evals-path", str(ROOT / "evals"),
+            "--target", "kilo", "--constraints", str(ROOT / "CONSTRAINTS.md")]
+
+    done = subprocess.run(args, capture_output=True, text=True, timeout=120, cwd=tmp_path)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.endswith("2 eval file(s), 0 problem(s), 0 warning(s)\n")

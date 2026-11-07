@@ -29,7 +29,7 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 
@@ -41,7 +41,10 @@ from inspect_ai import eval as inspect_eval
 from inspect_ai._util.dotenv import init_dotenv
 
 from whitney import targets
+from whitney.agent import redact
 from whitney.checks import CheckSpec, registry
+from whitney.credentials import CredentialsError, resolve_gateway_credentials
+from whitney.evidence import run_secrets
 from whitney.evalfile import EvalFile, Problem
 from whitney.report import (
     ROLE_ORDER,
@@ -56,13 +59,16 @@ from whitney.report import (
     summarise,
 )
 from whitney.target_names import TARGETS
-from whitney.tasks import scenario_eval
+from whitney.tasks import scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
 from whitney.validate import ValidationResult, validate_evals, validate_project
 from whitney.variants import TEMPLATE, declared_variants
 
 # The CLI each target runs, checked with `<name> --version` before a run.
 HARNESS_COMMANDS = {"kilo": "kilo", "claude-code": "claude"}
+MAX_VERSION_LENGTH = 200  # a version is short; a long first line is something else, kept out of every report
+# In Docker mode Inspect answers for the model: the key variable of each provider the bridge serves, besides kilo/.
+DOCKER_KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 VERSION_TIMEOUT = 30  # seconds; `--version` answers at once, so a longer wait means a hung CLI
 SAMPLE_SHUFFLE_SEED = 42  # as run_evals.py: the same order across variants and runs
 
@@ -160,6 +166,10 @@ def _check_args(args: argparse.Namespace) -> None:
         args.min_rate = min_rates(args.parser, args.min_rate)
         if args.limit is not None and args.limit < 1:
             args.parser.error("--limit must be positive")
+        # Inspect waits forever with max_samples 0, and refuses epochs below 1 only once the run has started.
+        for option, value in (("--epochs", args.epochs), ("--max-samples", args.max_samples)):
+            if value < 1:
+                args.parser.error(f"{option} must be positive")
     for option, folder in (("--project-path", args.project_path), ("--evals-path", args.evals_path)):
         if not Path(folder).is_dir():
             raise CannotRun(f"{option} {folder} isn't a folder")
@@ -193,39 +203,47 @@ def _run(args: argparse.Namespace) -> int:
     _print_findings(result, sys.stderr)
     if result.problems:
         raise CannotRun("the evals aren't valid; `whitney validate` lists the same problems")
-    selected, not_run = _select(result.files, evals, args.target, args.only)
+    selected, not_run, left_out = _select(result.files, evals, args.target, args.only)
     project_problems = validate_project(selected, project, args.target, evals_path=evals)
     _print_findings(ValidationResult(problems=project_problems), sys.stderr)
     if project_problems:
         raise CannotRun("the evals don't fit the project; `whitney validate` lists the same problems")
     init_dotenv()
-    missing = missing_credential(args.target, args.execution, args.api_key_env)
+    missing = missing_credential(args.target, args.execution, args.api_key_env, model=args.model)
     if missing:
         raise CannotRun(missing)
     # In Docker mode the harness is the image's, not the host's, so the host has nothing to check.
-    version = harness_version(args.target) if args.execution == "local" else None
+    secrets = run_secrets(args.target, args.execution, args.api_key_env)
+    version = harness_version(args.target, secrets=secrets) if args.execution == "local" else None
     tasks = [
         _task(eval_file.path.relative_to(evals).as_posix(), variant, args, version)
         for eval_file in selected
         for variant in variant_order(eval_file)
     ]
-    logs = []
-    for task in tasks:
-        logs += inspect_eval(
-            task,
-            model=args.model if args.execution == "docker" else None,
-            epochs=args.epochs,
-            limit=args.limit,
-            sample_shuffle=SAMPLE_SHUFFLE_SEED if args.sample_shuffle else None,
-            max_samples=args.max_samples,
-            log_dir=args.log_dir,
-            display="plain",
-        )
-    return write_report(
+    logs, stopped, cannot_run = [], None, False
+    for done, task in enumerate(tasks):
+        try:
+            logs += inspect_eval(
+                task,
+                model=args.model if args.execution == "docker" else None,
+                epochs=args.epochs,
+                limit=args.limit,
+                sample_shuffle=SAMPLE_SHUFFLE_SEED if args.sample_shuffle else None,
+                max_samples=args.max_samples,
+                log_dir=args.log_dir,
+                display="plain",
+            )
+        except Exception as e:  # anything at all: the report still says what ran before it, and why it stopped
+            stopped = f"stopped after {done} of {len(tasks)} tasks: {type(e).__name__}: {e}"
+            cannot_run = isinstance(e, (CannotRun, CredentialsError))
+            break
+    code = write_report(
         logs, target=args.target, model=args.model, evals_path=args.evals_path,
         min_rates=replaced_minimums(args.min_adherence, args.min_held, args.min_rate),
         min_conclusive=args.min_conclusive, results_dir=args.results_dir, not_run=not_run,
+        left_out=left_out, expected=[f.eval_name for f in selected], stopped=stopped,
     )
+    return 2 if cannot_run else code
 
 
 def _check_target(args: argparse.Namespace) -> None:
@@ -268,23 +286,18 @@ def _print_findings(result: ValidationResult, stream=None) -> None:
 
 
 def why_not_run(eval_file: EvalFile, target: str, checks: Mapping[str, CheckSpec]) -> str | None:
-    """Why `eval_file` doesn't apply to `target`, or None if it does.
+    """Why `eval_file` doesn't apply to `target`, or None if it does (tasks.why_not_applies, as its task would say).
 
-    A file applies if `target` is in its `targets` (left out: every target)
-    and every check it names supports `target`. A check that isn't
-    registered is left to validation.
+    A check that isn't registered is left to validation.
     """
-    if eval_file.targets is not None and target not in eval_file.targets:
-        return f"it applies to {', '.join(eval_file.targets)}"
-    named = {e.check for scenario in eval_file.resolved() for e in scenario.expect}
-    unsupported = sorted(name for name in named if name in checks and target not in checks[name].targets)
-    if unsupported:
-        return f"its checks {', '.join(unsupported)} don't support it"
-    return None
+    named = dict.fromkeys(e.check for scenario in eval_file.resolved() for e in scenario.expect)
+    return why_not_applies(target, eval_file.targets or TARGETS, [checks[name] for name in named if name in checks])
 
 
-def _select(files: list[EvalFile], evals: Path, target: str, only: list[str] | None) -> tuple[list[EvalFile], dict[str, str]]:
-    """The eval files to run, and each file left out because it doesn't apply to `target`, with why.
+def _select(
+    files: list[EvalFile], evals: Path, target: str, only: list[str] | None
+) -> tuple[list[EvalFile], dict[str, str], list[str]]:
+    """The eval files to run; each file left out because it doesn't apply to `target`, with why; and each one --only left out.
 
     Raises:
         CannotRun: an --only value names no eval file, or one that doesn't
@@ -310,7 +323,8 @@ def _select(files: list[EvalFile], evals: Path, target: str, only: list[str] | N
     if not selected:
         raise CannotRun(f"no eval file under {evals} applies to the {target} target")
     not_run = {path: why for path, why in reasons.items() if why}
-    return selected, not_run
+    left_out = [path for path, why in reasons.items() if not why and path not in {f.path.relative_to(evals).as_posix() for f in chosen}]
+    return selected, not_run, left_out
 
 
 def variant_order(eval_file: EvalFile) -> list[str]:
@@ -323,30 +337,55 @@ def variant_order(eval_file: EvalFile) -> list[str]:
     return sorted([TEMPLATE, *declared], key=rank)
 
 
-def missing_credential(target: str, execution: str, api_key_env: str | None, environ: Mapping[str, str] = os.environ) -> str | None:
-    """Why the run's credential variable isn't usable, or None.
+def missing_credential(
+    target: str,
+    execution: str,
+    api_key_env: str | None,
+    environ: Mapping[str, str] = os.environ,
+    *,
+    model: str | None = None,
+    auth_path: Path | None = None,
+) -> str | None:
+    """Why the run's credentials aren't usable, or None.
 
     claude-code needs its key variable (api_key_env, default
     ANTHROPIC_API_KEY); a local kilo run needs api_key_env if it names one.
-    A kilo run without one uses the global Kilo config, which Whitney can't
-    check without calling the model. In Docker mode Kilo gets no key: the
-    task refuses api_key_env there when it is built.
+    A local kilo run without one uses the global Kilo config, which Whitney
+    can't check without calling the model. In Docker mode Inspect answers
+    for the model, so it needs the model's provider credentials: the Kilo
+    Gateway's for a kilo/ model (credentials.resolve_gateway_credentials,
+    reading the login at `auth_path` if given), else the provider's key
+    variable (DOCKER_KEY_VARIABLES). A model the bridge can't serve, and
+    api_key_env, are refused when the task is built.
     """
     if target == "claude-code":
         name = api_key_env or "ANTHROPIC_API_KEY"
-    elif execution == "local" and api_key_env:
+    elif execution == "local":
         name = api_key_env
+    elif model is not None and model.startswith("kilo/"):
+        try:
+            resolve_gateway_credentials(environ, auth_path)
+        except CredentialsError as e:
+            return str(e)
+        return None
     else:
+        name = DOCKER_KEY_VARIABLES.get((model or "").partition("/")[0])
+    if name is None:
         return None
     return None if environ.get(name) else f"{name} is not set; put it in .env or the environment"
 
 
-def harness_version(target: str) -> str:
-    """The first line `<harness> --version` prints, such as "7.8.18" for Kilo.
+def harness_version(target: str, secrets: Iterable[str] = ()) -> str:
+    """The first line `<harness> --version` prints, such as "7.8.18" for Kilo, cut to MAX_VERSION_LENGTH characters.
+
+    Args:
+        target: the harness to check.
+        secrets: the run's secret values (evidence.run_secrets), redacted
+            from the stderr a failure quotes.
 
     Raises:
-        CannotRun: the CLI isn't on PATH, exits non-zero, prints nothing or
-            doesn't finish within VERSION_TIMEOUT seconds.
+        CannotRun: the CLI isn't on PATH or can't be started, exits non-zero,
+            prints nothing or doesn't finish within VERSION_TIMEOUT seconds.
     """
     command = HARNESS_COMMANDS[target]
     try:
@@ -356,14 +395,18 @@ def harness_version(target: str) -> str:
         )
     except FileNotFoundError as e:
         raise CannotRun(f"`{command}` isn't on PATH; install the {target} target's CLI (see the README's Setup)") from e
+    except OSError as e:  # found but not runnable, such as a file without execute permission
+        raise CannotRun(f"`{command} --version` couldn't start: {e}") from e
     except subprocess.TimeoutExpired as e:
         raise CannotRun(f"`{command} --version` didn't finish in {VERSION_TIMEOUT}s") from e
     if done.returncode != 0:
-        raise CannotRun(f"`{command} --version` exited {done.returncode}: {done.stderr.strip()[-300:]}")
+        # Redacted before it is cut, so a cut can't leave part of a secret behind.
+        quoted = redact(done.stderr, list(secrets)).strip()[-300:]
+        raise CannotRun(f"`{command} --version` exited {done.returncode}: {quoted}")
     lines = done.stdout.strip().splitlines()
     if not lines:
         raise CannotRun(f"`{command} --version` printed no version")
-    return lines[0].strip()
+    return lines[0].strip()[:MAX_VERSION_LENGTH]
 
 
 def write_report(
@@ -376,14 +419,20 @@ def write_report(
     min_conclusive: float,
     results_dir: str | Path,
     not_run: Mapping[str, str] | None = None,
+    left_out: Iterable[str] = (),
+    expected: Iterable[str] = (),
+    stopped: str | None = None,
 ) -> int:
     """Gate the logs, then print the report and write it to results_dir; return 1 if the gate failed, else 0.
 
-    The gate fails on an Inspect log that isn't `success`, and on any eval
-    file whose template falls short (report.check_thresholds). The report is
-    the header (target, model, versions, eval files), one table per eval
-    file, the IFEvalCode and Harbor tables if those ran, the files not run
-    for this target, the staged files' provenance and the gate's problems.
+    The gate fails on an Inspect log that isn't `success`, on any eval file
+    whose template falls short (report.check_thresholds), on any `expected`
+    eval file no log was read for, so a run that left no logs never passes,
+    and on `stopped`. The report is the header (target, model, versions,
+    eval files, any replaced minimum and a changed min_conclusive), one
+    table per eval file, the IFEvalCode and Harbor tables if those ran, the
+    files not run for this target and those --only left out, the staged
+    files' provenance and the gate's problems.
 
     Args:
         logs: Inspect logs, from this run or read back.
@@ -393,6 +442,9 @@ def write_report(
         min_conclusive: the share of template runs that must be conclusive.
         results_dir: where the report is written, as <target>_<model>_<timestamp>.md.
         not_run: eval file -> why it doesn't apply to the target.
+        left_out: eval files that apply but --only didn't name.
+        expected: the eval names the run selected.
+        stopped: why the run stopped before its last task, if it did.
     """
     core_logs = [log for log in logs if not _benchmark(log.eval.task)]
     ifeval_logs = [log for log in logs if log.eval.task.startswith("ifevalcode_")]
@@ -400,6 +452,9 @@ def write_report(
     summary = summarise([r for log in core_logs if log.status == "success" for r in records_from_log(log)])
     failed_runs = [f"{log.eval.task}: {log.status}" for log in logs if log.status != "success"]
     problems = failed_runs + check_thresholds(summary, min_conclusive=min_conclusive, min_rates=min_rates)
+    read = {s.file.eval_name if s.file else key for key, s in summary.items()}
+    problems += [f"{name}: no conclusive runs: no log of its runs was read" for name in expected if name not in read]
+    problems += [stopped] if stopped else []
 
     report = render_markdown(summary)
     if ifeval_logs:
@@ -408,8 +463,12 @@ def write_report(
         report += "\n" + render_harbor_markdown(harbor_logs)
     if not_run:
         report += "\n## Not run for this target\n\n" + "".join(f"- `{path}`: {why}\n" for path, why in not_run.items())
+    if left_out:
+        report += "\n## Left out by --only\n\n" + "".join(f"- `{path}`\n" for path in left_out)
     report += "\n" + render_asset_provenance_markdown(logs)
     header = render_header(logs, evals_path, min_rates)
+    if min_conclusive != MIN_CONCLUSIVE:
+        header += f"Minimum conclusive share for this run: {min_conclusive:g} (default {MIN_CONCLUSIVE:g}).\n\n"
     report = f"Target: `{target}` · Model: `{model}`\n\n" + header + report
     if problems:
         report += "\n## Problems\n\n" + "\n".join(f"- {p}" for p in problems) + "\n"
@@ -449,6 +508,8 @@ def min_rates(p: argparse.ArgumentParser, given: list[str]) -> dict[str, float]:
             p.error(f"--min-rate takes CHECK=VALUE, got {pair!r}")
         if name not in checks:
             p.error(f"--min-rate names no registered check {name!r}; the checks are {', '.join(sorted(checks))}")
+        if name in rates:
+            p.error(f"--min-rate gives {name} twice")
         try:
             rates[name] = rate(value)
         except argparse.ArgumentTypeError:

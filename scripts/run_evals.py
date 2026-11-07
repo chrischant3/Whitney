@@ -265,6 +265,10 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     args.min_rate = _min_rates(p, args.min_rate)
     if args.limit is not None and args.limit < 1:
         p.error("--limit must be positive")
+    # Inspect waits forever with max_samples 0, and refuses epochs below 1 only once the run has started.
+    for option, value in (("--epochs", args.epochs), ("--max-samples", args.max_samples)):
+        if value < 1:
+            p.error(f"{option} must be positive")
     # No default target or model: what to evaluate is the user's choice, not the framework's.
     if not args.report_only:
         if not args.model:
