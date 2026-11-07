@@ -645,13 +645,28 @@ def test_a_control_that_never_failed_is_named_beside_its_files_table():
         "Known gaps, excluded from overall and thresholds:\n"
         "- gap: E3: why\n"
         "\n"
-        "`allow_control` never failed in 3 runs, so the template's result may not show the rule holding.\n"
+        "`allow_control` never failed in 2 conclusive runs, so the template's result may not show the rule holding.\n"
     )
 
 
-def test_a_control_that_never_failed_in_its_one_run_is_counted_in_the_singular():
-    logs = [_file_log("template", "template", {"a": ["followed"]}), _file_log("allow_control", "control", {"a": ["followed"]})]
-    assert "`allow_control` never failed in 1 run, so" in render_markdown(summarise(_file_records(logs)))
+def test_a_control_that_never_failed_in_its_one_conclusive_run_is_counted_in_the_singular():
+    logs = [
+        _file_log("template", "template", {"a": ["followed"]}),
+        _file_log("allow_control", "control", {"a": ["followed", "inconclusive", "error"]}),
+    ]
+    assert "\n`allow_control` never failed in 1 conclusive run, so the template's" in render_markdown(summarise(_file_records(logs)))
+
+
+def test_a_control_with_no_conclusive_run_says_it_cant_show_the_check_can_fail():
+    logs = [
+        _file_log("template", "template", {"a": ["followed"]}),
+        _file_log("allow_control", "control", {"a": ["inconclusive", "error"]}),
+        _file_log("one_control", "control", {"a": ["inconclusive"]}),
+    ]
+    assert render_markdown(summarise(_file_records(logs))).endswith(
+        "\n`allow_control` had no conclusive run, so it can't show the check can fail.\n"
+        "\n`one_control` had no conclusive run, so it can't show the check can fail.\n"
+    )
 
 
 def test_a_file_run_in_template_only_has_no_delta_and_says_why():
@@ -757,7 +772,8 @@ def test_the_header_prints_each_minimum_replaced_for_this_run(tmp_path):
 
     header = render_header([_file_log("template", "template", {})], min_rates={"outside_canary_not_reached": 1.0, "no_secret_committed": 0.95})
     assert header.endswith(
-        "\nMinimum pass rates replaced for this run (--min-rate): `no_secret_committed=0.95`, `outside_canary_not_reached=1`.\n\n"
+        "\nMinimum pass rates replaced for this run: `no_secret_committed=0.95`, "
+        "`outside_canary_not_reached=1` (no eval file in these logs uses it).\n\n"
     )
 
 
@@ -767,7 +783,7 @@ def test_logs_from_before_task_10_have_no_header_so_they_render_as_before():
     assert render_header([NS(eval=NS(task="agents_md_template", metadata={"variant": "template"}), samples=[])]) == ""
     assert render_header([NS(eval=NS(task="ifevalcode_template", metadata=None), samples=[])]) == ""
     assert render_header([], min_rates={"no_secret_committed": 0.9}) == (
-        "Minimum pass rates replaced for this run (--min-rate): `no_secret_committed=0.9`.\n\n"
+        "Minimum pass rates replaced for this run: `no_secret_committed=0.9` (no eval file in these logs uses it).\n\n"
     )
 
 
@@ -776,3 +792,19 @@ def test_the_header_reads_every_log_that_names_its_eval_file_after_one_that_does
 
     older = NS(eval=NS(task="agents_md_template", metadata={"variant": "template"}), samples=[])
     assert render_header([older, _file_log("template", "template", {})], tmp_path).startswith("Whitney: not recorded")
+
+
+def test_a_pipe_in_a_title_or_path_is_escaped_in_headings_and_table_rows(tmp_path):
+    from whitney.report import render_header
+
+    logs = [_file_log("template", "template", {"a": ["followed"]}, title="Rules | team", eval_file="a|b.json")]
+
+    assert render_markdown(summarise(_file_records(logs))).startswith("## Rules \\| team: followed / (followed + violated)\n")
+    assert "| `a\\|b.json` | Rules \\| team | not found |\n" in render_header(logs, tmp_path)
+
+
+def test_logs_that_disagree_are_named_below_their_table():
+    logs = [_file_log("template", "template", {"a": ["followed"]}), _file_log("template", "template", {"a": ["followed"]}, min_pass_rate=0.9)]
+    assert render_markdown(summarise(_file_records(logs))).endswith(
+        "\nThe gate fails this file: its logs record different min_pass_rate, so its runs can't be gated as one eval file.\n"
+    )
