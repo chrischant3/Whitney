@@ -1,7 +1,7 @@
 """Run the CONSTRAINTS.md checks for one stage of the work.
 
     python scripts/check.py fast    # after an edit: floor guard + secrets (seconds)
-    python scripts/check.py task    # before handing work back: + tests, coverage, mutation of touched functions (~1 min)
+    python scripts/check.py task    # before handing work back: + tests (on every core), coverage, mutation of touched functions (~1 min)
     python scripts/check.py full    # before a pull request: + every mutant, dependency vulnerabilities
 
 `task` judges the touched functions' mutants fresh and the rest from mutmut's cache;
@@ -184,7 +184,14 @@ class Checks:
     # task ---------------------------------------------------------------
 
     def tests_and_coverage(self) -> float | None:
-        result = _run([PYTHON, "-m", "pytest", "-q", "--cov=whitney", "--cov-report=xml:coverage.xml"])
+        """Run the whole suite on every core under coverage; return the project's line coverage in percent.
+
+        `-n auto` is only here: mutmut runs its own workers, so its pytest runs stay on one process.
+        pytest-cov combines the xdist workers' coverage into one coverage.xml.
+        """
+        result = self.run(
+            [PYTHON, "-m", "pytest", "-q", "-n", "auto", "--cov=whitney", "--cov-report=xml:coverage.xml"]
+        )
         if result.returncode != 0:
             self.record("tests", FAIL, result.stdout.strip().splitlines()[-1] if result.stdout else result.stderr[-300:])
             return None

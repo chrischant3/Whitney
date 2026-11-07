@@ -121,9 +121,15 @@ case-sensitive one (Linux).
 ```bash
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
-python scripts/check.py task       # before handing work back: a minute or two for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants)
+python scripts/check.py task       # before handing work back: about a minute for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants)
 python scripts/check.py full       # before opening a pull request: reruns every mutant, and the dependency scan
 ```
+
+`task` runs the test suite with `pytest -n auto` (pytest-xdist, in the `dev`
+extra for this reason): on every core it takes about 30 seconds instead of
+one to two minutes on one. pytest-cov combines the workers' coverage, and the
+figure matches a serial run. mutmut's pytest runs get no `-n`, since mutmut
+runs its own workers; a plain `pytest` stays on one process too.
 
 Run `check.py full` before opening a pull request: CI runs only the floor
 guard, so nothing else runs the whole mutation suite or the dependency scan.

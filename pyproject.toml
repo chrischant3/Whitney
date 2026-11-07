@@ -24,6 +24,8 @@ dev = [
     "pytest-cov==7.1.0",
     "diff-cover==11.0.0",
     "mutmut==3.8.1",
+    # Runs check.py's test-and-coverage step on every core (`-n auto`); pytest-cov combines the workers' coverage
+    "pytest-xdist==3.8.0",
 ]
 ifevalcode = ["inspect-evals[ifevalcode]==0.27.0"]  # supplies the IFEvalCode scorer, so pinned like inspect-ai
 gateway = ["openai>=1", "anthropic>=2"]  # Docker mode: Inspect's bridge serves Kilo's OpenAI- or Anthropic-format calls
