@@ -609,3 +609,89 @@ def test_the_wrapper_builds_every_task_before_running_any_and_an_invalid_file_ex
     err = capsys.readouterr().err
     assert f"run_evals.py: error: {evals / 'configuration/kilo-jsonc.json'}: " in err
     assert not (tmp_path / "results").exists()
+
+
+# Details the tests above don't reach
+
+
+def test_help_names_the_command_and_its_placeholders(capsys):
+    assert cli.main(["run", "--help"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("usage: whitney run ")
+    assert "[--only FILE_OR_NAME [FILE_OR_NAME ...]]" in out and "[--min-rate CHECK=VALUE]" in out
+    assert cli.main(["--help"]) == 0
+    assert " ".join(capsys.readouterr().out.split("\n\n")[1].split()) == "The `whitney` command: run a project's evals against a harness and model, or check them without a model."
+
+
+def test_a_limit_of_1_is_allowed(consumer, recorded):
+    assert cli.main(_run_args(consumer, "--limit", "1")) == 0
+    assert recorded.calls[0][1]["limit"] == 1
+
+
+def test_the_harness_version_check_gives_the_harness_no_stdin(tmp_path, monkeypatch, stdin_is_a_pipe):
+    _harness(tmp_path, monkeypatch, '#!/bin/sh\nif read line; then echo "read stdin"; else echo "1.0"; fi\n')
+    monkeypatch.setattr(cli, "VERSION_TIMEOUT", 2)
+    assert cli.harness_version("kilo") == "1.0"
+
+
+def test_the_harness_version_check_survives_output_that_is_not_utf_8(tmp_path, monkeypatch):
+    _harness(tmp_path, monkeypatch, "#!/bin/sh\nprintf '7.8\\377\\n'\n")
+    assert cli.harness_version("kilo") == "7.8�"
+
+
+def test_a_failed_version_check_quotes_the_last_300_characters_of_stderr(tmp_path, monkeypatch):
+    _harness(tmp_path, monkeypatch, "#!/bin/sh\nprintf 'a%.0s' $(seq 1 100) >&2\nprintf 'b%.0s' $(seq 1 300) >&2\nexit 1\n")
+    with pytest.raises(cli.CannotRun) as raised:
+        cli.harness_version("kilo")
+    assert str(raised.value) == "`kilo --version` exited 1: " + "b" * 300
+
+
+def test_why_not_run_lists_every_unsupported_check():
+    from whitney.evalfile import EvalFile
+
+    eval_file = EvalFile.model_validate(json.loads(_eval_file(defaults={
+        "fixture": "repo", "expect": [{"check": "b_check"}, {"check": "a_check"}, {"check": "unregistered"}, {"check": "c_check"}],
+    })))
+    checks = {"a_check": SimpleNamespace(targets=("kilo",)), "b_check": SimpleNamespace(targets=("kilo",)),
+              "c_check": SimpleNamespace(targets=("kilo", "claude-code"))}
+
+    assert cli.why_not_run(eval_file, "claude-code", checks) == "its checks a_check, b_check don't support it"
+    assert cli.why_not_run(eval_file, "kilo", checks) is None
+
+
+def test_filename_model_strips_only_dots_dashes_and_underscores():
+    assert cli.filename_model("v/Xbox.") == "xbox"
+    assert cli.filename_model("v/_-.") == "model"
+
+
+def _log(task, status="success"):
+    return SimpleNamespace(eval=SimpleNamespace(task=task, metadata={}, task_args={}), samples=[], status=status)
+
+
+def test_the_report_is_its_parts_in_order(tmp_path, monkeypatch, capsys):
+    logs = [_log("agents_md_template"), _log("ifevalcode_template"), _log("bigcodebench_hard_complete_template", "error")]
+    seen = {}
+    for name in ("render_markdown", "render_ifevalcode_markdown", "render_harbor_markdown", "render_asset_provenance_markdown"):
+        monkeypatch.setattr(cli, name, lambda given, name=name: (seen.setdefault(name, given), f"<{name}>\n")[1])
+    monkeypatch.setattr(cli, "render_header", lambda logs, evals, rates: f"<header {evals} {rates}>\n")
+    monkeypatch.setattr(cli, "summarise", lambda records: {})
+
+    code = cli.write_report(
+        logs, target="kilo", model="p/Model", evals_path="ev", min_rates={"c": 0.5}, min_conclusive=0.5,
+        results_dir=tmp_path / "a" / "b", not_run={"x.json": "why"},
+    )
+
+    expected = (
+        "Target: `kilo` · Model: `p/Model`\n\n<header ev {'c': 0.5}>\n<render_markdown>\n"
+        "\n<render_ifevalcode_markdown>\n\n<render_harbor_markdown>\n"
+        "\n## Not run for this target\n\n- `x.json`: why\n"
+        "\n<render_asset_provenance_markdown>\n"
+        "\n## Problems\n\n- bigcodebench_hard_complete_template: error\n"
+    )
+    [out] = (tmp_path / "a" / "b").iterdir()
+    assert code == 1
+    assert out.read_text(encoding="utf-8") == expected
+    assert out.name.startswith("kilo_model_") and out.name.endswith(".md")
+    assert capsys.readouterr().out == f"{expected}\nReport written to {out}\n"
+    assert seen["render_ifevalcode_markdown"] == [logs[1]] and seen["render_harbor_markdown"] == [logs[2]]
+    assert seen["render_asset_provenance_markdown"] == logs
