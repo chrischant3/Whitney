@@ -402,3 +402,33 @@ def test_malformed_metadata_is_a_problem_line_not_a_traceback_and_fails_the_gate
 def test_a_file_with_a_min_pass_rate_and_no_checks_is_gated_at_it():
     summary = summarise(records_from_log(_log("template", ["followed"] * 9 + ["violated"], checks={}, min_pass_rate=0.95)))
     assert check_thresholds(summary) == ["team_rules: template 90% is below the minimum 95%"]
+
+
+@pytest.mark.parametrize("labels", ["abc", None, ["a", "b", "c", "c"], ["a", "b", ""], ["a", "b", 3]])
+def test_labels_that_are_not_three_different_words_are_malformed(labels):
+    [problem] = check_thresholds(summarise(records_from_log(_log("template", ["a"], labels=labels))))
+    assert f"labels is {labels!r}, not three different words" in problem
+
+
+def test_minimums_at_either_end_of_the_range_are_well_formed():
+    summary = summarise(records_from_log(_log("template", ["followed"], checks={"c": {**AGENT, "min_pass_rate": 0}}, min_pass_rate=1)))
+    assert summary["team.json"].problems == []
+    assert check_thresholds(summary) == []
+
+
+def test_logs_that_differ_in_all_three_gate_terms_name_them_all():
+    logs = [_log("template", ["followed"]), _log("template", ["pass"], labels=["pass", "fail", "x"], checks={"c": HARNESS}, min_pass_rate=1)]
+    assert check_thresholds(summarise([r for log in logs for r in records_from_log(log)])) == [
+        "team_rules: its logs record different labels, checks and min_pass_rate, so its runs can't be gated as one eval file"
+    ]
+
+
+def test_one_eval_files_problem_still_lets_the_next_file_be_gated():
+    logs = [_log("template", ["followed"], checks={}), _log("template", ["violated"], eval_file="next.json")]
+    problems = check_thresholds(summarise([r for log in logs for r in records_from_log(log)]))
+    assert problems[1:] == ["team_rules: template 0% is below the minimum 80%"]
+
+
+def test_the_same_malformed_metadata_is_named_once_however_many_logs_carry_it():
+    logs = [_log("template", ["followed"], checks={}), _log("baseline", ["followed"], checks={})]
+    assert len(check_thresholds(summarise([r for log in logs for r in records_from_log(log)]))) == 1

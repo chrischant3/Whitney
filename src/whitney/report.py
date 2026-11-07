@@ -77,19 +77,6 @@ MORE_NOT_STAGED = re.compile(r"and \d+ more")
 
 
 @dataclass(frozen=True)
-class CheckMinimum:
-    """What the gate needs to know about one check an eval file names.
-
-    Attributes:
-        judges: "agent" or "harness" (whitney.checks.CheckSpec.judges).
-        min_pass_rate: the check's default minimum pass rate.
-    """
-
-    judges: str
-    min_pass_rate: float
-
-
-@dataclass(frozen=True)
 class FileInfo:
     """What a log written by whitney.tasks says about the eval file it ran.
 
@@ -99,7 +86,7 @@ class FileInfo:
         title: the file's title, or None if it has none.
         source: the file under test, or None in logs that don't record it.
         labels: the score's words for pass, fail and inconclusive.
-        checks: each check the file names -> its CheckMinimum.
+        checks: each check the file names -> its default minimum pass rate.
         min_pass_rate: the file's own minimum, or None.
         sha256: of the file's bytes as the task read them, or None in logs that don't record it.
         problem: what is malformed in the metadata, or None. A file with a
@@ -111,7 +98,7 @@ class FileInfo:
     title: str | None
     source: str | None
     labels: tuple[str, str, str]
-    checks: Mapping[str, CheckMinimum]
+    checks: Mapping[str, float]
     min_pass_rate: float | None
     sha256: str | None = None
     problem: str | None = None
@@ -210,7 +197,7 @@ def _file_info(metadata: dict) -> FileInfo | None:
     return FileInfo(
         **named,
         labels=tuple(metadata["labels"]),
-        checks={name: CheckMinimum(c["judges"], c["min_pass_rate"]) for name, c in metadata["checks"].items()},
+        checks={name: c["min_pass_rate"] for name, c in metadata["checks"].items()},
         min_pass_rate=metadata.get("min_pass_rate"),
     )
 
@@ -277,7 +264,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
     gaps: dict[str, dict[str, str]] = defaultdict(dict)
     files: dict[str, FileInfo] = {}
     differ: dict[str, set[str]] = defaultdict(set)
-    malformed: dict[str, dict[str, None]] = defaultdict(dict)  # an ordered set
+    malformed: dict[str, list[str]] = defaultdict(list)
     roles: dict[str, dict[str, str]] = defaultdict(dict)
     for r in records:
         key = r.file.eval_file if r.file else r.eval_name
@@ -285,8 +272,8 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             first = files.setdefault(key, r.file).gate_terms()
             own = r.file.gate_terms()
             differ[key].update(term for term in first if first[term] != own[term])
-            if r.file.problem:
-                malformed[key][r.file.problem] = None
+            if r.file.problem and r.file.problem not in malformed[key]:
+                malformed[key].append(r.file.problem)
         if r.role:
             roles[key][r.variant] = r.role
         passing, failing = (r.file.labels if r.file else EVALS[r.eval_name])[:2]
@@ -309,7 +296,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             known_gaps=gaps[key],
             file=files.get(key),
             roles=roles[key],
-            problems=_problems(differ[key], list(malformed[key])),
+            problems=_problems(differ[key], malformed[key]),
         )
         for key in rows
     }
@@ -352,7 +339,7 @@ def file_minimum(info: FileInfo, min_rates: Mapping[str, float] | None = None) -
     minimum is `min_rates[check]` if given (--min-rate), else the default it declares.
     """
     rates = min_rates or {}
-    minimums = [rates.get(name, check.min_pass_rate) for name, check in info.checks.items()]
+    minimums = [rates.get(name, default) for name, default in info.checks.items()]
     if info.min_pass_rate is not None:
         minimums.append(info.min_pass_rate)
     return max(minimums)
@@ -494,7 +481,7 @@ def render_header(
     this run, noting any no eval file in the logs uses. Empty when there is
     none of these, so logs written before them render as before.
     """
-    files: dict[tuple[str, str], FileInfo] = {}
+    files: dict[tuple[str, str | None], FileInfo] = {}  # by eval file and recorded SHA-256
     used: set[str] = set()
     recorded: dict[str, set[str]] = {key: set() for key in ("whitney_version", "harness_version")}
     for log in logs:
@@ -505,7 +492,7 @@ def render_header(
             used.update([LEGACY_CHECKS[legacy]] if legacy else [])
             continue
         used.update(info.checks)
-        files.setdefault((info.eval_file, info.sha256 or ""), info)
+        files.setdefault((info.eval_file, info.sha256), info)
         for key, values in recorded.items():
             if metadata.get(key):
                 values.add(str(metadata[key]))
@@ -521,7 +508,8 @@ def render_header(
         ]
         lines += [
             f"| `{_escaped(path)}` | {_escaped(info.heading)} | {_sha256_shown(evals_path, info)} |"
-            for (path, _), info in sorted(files.items())
+            # By path only; a file's rows stay in the order its logs came, since sorting can't compare a hash with None.
+            for (path, _), info in sorted(files.items(), key=lambda item: item[0][0])
         ]
         lines.append("")
     if min_rates:

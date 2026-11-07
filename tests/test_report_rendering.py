@@ -829,12 +829,30 @@ def test_the_header_shows_the_hash_each_run_recorded_and_whether_the_file_has_ch
     ]
 
     rows = [line for line in render_header(logs, tmp_path).splitlines() if line.startswith("| `")]
-    assert rows == sorted([
-        f"| `same.json` | Team rule followed | `{same}` |",
+    assert rows == [  # by path, then in the order the logs came
         f"| `edited.json` | Team rule followed | `{old}` (changed since the run) |",
         f"| `edited.json` | Team rule followed | `{new}` |",
         f"| `gone.json` | Team rule followed | `{gone}` (not found) |",
-    ], key=lambda row: (row.split("`")[1], row.split("`")[3]))
+        f"| `same.json` | Team rule followed | `{same}` |",
+    ]
     assert [line for line in render_header(logs[:1]).splitlines() if line.startswith("| `")] == [
         f"| `same.json` | Team rule followed | `{same}` |"
     ]
+
+
+def test_a_title_or_source_that_is_not_text_is_not_used_as_the_heading():
+    logs = [_file_log("template", "template", {"a": ["followed"]}, title=5)]
+    assert render_markdown(summarise(_file_records(logs))).startswith("## AGENTS.md: followed")
+
+
+def test_a_replaced_minimum_for_the_check_an_old_log_was_scored_by_is_not_called_unused():
+    from whitney.report import render_header
+
+    old = [
+        NS(eval=NS(task="agents_md_template", metadata={"variant": "template"}), samples=[]),
+        NS(eval=NS(task="ifevalcode_template"), samples=[]),
+    ]
+    assert render_header(old, min_rates={"no_secret_committed": 0.9, "outside_canary_not_reached": 0.9}) == (
+        "Minimum pass rates replaced for this run: `no_secret_committed=0.9`, "
+        "`outside_canary_not_reached=0.9` (no eval file in these logs uses it).\n\n"
+    )
