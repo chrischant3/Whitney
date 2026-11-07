@@ -24,6 +24,7 @@ its fixtures exist and its tokens can be found is whitney.validate's job.
 runs them; whitney.variants applies `variants` to the staged files.
 """
 
+import hashlib
 import json
 import re
 import warnings
@@ -290,11 +291,17 @@ class EvalFile(BaseModel):
 
     _path: Path = PrivateAttr(default=Path())
     _version_read: int = PrivateAttr(default=2)
+    _sha256: str = PrivateAttr(default="")
 
     @property
     def path(self) -> Path:
         """The file it was read from."""
         return self._path
+
+    @property
+    def sha256(self) -> str:
+        """The SHA-256 of the bytes it was read from, which the report's header shows ("" if built in memory)."""
+        return self._sha256
 
     @property
     def version_read(self) -> int:
@@ -372,6 +379,13 @@ class V1File(BaseModel):
     source: str
     scenarios: list[V1Scenario] = Field(min_length=1)
 
+    _sha256: str = PrivateAttr(default="")
+
+    @property
+    def sha256(self) -> str:
+        """The SHA-256 of the bytes it was read from, as EvalFile.sha256."""
+        return self._sha256
+
 
 def read(path: Path) -> V1File | EvalFile:
     """An eval file as written: a V1File for version 1 (with a FutureWarning), else an EvalFile.
@@ -384,7 +398,8 @@ def read(path: Path) -> V1File | EvalFile:
     path = Path(path)
     try:
         # json.loads reads the bytes as UTF-8 (or UTF-16 or 32, by their first bytes), so no codec is named here.
-        raw = json.loads(path.read_bytes())
+        data = path.read_bytes()
+        raw = json.loads(data)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise EvalFileError(path, [("", f"not valid JSON ({e})")]) from e
     if not isinstance(raw, dict) or not {"source", "scenarios"} & raw.keys():
@@ -400,6 +415,7 @@ def read(path: Path) -> V1File | EvalFile:
     else:
         parsed = _validate(EvalFile, raw, path)
         parsed._path = path
+    parsed._sha256 = hashlib.sha256(data).hexdigest()
     problems = _duplicate_ids(parsed.scenarios)
     if isinstance(parsed, EvalFile):
         problems += parsed._missing()
@@ -472,6 +488,7 @@ def _upgrade(old: V1File, path: Path) -> EvalFile:
     upgraded_file = _validate(EvalFile, data, path)
     upgraded_file._path = path
     upgraded_file._version_read = 1
+    upgraded_file._sha256 = old.sha256
     return upgraded_file
 
 

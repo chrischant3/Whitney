@@ -961,3 +961,13 @@ def test_a_whitney_that_is_not_installed_records_no_version(monkeypatch):
 
     monkeypatch.setattr(tasks_module, "package_version", not_installed)
     assert agents_md(target="kilo", model=MODEL).metadata["whitney_version"] is None
+
+
+def test_the_task_metadata_records_the_sha256_of_the_eval_file_it_read():
+    import hashlib
+
+    generic = tasks_module.scenario_eval("configuration/kilo-jsonc.json", target="kilo", model=MODEL, evals_path=str(EVALS)).metadata
+    wrapper = agents_md(target="kilo", model=MODEL).metadata
+
+    assert generic["eval_file_sha256"] == hashlib.sha256((EVALS / "configuration" / "kilo-jsonc.json").read_bytes()).hexdigest()
+    assert wrapper["eval_file_sha256"] == hashlib.sha256((EVALS / "agents-md.json").read_bytes()).hexdigest()

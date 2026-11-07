@@ -808,3 +808,33 @@ def test_logs_that_disagree_are_named_below_their_table():
     assert render_markdown(summarise(_file_records(logs))).endswith(
         "\nThe gate fails this file: its logs record different min_pass_rate, so its runs can't be gated as one eval file.\n"
     )
+
+
+def test_the_header_shows_the_hash_each_run_recorded_and_whether_the_file_has_changed_since(tmp_path):
+    import hashlib
+
+    from whitney.report import render_header
+
+    (tmp_path / "same.json").write_text("same\n")
+    (tmp_path / "edited.json").write_text("edited since\n")
+    same = hashlib.sha256(b"same\n").hexdigest()
+    old, new = hashlib.sha256(b"as run\n").hexdigest(), hashlib.sha256(b"edited since\n").hexdigest()
+    gone = hashlib.sha256(b"gone\n").hexdigest()
+    logs = [
+        _file_log("template", "template", {}, eval_file="same.json", eval_file_sha256=same),
+        _file_log("baseline", "baseline", {}, eval_file="same.json", eval_file_sha256=same),
+        _file_log("template", "template", {}, eval_file="edited.json", eval_file_sha256=old),
+        _file_log("baseline", "baseline", {}, eval_file="edited.json", eval_file_sha256=new),
+        _file_log("template", "template", {}, eval_file="gone.json", eval_file_sha256=gone),
+    ]
+
+    rows = [line for line in render_header(logs, tmp_path).splitlines() if line.startswith("| `")]
+    assert rows == sorted([
+        f"| `same.json` | Team rule followed | `{same}` |",
+        f"| `edited.json` | Team rule followed | `{old}` (changed since the run) |",
+        f"| `edited.json` | Team rule followed | `{new}` |",
+        f"| `gone.json` | Team rule followed | `{gone}` (not found) |",
+    ], key=lambda row: (row.split("`")[1], row.split("`")[3]))
+    assert [line for line in render_header(logs[:1]).splitlines() if line.startswith("| `")] == [
+        f"| `same.json` | Team rule followed | `{same}` |"
+    ]
