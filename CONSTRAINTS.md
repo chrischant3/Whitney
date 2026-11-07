@@ -97,7 +97,10 @@ applies to" message, which joins a single name whenever that message is
 reached, since a target missing from a file's `targets` leaves room for only
 the other of the two; and `simplefilter("ignore")` without `FutureWarning`
 in `tasks._loaded`, whose block can raise no warning but version 1's
-`FutureWarning`. None of these depends on the platform.
+`FutureWarning`. Task 10 adds `package_version("WHITNEY")` in
+`tasks._whitney_version`, which finds the same installed package, since
+`importlib.metadata` matches a package's name whatever its case. None of
+these depends on the platform.
 Two more survive here but are not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
 and 3.12 it is `re.TEMPLATE`, matching raises `re.error`, and

@@ -769,3 +769,10 @@ def test_logs_from_before_task_10_have_no_header_so_they_render_as_before():
     assert render_header([], min_rates={"no_secret_committed": 0.9}) == (
         "Minimum pass rates replaced for this run (--min-rate): `no_secret_committed=0.9`.\n\n"
     )
+
+
+def test_the_header_reads_every_log_that_names_its_eval_file_after_one_that_does_not(tmp_path):
+    from whitney.report import render_header
+
+    older = NS(eval=NS(task="agents_md_template", metadata={"variant": "template"}), samples=[])
+    assert render_header([older, _file_log("template", "template", {})], tmp_path).startswith("Whitney: not recorded")

@@ -391,7 +391,7 @@ def render_header(
     if files:
         shown = {key: ", ".join(f"`{v}`" for v in sorted(values)) or NOT_RECORDED for key, values in recorded.items()}
         evals = f"`{evals_path}`" if evals_path else NOT_GIVEN
-        lines += [
+        lines = [
             f"Whitney: {shown['whitney_version']} · Harness: {shown['harness_version']} · Evals: {evals}",
             "",
             "| Eval file | Title | SHA-256 |",
