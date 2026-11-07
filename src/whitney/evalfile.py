@@ -266,7 +266,7 @@ class EvalFile(BaseModel):
         source: the file under test, relative to the project root.
         name: the eval name, if not the file stem (see eval_name).
         title: the report's heading for this file.
-        targets: the targets it applies to; None means every target its checks support.
+        targets: the targets it applies to, each once; None means every target its checks support.
         variants: the variants besides `template`; None means the default
             baseline, which removes `source`.
         harness_permissions: per target, the overlay that lets the agent work
@@ -292,6 +292,15 @@ class EvalFile(BaseModel):
     _path: Path = PrivateAttr(default=Path())
     _version_read: int = PrivateAttr(default=2)
     _sha256: str = PrivateAttr(default="")
+
+    @field_validator("targets")
+    @classmethod
+    def _each_target_once(cls, targets: list[str] | None) -> list[str] | None:
+        """Refuse a target listed twice: a file's targets are a set, and a report naming one twice would mislead."""
+        for target in targets or []:
+            if targets.count(target) > 1:
+                raise ValueError(f"lists {target} twice; name each target once")
+        return targets
 
     @property
     def path(self) -> Path:
