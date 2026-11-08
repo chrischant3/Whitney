@@ -10,6 +10,17 @@
 
 The spec in `docs/specs/` is an unchanged copy of `~/workspace/package-and-expected-results.md` as it stood at 23:38 on 2026-11-05. Edit the repo copy from now on.
 
+## Where we are (paused 2026-11-07, about 12:40)
+
+Read this first when resuming.
+
+- **In `main`:** Tasks 1 to 8, the Kilo captures (16, 22), the push-controls guide, and the floor guard watching `thresholds.py` (PRs #8, #9, #10).
+- **On `phase5`, not yet in `main`:** Tasks 9 and 10, two mutant clean-ups (project score 99.5% measured by a fresh `check.py full`, every survivor recorded in CONSTRAINTS.md), the `check.py` task/full split (full now rebuilds mutmut's test map), pytest-xdist, the coverage ratchet raised to 99.3%.
+- **Next step 1:** if `check.py full` on `phase5` passed (log in the session scratchpad, `pr-full.log`), push `phase5` and open the PR to `main`. If it didn't finish, rerun it: `.venv/bin/python scripts/check.py full --base origin/main`.
+- **Next step 2: Task 11** (`whitney run`, `whitney validate`) is on branch `p5-t11-cli` in worktree `../Whitney-p5-t11`, with its review fixes committed. Its final `check.py task` and report may still be pending; then review the fixes, merge into `phase5`, and raise it as its own PR.
+- **Then:** Task 12 (Christopher's signed floor guard commit: watch `cli.py`, parse `thresholds.py` for duplicate lines, `None` defaults for `--min-adherence`/`--min-held` in `run_evals.py`), then Tasks 13 to 15.
+- **Working rules:** one `check.py full` lane at a time, other lanes `check.py task`; seed new worktrees' `mutants/` from the main checkout, `rm -rf mutants/tests`, touch the sources; use `.venv/bin/python` (the shell may have no `python`).
+
 ## Overview
 
 Today a user can add scenarios only for the two rules Whitney already knows how to score. After Phase 5 they can:
@@ -154,6 +165,8 @@ Spec open questions that block a task here, so they need an answer before that t
 ## Later
 
 Not planned in detail:
+
+- **The Python API (found in the Task 11 review, 2026-11-07):** the spec's `whitney.run`, `whitney.validate` and `whitney.discover`, which the CLI should be a thin layer over. Task 11's `cli._run` takes an argparse Namespace and prints its findings, so it needs splitting into a library call that returns results and a CLI that prints them. Plan it with Task 25 or before the `v0.2.0` release.
 
 - **Security, found in the Task 9 review (2026-11-06), do before a release:** a literal `apiKey` in the user's global Kilo `provider` settings is copied into the `KILO_CONFIG` overlay, which the agent can read, and neither the agent nor `evidence.run_secrets` redacts it; the same goes for proxy credentials passed through `LOCAL_ENV_PASSTHROUGH` (for example `HTTP_PROXY=user:pass@...`). Refuse literal keys in the overlay (use `{env:NAME}`), or redact them, with a test.
 

@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -240,6 +241,17 @@ def test_every_host_variable_a_task_reads_is_named_once(tmp_path):
         "Harbor task 'bigcode/sample' reads ALPHA, MIDDLE, ZED from the host's environment, which would copy "
         "host values such as API keys into its container; refusing to run it."
     )
+
+
+def test_the_compose_file_is_read_by_its_exact_name_on_a_case_sensitive_disk(tmp_path, monkeypatch):
+    # macOS's disk ignores case, so a misspelt docker-compose.yaml would still be found here;
+    # this simulates Linux's, where a path is a file only when its name is spelt as listed.
+    is_file = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda path: is_file(path) and path.name in os.listdir(path.parent))
+    monkeypatch.setenv("WHITNEY_TEST_HOST_VAR", "not-a-real-secret")  # set, so inspect-harbor fills it in and only the compose file names it
+    write_task(tmp_path, "services:\n  main:\n    image: python:3.12-slim\n    environment: {A: '${WHITNEY_TEST_HOST_VAR}'}\n")
+    with pytest.raises(ValueError, match="^Harbor task 'bigcode/sample' reads WHITNEY_TEST_HOST_VAR from the host's environment, "):
+        load(tmp_path)
 
 
 def test_harbors_own_variables_escaped_dollars_and_the_tasks_own_env_are_allowed(tmp_path):

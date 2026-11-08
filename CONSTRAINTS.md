@@ -105,13 +105,14 @@ adds more codec-name cases (`cli.harness_version`, `cli.write_report`);
 the `", "` in `tasks._scenario_task` moved to `tasks.why_not_applies`, which
 `whitney run` uses too, and an eval file may now list each target only once.
 None of these depends on the platform.
-Two more survive here but are not equivalent: `re` flag `1` in place of `0`
+One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
 and 3.12 it is `re.TEMPLATE`, matching raises `re.error`, and
-`test_names_match_whatever_their_case_only_where_kilos_glob_does` kills it;
-and `harbor_tasks._host_variables` opening `DOCKER-COMPOSE.YAML` finds the
-same file on a case-insensitive disk such as macOS's, but is killed on a
-case-sensitive one (Linux).
+`test_names_match_whatever_their_case_only_where_kilos_glob_does` kills it.
+`harbor_tasks._host_variables` opening `DOCKER-COMPOSE.YAML`, which finds the
+same file on a case-insensitive disk such as macOS's, survived here too until
+2026-11-07; `test_the_compose_file_is_read_by_its_exact_name_on_a_case_sensitive_disk`
+now kills it on every disk by simulating a case-sensitive one.
 
 ## Not covered, on purpose
 
@@ -142,8 +143,11 @@ fresh ones and every other function's last one, labelled as cached. It still
 enforces the ratchet, since each of those results was measured; mutants not
 checked since their function changed are left out and counted, and when they
 are more than 5% of all mutants, or there are no cached results, a score that
-holds only warns. `full` reruns every mutant against the current tests and
-judges the ratchet from that, so a weakened test is measured too.
+holds only warns. `full` deletes mutmut's map of which tests reach which
+function (`mutants/mutmut-stats.json`), because mutmut 3.8.1 adds a test to it
+only when the test is new, then reruns every mutant against the current tests
+and judges the ratchet from that, so a weakened or newly reaching test is
+measured too.
 
 A new worktree starts cold: its first `full` runs every mutant, and until
 then `task`'s cached project score covers only the mutants run so far. To start

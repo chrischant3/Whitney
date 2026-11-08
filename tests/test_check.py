@@ -184,6 +184,33 @@ def test_full_runs_the_whole_mutation_suite():
     assert runs == [["*"]]
 
 
+def test_full_rebuilds_mutmuts_map_of_which_tests_reach_which_function():
+    # mutmut 3.8.1 adds a test to its map only when the test is new, so an existing test that
+    # starts reaching a function would never be run against that function's mutants.
+    mutants = _mutants_dir()
+    (mutants / "mutmut-stats.json").write_text("{}")
+    seen = []
+
+    def run(cmd, **kw):
+        if cmd[3] == "run":
+            seen.append((mutants / "mutmut-stats.json").exists())
+        return _fake_mutmut({"whitney.mod.x_touched__mutmut_1": "killed"})[0](cmd, **kw)
+
+    _checks(run, mutants=mutants).mutation(RATCHETS, TOUCHED, stage="full")
+
+    assert seen == [False]
+
+
+def test_task_keeps_mutmuts_map_of_which_tests_reach_which_function():
+    mutants = _mutants_dir()
+    (mutants / "mutmut-stats.json").write_text("{}")
+    run, _ = _fake_mutmut({"whitney.mod.x_touched__mutmut_1": "killed"})
+
+    _checks(run, mutants=mutants).mutation(RATCHETS, TOUCHED, stage="task")
+
+    assert (mutants / "mutmut-stats.json").exists()
+
+
 def test_task_with_no_touched_functions_runs_no_mutants_but_still_reports_the_cached_score():
     run, runs = _fake_mutmut({"whitney.mod.x_other__mutmut_1": "killed"})
     checks = _checks(run)
