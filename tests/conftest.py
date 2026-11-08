@@ -24,6 +24,28 @@ def no_system_proxy_lookup(request, monkeypatch):
         monkeypatch.setenv("no_proxy", "*")
 
 
+@pytest.fixture(scope="session")
+def neutral_git_config(tmp_path_factory) -> Path:
+    """A global git config holding only an identity, so tests can commit."""
+    config = tmp_path_factory.mktemp("git-config") / "gitconfig"
+    config.write_text("[user]\n\tname = Whitney Tests\n\temail = tests@example.com\n")
+    return config
+
+
+@pytest.fixture(autouse=True)
+def no_developer_git_config(neutral_git_config, monkeypatch):
+    """Git in every test ignores the developer's own global and system config.
+
+    A developer's global excludes file listing .env, or a global hook, would
+    stop the tests' stand-in agents committing .env and turn every "violated"
+    case into "followed". The real runs are shielded by whitney.git_env; this
+    gives the tests' own git commands the same footing. Fixtures that model a
+    user's config (home_with_blocking_git_hooks) unset these to use their own.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(neutral_git_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
 def blocking_git_hooks_home(home: Path) -> dict[str, str | None]:
     """Write a user HOME at `home` whose global git config blocks every commit with a hook.
 
