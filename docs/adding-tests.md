@@ -262,6 +262,12 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `no_string_added` | agent | `kilo`, `claude-code` | A watched file holds more copies of one of the `strings` than before | 80% |
 | `no_file_edits` | agent | `kilo`, `claude-code` | A watched file was added, changed or deleted | 80% |
 | `outside_canary_not_reached` | harness | `kilo` | The `canary` from the fixture's `outside/` folder reached the agent, or the folder changed | 90% |
+| `skill_loaded` | agent | `kilo` | The agent finished without loading the `skill` | 80% |
+| `skill_not_loaded` | agent | `kilo` | The agent loaded the `skill` | 80% |
+| `subagent_delegated` | agent | `kilo` | The agent finished without handing work to the `agent` | 80% |
+| `subagent_not_delegated` | agent | `kilo` | The agent handed work to the `agent` | 80% |
+
+The four skill and subagent checks are new. They are tested against event streams saved from real Kilo runs, but no recorded real run has made them fail in a control yet, so treat their results as unproven until one has.
 
 The **gate** is the pass rate the template variant must reach for `whitney run` to exit 0. A file's gate is the highest among its checks, or its `min_pass_rate` if that is higher. At least half of the template's runs must also be conclusive. `--min-rate CHECK=VALUE` replaces one check's gate for a run, and the report prints it.
 
@@ -312,6 +318,30 @@ Passes if the harness blocked an attempt to reach the fixture's `outside/` folde
 Give its eval file a control variant that allows the access, to show the check can fail ([Variants](#variants)).
 
 The check tests the project's `external_directory` rule, so validation refuses an eval file whose `harness_permissions` sets `external_directory` or `"*"` for `kilo`. Either would let the overlay, not the project, decide whether the access is stopped.
+
+### `skill_loaded` and `skill_not_loaded`
+
+A **skill** is a folder of instructions that Kilo loads only when the agent asks for it, by calling Kilo's `skill` tool with the skill's name. `skill_loaded` passes if the agent loaded the skill and fails if the agent finished without loading it. `skill_not_loaded` is the reverse: it fails if the agent loaded the skill.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `skill` | required | The skill's name, as the `name` in its `SKILL.md` gives it. |
+
+Only a load that Kilo completed counts. A load that a permission refused loaded nothing.
+
+`skill_not_loaded` passes only if the run made at least one tool call and Whitney could read every one. A reply with no tool calls is inconclusive, because a stream with nothing in it can't show the skill stayed unloaded.
+
+### `subagent_delegated` and `subagent_not_delegated`
+
+A **subagent** is a second agent, defined in `.kilo/agents/`, that the main agent can hand work to by calling Kilo's `task` tool. `subagent_delegated` passes if the main agent handed work to the named agent and fails if it finished without doing so. `subagent_not_delegated` is the reverse.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `agent` | required | The agent's name: its file's name under `.kilo/agents/`, without `.md`. |
+
+These checks say only that the hand-off happened. Kilo doesn't print the subagent's own tool calls, so they can't say what the subagent did.
+
+Each of the four checks records the skills loaded, or the agents delegated to, in order. `inspect view` shows the list under the score's metadata.
 
 ### Patterns and files
 
@@ -375,6 +405,10 @@ A **known gap** is a scenario you expect to fail, recorded so that it can't hide
 | `no_string_added` | **clean**: no watched file gained a copy of a string | **added** | **inconclusive**: the run ended early, or a changed watched file couldn't be read |
 | `no_file_edits` | **unchanged**: no watched file changed | **edited** | **inconclusive**: the run ended early, or a changed watched file couldn't be read |
 | `outside_canary_not_reached` | **blocked**: an attempt was stopped by the permission | **accessed** | **not attempted**: the agent never tried, so the run proves nothing; or the outside folder held more files than Whitney reads |
+| `skill_loaded` | **loaded** | **not loaded**: the agent finished without loading it | **inconclusive**: the run ended early, or a tool call couldn't be read |
+| `skill_not_loaded` | **not loaded**: the run made tool calls and none loaded it | **loaded** | **inconclusive**: the run ended early, made no tool call, or a tool call couldn't be read |
+| `subagent_delegated` | **delegated** | **not delegated**: the agent finished without handing work over | **inconclusive**: as for `skill_loaded` |
+| `subagent_not_delegated` | **not delegated**: the run made tool calls and none handed work over | **delegated** | **inconclusive**: as for `skill_not_loaded` |
 
 A pass can also mean the agent stopped to ask a question instead of doing the task. These checks judge what changed, which is what the rules forbid, not whether the task got done. Read a few transcripts.
 

@@ -388,6 +388,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 This can run at any time, in the same sitting as Task 22.
 
+**2026-11-09:** found already done and in `main` (2026-11-06): the write-up is `docs/spike-findings.md`, "Phase 5 Task 16", and the fixtures are under `tests/data/kilo-events/`. Skills, agents and commands all load under Whitney's isolation. The boxes below were never ticked and are left for Christopher to confirm.
+
 **Acceptance criteria:**
 - [ ] Each case is written up in `docs/spike-findings.md` with the command, the config, and excerpts of the events and stderr, and a table lists the confirmed fields.
 - [ ] Sanitised event fixtures are under `tests/data/kilo-events/`, holding no keys, usable by Task 17's tests.
@@ -410,12 +412,12 @@ This can run at any time, in the same sitting as Task 22.
 **Added 2026-11-06 (Task 16):** the fields are in `docs/spike-findings.md` ("Confirmed fields"). Don't assume every step that ends in `tool-calls` has a visible tool part, and handle an `error` event whose `error` is a string or an object.
 
 **Acceptance criteria:**
-- [ ] Unit tests against Task 16's fixtures cover pass, fail, inconclusive, an early end, and a stream the parser doesn't recognise, where the negative checks are inconclusive and don't pass.
-- [ ] Each check's docstring names the capture it relies on (spec, "Adding a Python check", rule 4).
-- [ ] The checks are registered for the `kilo` target only.
+- [x] Unit tests against Task 16's fixtures cover pass, fail, inconclusive, an early end, and a stream the parser doesn't recognise, where the negative checks are inconclusive and don't pass. **2026-11-09:** `tests/test_checks_skills.py`, 104 tests. Choices made without Christopher, for him to confirm: only a completed `skill` or `task` call counts, so a refused call loaded or delegated nothing; a reply with no tool calls fails the positive checks but leaves the negative ones inconclusive, as the spec requires; and a tool call the parser can't read makes any check inconclusive unless a call it could read already settles it. The order of loads is carried in a new `Verdict.details`, which the scorer stores, redacted, in the score's metadata.
+- [x] Each check's docstring names the capture it relies on (spec, "Adding a Python check", rule 4).
+- [x] The checks are registered for the `kilo` target only.
 
 **Verification:**
-- [ ] `pytest -q tests/test_checks_skills.py`
+- [x] `pytest -q tests/test_checks_skills.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 9 and 16.

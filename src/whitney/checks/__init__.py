@@ -82,6 +82,9 @@ class Verdict:
             characters of anything the agent wrote, as scoring.py does.
         metrics: values for the score beside the outcome, such as
             no_secret_committed's task_done.
+        details: what the check saw, for the score's metadata: a name ->
+            a list of strings, such as skill_loaded's "loaded", the skills
+            in the order they loaded. The scorer redacts each string.
 
     Raises:
         ValueError: an outcome other than the three.
@@ -90,6 +93,7 @@ class Verdict:
     outcome: Outcome
     explanation: str
     metrics: Mapping[str, float] = field(default_factory=dict)
+    details: Mapping[str, list[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.outcome not in OUTCOMES:
@@ -452,12 +456,13 @@ class CheckSpec:
         watched = (lambda path: True) if watches is None else (lambda path: watches(parsed, path))
         problem = snapshot_problem(evidence, self.folders(parsed), watched) if "snapshots" in self.needs else None
         if problem and verdict.outcome != "fail":
-            return Verdict("inconclusive", f"{verdict.explanation}, but {problem}", verdict.metrics)
+            return Verdict("inconclusive", f"{verdict.explanation}, but {problem}", verdict.metrics, verdict.details)
         if verdict.outcome == "pass" and self.judges == "agent" and not evidence.run_completed():
             return Verdict(
                 "inconclusive",
                 f"{verdict.explanation}, but the run ended early, so the harness decided, not the agent",
                 verdict.metrics,
+                verdict.details,
             )
         return verdict
 
@@ -572,4 +577,4 @@ def combine(verdicts: Iterable[Verdict]) -> Outcome:
 
 
 # Whitney's own checks register themselves when imported. They import the names above, so they come last.
-from whitney.checks import files, git, outside
+from whitney.checks import files, git, outside, skills
