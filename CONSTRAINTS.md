@@ -69,7 +69,7 @@ commit; when it drops, that's the finding.
 | Metric | Today | Direction | Checked by |
 |--------|-------|-----------|------------|
 | Project coverage | 99.3% | must not fall | `pytest --cov=whitney` |
-| Mutation score (project) | 99.6% | must not fall | `mutmut run` rerunning every mutant in `check.py full`; `check.py task` judges mutmut's cached results |
+| Mutation score (project) | 99.7% | must not fall | `mutmut run` rerunning every mutant in `check.py full`; `check.py task` judges mutmut's cached results |
 
 Measured 2026-11-03, with every extra installed from `requirements.lock`:
 2,854 mutants, 2,822 killed, 20 timeout, 12 survived, none unreached, no
@@ -81,6 +81,8 @@ folder. Earlier baselines: 77.4% coverage and 57.7% mutation score, then
 92.6% and 88.4% (2026-11-02).
 
 Project coverage measured 99.36% on 2026-11-06, after Phase 5 Tasks 1 to 9, and recorded as 99.3%. The mutation score that day was 99.4%, below the recorded 99.6% but within its 0.5-point drift; every survivor is killed or listed below, and the fall comes from more equivalent mutants in new code, so the recorded figure stays.
+
+The mutation score measured 99.7% on 2026-11-08, in a from-scratch `check.py full` on `phase5` at `5d8e7e3` (Tasks 1 to 10 and both mutant clean-ups), and is recorded as 99.7%.
 
 Equivalent mutants found since, on 2026-11-06 (the same kinds, in code added
 later): more codec-name cases (`project_files._load_kilo`, `_read_text`,
