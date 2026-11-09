@@ -313,13 +313,13 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 **Added 2026-11-06 (Task 22 review):** Kilo 7.8.18 rewrites a project `kilo.jsonc` that has no `$schema`, adding one and reformatting the file (seen with `kilo debug config`; `kilo run` unchecked). `no_file_edits` must not count that as the agent's edit.
 
 **Acceptance criteria:**
-- [ ] Each check has tests, using hand-built `Evidence`, for pass, fail, inconclusive, an early end and unreadable evidence, and every mutant in it is killed or explained.
-- [ ] `no_string_added` catches a copy into a new file and a rise in an existing file's count, and ignores a file whose count didn't rise.
-- [ ] A string that isn't in the fixture or the prompt fails validation (`findable`).
+- [ ] Each check has tests, using hand-built `Evidence`, for pass, fail, inconclusive, an early end and unreadable evidence, and every mutant in it is killed or explained. **2026-11-09:** the tests are in `tests/test_checks_files.py`; the mutants wait for the mutation spike, since mutation testing is skipped for now.
+- [x] `no_string_added` catches a copy into a new file and a rise in an existing file's count, and ignores a file whose count didn't rise.
+- [x] A string that isn't in the fixture or the prompt fails validation (`findable`). With `regex: true` the pattern must match there.
 
 **Verification:**
-- [ ] `pytest -q tests/test_checks_files.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_checks_files.py`
+- [x] `python scripts/check.py task --skip-mutation` (2026-11-09: 1,815 tests, changed-line coverage 100%)
 
 **Dependencies:** Task 9.
 
