@@ -4,6 +4,11 @@
     python scripts/check.py task    # before handing work back: + tests (on every core), coverage, mutation of touched functions (~1 min)
     python scripts/check.py full    # before a pull request: + every mutant, dependency vulnerabilities
 
+`--skip-mutation` (task or full) runs everything except mutmut and prints a warning
+in place of the mutation scores. It is a stopgap while mutation testing is too slow
+(decided 2026-11-09, tasks/plan-phase5.md): a skipped run doesn't show the mutation
+floor or ratchet hold.
+
 `task` judges the touched functions' mutants fresh and the rest from mutmut's cache;
 `full` reruns every mutant against the current tests, after deleting mutmut's map of which
 tests reach which function so that mutmut rebuilds it. A new worktree starts warm
@@ -371,6 +376,8 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("stage", choices=("fast", "task", "full"))
     p.add_argument("--base", default="origin/main", help="branch the change will merge into")
+    p.add_argument("--skip-mutation", action="store_true",
+                   help="task or full: run everything except mutation testing, and warn that it was skipped")
     args = p.parse_args(argv)
     checks = Checks(args.base, date.today())
     ratchets = read_ratchets(CONSTRAINTS.read_text(encoding="utf-8"))
@@ -381,7 +388,10 @@ def main(argv: list[str] | None = None) -> int:
         total = checks.tests_and_coverage()
         checks.changed_line_coverage()
         checks.coverage_ratchet(total, ratchets)
-        checks.mutation(ratchets, checks.touched_prefixes(), args.stage)
+        if args.skip_mutation:
+            checks.record("mutation testing", WARN, "skipped (--skip-mutation); the mutation scores weren't judged")
+        else:
+            checks.mutation(ratchets, checks.touched_prefixes(), args.stage)
     if args.stage == "full":
         checks.dependencies()
 
