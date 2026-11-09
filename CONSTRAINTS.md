@@ -15,6 +15,7 @@ and a human reviewer, never the same commit as the change that was failing.
 - No secrets in source (the eval fixtures' fake canary tokens are the only allowed exception, see E1)
 - No inline `gitleaks:allow` in any file, not just Python: gitleaks honours it everywhere
 - No lowered eval-gate thresholds: the `MIN_*` constants in `src/whitney/report.py` and the `--min-*` defaults in `scripts/run_evals.py`
+- No eval-gate threshold the floor guard can't read: in `src/whitney/thresholds.py` each `MIN_*` is bound once, by a plain top-level `MIN_NAME = number` line; `scripts/run_evals.py`, `src/whitney/report.py` and `src/whitney/cli.py` bind a `MIN_*` name only by importing it under its own name; and a `--min-*` default in them is left out, `None`, a `MIN_*` constant, or a number no lower than before (the guard parses these files at the merge base and now)
 - No new `known_gap` scenario, which the eval gate leaves out of its thresholds, without an Exceptions row it cites (`"known_gap": "E3: ..."`)
 - This file does not get weakened to make a change pass
 
