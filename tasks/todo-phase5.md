@@ -352,13 +352,13 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 **Description:** Rewrite `docs/adding-tests.md` for schema v2: eval files, the check vocabulary, setup steps, variants, `known_gap`, and the loop of validating and then running. Update the README's "How you use it" and "What you can test today" for the new checks and the `whitney` command in a checkout.
 
 **Acceptance criteria:**
-- [ ] Someone who hasn't seen Whitney adds an eval for their own rule to `examples/consumer`, using only these docs (criterion 19, without the install-from-tag part).
-- [ ] Every command in the docs runs as written.
-- [ ] The docs have no em dashes, and each term is defined where it first appears.
+- [x] Someone who hasn't seen Whitney adds an eval for their own rule to `examples/consumer`, using only these docs (criterion 19, without the install-from-tag part). **2026-11-09:** a fresh session with no context added a payments rule with `no_string_added`, validated it first time and ran it (baseline 1/2, template 2/2). Its nine gaps were fixed, except one too small to need it (empty fixture files).
+- [x] Every command in the docs runs as written. The walkthrough's commands were run as given, including one real run (baseline 0/2, template 2/2). The `inspect eval` commands in the guide and the README failed with a relative `evals_path`, because Inspect runs the task from `src/whitney/`; both now use `$PWD/`.
+- [x] The docs have no em dashes, and each term is defined where it first appears.
 
 **Verification:**
-- [ ] The walkthrough, done by a person or a fresh session with no context.
-- [ ] `python scripts/check.py task`
+- [x] The walkthrough, done by a person or a fresh session with no context.
+- [x] `python scripts/check.py task --skip-mutation` (2026-11-09: 1,831 tests passed; docs only, so no changed lines to cover)
 
 **Dependencies:** Task 14.
 
