@@ -41,6 +41,7 @@ from whitney import shipped_evals
 from whitney.checks import CheckSpec, registry
 from whitney.evalfile import (
     FIXTURES_FOLDER,
+    TRIGGER_CONTROL,
     V1_PARAMETER_KEYS,
     VERSION_1_DEPRECATED,
     EvalFile,
@@ -52,6 +53,7 @@ from whitney.evalfile import (
     fixture_files,
     load,
     location,
+    under_test,
 )
 from whitney.project_files import load_project_files_for, not_staged_reason
 from whitney.setup_steps import NOTHING_PENDING, PENDING_DIR, PROJECT_DIR, SETUP_STEPS, order_problems, pending_problem
@@ -71,6 +73,12 @@ from whitney.variants import (
 # The fixture folders the agent's project starts from: project/ is staged as it is, pending/ by apply_pending.
 PROJECT, PENDING = PROJECT_DIR, PENDING_DIR
 KNOWN_GAP = re.compile(r"E\d+: .+")
+# Where Kilo 7.8.18 loads a project's skills and agents from, each named by its folder or file
+# (docs/spike-findings.md, "Case 2: the same skill in other folders").
+STAGED = {
+    "skill": re.compile(r"(?:\.kilo|\.kilocode|\.claude|\.agents)/skills?/([^/]+)/SKILL\.md"),
+    "agent": re.compile(r"(?:\.kilo|\.kilocode)/agents?/([^/]+)\.md"),
+}
 KILO_ACTIONS = ("allow", "ask", "deny")
 # Kilo's key for every permission, so setting it sets a guarded key too.
 EVERY_PERMISSION = "*"
@@ -270,7 +278,8 @@ def _pending_problems(eval_file: EvalFile, scenario: ResolvedScenario, files: di
             found.append((scenario.fixture_at, f"fixture '{scenario.fixture}': {prefix}{path}: {problem}"))
     steps = [step.step for step in scenario.setup]
     if eval_file.version_read == 2 and not pending and "apply_pending" in steps:
-        own = eval_file.scenarios[scenario.index].setup is not None
+        # A trigger test has no setup of its own: it runs the defaults'.
+        own = scenario.trigger is None and eval_file.scenarios[scenario.index].setup is not None
         setup_at = f"scenarios[{scenario.index}].setup" if own else "defaults.setup"
         inherited = "" if own else f" (scenario '{scenario.id}')"
         found.append((f"{setup_at}[{steps.index('apply_pending')}]", NOTHING_PENDING + inherited))
@@ -369,8 +378,9 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
 
     Returns:
         One Problem per finding. A variant the file declares is named at
-        `variants.<name>`; the default baseline, and a version 1 file's
-        upgraded variant, are named at `source`, which is what their author wrote.
+        `variants.<name>`; the default baseline, the automatic control for
+        trigger tests, and a version 1 file's upgraded variant, are named at
+        `source`, which is what their author wrote.
     """
     written = eval_file.variants is not None and eval_file.version_read == 2
     found: list[Found] = []
@@ -428,8 +438,24 @@ def validate_project(
         reason = not_staged_reason(target, project_path, eval_file.source, staged, evals_path=evals_path)
         if reason is not None:
             problems.append(Problem(eval_file.path, "source", f"'{eval_file.source}' isn't staged: {reason}"))
+        problems += _owner_problems(eval_file, staged)
         problems += validate_variants(eval_file, staged)
     return problems
+
+
+def _owner_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
+    """A negative trigger prompt whose `owner` isn't a staged skill (or agent, in an agent's file)."""
+    if eval_file.trigger is None:
+        return []
+    kind, _ = under_test(eval_file.source)
+    names = sorted({match.group(1) for path in staged if (match := STAGED[kind].fullmatch(path))})
+    return [
+        Problem(eval_file.path, f"trigger.negative[{index}].owner", (
+            f"no staged {kind} is named '{prompt.owner}'; staged {kind}s: {', '.join(names) or 'none'}"
+        ))
+        for index, prompt in enumerate(eval_file.trigger.negative)
+        if prompt.owner is not None and prompt.owner not in names
+    ]
 
 
 def _spread_by_the_wrapper(eval_file: EvalFile) -> bool:
@@ -444,6 +470,9 @@ def _spread_by_the_wrapper(eval_file: EvalFile) -> bool:
 
 
 def _variant_at(written: bool, name: str, eval_file: EvalFile, at: tuple, message: str) -> Found:
+    if name == TRIGGER_CONTROL and eval_file.trigger is not None:
+        # Whitney adds this control itself, so its author wrote only the source it removes.
+        return "source", f"the control for the trigger tests removes the source: {message}"
     if written:
         return location(("variants", name, *at)), message
     if eval_file.variants is None:

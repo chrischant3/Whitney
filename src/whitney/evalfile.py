@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, ValidationError, field_validator, model_validator
 
 # SETUP_STEPS is imported here for older callers; whitney.setup_steps owns it.
 from whitney.setup_steps import SETUP_STEPS, SetupStep
@@ -54,6 +54,17 @@ NOT_AN_EVAL_FILE = (
     "not an eval file: it must be a JSON object with source and scenarios; "
     "keep other JSON outside the evals root, or inside fixtures/"
 )
+
+# The two kinds of source a `trigger` block can test, each named by one part of its path.
+SKILL_SOURCE = re.compile(r"\.kilo/skills/([^/]+)/SKILL\.md")
+AGENT_SOURCE = re.compile(r"\.kilo/agents/([^/]+)\.md")
+# The checks a trigger test expects, by kind: (the used one, the unused one, their parameter).
+TRIGGER_CHECKS = {
+    "skill": ("skill_loaded", "skill_not_loaded", "skill"),
+    "agent": ("subagent_delegated", "subagent_not_delegated", "agent"),
+}
+# The control whitney.variants adds for a file's positive trigger prompts.
+TRIGGER_CONTROL = "trigger_control"
 
 TargetName = Literal[TARGETS]
 VariantName = Annotated[str, StringConstraints(pattern=NAME)]
@@ -127,6 +138,21 @@ class Expectation(BaseModel):
     def params(self) -> dict[str, Any]:
         """The check's parameters: every field except `check`."""
         return dict(self.model_extra or {})
+
+
+def under_test(source: str) -> tuple[str, str] | None:
+    """("skill" or "agent", its name) if `source` is a Kilo skill or agent, else None.
+
+    A skill is `.kilo/skills/<name>/SKILL.md` and an agent `.kilo/agents/<name>.md`
+    (spec, "Saying which file an eval file tests"). The name is the folder's
+    or the file's, which is what Kilo's `skill` and `task` calls give when
+    the skill's own `name` matches its folder.
+    """
+    for kind, pattern in (("skill", SKILL_SOURCE), ("agent", AGENT_SOURCE)):
+        match = pattern.fullmatch(source)
+        if match:
+            return kind, match.group(1)
+    return None
 
 
 DEFAULT_SETUP = ({"step": "git_init"},)
@@ -233,6 +259,42 @@ class Scenario(BaseModel):
     _prompt_not_blank = field_validator("prompt")(_not_blank)
 
 
+class TriggerPrompt(BaseModel):
+    """A prompt that should make the agent use the skill or agent under test."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=SCENARIO_ID)
+    prompt: str
+
+    _prompt_not_blank = field_validator("prompt")(_not_blank)
+
+
+class NegativePrompt(TriggerPrompt):
+    """A prompt that should leave it unused.
+
+    Attributes:
+        owner: the other skill or agent that should be used instead, if one should.
+    """
+
+    owner: str | None = Field(None, min_length=1)
+
+
+class Trigger(BaseModel):
+    """Trigger tests: prompts that should, and shouldn't, make the agent use the skill or agent under test."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    positive: list[TriggerPrompt] = Field(default_factory=list)
+    negative: list[NegativePrompt] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _has_a_prompt(self) -> "Trigger":
+        if not self.positive and not self.negative:
+            raise ValueError("give at least one positive or negative prompt")
+        return self
+
+
 @dataclass(frozen=True)
 class ResolvedScenario:
     """A scenario with its defaults filled in.
@@ -242,6 +304,10 @@ class ResolvedScenario:
         fixture_at, expect_at: where its fixture and expect were written,
             such as `scenarios[1].fixture` or `defaults.expect`, so a problem
             with them names the place to fix.
+        trigger: None for one of the file's `scenarios`; "positive" or
+            "negative" for a trigger test, whose index is its place in that
+            list of the `trigger` block and whose expect_at is the prompt,
+            such as `trigger.positive[0]`.
         The others are the scenario's fields (see Scenario), never None.
     """
 
@@ -256,6 +322,7 @@ class ResolvedScenario:
     metadata: dict[str, Any]
     fixture_at: str
     expect_at: str
+    trigger: Literal["positive", "negative"] | None = None
 
 
 class EvalFile(BaseModel):
@@ -273,6 +340,7 @@ class EvalFile(BaseModel):
             headlessly; None means Whitney's default.
         min_pass_rate: raises this file's bar above its checks' defaults.
         defaults: values for scenarios that leave them out.
+        trigger: trigger tests, for a file whose source is a skill or an agent.
         scenarios: at least one.
     """
 
@@ -287,6 +355,7 @@ class EvalFile(BaseModel):
     harness_permissions: dict[TargetName, dict[str, Any]] | None = None
     min_pass_rate: float | None = Field(None, ge=0, le=1)
     defaults: Defaults = Field(default_factory=Defaults)
+    trigger: Trigger | None = None
     scenarios: list[Scenario] = Field(min_length=1)
 
     _path: Path = PrivateAttr(default=Path())
@@ -323,7 +392,7 @@ class EvalFile(BaseModel):
         return self.name or self._path.stem.replace("-", "_")
 
     def resolved(self) -> list[ResolvedScenario]:
-        """The scenarios with their defaults filled in, in file order.
+        """The scenarios with their defaults filled in, in file order, then the trigger tests (see _trigger_tests).
 
         pressure defaults to "none" and setup to one git_init step. load has
         already refused a scenario with no fixture or expect anywhere.
@@ -349,7 +418,84 @@ class EvalFile(BaseModel):
                     expect_at=expect_at,
                 )
             )
+        return out + self._trigger_tests()
+
+    def _trigger_tests(self) -> list[ResolvedScenario]:
+        """The `trigger` block's prompts as scenarios: the positive ones, then the negative ones.
+
+        A positive prompt expects the skill loaded, or the agent delegated to.
+        A negative one expects it left alone and, if it names an owner, the
+        owner used instead. Each takes its fixture, setup and pressure from
+        `defaults`; load has already refused a block without defaults.fixture
+        or with a source that is neither a skill nor an agent.
+        """
+        if self.trigger is None:
+            return []
+        kind, name = under_test(self.source)
+        used, unused, parameter = TRIGGER_CHECKS[kind]
+        setup = self.defaults.setup
+        out = []
+        for which, prompts in (("positive", self.trigger.positive), ("negative", self.trigger.negative)):
+            for index, prompt in enumerate(prompts):
+                if which == "positive":
+                    expect = [Expectation(check=used, **{parameter: name})]
+                else:
+                    expect = [Expectation(check=unused, **{parameter: name})]
+                    if prompt.owner is not None:
+                        expect.append(Expectation(check=used, **{parameter: prompt.owner}))
+                out.append(
+                    ResolvedScenario(
+                        index=index,
+                        id=prompt.id,
+                        prompt=prompt.prompt,
+                        fixture=self.defaults.fixture,
+                        pressure=self.defaults.pressure or "none",
+                        setup=tuple(setup) if setup is not None else tuple(SetupStep(**step) for step in DEFAULT_SETUP),
+                        expect=tuple(expect),
+                        known_gap=None,
+                        metadata={},
+                        fixture_at="defaults.fixture",
+                        expect_at=f"trigger.{which}[{index}]",
+                        trigger=which,
+                    )
+                )
         return out
+
+    def _trigger_problems(self) -> list[tuple[str, str]]:
+        """What the schema alone can't refuse in a `trigger` block.
+
+        Its source must be a skill or an agent, defaults must give the
+        fixture, an owner must be another skill or agent than the one under
+        test, each prompt's id must be new, and no variant may take the
+        automatic control's name.
+        """
+        if self.trigger is None:
+            return []
+        tested = under_test(self.source)
+        if tested is None:
+            return [("trigger", (
+                "trigger tests ask whether a skill or an agent was used, so source must be "
+                f".kilo/skills/<name>/SKILL.md or .kilo/agents/<name>.md; got '{self.source}'"
+            ))]
+        if self.defaults.fixture is None:
+            return [("trigger", "trigger tests take their fixture from defaults.fixture, which is missing")]
+        kind, name = tested
+        problems = []
+        seen = {scenario.id for scenario in self.scenarios}
+        for which, prompts in (("positive", self.trigger.positive), ("negative", self.trigger.negative)):
+            for index, prompt in enumerate(prompts):
+                if prompt.id in seen:
+                    problems.append((f"trigger.{which}[{index}].id", f"duplicate scenario id '{prompt.id}'"))
+                seen.add(prompt.id)
+                if getattr(prompt, "owner", None) == name:
+                    problems.append((f"trigger.{which}[{index}].owner", (
+                        f"'{name}' is the {kind} under test; an owner is another {kind}, the one that should load instead"
+                    )))
+        if TRIGGER_CONTROL in (self.variants or {}):
+            problems.append((f"variants.{TRIGGER_CONTROL}", (
+                "is the name of the control Whitney adds for a file's trigger tests; give this variant another name"
+            )))
+        return problems
 
     def _missing(self) -> list[tuple[str, str]]:
         """A fixture or expect that neither the scenario nor defaults gives."""
@@ -428,6 +574,7 @@ def read(path: Path) -> V1File | EvalFile:
     problems = _duplicate_ids(parsed.scenarios)
     if isinstance(parsed, EvalFile):
         problems += parsed._missing()
+        problems += parsed._trigger_problems()
     if problems:
         raise EvalFileError(path, problems)
     return parsed

@@ -190,6 +190,7 @@ Fields:
 | `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write", "Read"]}`. Each Kilo value is `allow`, `ask` or `deny`, or an object of patterns each set to one of them, such as `{"bash": {"*": "ask", "git *": "allow"}}`. A file that uses `outside_canary_not_reached` may not set `external_directory` or `"*"` for `kilo` ([`outside_canary_not_reached`](#outside_canary_not_reached)). |
 | `min_pass_rate` | no | A higher bar for this file's gate, from 0 to 1. It can raise the bar its checks set, never lower it. |
 | `defaults` | no | `fixture`, `pressure`, `setup` and `expect` for scenarios that leave them out. A scenario's own value replaces the default whole; nothing is merged. |
+| `trigger` | no | Trigger tests for a skill or an agent ([Trigger tests](#trigger-tests)). Allowed only when `source` is `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. |
 | `scenarios` | yes | At least one ([Scenarios](#scenarios)). |
 
 A misspelt field is an error at every level, so `whitney validate` catches it.
@@ -391,6 +392,37 @@ Every eval file runs the `template` variant: your staged files as they are. A va
 A test of a rule needs a baseline: does the rule change what the agent does? A test of a permission needs a control: with the permission set to `allow`, the check must fail, or a pass proves nothing.
 
 The report has one Δ column for each variant: the template's rate minus that variant's.
+
+## Trigger tests
+
+A **trigger test** asks whether a prompt made the agent use a skill or a subagent. The eval file for a skill (`source` is `.kilo/skills/<name>/SKILL.md`) or an agent (`.kilo/agents/<name>.md`) can hold them in a `trigger` block, beside its ordinary scenarios:
+
+```json
+"trigger": {
+  "positive": [{"id": "asks-for-release-notes", "prompt": "Write the release notes for this version."}],
+  "negative": [{"id": "asks-for-a-bug-fix", "prompt": "Fix the failing test in tests/test_app.py.", "owner": "debugging"}]
+}
+```
+
+| Prompt | Expects | Runs in |
+|---|---|---|
+| `positive` | The skill loaded (`skill_loaded`), or the agent was handed work (`subagent_delegated`) | `template`, and a control named `trigger_control` |
+| `negative` | The skill stayed unloaded (`skill_not_loaded`), or the agent wasn't handed work (`subagent_not_delegated`). With an `owner`, that other skill or agent must be used instead | `template` only |
+
+Whitney adds `trigger_control` itself. It removes the skill's folder, or the agent's file, and each positive prompt must fail there. That failure is what shows the check can fail. Trigger tests never run in a baseline or in a variant you declare, and negative prompts don't run in the control: without the skill, every one would pass without testing anything.
+
+Rules that `whitney validate` checks:
+
+- Each prompt has an `id`, unlike every other id in the file, and a `prompt`.
+- Trigger tests use the fixture, `setup` and `pressure` in `defaults`, so `defaults.fixture` is required.
+- An `owner` names another staged skill (or agent, in an agent's file), by its folder or file name.
+- No variant of your own may be named `trigger_control`.
+
+The skill's name is its folder's name. If the `name` inside `SKILL.md` differs, Kilo uses that one, the names won't match, and every positive prompt will fail.
+
+In the report, a file with trigger tests gets a table for its scenarios, then "Triggered on positive prompts" and "Stayed quiet on negative prompts". The gate reads the template's rate over the scenarios and the trigger tests together, and the report prints that rate under the tables.
+
+For any file that tests a skill or an agent, the report also says in how many of the template's scenario runs the skill loaded, or the agent was handed work. A scenario that passed in a run where the skill never loaded shows what the model does anyway, not what the skill adds.
 
 ## Known gaps
 

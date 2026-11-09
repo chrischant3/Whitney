@@ -440,12 +440,12 @@ This can run at any time, in the same sitting as Task 22.
 Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_delegated` for an agent. Negative prompts expand into scenarios expecting `skill_not_loaded`, plus `skill_loaded` for the `owner` when one is named. The skill or agent name comes from `source`: `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. Trigger prompts never run in a baseline. Positive prompts also run in an automatic control that removes the skill or agent, and must fail there (D4). The report gives triggers their own table, "Triggered on positive prompts" and "Stayed quiet on negative prompts". For behaviour scenarios in the same file, it says in how many template runs the skill loaded or the agent was delegated to.
 
 **Acceptance criteria:**
-- [ ] Expansion tests show the expected ids, checks, fixtures and variants. No trigger prompt runs in a baseline, and no negative prompt runs in the control.
-- [ ] Validation: `owner` names a staged skill or agent, and a `trigger` block is allowed only in a file whose `source` is a skill or agent.
-- [ ] Report tests cover the trigger table, the control column and the "loaded in N of M runs" note.
+- [x] Expansion tests show the expected ids, checks, fixtures and variants. No trigger prompt runs in a baseline, and no negative prompt runs in the control. **2026-11-09:** `tests/test_trigger.py`. Choices made without Christopher, for him to confirm: the automatic control is a variant named `trigger_control`, reserved in a file with a `trigger` block; trigger tests take their fixture, setup and pressure from `defaults` (so `defaults.fixture` is required); an agent's negative prompt expects `subagent_not_delegated`, and its owner `subagent_delegated`; trigger tests run only in `template` and `trigger_control`, never in a variant the file declares; the template's trigger tests count in the gate; the skill's name is its folder's name.
+- [x] Validation: `owner` names a staged skill or agent, and a `trigger` block is allowed only in a file whose `source` is a skill or agent.
+- [x] Report tests cover the trigger table, the control column and the "loaded in N of M runs" note. **2026-11-09:** in `tests/test_trigger.py`, not `tests/test_report.py`. Each score of a skill's or agent's file now records `used` (true, false, or null when the stream can't say), and the note counts it over the template's scenario runs.
 
 **Verification:**
-- [ ] `pytest -q tests/test_trigger.py tests/test_report.py`
+- [x] `pytest -q tests/test_trigger.py tests/test_report.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 10 and 17.

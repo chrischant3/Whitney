@@ -135,6 +135,27 @@ def subagent_not_delegated(evidence: Evidence, params: AgentParams) -> Verdict:
     return _did_not_happen(_calls(evidence.events, "task", "subagent_type"), params.agent, "delegated", "subagent")
 
 
+# For each kind of source a `trigger` block tests (evalfile.under_test): the tool that uses it and the key naming it.
+USED_BY = {"skill": ("skill", "name"), "agent": ("task", "subagent_type")}
+
+
+def was_used(events: str, kind: str, name: str) -> bool | None:
+    """Whether the run loaded the skill, or delegated to the agent, named `name`; None if the stream can't say.
+
+    For the report's count of the template runs in which the skill or agent
+    under test was used, whatever each scenario's own checks expect.
+
+    Args:
+        events: Kilo's event stream.
+        kind: "skill" or "agent".
+        name: the skill's or the agent's name.
+    """
+    calls = _calls(events, *USED_BY[kind])
+    if name in calls.names:
+        return True
+    return None if calls.doubt else False
+
+
 def _happened(evidence: Evidence, calls: _Calls, name: str, verb: str, kind: str) -> Verdict:
     """The verdict of a check that expects `name` among the calls' names."""
     details = {verb: calls.names}

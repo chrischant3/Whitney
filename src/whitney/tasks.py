@@ -37,6 +37,7 @@ from pydantic import ValidationError
 from whitney import evalfile, evidence, setup_steps, shipped_evals, targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model, redact
 from whitney.checks import OUTCOMES, CheckSpec, Evidence, FolderSnapshot, Verdict, combine, registry
+from whitney.checks.skills import was_used
 from whitney.evalfile import DEFAULT_SETUP, FIXTURES_FOLDER, V1_COMMIT_SETUP, EvalFile, EvalFileError, Variant
 from whitney.project_files import (
     CONFIG_PATHS,
@@ -50,7 +51,7 @@ from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
 from whitney.setup_steps import SetupError, SetupStep
 from whitney.target_names import TARGETS
 from whitney.validate import _spread_by_the_wrapper
-from whitney.variants import TEMPLATE, apply_variant, declared_variants, spread_over_kilo_configs, staged_matches
+from whitney.variants import TEMPLATE, apply_variant, declared_variants, runs_in, spread_over_kilo_configs, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
 # Read when a task is built, so a test can point EVALS_DIR at its own evals. The files are relative to it.
@@ -121,6 +122,8 @@ class _EvalPlan:
             (variant, staged files, source) -> variant.
         fixtures_dir: where its fixtures are; None for the folder beside the
             file that load_scenarios finds, as the wrappers have always used.
+        has_trigger: True if the file has trigger tests, which run in some variants only (variants.runs_in).
+        under_test: ("skill" or "agent", its name) if the source is one (evalfile.under_test), else None.
     """
 
     path: Path
@@ -136,6 +139,8 @@ class _EvalPlan:
     targets: tuple[str, ...]
     adjust: Callable[[Variant, dict[str, str], str], Variant]
     fixtures_dir: Path | None = None
+    has_trigger: bool = False
+    under_test: tuple[str, str] | None = None
 
 
 @task
@@ -207,6 +212,8 @@ def scenario_eval(
         targets=tuple(parsed.targets or TARGETS),
         adjust=spread_over_kilo_configs if _spread_by_the_wrapper(parsed) else _as_written,
         fixtures_dir=root / FIXTURES_FOLDER,
+        has_trigger=parsed.trigger is not None,
+        under_test=evalfile.under_test(parsed.source),
     )
     return _scenario_task(
         plan, variant, target=target, model=model, execution=execution, project_path=project_path,
@@ -380,6 +387,8 @@ def _scenario_task(
 ) -> Task:
     """The Inspect task for `plan` in `variant`: what scenario_eval, agents_md and kilo_jsonc each return.
 
+    A file's trigger tests run in the template and, the positive ones, in the
+    automatic control only (variants.runs_in).
     Each sample is a scenario with the staged files in project/, its fixture
     beside them and its setup script. Inspect logs the script, which carries
     the fixture's pending/ text, so a script holding one of the run's
@@ -394,7 +403,8 @@ def _scenario_task(
 
     The metadata holds, besides the run's settings and staged files:
     eval_file (relative to the evals root), eval_file_sha256 (of the bytes
-    the plan was read from), whitney_version, harness_version, eval_name, title, source, variant_role
+    the plan was read from), whitney_version, harness_version, eval_name, title, source,
+    under_test ({"kind", "name"} if the source is a skill or an agent, else None), variant_role
     ("template", "baseline" or "control"), labels (the score's words for
     pass, fail and inconclusive), checks (each check's labels, what it
     judges and its default minimum pass rate) and min_pass_rate (the file's
@@ -415,6 +425,8 @@ def _scenario_task(
     secrets = evidence.run_secrets(target, execution, api_key_env)
     samples = []
     for sample in _scenario_samples(plan.path, plan.fixtures_dir):
+        if not runs_in(variant, sample.metadata.get("trigger"), has_trigger=plan.has_trigger):
+            continue
         if sample.setup and redact(sample.setup, secrets) != sample.setup:
             raise ValueError(
                 f"{plan.path}: scenario '{sample.id}': its setup holds the value of a secret this run is given; "
@@ -438,7 +450,7 @@ def _scenario_task(
             target, model, {target: plan.harness_permissions[target]}, execution=execution,
             api_key_env=api_key_env, base_url=base_url,
         ),
-        scorer=checks_scorer(plan.expect, labels, metrics, target, execution, api_key_env, python),
+        scorer=checks_scorer(plan.expect, labels, metrics, target, execution, api_key_env, python, plan.under_test),
         cleanup=_forget_before,
         sandbox=_sandbox_config(execution),
         metadata={
@@ -461,6 +473,7 @@ def _scenario_task(
             "eval_name": plan.eval_name,
             "title": plan.title,
             "source": plan.source,
+            "under_test": dict(zip(("kind", "name"), plan.under_test)) if plan.under_test else None,
             "variant_role": TEMPLATE if variant == TEMPLATE else plan.variants[variant].role,
             "labels": labels,
             "checks": {
@@ -566,7 +579,7 @@ async def _forget_before(state: TaskState) -> None:
 
 def _checks_scorer(
     expect: dict[str, list[tuple[str, dict]]], labels: list[str], metrics: list[str], target: str, execution: str,
-    api_key_env: str | None, python: str,
+    api_key_env: str | None, python: str, under_test: tuple[str, str] | None = None,
 ):
     """The scorer for scenario_eval's tasks, registered as scenario_checks with metrics for `labels` and `metrics`.
 
@@ -577,6 +590,7 @@ def _checks_scorer(
         target, execution, api_key_env: the run's, so the scorer knows the
             secrets it was given (evidence.run_secrets) without holding them.
         python: the sandbox's Python, for the snapshot script.
+        under_test: the skill or agent the file tests, if it tests one (see _scenario_score).
     """
 
     async def score(state: TaskState, _target: Target) -> Score:
@@ -588,13 +602,14 @@ def _checks_scorer(
             before=_BEFORE_SNAPSHOTS.pop(state.uuid, {}), secrets=secrets,
         )
         verdicts = [(spec, spec.run(found, params)) for spec, params in checks]
-        return _scenario_score(verdicts, labels, metrics, run, secrets)
+        return _scenario_score(verdicts, labels, metrics, run, secrets, under_test=under_test)
 
     return score
 
 
 def _scenario_score(
-    verdicts: list[tuple[CheckSpec, Verdict]], labels: list[str], metrics: list[str], run: dict, secrets: list[str]
+    verdicts: list[tuple[CheckSpec, Verdict]], labels: list[str], metrics: list[str], run: dict, secrets: list[str],
+    *, under_test: tuple[str, str] | None = None,
 ) -> Score:
     """One scenario's Inspect score from its checks' verdicts (see whitney.checks.combine).
 
@@ -605,7 +620,15 @@ def _scenario_score(
     tail. The metadata lists each check's outcome, label, explanation and details.
     Every explanation goes through agent.redact with `secrets`, because a
     check can quote a file the agent wrote, and the agent can write its key.
+
+    For a file that tests a skill or an agent (`under_test`, its kind and
+    name), the metadata's `used` says whether this run loaded the skill or
+    delegated to the agent: True, False, or None if the event stream can't
+    say (skills.was_used). The report counts it over the template's runs,
+    because a scenario that passed without the skill shows the model's
+    default, not the skill.
     """
+    used = {"used": was_used(run.get("events", ""), *under_test)} if under_test else {}
     answer = labels[OUTCOMES.index(combine(verdict for _, verdict in verdicts))]
     values = dict.fromkeys(metrics, 0.0)
     for _, verdict in verdicts:
@@ -619,7 +642,8 @@ def _scenario_score(
         answer=answer,
         explanation=redact(f"{judged}\n{_summary(run)}", secrets),
         metadata={
-            "checks": [_check_record(spec, verdict, secrets) for spec, verdict in verdicts]
+            "checks": [_check_record(spec, verdict, secrets) for spec, verdict in verdicts],
+            **used,
         },
     )
 

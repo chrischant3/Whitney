@@ -527,6 +527,8 @@ Once these exist, eval files may use an optional `trigger` block that expands in
 }
 ```
 
+Built by plan Task 18 (2026-11-09), with these choices: the automatic control is a variant named `trigger_control`, a name no file with a `trigger` block may declare; trigger tests take their fixture, setup and pressure from `defaults`; an agent's negative prompt expects `subagent_not_delegated`, plus `subagent_delegated` for its owner; the gate reads the template's rate over scenarios and trigger tests together; and each score of a skill's or agent's file records whether it was used (`used`), which the report counts over the template's scenario runs.
+
 The skill or agent under test comes from `source`: `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. A positive prompt expands into a trigger test expecting `skill_loaded`, or `subagent_delegated` for an agent. A negative prompt expands into one expecting `skill_not_loaded`, plus `skill_loaded` for its `owner` when one is named. Which variants trigger tests run in is under "Saying which variants run" (D4). Behaviour scenarios in the same file don't expect `skill_loaded`, because their baseline can never load the skill; instead the report says in how many template runs it loaded. The inspiration repo's `top_k` has no direct equivalent in a real run (it ranks descriptions lexically). Trigger tests check only loaded and not loaded, and the order of loads is kept in the score metadata (open question 15, answered on 2026-11-06).
 
 ### What Whitney does not adopt from the inspiration repo

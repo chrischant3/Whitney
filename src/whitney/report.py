@@ -56,6 +56,10 @@ NOT_GIVEN = "not given"
 # A log whose checks have different labels is scored in these (whitney.tasks), as is one whose metadata is malformed.
 GENERIC_LABELS = ("pass", "fail", "inconclusive")
 JUDGES = ("agent", "harness")
+TRIGGER_KINDS = ("positive", "negative")
+TRIGGER_HEADINGS = {"positive": "Triggered on positive prompts", "negative": "Stayed quiet on negative prompts"}
+# How the report says a skill or an agent was used, by the kind a log records (evalfile.under_test).
+USE_WORDS = {"skill": "was loaded", "agent": "was delegated to"}
 # Logs written before they named their checks ran Whitney's own two evals, each scored by one check.
 LEGACY_CHECKS = {"agents_md": "no_secret_committed", "kilo_jsonc": "outside_canary_not_reached"}
 LEGACY_MINIMUMS = {"agents_md": MIN_ADHERENCE, "kilo_jsonc": MIN_HELD}
@@ -89,6 +93,7 @@ class FileInfo:
         checks: each check the file names -> its default minimum pass rate.
         min_pass_rate: the file's own minimum, or None.
         sha256: of the file's bytes as the task read them, or None in logs that don't record it.
+        under_test: ("skill" or "agent", its name) if the file tests one, else None.
         problem: what is malformed in the metadata, or None. A file with a
             problem has no checks and pass, fail and inconclusive as its labels.
     """
@@ -102,6 +107,7 @@ class FileInfo:
     min_pass_rate: float | None
     sha256: str | None = None
     problem: str | None = None
+    under_test: tuple[str, str] | None = None
 
     @property
     def heading(self) -> str:
@@ -118,7 +124,9 @@ class Record:
     """One scored run of one scenario.
 
     role and file come from the log's metadata; both are None for a log
-    written before it recorded them.
+    written before it recorded them. trigger is "positive" or "negative" for
+    a trigger test, else None. use is "used", "unused" or "unknown" where the
+    score says whether the skill or agent under test was used, else None.
     """
 
     eval_name: str
@@ -128,6 +136,8 @@ class Record:
     metadata: dict = field(default_factory=dict, compare=True, hash=False)
     role: str | None = None
     file: FileInfo | None = field(default=None, compare=True, hash=False)
+    trigger: str | None = None
+    use: str | None = None
 
 
 @dataclass
@@ -151,6 +161,10 @@ class EvalSummary:
     file: FileInfo | None = None  # the first log's; None when every log was written before it was recorded
     roles: dict[str, str] = field(default_factory=dict)  # variant -> role, where the logs record it
     problems: list[str] = field(default_factory=list)  # why the gate can't judge these runs; each fails it
+    triggers: dict[str, str] = field(default_factory=dict)  # trigger test -> "positive" or "negative"
+    # In the template's runs of the file's scenarios: how often the skill or agent under test was used ("used",
+    # "unused", "unknown" -> runs). Empty when no such run recorded it.
+    usage: dict[str, int] = field(default_factory=dict)
 
 
 def records_from_log(log: EvalLog) -> list[Record]:
@@ -171,8 +185,23 @@ def records_from_log(log: EvalLog) -> list[Record]:
             outcome = "error"
         else:
             outcome = next(iter(sample.scores.values())).answer or "error"
-        out.append(Record(eval_name, variant, str(sample.id), outcome, dict(sample.metadata or {}), role, info))
+        sample_metadata = dict(sample.metadata or {})
+        trigger = sample_metadata.get("trigger")
+        out.append(Record(
+            eval_name, variant, str(sample.id), outcome, sample_metadata, role, info,
+            trigger=trigger if trigger in TRIGGER_KINDS else None, use=_use(sample),
+        ))
     return out
+
+
+def _use(sample: object) -> str | None:
+    """What a sample's score says of the skill or agent under test: "used", "unused", "unknown", or None if it says nothing."""
+    if sample.error or not sample.scores:
+        return None
+    metadata = getattr(next(iter(sample.scores.values())), "metadata", None) or {}
+    if "used" not in metadata:
+        return None
+    return {True: "used", False: "unused"}.get(metadata["used"], "unknown")
 
 
 def _file_info(metadata: dict) -> FileInfo | None:
@@ -196,10 +225,18 @@ def _file_info(metadata: dict) -> FileInfo | None:
         return FileInfo(**named, labels=GENERIC_LABELS, checks={}, min_pass_rate=None, problem=problem)
     return FileInfo(
         **named,
+        under_test=_under_test(metadata.get("under_test")),
         labels=tuple(metadata["labels"]),
         checks={name: c["min_pass_rate"] for name, c in metadata["checks"].items()},
         min_pass_rate=metadata.get("min_pass_rate"),
     )
+
+
+def _under_test(recorded: object) -> tuple[str, str] | None:
+    """The skill or agent a log says its file tests, or None if it names none the report knows."""
+    if not isinstance(recorded, dict) or recorded.get("kind") not in USE_WORDS or not _text(recorded.get("name")):
+        return None
+    return recorded["kind"], recorded["name"]
 
 
 def _metadata_problem(metadata: dict) -> str | None:
@@ -266,6 +303,8 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
     differ: dict[str, set[str]] = defaultdict(set)
     malformed: dict[str, list[str]] = defaultdict(list)
     roles: dict[str, dict[str, str]] = defaultdict(dict)
+    triggers: dict[str, dict[str, str]] = defaultdict(dict)
+    usage: dict[str, dict[str, int]] = defaultdict(dict)
     for r in records:
         key = r.file.eval_file if r.file else r.eval_name
         if r.file:
@@ -276,6 +315,10 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
                 malformed[key].append(r.file.problem)
         if r.role:
             roles[key][r.variant] = r.role
+        if r.trigger:
+            triggers[key][r.scenario] = r.trigger
+        elif r.use and r.variant == TEMPLATE_VARIANT:
+            usage[key][r.use] = usage[key].get(r.use, 0) + 1
         passing, failing = (r.file.labels if r.file else EVALS[r.eval_name])[:2]
         if r.metadata.get("known_gap"):
             gaps[key][r.scenario] = r.metadata["known_gap"]
@@ -297,6 +340,8 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             file=files.get(key),
             roles=roles[key],
             problems=_problems(differ[key], malformed[key]),
+            triggers=triggers[key],
+            usage=usage[key],
         )
         for key in rows
     }
@@ -403,31 +448,83 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
     never failed is named below the table, and so is each problem that fails
     the file at the gate. An older log's eval shows the two variants it
     always ran, as it always did, without those notes.
+
+    A file that tests a skill or an agent says in how many of the template's
+    scenario runs it was used. Its trigger tests get a table each for the
+    positive and the negative prompts, with the variants those ran in, and a
+    line giving the template's rate over scenarios and trigger tests
+    together, which is what the gate reads.
     """
     parts = []
     for key, s in summary.items():
         passing, failing, neither = s.file.labels if s.file else EVALS[key][:3]
         neither = neither.replace("_", " ")
         title = _escaped(s.file.heading if s.file else LEGACY_TITLES[key])
-        variants = _file_variants(s) if s.file else EVALS[key][3]
-        others = [v for v in variants if v != TEMPLATE_VARIANT]
-        deltas = ["Δ"] if len(others) == 1 else [f"Δ {v}" for v in others]
+        scenarios = {name: cells for name, cells in s.rows.items() if name not in s.triggers}
+        variants = _variants(s, scenarios) if s.file else EVALS[key][3]
+        overall = _overall(scenarios, s.known_gaps) if s.triggers else s.overall
         parts.append(f"## {title}: {passing} / ({passing} + {failing})\n")
-        parts.append("| Scenario | " + " | ".join([*variants, *deltas]) + " |")
-        parts.append("|---" * (1 + len(variants) + len(deltas)) + "|")
-        for scenario, cells in sorted(s.rows.items()):
-            label = f"{scenario} (known gap)" if scenario in s.known_gaps else scenario
-            parts.append(_row(label, cells, variants, others, neither))
-        parts.append(_row("**overall**", s.overall, variants, others, neither))
+        parts.extend(_table("Scenario", scenarios, overall, variants, neither, s.known_gaps))
         if s.known_gaps:
             parts.append("\nKnown gaps, excluded from overall and thresholds:")
             parts.extend(f"- {scenario}: {note}" for scenario, note in sorted(s.known_gaps.items()))
-        if not others:
+        if len(variants) == 1:
             parts.append(f"\nOnly `{TEMPLATE_VARIANT}` ran for this file, so there is no Δ.")
-        parts.extend(f"\n{warning}" for warning in _control_warnings(s, variants))
+        if s.usage and s.file and s.file.under_test:
+            parts.append(f"\n{_usage_note(s.usage, *s.file.under_test)}")
+        for kind in TRIGGER_KINDS:
+            prompts = {name: cells for name, cells in s.rows.items() if s.triggers.get(name) == kind}
+            if prompts:
+                parts.append(f"\n### {TRIGGER_HEADINGS[kind]}\n")
+                parts.extend(_table("Prompt", prompts, _overall(prompts, {}), _variants(s, prompts), neither, {}))
+        if s.triggers:
+            together = _cell(s.overall.get(TEMPLATE_VARIANT), neither)
+            parts.append(f"\nThe gate reads the template's scenarios and trigger tests together: {together}.")
+        parts.extend(f"\n{warning}" for warning in _control_warnings(s, _variants(s, s.rows) if s.file else variants))
         parts.extend(f"\nThe gate fails this file: {problem}." for problem in s.problems)
         parts.append("")
     return "\n".join(parts)
+
+
+def _table(
+    heading: str, rows: dict[str, dict[str, Cell]], overall: dict[str, Cell], variants: tuple[str, ...], neither: str,
+    known_gaps: dict[str, str],
+) -> list[str]:
+    """A Markdown table of `rows` by variant, with a Δ column per variant other than the template and an overall row."""
+    others = [v for v in variants if v != TEMPLATE_VARIANT]
+    deltas = ["Δ"] if len(others) == 1 else [f"Δ {v}" for v in others]
+    lines = [f"| {heading} | " + " | ".join([*variants, *deltas]) + " |", "|---" * (1 + len(variants) + len(deltas)) + "|"]
+    for name, cells in sorted(rows.items()):
+        label = f"{name} (known gap)" if name in known_gaps else name
+        lines.append(_row(label, cells, variants, others, neither))
+    lines.append(_row("**overall**", overall, variants, others, neither))
+    return lines
+
+
+def _overall(rows: dict[str, dict[str, Cell]], known_gaps: dict[str, str]) -> dict[str, Cell]:
+    """Each variant's counts over `rows`, leaving out the known gaps."""
+    overall: dict[str, Cell] = defaultdict(Cell)
+    for name, cells in rows.items():
+        if name in known_gaps:
+            continue
+        for variant, cell in cells.items():
+            overall[variant].passed += cell.passed
+            overall[variant].failed += cell.failed
+            overall[variant].inconclusive += cell.inconclusive
+    return dict(overall)
+
+
+def _usage_note(usage: dict[str, int], kind: str, name: str) -> str:
+    """In how many of the template's scenario runs the skill or agent under test was used.
+
+    A scenario that passed in a run where the skill never loaded shows the
+    model's default, not the skill, so the count belongs beside the table.
+    """
+    used, unused, unknown = (usage.get(word, 0) for word in ("used", "unused", "unknown"))
+    return (
+        f"In the template's {used + unused + unknown} scenario runs, the {kind} `{_escaped(name)}` "
+        f"{USE_WORDS[kind]} in {used}, wasn't in {unused} and couldn't be told in {unknown}."
+    )
 
 
 def _escaped(text: str) -> str:
@@ -435,9 +532,9 @@ def _escaped(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def _file_variants(s: EvalSummary) -> tuple[str, ...]:
-    """The variants an eval file's logs ran, in role order and by name within a role."""
-    seen = {variant for cells in s.rows.values() for variant in cells}
+def _variants(s: EvalSummary, rows: dict[str, dict[str, Cell]]) -> tuple[str, ...]:
+    """The variants `rows` of an eval file's logs ran in, in role order and by name within a role."""
+    seen = {variant for cells in rows.values() for variant in cells}
     rank = {role: index for index, role in enumerate(ROLE_ORDER)}
     return tuple(sorted(seen, key=lambda v: (rank.get(s.roles.get(v), len(ROLE_ORDER)), v)))
 

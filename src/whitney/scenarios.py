@@ -58,7 +58,8 @@ def load_scenarios(path: Path, fixtures_dir: Path | None = None) -> list[Sample]
     Returns:
         Samples with `id` and `input` from the scenario, metadata holding
         `source`, `fixture`, `pressure` and any extra `metadata` (for version
-        2, also the version 1 token keys above), and `files` mapping each
+        2, also the version 1 token keys above, and `trigger` for a trigger
+        test), and `files` mapping each
         fixture file to its path under /workspace.
 
     Raises:
@@ -90,7 +91,12 @@ def _rows(parsed: V1File | EvalFile) -> list[tuple[str, str, str, str, dict]]:
     """(id, prompt, fixture, pressure, metadata) per scenario."""
     if isinstance(parsed, V1File):
         return [(s.id, s.prompt, s.fixture, s.pressure, s.metadata) for s in parsed.scenarios]
-    return [(s.id, s.prompt, s.fixture, s.pressure, _version_1_metadata(s)) for s in parsed.resolved()]
+    return [(s.id, s.prompt, s.fixture, s.pressure, _version_1_metadata(s) | _trigger_metadata(s)) for s in parsed.resolved()]
+
+
+def _trigger_metadata(scenario: ResolvedScenario) -> dict:
+    """`trigger` ("positive" or "negative") for a trigger test, which the tasks and the report read; nothing for a scenario."""
+    return {"trigger": scenario.trigger} if scenario.trigger else {}
 
 
 def _version_1_metadata(scenario: ResolvedScenario) -> dict:
