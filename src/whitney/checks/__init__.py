@@ -299,6 +299,9 @@ class CheckSpec:
             parameters and a path inside a watched folder, True if the check
             judges that file. A changed file it doesn't judge can't make its
             verdict inconclusive (snapshot_problem). Left out, every file.
+        guards: the Kilo permission keys whose project rule it tests. An eval
+            file using it may not set them, or "*", in its harness_permissions,
+            or the overlay and not the project would decide the outcome.
         min_pass_rate: its default minimum pass rate for the template
             variant, from 0 to 1. Left out, thresholds.MIN_ADHERENCE for an
             agent-judged check and thresholds.MIN_HELD for a harness-judged one.
@@ -325,11 +328,12 @@ class CheckSpec:
     min_pass_rate: float | None = None
     watch: tuple[str, ...] = DEFAULT_WATCH
     watches: Callable[[Any, str], bool] | None = None
+    guards: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not NAME.fullmatch(self.name):
             raise CheckError(f"check name {self.name!r} must be lowercase snake_case, such as no_secret_committed")
-        for listed in ("labels", "targets", "needs", "metrics", "watch"):
+        for listed in ("labels", "targets", "needs", "metrics", "watch", "guards"):
             # tuple("abc") is three one-letter words, so a string meant as one word would slip through.
             if isinstance(getattr(self, listed), str):
                 raise CheckError(f"check {self.name!r}: {listed} must be a list of words, not one string")
@@ -507,6 +511,7 @@ def check(
     min_pass_rate: float | None = None,
     watch: Iterable[str] = DEFAULT_WATCH,
     watches: Callable[[Any, str], bool] | None = None,
+    guards: Iterable[str] = (),
     into: Registry = REGISTRY,
 ) -> Callable[[CheckFunction], CheckFunction]:
     """Register a function as the check `name`, with its declaration (see CheckSpec).
@@ -537,6 +542,7 @@ def check(
                 min_pass_rate=min_pass_rate,
                 watch=watch,
                 watches=watches,
+                guards=guards,
             )
         )
         return function

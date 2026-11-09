@@ -21,6 +21,9 @@ Rules, numbered as in docs/specs/package-and-expected-results.md ("Validation"):
    against what the target's loader staged.
 7. A `known_gap` starts with an Exceptions ID (`E3: why`); with a constraints
    file, that ID is a row in its Exceptions table.
+8. Each Kilo action in `harness_permissions` is "allow", "ask" or "deny",
+   alone or per pattern, and the Kilo overlay sets neither "*" nor a key a
+   check in the file guards (CheckSpec.guards).
 9. A file's `min_pass_rate` isn't below the default minimum of any check it uses.
 
 Each problem names the file and the location, such as
@@ -68,6 +71,9 @@ from whitney.variants import (
 # The fixture folders the agent's project starts from: project/ is staged as it is, pending/ by apply_pending.
 PROJECT, PENDING = PROJECT_DIR, PENDING_DIR
 KNOWN_GAP = re.compile(r"E\d+: .+")
+KILO_ACTIONS = ("allow", "ask", "deny")
+# Kilo's key for every permission, so setting it sets a guarded key too.
+EVERY_PERMISSION = "*"
 EXCEPTION_ROW = re.compile(r"^\|\s*(E\d+)\s*\|", re.MULTILINE)
 # The Exceptions section runs from its heading to the next level-2 heading.
 EXCEPTIONS_SECTION = re.compile(r"^## Exceptions[ \t]*$(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
@@ -142,6 +148,7 @@ def validate_evals(
             *_fixture_and_token_problems(eval_file, checks, fixtures_dir),
             *_declared_variant_problems(eval_file),
             *_known_gap_problems(eval_file, exceptions, constraints),
+            *_harness_permission_problems(eval_file, checks),
             *_min_pass_rate_problems(eval_file, checks),
         ]
         # A default shared by several scenarios would otherwise be reported once per scenario.
@@ -460,6 +467,31 @@ def _known_gap_problems(eval_file: EvalFile, exceptions: set[str] | None, constr
             )))
         elif exceptions is not None and gap.split(":")[0] not in exceptions:
             found.append((at, f"{gap.split(':')[0]} isn't a row in {constraints}'s Exceptions table"))
+    return found
+
+
+def _harness_permission_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec]) -> list[Found]:
+    """Rule 8: the Kilo overlay uses Kilo's actions, and leaves alone every key a check in the file tests."""
+    overlay = (eval_file.harness_permissions or {}).get("kilo") or {}
+    found = []
+    for key, value in overlay.items():
+        at = location(("harness_permissions", "kilo", key))
+        patterns = value.items() if isinstance(value, dict) and value else [(None, value)]
+        for pattern, action in patterns:
+            if not isinstance(action, str) or action not in KILO_ACTIONS:
+                found.append((at if pattern is None else location((pattern,), at), (
+                    f"{action!r} isn't a Kilo action; use \"allow\", \"ask\" or \"deny\", "
+                    "or an object of patterns, each set to one of them"
+                )))
+    used = dict.fromkeys(e.check for scenario in eval_file.resolved() for e in scenario.expect if e.check in checks)
+    for name in used:
+        for guarded in checks[name].guards:
+            for key in (guarded, EVERY_PERMISSION):
+                if key in overlay:
+                    found.append((location(("harness_permissions", "kilo", key)), (
+                        f"sets {guarded}, the permission {name} tests, "
+                        "so the overlay and not the project would decide the outcome; leave it out"
+                    )))
     return found
 
 
