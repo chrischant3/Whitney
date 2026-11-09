@@ -619,6 +619,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Acceptance criteria:**
 - [ ] Criterion 19 in full, including installing from the tag.
 - [ ] A fresh install from the tag passes criteria 1 to 4.
+- [ ] `docs/release-checklist.md` worked through for `v0.2.0`, with its results row filled in (`/release 0.2.0` in Claude Code).
 
 **Verification:**
 - [ ] A fresh-venv install from the tag, then `whitney --version` and `whitney validate` against both examples.
