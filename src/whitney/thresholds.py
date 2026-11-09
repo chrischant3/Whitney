@@ -6,11 +6,11 @@ the report can read each check's minimum from the registry. report.py
 re-exports all three under their old names.
 
 The floor guard (scripts/floor_guard.py, EVAL_THRESHOLD_FILES) watches the
-MIN_* lines in this file: lowering or removing its line is flagged. Keep each
-one as a plain `MIN_NAME = number` line, the form the guard matches, and don't
-assign these names anywhere else; import them from here instead, because the
-guard can't see a second assignment that shadows one
-(tests/test_thresholds.py checks for that).
+MIN_* lines in this file: lowering or removing one is flagged. Keep each one
+as a plain top-level `MIN_NAME = number` line, and don't assign these names
+anywhere else; import them from here instead. The guard parses this file and
+flags a second binding, an indented one or a value written as an expression
+(eval_threshold_findings); tests/test_thresholds.py checks the other modules.
 """
 
 # Most of the template's runs must be conclusive. Real runs have had 67-80%
