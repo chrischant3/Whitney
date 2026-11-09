@@ -333,7 +333,7 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 **Acceptance criteria:**
 - [x] `whitney validate --project-path examples/consumer --evals-path examples/consumer/evals --target kilo` exits 0 (criterion 4).
-- [x] In one recorded real run, each new check fails at least once in a baseline, written up in `docs/results/<date>-own-rules.md` (criterion 16). **2026-11-09:** `docs/results/2026-11-09-own-rules.md`. The first run found both checks misjudging `__pycache__/` bytecode, fixed in `f6e9f24`.
+- [x] In one recorded real run, each new check fails at least once in a baseline, written up in `docs/results/<date>-own-rules.md` (criterion 16). **2026-11-09:** `docs/results/2026-11-09-own-rules.md`. The first run found both checks misjudging `__pycache__/` bytecode, fixed in `57a82f1`.
 - [x] `examples/` is added to mutmut's `also_copy`.
 
 **Verification:**
@@ -368,8 +368,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 ### Checkpoint A: your own rules
 
-- [ ] In a clone, a user writes an eval file for their own rule, validates it, runs it, and reads a report with a Δ.
-- [ ] The spec's acceptance criteria that apply to milestone A hold: 3 to 16, with 16 for the two file checks.
+- [x] In a clone, a user writes an eval file for their own rule, validates it, runs it, and reads a report with a Δ. **2026-11-09:** a fresh session with no context, using only `docs/adding-tests.md`, added an eval for a payments rule (`no_string_added`) to a copy of `examples/consumer`. It validated first time; the run gave baseline 1/2, template 2/2, with the Δ in the report. Task 15's notes list the gaps it found and the fixes.
+- [ ] The spec's acceptance criteria that apply to milestone A hold: 3 to 16, with 16 for the two file checks. **2026-11-09, on `p5-t15-docs`:** 3 to 16 hold except one part of 5. Run by hand: 3 (`whitney run` without each of the four options exits 2 naming it) and 4 (`whitney validate` exits 0 on `template/kilo` with `CONSTRAINTS.md`, and on `examples/consumer`). Tested: 5 (`tests/test_validate.py`, a file and location per rule; exit 1 in `tests/test_cli.py::test_validate_exits_1_on_a_problem_and_0_with_only_warnings`), 6 (`test_a_token_that_is_not_in_its_fixture_is_a_problem`), 7 (`tests/test_checks.py::test_every_combination_of_up_to_four_checks_is_tried`), 8 (`tests/test_equivalence.py`, and the two ported checks over every combination of evidence in `tests/test_checks.py`), 9 (`tests/test_run_evals.py`, only added to since `217230c`; old logs in `tests/test_report_rendering.py`), 10 (`tests/test_cli.py::test_whitney_run_exits_0_1_or_2_with_no_ci_variables_set`), 11 (`tests/test_floor_guard.py`, the thresholds module and `cli.py`), 12 (`test_a_min_pass_rate_below_the_files_check_defaults_is_a_problem`), 13 (`tests/test_validate.py` and `tests/test_report.py`), 14 (`tests/test_safe_staging.py`), 15 (`tests/test_evidence.py::test_a_fake_agent_that_prints_its_key_and_writes_it_to_a_file_leaves_no_trace_in_the_log`), 16 (`docs/results/2026-11-09-own-rules.md`: each file check failed in 9 of 9 baseline runs). **The gap:** validation rule 8 isn't enforced. `harness_permissions` is any object per target, so a Kilo action such as `"bash": "yolo"`, or `"*": "allow"`, passes `whitney validate` (checked by hand on a copy of `evals/`). The rule's other half, about `permission_held`, belongs to milestone C. No task in this plan covers rule 8.
 - [ ] Review with Christopher, and decide whether to tag a pre-release.
 
 ---
