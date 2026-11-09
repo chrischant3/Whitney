@@ -169,6 +169,13 @@ def test_a_field_that_breaks_the_schema_is_named(tmp_path, overrides, location):
     assert location in [where for where, _ in problems(raised)]
 
 
+def test_a_target_listed_twice_is_refused(tmp_path):
+    with pytest.raises(EvalFileError) as raised:
+        load(write(tmp_path, v2(targets=["kilo", "kilo"])))
+
+    assert problems(raised) == [("targets", "Value error, lists kilo twice; name each target once")]
+
+
 @pytest.mark.parametrize("left_out", ["fixture", "expect"])
 def test_a_scenario_needs_a_fixture_and_an_expect_here_or_in_defaults(tmp_path, left_out):
     defaults = v2()["defaults"]

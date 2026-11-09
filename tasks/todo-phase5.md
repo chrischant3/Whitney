@@ -6,7 +6,7 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 - Write a failing test first, then the code.
 - Don't delete a test, skip it or loosen its assertions. If a test's expectation has to change because the behaviour is meant to change, name the test and get Christopher's confirmation before changing it.
-- `python scripts/check.py task` passes on the task's final commit.
+- `python scripts/check.py task` passes on the task's final commit. Until the mutation spike lands, run it with `--skip-mutation` and say so in the PR (decided 2026-11-09).
 - Update every doc the task makes wrong, in the same task.
 - Work on the task's own branch, preferably in its own worktree, because other sessions share the main working tree.
 - Stop and show Christopher when the task is done.
@@ -248,6 +248,8 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 An invalid scenario file now exits 2 instead of ending in a traceback with exit 1. Confirm this with Christopher first, and name any test that pins the old exit code.
 
+**Decided 2026-11-07 (Task 11 review, Christopher):** an invalid eval file exits 2, from `whitney run` and from `run_evals.py`; no existing test pinned the old exit code. `whitney run` loads a `.env` file with Inspect's own `init_dotenv` (from `inspect_ai._util.dotenv`, which isn't public) before it checks credentials, so the check sees what the run will see.
+
 **Verification:**
 - [ ] `pytest -q tests/test_cli.py tests/test_run_evals.py`
 - [ ] `python scripts/check.py task`
@@ -267,18 +269,36 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 **Added 2026-11-07 (Task 10 review):** `scripts/run_evals.py` writes the `--min-adherence` and `--min-held` defaults as the numbers 0.8 and 0.9, and replaces a minimum only when the value given differs from `MIN_ADHERENCE` or `MIN_HELD`. Raising a constant in `thresholds.py` would then make the written default a lowering nobody sees. In the same signed commit, make both defaults `None`, so a flag left out replaces nothing, and teach the floor guard that this is not a removed threshold. Until then, `tests/test_run_evals.py::test_the_min_flags_defaults_are_the_constants_in_thresholds` fails if the two drift apart.
 
 **Acceptance criteria:**
-- [ ] A floor guard test shows that a lowered default in `cli.py` is flagged (criterion 11).
-- [ ] The commit is signed by Christopher, and the `floor-guard` check passes on the pull request.
+- [x] A floor guard test shows that a lowered default in `cli.py` is flagged (criterion 11).
+- [x] The commit is signed by Christopher, and the `floor-guard` check passes on the pull request. **Done 2026-11-09:** `05d9063`, PR #12. The `None` defaults came after it (`e941a5e`), because `main`'s guard at the time read them as removed thresholds.
 
 **Verification:**
-- [ ] `pytest -q tests/test_floor_guard.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_floor_guard.py`
+- [x] `python scripts/check.py full --skip-mutation`, on `phase5` with Task 11 (2026-11-09).
 
 **Dependencies:** Task 11.
 
 **Files likely touched:** `scripts/floor_guard.py`, `tests/test_floor_guard.py`.
 
 **Estimated scope:** XS. Needs Christopher.
+
+### Spike: faster mutation testing
+
+**Added 2026-11-09 (Christopher):** mutation testing takes long enough to hold up every task. Task 11's `check.py full` was still mutating after 2 hours at background priority. Until this spike lands, the checks run with `--skip-mutation` (plan-phase5.md, "Where we are").
+
+**Description:** A spike with no product code. Find a way to get a trustworthy mutation result in 10 to 15 minutes for `full` and about a minute for `task`, on Christopher's Mac at background priority. Measure each option before recommending it. Start from plan-phase5.md decision 2 (reuse unchanged results; speed up the slow end-to-end tests). Also look at:
+
+- running mutation testing in CI, or a weekly scheduled run, rather than on the Mac
+- narrowing which tests run against each mutant
+- the slowest mutants' timeouts: mutmut 3.8.1 allows 30 times a mutant's estimated test time
+- another tool or mutmut setting, if one does better
+
+**Acceptance criteria:**
+- [ ] `docs/spike-findings.md` records each option's measured time and what it would stop catching, if anything.
+- [ ] A recommendation, reviewed with Christopher, on how mutation testing runs from now on and when `--skip-mutation` goes.
+- [ ] Nothing in CONSTRAINTS.md is weakened. Any change to how the ratchet is measured is agreed with Christopher first.
+
+**Estimated scope:** M. Needs Christopher for the decision.
 
 ### Checkpoint A3: after Tasks 9 to 12
 
