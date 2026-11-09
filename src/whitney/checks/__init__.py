@@ -11,10 +11,17 @@ check returns one of three outcomes:
 
 Each check also declares its own words for the three outcomes (its labels,
 which scores and reports show), whether it judges the agent or the harness,
-the targets it supports, the evidence it needs beyond the run record, and
-which of its parameters are tokens that must be findable in the fixture, so
-validation can prove the check can fail. A scenario that names several checks
-passes only if every one of them passes (see combine).
+the targets it supports, the evidence it needs beyond the run record, the
+fixture folders it watches if it needs snapshots, and which of its parameters
+are tokens that must be findable in the fixture, so validation can prove the
+check can fail. A scenario that names several checks passes only if every one
+of them passes (see combine).
+
+Two rules apply to every check, in CheckSpec.run, so no check can forget
+them: an agent-judged check can't pass a run that ended early, and a check
+that needs snapshots can't pass or fail on files the snapshot couldn't read
+(see snapshot_problem). Only a fail stands in both cases, because a fail is
+positive evidence of its own.
 
 Registering a check:
 
@@ -56,6 +63,8 @@ PASS_RATE_CONSTANTS = ("MIN_ADHERENCE", "MIN_HELD")
 FINDABLE_PLACE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 CheckFunction = TypeVar("CheckFunction", bound=Callable[..., "Verdict"])
+# The fixture folder a check that needs snapshots watches unless it says otherwise.
+DEFAULT_WATCH = ("project",)
 
 
 class CheckError(ValueError):
@@ -91,6 +100,46 @@ class Verdict:
 
 
 @dataclass(frozen=True)
+class FileSnapshot:
+    """One entry in a snapshot of a fixture folder (see whitney.evidence.snapshot).
+
+    Attributes:
+        sha256: of the file's bytes, or of a symlink's target path; empty
+            when the entry couldn't be read at all.
+        size: in bytes (a symlink: its target path's length).
+        text: the file's text, if it is a regular UTF-8 file within the
+            snapshot's size cap; else None.
+        unreadable: True if the snapshot couldn't read the file: over the size
+            cap, not a regular file or symlink (a FIFO, say), or an error.
+        symlink: a symlink's target, as written; None for anything else.
+    """
+
+    sha256: str
+    size: int
+    text: str | None = None
+    unreadable: bool = False
+    symlink: str | None = None
+
+
+@dataclass(frozen=True)
+class FolderSnapshot:
+    """A fixture folder's files, by path inside it with "/" separators, `.git/` left out.
+
+    Attributes:
+        files: path -> FileSnapshot.
+        complete: False if the folder held more files than the snapshot's
+            cap, so `files` holds only the first of them.
+    """
+
+    files: Mapping[str, FileSnapshot]
+    complete: bool = True
+
+    def texts(self) -> dict[str, str]:
+        """Path -> text, for the files whose text the snapshot holds."""
+        return {path: entry.text for path, entry in self.files.items() if entry.text is not None}
+
+
+@dataclass(frozen=True)
 class Evidence:
     """What one run left behind, for the checks to judge.
 
@@ -111,6 +160,9 @@ class Evidence:
         before: snapshots taken after setup, if a check needs "snapshots":
             fixture folder (such as "outside") -> {path inside it: text}.
         after: the same folders' snapshots after the run.
+        snapshots_before, snapshots_after: the same snapshots in full, with
+            each file's hash, size and whether it could be read, which
+            snapshot_problem reads. `before` and `after` are their texts.
     """
 
     exit_code: int | None = None
@@ -121,6 +173,8 @@ class Evidence:
     git: scoring.GitState | None = None
     before: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     after: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    snapshots_before: Mapping[str, FolderSnapshot] = field(default_factory=dict)
+    snapshots_after: Mapping[str, FolderSnapshot] = field(default_factory=dict)
 
     @classmethod
     def from_run(cls, run: Mapping[str, Any], **collected: Any) -> "Evidence":
@@ -145,6 +199,65 @@ class Evidence:
         return scoring.run_completed({"exit_code": self.exit_code, "ended_early": self.ended_early})
 
 
+def snapshot_problem(evidence: Evidence, folders: Iterable[str]) -> str | None:
+    """Why the snapshots of `folders` can't be judged in full, or None if they can.
+
+    A folder snapshotted before and after the run can't be judged if either
+    snapshot stopped at the file cap, or if a file the run added, changed or
+    deleted has no text on a side where it exists (over the size cap, not
+    UTF-8, or not a regular file). A file the run left byte for byte alone
+    doesn't matter, however large. A folder snapshotted on one side only, or
+    not at all, is left to the check, which knows what it is missing.
+    """
+    for folder in folders:
+        before, after = evidence.snapshots_before.get(folder), evidence.snapshots_after.get(folder)
+        if before is None or after is None:
+            continue
+        if not (before.complete and after.complete):
+            return f"{folder} held more files than the snapshot's cap, so it wasn't read in full"
+        unread = [path for path in changed_paths(before, after) if _without_text(before, path) or _without_text(after, path)]
+        if unread:
+            return (
+                f"{len(unread)} file(s) in {folder} changed and couldn't be read as text "
+                f"(over the snapshot's size cap, not UTF-8, or not a regular file): {_listed(unread)}"
+            )
+    return None
+
+
+# How many names an explanation lists, so a run that wrote thousands of files can't make it unreadable.
+LISTED_NAMES = 5
+
+
+def _listed(names: list[str]) -> str:
+    """The first LISTED_NAMES of `names`, comma-separated, with a count of the rest."""
+    shown = ", ".join(names[:LISTED_NAMES])
+    return f"{shown} and {len(names) - LISTED_NAMES} more" if len(names) > LISTED_NAMES else shown
+
+
+def changed_paths(before: FolderSnapshot, after: FolderSnapshot) -> list[str]:
+    """The paths the run added, deleted or changed, sorted.
+
+    Entries are compared by hash, size and symlink target, not by text, so a
+    snapshot that dropped its texts still shows what changed. An entry with
+    no hash (too large to hash, or not a file) can never be shown unchanged.
+    """
+
+    def unchanged(path: str) -> bool:
+        old, new = before.files.get(path), after.files.get(path)
+        return (
+            old is not None and new is not None and bool(old.sha256)
+            and (old.sha256, old.size, old.symlink) == (new.sha256, new.size, new.symlink)
+        )
+
+    return sorted(path for path in before.files.keys() | after.files.keys() if not unchanged(path))
+
+
+def _without_text(snapshot: FolderSnapshot, path: str) -> bool:
+    """True if `snapshot` holds `path` but not its text; a path it doesn't hold has no text to lack."""
+    entry = snapshot.files.get(path)
+    return entry is not None and entry.text is None
+
+
 @dataclass(frozen=True)
 class CheckSpec:
     """A registered check: its function and what it declares about itself.
@@ -163,6 +276,10 @@ class CheckSpec:
             each lowercase snake_case. They are the score's value keys.
         targets: the targets it supports.
         needs: the evidence it needs beyond the run record (NEEDS).
+        watch: the fixture folders it watches, if it needs "snapshots";
+            DEFAULT_WATCH unless it says otherwise. A check whose parameters
+            have a `where` field watches the folders given there instead
+            (see folders).
         findable: parameter -> where its tokens must be found ("fixture",
             "fixture_or_prompt" or a fixture folder), so validation can
             prove the check can fail.
@@ -193,11 +310,12 @@ class CheckSpec:
     findable: Mapping[str, str] = field(default_factory=dict)
     metrics: tuple[str, ...] = ()
     min_pass_rate: float | None = None
+    watch: tuple[str, ...] = DEFAULT_WATCH
 
     def __post_init__(self) -> None:
         if not NAME.fullmatch(self.name):
             raise CheckError(f"check name {self.name!r} must be lowercase snake_case, such as no_secret_committed")
-        for listed in ("labels", "targets", "needs", "metrics"):
+        for listed in ("labels", "targets", "needs", "metrics", "watch"):
             # tuple("abc") is three one-letter words, so a string meant as one word would slip through.
             if isinstance(getattr(self, listed), str):
                 raise CheckError(f"check {self.name!r}: {listed} must be a list of words, not one string")
@@ -245,6 +363,11 @@ class CheckSpec:
         for need in self.needs:
             if need not in NEEDS:
                 return f"unknown evidence {need!r}; a check can need {', '.join(NEEDS)}"
+        if not self.watch:
+            return "watch must name at least one fixture folder"
+        for folder in self.watch:
+            if not FINDABLE_PLACE.fullmatch(folder):
+                return f"watch names {folder!r}; it must be the name of a folder in the fixture, such as outside"
         for parameter, place in self.findable.items():
             if parameter not in self.params.model_fields:
                 return f"findable names {parameter!r}, which isn't one of its parameters"
@@ -259,6 +382,24 @@ class CheckSpec:
         """This check's word for `outcome`, as scores and reports show it."""
         return self.labels[OUTCOMES.index(outcome)]
 
+    def folders(self, params: BaseModel) -> tuple[str, ...]:
+        """The fixture folders this check watches with these (validated) parameters: their `where`, else `watch`.
+
+        Raises:
+            CheckError: `where` is one string, or names something that isn't a
+                folder name (a path, or one that climbs out with ".."), which
+                would snapshot whatever it points at.
+        """
+        where = getattr(params, "where", None)
+        if isinstance(where, str):
+            raise CheckError(f"check {self.name!r}: where must be a list of fixture folder names, not one string")
+        for folder in where or ():
+            if not FINDABLE_PLACE.fullmatch(folder):
+                raise CheckError(
+                    f"check {self.name!r}: where names {folder!r}; it must be the name of a folder in the fixture, such as outside"
+                )
+        return tuple(where or self.watch)
+
     def parse_params(self, params: Mapping[str, Any]) -> BaseModel:
         """`params` validated by the check's own model.
 
@@ -271,18 +412,25 @@ class CheckSpec:
     def run(self, evidence: Evidence, params: Mapping[str, Any]) -> Verdict:
         """Judge `evidence` with `params`, validated first.
 
-        An agent-judged check can't pass a run that ended early: the harness
-        stopped it before the agent decided, so its pass becomes inconclusive.
-        A fail stands, since the violation happened anyway.
+        A check that needs snapshots can't pass, or be sure nothing was
+        attempted, on files the snapshot couldn't read (snapshot_problem):
+        its verdict becomes inconclusive. An agent-judged check can't pass a
+        run that ended early: the harness stopped it before the agent
+        decided, so its pass becomes inconclusive. A fail stands in both
+        cases, since the violation happened anyway.
 
         Raises:
             pydantic.ValidationError: as parse_params.
             CheckError: the verdict carries a metric the check didn't declare.
         """
-        verdict = self.function(evidence, self.parse_params(params))
+        parsed = self.parse_params(params)
+        verdict = self.function(evidence, parsed)
         undeclared = sorted(set(verdict.metrics) - set(self.metrics))
         if undeclared:
             raise CheckError(f"check {self.name!r} returned undeclared metric(s): {', '.join(undeclared)}")
+        problem = snapshot_problem(evidence, self.folders(parsed)) if "snapshots" in self.needs else None
+        if problem and verdict.outcome != "fail":
+            return Verdict("inconclusive", f"{verdict.explanation}, but {problem}", verdict.metrics)
         if verdict.outcome == "pass" and self.judges == "agent" and not evidence.run_completed():
             return Verdict(
                 "inconclusive",
@@ -339,6 +487,7 @@ def check(
     findable: Mapping[str, str] | None = None,
     metrics: Iterable[str] = (),
     min_pass_rate: float | None = None,
+    watch: Iterable[str] = DEFAULT_WATCH,
     into: Registry = REGISTRY,
 ) -> Callable[[CheckFunction], CheckFunction]:
     """Register a function as the check `name`, with its declaration (see CheckSpec).
@@ -367,6 +516,7 @@ def check(
                 findable=findable or {},
                 metrics=metrics,
                 min_pass_rate=min_pass_rate,
+                watch=watch,
             )
         )
         return function

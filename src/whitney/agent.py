@@ -326,6 +326,12 @@ def kilo_home(environ: Mapping[str, str] = os.environ) -> Iterator[KiloHome]:
         )
 
 
+def login_secrets(environ: Mapping[str, str] = os.environ) -> list[str]:
+    """The values in the user's Kilo login (kilo_auth_path), which a local run's copy of it holds; [] without one."""
+    login = kilo_auth_path(environ)
+    return _string_values(login.read_text(encoding="utf-8", errors="replace")) if login.is_file() else []
+
+
 def _string_values(text: str) -> list[str]:
     """Every string in a JSON document (the tokens in a login file), or [] if it isn't JSON."""
     try:

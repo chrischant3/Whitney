@@ -200,14 +200,14 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Add `scenario_eval`: one Inspect task per eval file and variant, built from the eval file, running the agent through `targets.build_agent`. It collects the evidence its checks declare. Snapshots of the watched fixture folders are taken before and after the run: a SHA-256, size and text for each file up to 1 MiB, and at most 10,000 files. It also collects git state when a check asks for it, and `initial_commits`. Everything a check stores passes through `agent.redact`. `agents_md` and `kilo_jsonc` become wrappers with today's names.
 
 **Acceptance criteria:**
-- [ ] With the fake `kilo` from `tests/test_agent_local_run.py`, the wrappers give today's score answers on the same runs.
-- [ ] A fake agent that prints its API key and writes it to a file leaves no trace of the key in the log (criterion 15).
-- [ ] A file over the size cap, or a folder over the file cap, makes a check that needs it inconclusive.
-- [ ] (Added 2026-11-06, Task 5 review.) `Sample.setup` holds the text of the fixture's `pending/` files, and Inspect logs it. Either run `Sample.setup` through `agent.redact` before it's logged, or stage `pending/` so the setup holds paths, not text.
+- [x] With the fake `kilo` from `tests/test_agent_local_run.py`, the wrappers give today's score answers on the same runs.
+- [x] A fake agent that prints its API key and writes it to a file leaves no trace of the key in the log (criterion 15).
+- [x] A file over the size cap, or a folder over the file cap, makes a check that needs it inconclusive.
+- [x] (Added 2026-11-06, Task 5 review.) `Sample.setup` holds the text of the fixture's `pending/` files, and Inspect logs it. Either run `Sample.setup` through `agent.redact` before it's logged, or stage `pending/` so the setup holds paths, not text.
 
 **Verification:**
-- [ ] `pytest -q tests/test_tasks.py tests/test_evidence.py tests/test_agent_local_run.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_tasks.py tests/test_evidence.py tests/test_agent_local_run.py`
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 8.
 
@@ -219,15 +219,17 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 **Description:** The report reads `eval_file`, `eval_name`, `variant` and the outcome labels from log metadata, and reads old logs the way it does today. It shows one table per eval file, variants in role order, and one Δ for each variant other than `template`. The gate runs per eval file and uses per-check minimums and `min_pass_rate`, which can only raise the bar. `MIN_ADHERENCE` and `MIN_HELD` are new constants in `report.py`. The header shows the Whitney version, harness version, evals path and each eval file's SHA-256. Answer spec open question 6 (controls in the gate) before starting.
 
+**Decided 2026-11-06 (spec open question 6):** controls don't affect the gate. When a control variant has no failing run, the report says so beside that file's table, for example "`allow_control` never failed in 3 runs, so the template's result may not show the rule holding". Test the warning and that the gate result is unchanged.
+
 **Acceptance criteria:**
-- [ ] Today's report tests pass without edits, and the logs in `logs/` render exactly as they do today.
-- [ ] New tests cover a file with several checks and a file with several comparison variants.
-- [ ] A `min_pass_rate` below its checks' defaults fails validation (criterion 12).
+- [x] Today's report tests pass without edits, and the logs in `logs/` render exactly as they do today.
+- [x] New tests cover a file with several checks and a file with several comparison variants.
+- [x] A `min_pass_rate` below its checks' defaults fails validation (criterion 12).
 
 **Verification:**
-- [ ] `pytest -q tests/test_report.py tests/test_report_rendering.py`
-- [ ] `python scripts/run_evals.py --report-only logs` gives the same output before and after.
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_report.py tests/test_report_rendering.py`
+- [x] `python scripts/run_evals.py --report-only logs` gives the same output before and after.
+- [x] `python scripts/check.py task`
 
 **Dependencies:** Task 9.
 
@@ -261,6 +263,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 **Description:** Add `src/whitney/cli.py` to `floor_guard.EVAL_THRESHOLD_FILES`, so a lowered `--min-*` default there is blocked. CONSTRAINTS.md requires a commit that changes the floor guard to be signed by an approver, so Christopher makes or signs this commit.
 
 **Added 2026-11-06 (Checkpoint A1, Christopher):** in the same signed commit, close the floor guard's older gap: it judges only removed or changed `MIN_*` lines, so an added duplicate (a second `MIN_HELD = 0.1` lower in the file), an indented decoy or a value written as an expression goes unflagged. Parse `src/whitney/thresholds.py` with `ast` at the base and at HEAD, and flag any module-level threshold whose value falls, is no longer a number, or is bound more than once.
+
+**Added 2026-11-07 (Task 10 review):** `scripts/run_evals.py` writes the `--min-adherence` and `--min-held` defaults as the numbers 0.8 and 0.9, and replaces a minimum only when the value given differs from `MIN_ADHERENCE` or `MIN_HELD`. Raising a constant in `thresholds.py` would then make the written default a lowering nobody sees. In the same signed commit, make both defaults `None`, so a flag left out replaces nothing, and teach the floor guard that this is not a removed threshold. Until then, `tests/test_run_evals.py::test_the_min_flags_defaults_are_the_constants_in_thresholds` fails if the two drift apart.
 
 **Acceptance criteria:**
 - [ ] A floor guard test shows that a lowered default in `cli.py` is flagged (criterion 11).

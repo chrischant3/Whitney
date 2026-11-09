@@ -67,7 +67,7 @@ Whitney is at its first milestone. A scorer is the code that decides whether a r
 
 Not supported yet:
 
-- **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, and a task and scorer in `src/whitney/tasks.py` that use it. The runner reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new scenario file on its own isn't run.
+- **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, registered with `check(...)`. `inspect eval` runs any eval file through `scenario_eval` (below), but `scripts/run_evals.py` reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`, so a new eval file isn't in its report yet.
 - **Skills and agents.** Files under `.kilo/skills/` and `.kilo/agents/` are copied into each Kilo run, so the agent has them, but no eval checks whether a skill is triggered or followed.
 - **Claude Code settings, skills and agents.** With `--project-path`, the `claude-code` target copies one instruction file, always as `AGENTS.md`, because its evals and their baseline are about `AGENTS.md`: the root `AGENTS.md`, or if there is none, the root `CLAUDE.md`, or else `.claude/CLAUDE.md`. A `CLAUDE.md` beside an `AGENTS.md` isn't copied, because in one run Claude Code ignored `AGENTS.md` once `.claude/CLAUDE.md` existed. A root `CLAUDE.md` beside `AGENTS.md` wasn't tried and is left out by the same rule. Only the temporary copy is renamed, never your project, and the report says when it was. The rest of `.claude/`, such as `settings.json`, skills and agents, isn't copied either, and the report lists what was left out and why.
 - **Which instruction wins** when two files disagree.
@@ -228,7 +228,7 @@ python scripts/run_evals.py --report-only logs
 inspect view
 ```
 
-Without `--evals`, a target runs every core eval it supports: `agents_md` and `kilo_jsonc` for `kilo`, `agents_md` for `claude-code`. Each run prints a results table and writes it to `results/<target>_<model>_<timestamp>.md`; Inspect logs go to `logs/`. Without `--target` and `--model` the runner stops before calling anything. `run_evals.py` exits 1 if the template variant falls below `--min-adherence` (AGENTS.md, default 80%) or `--min-held` (kilo.jsonc, default 90%), or if fewer than `--min-conclusive` of its runs were conclusive (default 50%; runs that ended early, errored or never attempted the access don't count), so CI can gate on it. Keep `--max-samples` low (default 2): each sample runs a full agent.
+Without `--evals`, a target runs every core eval it supports: `agents_md` and `kilo_jsonc` for `kilo`, `agents_md` for `claude-code`. Each run prints a results table and writes it to `results/<target>_<model>_<timestamp>.md`; Inspect logs go to `logs/`. Without `--target` and `--model` the runner stops before calling anything. `run_evals.py` gates each eval file on its own and exits 1 if, for any of them, the template variant falls below the file's minimum, or if fewer than `--min-conclusive` of its runs were conclusive (default 50%; runs that ended early, errored or never attempted the access don't count), so CI can gate on it. A file's minimum is the highest of its checks' minimums (80% for a check that judges the agent, such as AGENTS.md's; 90% for one that judges the harness, such as kilo.jsonc's), or the file's own `min_pass_rate` if that is higher. `--min-rate CHECK=VALUE` replaces one check's minimum for this run. `--min-adherence` and `--min-held` are deprecated aliases for `--min-rate no_secret_committed=VALUE` and `--min-rate outside_canary_not_reached=VALUE`, the checks of the two shipped evals. The report prints each minimum replaced. Baselines and controls never affect the gate. When a control variant, such as `kilo_jsonc`'s `allow_control`, never failed in its conclusive runs, or had none, the report says so below that file's table, because the template's result may then not show the rule holding. Logs of one eval file that disagree on its checks, labels or `min_pass_rate`, or whose metadata the report can't read, fail the gate with a line saying why. Reports from logs written by this version also start with the Whitney version, the harness version ("not recorded" until Whitney records it), the evals path and each eval file's SHA-256 as the run read it, noting a file that has changed since the run or is gone. Keep `--max-samples` low (default 2): each sample runs a full agent.
 
 You can also run one task and variant with Inspect directly, passing the same options as `-T` task arguments; `target` and `model` are required:
 
@@ -236,6 +236,13 @@ You can also run one task and variant with Inspect directly, passing the same op
 inspect eval src/whitney/tasks.py@agents_md -T target=claude-code -T model=anthropic/claude-haiku-4-5 -T variant=template
 inspect eval src/whitney/tasks.py@kilo_jsonc -T target=kilo -T variant=allow_control \
   -T model=anthropic/claude-haiku-4-5 -T api_key_env=ANTHROPIC_API_KEY
+```
+
+`agents_md` and `kilo_jsonc` are Whitney's two eval files run through `scenario_eval`, which runs any eval file in one variant, scored by the checks its scenarios name:
+
+```bash
+inspect eval src/whitney/tasks.py@scenario_eval -T eval_file=agents-md.json -T evals_path=evals \
+  -T target=kilo -T model=kilo/anthropic/claude-haiku-4.5 -T variant=baseline
 ```
 
 ## Running inspect_evals (IFEvalCode and BigCodeBench-Hard)
