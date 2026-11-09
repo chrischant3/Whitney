@@ -200,6 +200,36 @@ def test_full_runs_the_whole_mutation_suite():
     assert runs == [["*"]]
 
 
+def test_a_worker_cap_reaches_mutmut_in_both_stages():
+    # mutmut starts one worker per core unless told otherwise, which is too many for a laptop's memory.
+    for stage, selection in (("full", ["*"]), ("task", _check["mutmut_patterns"](TOUCHED))):
+        run, runs = _fake_mutmut({"whitney.mod.x_touched__mutmut_1": "killed"})
+
+        _check["Checks"]("origin/main", date(2026, 11, 20), run=run, mutants=_mutants_dir(), max_children=6).mutation(
+            RATCHETS, TOUCHED, stage=stage
+        )
+
+        assert runs == [["--max-children", "6", *selection]]
+
+
+def test_without_a_worker_cap_mutmut_chooses_its_own():
+    run, runs = _fake_mutmut({"whitney.mod.x_touched__mutmut_1": "killed"})
+
+    _checks(run).mutation(RATCHETS, TOUCHED, stage="full")
+
+    assert not [a for a in runs[0] if a.startswith("--max-children")]
+
+
+def test_the_worker_cap_is_a_command_line_option_of_at_least_one():
+    parse = _check["parse_args"]
+
+    assert parse(["full", "--max-children", "6"]).max_children == 6
+    assert parse(["task"]).max_children is None
+    for bad in ("0", "-1", "many"):
+        with pytest.raises(SystemExit):
+            parse(["full", "--max-children", bad])
+
+
 def test_full_rebuilds_mutmuts_map_of_which_tests_reach_which_function():
     # mutmut 3.8.1 adds a test to its map only when the test is new, so an existing test that
     # starts reaching a function would never be run against that function's mutants.
@@ -501,13 +531,21 @@ class _StageRecorder(_check["Checks"]):
 def recorded_stages(monkeypatch):
     made = []
 
-    def make(base, today):
+    def make(base, today, max_children=None):
         made.append(_StageRecorder(base, today))
+        made[-1].max_children = max_children
         return made[-1]
 
     monkeypatch.setitem(_check["main"].__globals__, "Checks", make)
     monkeypatch.setitem(_check["main"].__globals__, "read_ratchets", lambda text: RATCHETS)
     return made
+
+
+def test_main_hands_the_worker_cap_to_the_checks(recorded_stages):
+    _check["main"](["full", "--max-children", "6"])
+    _check["main"](["full"])
+
+    assert [c.max_children for c in recorded_stages] == [6, None]
 
 
 @pytest.mark.parametrize("stage", ["task", "full"])

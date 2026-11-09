@@ -65,6 +65,8 @@ Regenerating the lock also added the hashed entries for `pyyaml-ft` and `zipfile
 
 ## Next steps
 
-1. Run `check.py full` on the Mac with this branch, to confirm the drop there and record the new score in CONSTRAINTS.md's ratchet in its own commit.
-2. Then step 1 (result reuse) as already planned.
-3. Then decide on a shorter per-test timeout and on a CI mutation job.
+Decided 2026-11-09 (Christopher): use GitHub's hosted runners, which are free for this public repository. Every pull request runs `check.py task`, mutating only the touched functions (`.github/workflows/checks.yml`), and `check.py full` runs from scratch weekly and on demand (`.github/workflows/mutation-full.yml`). `check.py` gained `--max-children` for running `full` on a laptop.
+
+1. Merge the workflows, run "Mutation (full)" once by hand on main, and re-baseline the ratchet from that run in its own commit.
+2. Make `Checks / check.py task` a required status check in the branch ruleset.
+3. Then step 1 (result reuse) as already planned, and decide on a shorter per-test timeout.

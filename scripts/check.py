@@ -3,6 +3,7 @@
     python scripts/check.py fast    # after an edit: floor guard + secrets (seconds)
     python scripts/check.py task    # before handing work back: + tests (on every core), coverage, mutation of touched functions (~1 min)
     python scripts/check.py full    # before a pull request: + every mutant, dependency vulnerabilities
+    python scripts/check.py full --max-children 6   # the same with at most 6 mutmut workers, to spare memory
 
 `--skip-mutation` (task or full) runs everything except mutmut and prints a warning
 in place of the mutation scores. It is a stopgap while mutation testing is too slow
@@ -142,10 +143,14 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 class Checks:
     """Runs checks, records outcomes, and prints a summary."""
 
-    def __init__(self, base: str, today: date, run=None, mutants: Path | None = None) -> None:
+    def __init__(
+        self, base: str, today: date, run=None, mutants: Path | None = None, max_children: int | None = None
+    ) -> None:
         """`run` runs a command in the repo root, as `_run` does, and `mutants` is mutmut's
-        folder; tests pass stand-ins for both."""
+        folder; tests pass stand-ins for both. `max_children` caps mutmut's workers; None
+        leaves mutmut its default of one per core."""
         self.base = base
+        self.max_children = max_children
         self.run = run or _run
         self.mutants = mutants or ROOT / "mutants"
         self.numbered_outcome = WARN if today < WARN_UNTIL else FAIL
@@ -234,7 +239,8 @@ class Checks:
             # against that function's mutants. Deleting the map makes mutmut rebuild all of it.
             (self.mutants / "mutmut-stats.json").unlink(missing_ok=True)
         if selection:
-            run = self.run([PYTHON, "-m", "mutmut", "run", *selection])
+            cap = ["--max-children", str(self.max_children)] if self.max_children else []
+            run = self.run([PYTHON, "-m", "mutmut", "run", *cap, *selection])
             output = run.stdout + run.stderr
             # mutmut stops with an AssertionError when no mutant matches the selection, as when the
             # touched functions have no mutants. In task there is nothing to judge then; in full,
@@ -371,15 +377,30 @@ class Checks:
         self.numbered("dependency vulnerabilities (high or above)", count == 0, f"{count} found" if count else "none")
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the named stage and return the exit code."""
+def _at_least_one(text: str) -> int:
+    number = int(text)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, not {number}")
+    return number
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("stage", choices=("fast", "task", "full"))
     p.add_argument("--base", default="origin/main", help="branch the change will merge into")
     p.add_argument("--skip-mutation", action="store_true",
                    help="task or full: run everything except mutation testing, and warn that it was skipped")
-    args = p.parse_args(argv)
-    checks = Checks(args.base, date.today())
+    p.add_argument(
+        "--max-children", type=_at_least_one, default=None,
+        help="at most this many mutmut workers (default: one per core); fewer keep a laptop responsive",
+    )
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the named stage and return the exit code."""
+    args = parse_args(argv)
+    checks = Checks(args.base, date.today(), max_children=args.max_children)
     ratchets = read_ratchets(CONSTRAINTS.read_text(encoding="utf-8"))
 
     checks.floor()

@@ -398,6 +398,8 @@ def test_the_run_defaults(consumer, recorded):
 
 def test_docker_mode_hands_inspect_the_model_and_checks_no_host_harness(consumer, monkeypatch, recorded):
     monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: pytest.fail("checked the host's harness"))
+    # Docker mode needs a Kilo Gateway credential; a fake key keeps the test off the developer's own login.
+    monkeypatch.setenv("KILO_API_KEY", "test-key")
 
     args = _run_args(consumer, "--execution", "docker")
     args[args.index("test-provider/test-model")] = "kilo/anthropic/claude-haiku-4.5"
