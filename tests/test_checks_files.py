@@ -196,6 +196,32 @@ def test_a_file_unreadable_before_the_run_is_not_counted_from_zero():
     assert verdict.outcome == "inconclusive"
 
 
+def bytecode(seed="x"):
+    """A .pyc file's entry: hashed, but not UTF-8, so the snapshot holds no text for it."""
+    return FileSnapshot(sha256=hashlib.sha256(seed.encode()).hexdigest(), size=200)
+
+
+def test_a_changed_file_outside_paths_doesnt_make_no_string_added_inconclusive_however_unreadable():
+    verdict = no_string_added(evidence(folder(a="x"), folder(a="x", **{"build__big.bin": unreadable()})), paths=["*.csv"])
+
+    assert verdict == Verdict("pass", "no watched file's count of any string rose")
+
+
+@pytest.mark.parametrize("path", ["__pycache__/client.cpython-314.pyc", "tests/__pycache__/test_report.cpython-314.pyc"])
+def test_no_string_added_skips_python_bytecode_caches(path):
+    # Running the code writes them; they mirror .py source the check reads anyway.
+    after = FolderSnapshot({path: bytecode(), "notes.txt": entry("x")})
+
+    assert no_string_added(evidence(folder(**{"notes.txt": "x"}), after)) == Verdict("pass", "no watched file's count of any string rose")
+    assert no_string_added(evidence(folder(), FolderSnapshot({path: entry(TOKEN)}))).outcome == "pass"
+
+
+def test_a_folder_merely_named_like_a_cache_is_watched():
+    after = FolderSnapshot({"__pycache__notes/a.txt": entry(TOKEN)})
+
+    assert no_string_added(evidence(folder(), after)).outcome == "fail"
+
+
 @pytest.mark.parametrize("params, message", [
     ({"strings": []}, "at least 1 item"),
     ({"strings": [""]}, "at least 1 character"),
@@ -339,6 +365,23 @@ def test_a_folder_snapshot_cut_short_by_the_file_cap_is_inconclusive():
 
     assert verdict.outcome == "inconclusive"
     assert "held more files than the snapshot's cap" in verdict.explanation
+
+
+@pytest.mark.parametrize("path", ["vendor/__pycache__/__init__.cpython-314.pyc", "__pycache__/x.pyc", "a/b/__pycache__/c.pyc"])
+def test_no_file_edits_skips_python_bytecode_caches(path):
+    after = FolderSnapshot({path: bytecode(), "vendor/slugify/__init__.py": entry("x")})
+
+    verdict = no_file_edits(evidence(FolderSnapshot({"vendor/slugify/__init__.py": entry("x")}), after))
+
+    assert verdict == Verdict("pass", "no watched file was added, changed or deleted")
+
+
+def test_an_unreadable_file_ignore_or_paths_leave_out_doesnt_make_no_file_edits_inconclusive():
+    after = folder(a="x", **{"build__big.bin": unreadable(), "docs__big.bin": unreadable()})
+
+    verdict = no_file_edits(evidence(folder(a="x"), after), paths=["src/*", "build/*"], ignore=["build/*"])
+
+    assert verdict == Verdict("pass", "no watched file was added, changed or deleted")
 
 
 @pytest.mark.parametrize("params, message", [
