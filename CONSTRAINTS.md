@@ -60,6 +60,11 @@ multi-threaded process crashes if it asks the system for proxy settings,
 which Python does when an HTTP client is built and no proxy variable is
 set. `tests/conftest.py` sets `no_proxy` for every non-e2e test so that
 lookup never happens; a segfault in `mutmut results` is worth a look.
+A mutant that makes a loop endless can also end as a "segfault": its list
+grows until the out-of-memory killer takes it, which mutmut records the same
+way. `[tool.mutmut]` gives mutmut's pytest runs a 30-second per-test timeout
+(pytest-timeout) so such a test fails, and the mutant is killed, long before
+that (docs/mutation-testing-options.md).
 
 ## Measured, not yet enforced (ratchets)
 
