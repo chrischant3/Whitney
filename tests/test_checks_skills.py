@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from whitney.checks import Evidence, registry
+from whitney.checks import Evidence, FolderSnapshot, registry
 
 EVENTS = Path(__file__).parent / "data" / "kilo-events"
 CHECKS = ("skill_loaded", "skill_not_loaded", "subagent_delegated", "subagent_not_delegated")
@@ -103,10 +103,30 @@ def test_a_skills_name_must_match_exactly():
 
 
 def test_a_run_with_tool_calls_and_no_skill_call_loaded_nothing():
-    evidence = captured("subagent-description")
+    evidence = captured("bash-nonzero-exit")
 
     assert outcome("skill_loaded", "release-notes", evidence) == "not_loaded"
     assert outcome("skill_not_loaded", "release-notes", evidence) == "not_loaded"
+    assert judge("skill_loaded", "release-notes", evidence).explanation == "the skill release-notes wasn't loaded; nothing was loaded"
+    assert judge("skill_not_loaded", "release-notes", evidence).explanation == "the skill release-notes wasn't loaded; nothing was loaded"
+
+
+def test_the_explanations_say_what_was_seen():
+    loaded, delegated = captured("skill-named"), captured("subagent-description")
+
+    assert judge("skill_loaded", "release-notes", loaded).explanation == "the skill release-notes was loaded"
+    assert judge("skill_not_loaded", "release-notes", loaded).explanation == "the skill release-notes was loaded"
+    assert judge("skill_loaded", "debugging", loaded).explanation == "the skill debugging wasn't loaded; loaded: release-notes"
+    assert judge("skill_not_loaded", "debugging", loaded).explanation == "the skill debugging wasn't loaded; loaded: release-notes"
+    assert judge("subagent_delegated", "q7-helper", delegated).explanation == "the subagent q7-helper was delegated"
+    assert judge("subagent_not_delegated", "q7-helper", delegated).explanation == "the subagent q7-helper was delegated"
+    assert judge("subagent_delegated", "general", delegated).explanation == "the subagent general wasn't delegated; delegated: q7-helper"
+    assert judge("subagent_not_delegated", "general", delegated).explanation == (
+        "the subagent general wasn't delegated; delegated: q7-helper"
+    )
+    assert judge("subagent_delegated", "general", captured("task-deny")).explanation == (
+        "the subagent general wasn't delegated; nothing was delegated"
+    )
 
 
 @pytest.mark.parametrize("check", ["skill_loaded", "skill_not_loaded"])
@@ -146,6 +166,7 @@ def test_a_completed_task_call_is_a_delegation():
     assert outcome("subagent_delegated", "q7-helper", evidence) == "delegated"
     assert outcome("subagent_not_delegated", "q7-helper", evidence) == "delegated"
     assert judge("subagent_delegated", "q7-helper", evidence).details == {"delegated": ["q7-helper"]}
+    assert judge("subagent_not_delegated", "q7-helper", evidence).details == {"delegated": ["q7-helper"]}
 
 
 def test_a_delegation_to_another_agent_is_not_this_agents():
@@ -166,7 +187,37 @@ def test_a_task_call_refused_by_a_deny_rule_is_not_a_delegation():
 
 def test_a_skill_call_is_not_a_delegation_and_a_task_call_is_not_a_load():
     assert outcome("subagent_delegated", "release-notes", captured("skill-named")) == "not_delegated"
-    assert outcome("skill_loaded", "q7-helper", captured("subagent-description")) == "not_loaded"
+    assert outcome("skill_loaded", "q7-helper", captured("task-deny")) == "not_loaded"
+
+
+@pytest.mark.parametrize("check", ["skill_loaded", "skill_not_loaded"])
+def test_once_a_subagent_ran_a_skill_it_might_have_loaded_cant_be_ruled_out(check):
+    """A subagent's own tool calls aren't in the parent's stream (docs/spike-findings.md, case 3)."""
+    verdict = judge(check, "release-notes", captured("subagent-description"))
+
+    assert verdict.outcome == "inconclusive"
+    assert verdict.explanation == (
+        "no call that loaded the skill release-notes was seen, "
+        "but 1 subagent(s) ran, and a subagent's own tool calls aren't in the stream"
+    )
+
+
+def test_a_refused_subagent_ran_nothing_so_the_skill_checks_stand():
+    evidence = captured("task-deny")
+
+    assert outcome("skill_not_loaded", "release-notes", evidence) == "not_loaded"
+
+
+def test_a_skill_load_seen_beside_a_subagent_still_counts():
+    events = [*lines("skill-named")[:-1], *lines("subagent-description")]
+    evidence = captured("skill-named", events=stream(events))
+
+    assert judge("skill_loaded", "release-notes", evidence).outcome == "pass"
+    assert judge("skill_not_loaded", "release-notes", evidence).outcome == "fail"
+
+
+def test_a_subagent_doesnt_put_the_delegation_checks_in_doubt():
+    assert outcome("subagent_not_delegated", "general", captured("subagent-description")) == "not_delegated"
 
 
 # --- Runs that ended early -------------------------------------------------------------------
@@ -224,8 +275,7 @@ def test_a_stream_with_no_event_the_parser_knows_is_inconclusive(check, events):
 
 def test_a_reply_with_no_tool_call_fails_the_positive_checks_and_cannot_pass_the_negative_ones():
     """A negative check passes only on a stream holding a tool call the parser recognises (spec, "Check details")."""
-    replied = stream([event for event in lines("skill-named") if event["type"] != "tool_use"])
-    evidence = Evidence(events=replied, exit_code=0)
+    evidence = captured("command-option")  # exit 0, one step that ended in `stop`, no tool call
 
     assert outcome("skill_loaded", "release-notes", evidence) == "not_loaded"
     assert outcome("subagent_delegated", "q7-helper", evidence) == "not_delegated"
@@ -280,7 +330,45 @@ def test_a_tool_call_in_a_shape_the_parser_doesnt_know_makes_every_check_inconcl
     verdict = judge(check, name, captured(case, events=_changed(case, change)))
 
     assert verdict.outcome == "inconclusive"
-    assert "couldn't be read" in verdict.explanation
+    assert "tool call(s) couldn't be read" in verdict.explanation
+
+
+def test_the_explanation_counts_the_tool_calls_that_couldnt_be_read():
+    verdict = judge("skill_not_loaded", "debugging", captured("skill-description", events=_changed("skill-description", _rename_tool)))
+
+    assert verdict.explanation == "no call that loaded the skill debugging was seen, but 6 tool call(s) couldn't be read"
+
+
+@pytest.mark.parametrize("extra", ['not json', '{"type": "tool_use", "part": {"type": "tool", "tool": "ski', '{"type": "skill_use"}', "[1]", '"text"'])
+@pytest.mark.parametrize("check, name, case", [
+    ("skill_loaded", "debugging", "skill-named"),
+    ("skill_not_loaded", "debugging", "skill-named"),
+    ("subagent_delegated", "general", "subagent-description"),
+    ("subagent_not_delegated", "general", "subagent-description"),
+])
+def test_a_line_that_isnt_an_event_of_a_known_type_might_be_the_call(check, name, case, extra):
+    """A cut-off line, or an event type the captures don't have, could be the load or the delegation."""
+    events = (EVENTS / f"{case}.jsonl").read_text() + extra + "\n" + extra + "\n"
+
+    verdict = judge(check, name, captured(case, events=events))
+
+    assert verdict.outcome == "inconclusive"
+    assert "2 line(s) of the stream couldn't be read as events" in verdict.explanation
+
+
+@pytest.mark.parametrize("check, name, case", [("skill_loaded", "release-notes", "skill-named"), ("skill_not_loaded", "debugging", "skill-named")])
+def test_blank_lines_dont_matter(check, name, case):
+    events = "\n  \n" + (EVENTS / f"{case}.jsonl").read_text().replace("\n", "\n\n")
+
+    assert judge(check, name, captured(case, events=events)).outcome == "pass"
+
+
+def test_a_renamed_event_type_cant_fail_the_positive_checks():
+    renamed = (EVENTS / "skill-named.jsonl").read_text().replace('"type": "tool_use"', '"type": "tool_call"')
+
+    verdict = judge("skill_loaded", "release-notes", captured("skill-named", events=renamed))
+
+    assert verdict.outcome == "inconclusive"
 
 
 @pytest.mark.parametrize("check, name, case, key", [
@@ -313,15 +401,70 @@ def test_one_unreadable_call_doesnt_hide_a_load_that_was_read():
     assert judge("skill_not_loaded", "canary-kilo", evidence).outcome == "inconclusive"
 
 
-def test_a_step_that_ended_in_tool_calls_with_no_visible_tool_part_doesnt_break_the_checks():
+@pytest.mark.parametrize("check, name", [
+    ("skill_loaded", "debugging"), ("skill_not_loaded", "debugging"),
+    ("subagent_delegated", "q7-helper"), ("subagent_not_delegated", "q7-helper"),
+])
+def test_a_step_that_ended_in_tool_calls_and_shows_none_might_hide_the_call(check, name):
     """skill-description.jsonl has such a step (docs/spike-findings.md, "Phase 5: observations for later tasks")."""
+    verdict = judge(check, name, captured("skill-description"))
+
+    assert verdict.outcome == "inconclusive"
+    assert "1 step(s) ended in tool calls the stream doesn't show" in verdict.explanation
+
+
+def test_a_load_that_was_read_stands_whatever_a_step_hides():
     evidence = captured("skill-description")
 
-    assert outcome("skill_not_loaded", "debugging", evidence) == "not_loaded"
-    assert outcome("skill_not_loaded", "release-notes", evidence) == "loaded"
+    assert judge("skill_loaded", "release-notes", evidence).outcome == "pass"
+    assert judge("skill_not_loaded", "release-notes", evidence).outcome == "fail"
+
+
+def test_a_step_whose_only_tool_call_couldnt_be_read_is_counted_once_as_unreadable():
+    verdict = judge("skill_not_loaded", "debugging", captured("skill-named", events=_changed("skill-named", _rename_tool)))
+
+    assert "step(s)" not in verdict.explanation
+
+
+@pytest.mark.parametrize("part", [None, "step-finish", {"type": "step-finish"}, {"reason": "stop"}])
+def test_a_step_finish_that_doesnt_say_tool_calls_hides_nothing(part):
+    events = [event for event in lines("bash-nonzero-exit")]
+    events.append({"type": "step_start"})
+    events.append({"type": "step_finish"} | ({} if part is None else {"part": part}))
+
+    assert judge("skill_not_loaded", "debugging", captured("bash-nonzero-exit", events=stream(events))).outcome == "pass"
+
+
+def test_each_step_is_judged_on_its_own_tool_calls():
+    """A tool call in an earlier step doesn't cover a later step that shows none."""
+    events = [*lines("bash-nonzero-exit"), {"type": "step_start"}, {"type": "step_finish", "part": {"reason": "tool-calls"}}]
+
+    verdict = judge("skill_not_loaded", "debugging", captured("bash-nonzero-exit", events=stream(events)))
+
+    assert verdict.outcome == "inconclusive"
 
 
 # --- The score keeps what a check recorded ---------------------------------------------------
+
+
+def test_what_a_check_recorded_survives_the_snapshot_rule():
+    from pydantic import BaseModel, ConfigDict
+
+    from whitney.checks import Registry, Verdict, check
+
+    class NoParams(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    into = Registry()
+    check("demo_watching", params=NoParams, judges="agent", labels=("a", "b", "c"), targets=("kilo",), needs=("snapshots",),
+          into=into)(lambda evidence, params: Verdict("pass", "fine", details={"seen": ["x"]}))
+
+    cut_short = FolderSnapshot(files={}, complete=False)  # over the snapshot's file cap, so a pass can't stand
+    evidence = Evidence(exit_code=0, snapshots_before={"project": cut_short}, snapshots_after={"project": cut_short})
+
+    verdict = into.checks()["demo_watching"].run(evidence, {})
+
+    assert (verdict.outcome, verdict.details) == ("inconclusive", {"seen": ["x"]})
 
 
 def test_what_a_check_recorded_survives_the_early_end_rule():
