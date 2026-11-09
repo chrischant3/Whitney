@@ -21,8 +21,8 @@ and a human reviewer, never the same commit as the change that was failing.
 
 Checked by `python scripts/floor_guard.py` (diff since the merge base with
 `origin/main`, including uncommitted and untracked files) and gitleaks. CI
-runs the floor guard again on every pull request into main (below); gitleaks
-runs only locally, in `check.py`.
+runs the floor guard again on every pull request into main (below), and
+gitleaks with the rest of `check.py task` (`.github/workflows/checks.yml`).
 
 Human decisions are recorded as commit-message trailers, so they show up in review:
 - `Skip-reason: <test file> <why>` allows the skips added in that test file.
@@ -44,8 +44,8 @@ Numbered checks **warn until 2026-11-16, then block** (`WARN_UNTIL` in
 | Tests | Whole suite passes (blocks now; a hard constraint in CLAUDE.md) | `pytest` | task end |
 | Secrets | No secrets in history or uncommitted changes (floor, blocks now) | `gitleaks git --redact` (+ `--pre-commit`) | every edit |
 | Coverage: changed lines | ≥ 80% of lines changed since `origin/main` covered | `pytest --cov` + `diff-cover --fail-under=80` | task end |
-| Mutation: touched functions | ≥ 60% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end, before a pull request (`check.py full`) |
-| Dependencies | Nothing at high or above in the installed environment | `osv-scanner scan --no-resolve` on the installed distributions | before a pull request (`check.py full`) |
+| Mutation: touched functions | ≥ 60% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end and on every pull request in CI (`check.py task`); weekly in CI (`check.py full`) |
+| Dependencies | Nothing at high or above in the installed environment | `osv-scanner scan --no-resolve` on the installed distributions | weekly in CI (`check.py full`), and before a pull request that changes `requirements.lock` |
 
 Why these numbers:
 - **80% changed-line coverage**: high enough to force a test for new code, low enough to allow a config line or an error message.
@@ -134,7 +134,8 @@ now kills it on every disk by simulating a case-sensitive one.
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
 python scripts/check.py task       # before handing work back: about a minute for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants)
-python scripts/check.py full       # before opening a pull request: reruns every mutant, and the dependency scan
+python scripts/check.py full       # reruns every mutant, and the dependency scan; CI runs it weekly
+python scripts/check.py full --max-children 6   # the same on a laptop, with fewer mutmut workers to spare memory
 ```
 
 `task` runs the test suite with `pytest -n auto` (pytest-xdist, in the `dev`
@@ -143,8 +144,18 @@ one to two minutes on one. pytest-cov combines the workers' coverage, and the
 figure matches a serial run. mutmut's pytest runs get no `-n`, since mutmut
 runs its own workers; a plain `pytest` stays on one process too.
 
-Run `check.py full` before opening a pull request: CI runs only the floor
-guard, so nothing else runs the whole mutation suite or the dependency scan.
+CI runs on GitHub's hosted runners, which cost nothing for a public
+repository. Every pull request into main gets `check.py task`
+(`.github/workflows/checks.yml`), starting warm from the last weekly full
+run's mutmut results, so it mutates only the functions the diff touches.
+`check.py full` runs from scratch every Sunday and on demand from the Actions
+tab (`.github/workflows/mutation-full.yml`); a fall in the project score fails
+that run, and GitHub emails the owner. Neither workflow edits this file: a
+person records a new ratchet value, in its own commit. Run `full` yourself
+before a pull request that changes `requirements.lock`, so the dependency scan
+sees the new versions before the weekly run does. The ratchet's mutation score
+was measured on a Mac; once the weekly run on main has a result, re-baseline it
+from that run and say so here, since macOS and Linux differ by a few survivors.
 `task` mutates only the functions the diff touches and judges them as above;
 its project mutation score is mutmut's cached results, the touched functions'
 fresh ones and every other function's last one, labelled as cached. It still

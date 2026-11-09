@@ -1,0 +1,84 @@
+# Runs `check.py task` on every pull request into main: the floor guard,
+# gitleaks, the test suite, changed-line coverage, and mutation testing of the
+# functions the diff touches (CONSTRAINTS.md). The whole mutation suite runs
+# weekly in mutation-full.yml, whose results this job starts warm from.
+#
+# This runs the pull request's own code, so it uses `pull_request` (not
+# `pull_request_target`): a read-only token and no secrets, so code from a fork
+# can't reach anything. The floor guard here is the pull request's copy; the
+# one that can't be edited by the change it judges is floor-guard.yml.
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  task:
+    name: check.py task
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans history; check.py diffs against the merge base with origin/main
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install Whitney with every extra
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --quiet --require-hashes -r requirements.lock
+          .venv/bin/pip install --quiet --no-deps -e .
+
+      - name: Install gitleaks
+        env:
+          VERSION: 8.30.1
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The weekly full run on main saves mutmut's results; start from the latest.
+      # Without them `task` still judges the touched functions, and its cached
+      # project score only warns.
+      - name: Restore mutmut's results from the last full run
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mutants
+          key: mutants-full-${{ github.sha }}
+          restore-keys: mutants-full-
+
+      # As CONSTRAINTS.md's "How to run" says for a warm start: mutmut copies
+      # tests/ in again, and decides a file is unchanged by modification time.
+      - name: Prepare the restored results
+        run: |
+          rm -rf mutants/tests
+          find src -name '*.py' -exec touch {} +
+
+      - name: check.py task
+        run: .venv/bin/python scripts/check.py task 2>&1 | tee check.log; exit "${PIPESTATUS[0]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### check.py task'
+            echo '```'
+            grep -E '^\[|^checks:' check.log || echo "check.py printed no results; see the step log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
