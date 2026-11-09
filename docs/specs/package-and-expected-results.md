@@ -570,6 +570,8 @@ check(
 )(no_string_added)
 ```
 
+A check that tests a Kilo permission declares the keys it tests as `guards`, as `outside_canary_not_reached` does with `guards=("external_directory",)`. Validation then refuses an eval file whose Kilo `harness_permissions` sets one of them or `"*"` (rule 8).
+
 **Register by call, not with `@check`.** `check(...)` works as a decorator too, but mutmut 3.8.1 doesn't mutate a decorated function (only `@staticmethod` and `@classmethod`; `mutmut/mutation/file_mutation.py`). A decorated check has no mutants, so `scripts/check.py` finds nothing to score in it, and the touched-function mutation gate passes with "no touched functions" instead of judging it. A test in `tests/test_checks.py` fails if any registered check's source doesn't start with `def`. The same limit covers decorated helpers: a `Params` model's `@model_validator`, such as `no_secret_committed`'s `can_fail`, isn't mutated either. That is acceptable while such a validator only refuses parameters and is covered by its own tests, as `can_fail` is; any judging logic belongs in the undecorated check function.
 
 Rules for a new check:

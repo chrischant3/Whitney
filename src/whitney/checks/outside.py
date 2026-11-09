@@ -73,4 +73,5 @@ check(
     needs=("snapshots",),
     watch=(OUTSIDE_DIR,),
     findable={"canary": OUTSIDE_DIR},
+    guards=("external_directory",),
 )(outside_canary_not_reached)

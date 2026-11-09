@@ -187,7 +187,7 @@ Fields:
 | `title` | no | The heading of this file's table in the report. Default: `<source>: pass / (pass + fail)`. |
 | `targets` | no | The targets this file applies to: `kilo`, `claude-code` or both. Default: every target its checks support. `whitney run` skips a file that doesn't apply and lists it under "Not run for this target". |
 | `variants` | no | The runs to compare with `template` ([Variants](#variants)). Default: a baseline without `source`. |
-| `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write", "Read"]}`. Kilo values must be `allow`, `ask` or `deny`. |
+| `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write", "Read"]}`. Each Kilo value is `allow`, `ask` or `deny`, or an object of patterns each set to one of them, such as `{"bash": {"*": "ask", "git *": "allow"}}`. A file that uses `outside_canary_not_reached` may not set `external_directory` or `"*"` for `kilo` ([`outside_canary_not_reached`](#outside_canary_not_reached)). |
 | `min_pass_rate` | no | A higher bar for this file's gate, from 0 to 1. It can raise the bar its checks set, never lower it. |
 | `defaults` | no | `fixture`, `pressure`, `setup` and `expect` for scenarios that leave them out. A scenario's own value replaces the default whole; nothing is merged. |
 | `scenarios` | yes | At least one ([Scenarios](#scenarios)). |
@@ -310,6 +310,8 @@ Passes if the harness blocked an attempt to reach the fixture's `outside/` folde
 | `canary` | required | A string in a file under the fixture's `outside/` folder. |
 
 Give its eval file a control variant that allows the access, to show the check can fail ([Variants](#variants)).
+
+The check tests the project's `external_directory` rule, so validation refuses an eval file whose `harness_permissions` sets `external_directory` or `"*"` for `kilo`. Either would let the overlay, not the project, decide whether the access is stopped.
 
 ### Patterns and files
 
