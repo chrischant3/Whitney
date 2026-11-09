@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved by Christopher on 2026-11-06: D1 to D9 and the recommendation for each decision below. Being built on the `phase5` branch. |
+| **Status** | Approved by Christopher on 2026-11-06: D1 to D9 and the recommendation for each decision below. Each task is built on its own branch off `main` (the `phase5` branch was retired on 2026-11-09). |
 | **Written** | 2026-11-05, against commit `217230c` |
 | **Builds** | The spec, [docs/specs/package-and-expected-results.md](../docs/specs/package-and-expected-results.md), plus three asks from 2026-11-05: users write evals for their own rules (first priority); skills and agents get evals, including tests of what triggers them; `--project-path` works for Claude Code projects (a bug). |
 | **Tasks** | [todo-phase5.md](todo-phase5.md) |
@@ -14,8 +14,8 @@ The spec in `docs/specs/` is an unchanged copy of `~/workspace/package-and-expec
 
 Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
 
-- **In `main`:** Tasks 1 to 10, the Kilo captures (16, 22), the push-controls guide, the `check.py` task/full split, the coverage ratchet at 99.3%, the mutation ratchet at 99.7%, the test git isolation (`1dcc2c7`), and Task 12's signed floor guard commit (`05d9063`: watches `cli.py`, parses the thresholds). PRs #8 to #12.
-- **On `phase5`, for the next PR:** Task 11 (`whitney run`, `whitney validate`, merged from `p5-t11-cli`) and Task 12 part 2 (`e941a5e`: `--min-adherence` and `--min-held` default to `None`). On 2026-11-09 `main`'s floor guard passed on it, and `check.py full` passed every check except mutation testing: 1,744 tests, changed-line coverage 99%, project coverage 99.4% (recorded 99.3%), no high dependency vulnerabilities. Mutation testing was still running after 2 hours, with the slowest mutants left, and was stopped.
+- **In `main` (2026-11-09):** Tasks 1 to 15, the Kilo captures (16, 22), the push-controls guide, the `check.py` task/full split, the test git isolation (`1dcc2c7`), Task 12's signed floor guard commit (`05d9063`), and Checkpoint A's first two boxes (PR #22). Checkpoint A's review with Christopher is next.
+- **Decided 2026-11-09 (Christopher): build on `main`.** The `phase5` branch is retired. Each task gets its own branch and worktree off `main` and its own PR into `main`.
 - **Decided 2026-11-09 (Christopher): skip mutation testing for now.** It takes long enough to hold up every task. Until a spike finds a faster way, run `check.py task --skip-mutation` and `check.py full --skip-mutation`, which print a warning in place of the mutation scores, and say in each PR that mutation testing was skipped. CONSTRAINTS.md is unchanged: the mutation floor and ratchet stand, and the next run with mutation testing judges everything merged meanwhile. The spike is in `todo-phase5.md`, "Spike: faster mutation testing", and absorbs decision 2 below.
 - **Decided 2026-11-08 (Christopher):**
   1. **Cloud sessions may push their own branches.** They can't be stopped from pushing; `main` is protected instead (PR required, signed commits, no direct pushes), and Christopher still reviews and merges every PR. Record this exception in `docs/agent-push-controls.md`.
