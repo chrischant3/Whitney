@@ -104,6 +104,22 @@ def test_mutmut_and_a_plain_pytest_run_stay_on_one_process():
     assert not [a for a in arguments if a.startswith(("-n", "--numprocesses", "--dist"))]
 
 
+def test_a_mutant_that_loops_forever_fails_its_test_in_seconds_not_minutes():
+    # A mutant such as `i += 1` -> `i += 2` in a parser loop never ends, and mutmut's own limit,
+    # (the covering tests' time + 1) x 15, gave such mutants up to 217 s each while their lists
+    # grew to 5-7 GB, until the OOM killer took them and mutmut recorded a segfault, which the
+    # score leaves out. A per-test timeout on mutmut's runs fails the looping test instead.
+    # It sits well above the slowest test (about 6.5 s) so a slow machine can't fail a sound one.
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    arguments = pyproject["tool"]["mutmut"].get("pytest_add_cli_args", [])
+    timeouts = [int(a.removeprefix("--timeout=")) for a in arguments if a.startswith("--timeout=")]
+
+    assert timeouts == [30]
+    assert any(r.startswith("pytest-timeout==") for r in pyproject["project"]["optional-dependencies"]["dev"])
+    # Only mutmut's runs get it: a plain or check.py run has no per-test timeout.
+    assert not [a for a in pyproject["tool"]["pytest"]["ini_options"]["addopts"] if a.startswith("--timeout")]
+
+
 # Mutation stages: `task` mutates only the touched functions, `full` the whole suite. --------
 
 TOUCHED = {"whitney.mod.x_touched__mutmut_", "whitney.mod.xǁThingǁmethod__mutmut_"}

@@ -26,6 +26,8 @@ dev = [
     "mutmut==3.8.1",
     # Runs check.py's test-and-coverage step on every core (`-n auto`); pytest-cov combines the workers' coverage
     "pytest-xdist==3.8.0",
+    # mutmut's runs only (`[tool.mutmut]` below): fails a test a looping mutant never lets finish
+    "pytest-timeout==2.4.0",
 ]
 ifevalcode = ["inspect-evals[ifevalcode]==0.27.0"]  # supplies the IFEvalCode scorer, so pinned like inspect-ai
 gateway = ["openai>=1", "anthropic>=2"]  # Docker mode: Inspect's bridge serves Kilo's OpenAI- or Anthropic-format calls
@@ -51,4 +53,9 @@ markers = ["e2e: end-to-end smoke test against a real harness and model (opt-in,
 [tool.mutmut]
 source_paths = ["src/whitney/"]
 pytest_add_cli_args_test_selection = ["tests/"]
+# A mutant that loops forever (`i += 1` -> `i += 2` in a parser) fails its test after 30 s, not
+# after mutmut's (covering tests' time + 1) x 15, which reached 217 s while the loop's list grew
+# to 5-7 GB and the OOM killer took it (docs/mutation-testing-options.md). 30 s is well above the
+# slowest test, about 6.5 s, so a slow machine doesn't fail a sound test.
+pytest_add_cli_args = ["--timeout=30"]
 also_copy = ["evals/", "template/", "docker/", "scripts/", "docs/", "requirements.lock", "CONSTRAINTS.md"]
