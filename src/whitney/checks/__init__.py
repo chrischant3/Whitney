@@ -199,15 +199,19 @@ class Evidence:
         return scoring.run_completed({"exit_code": self.exit_code, "ended_early": self.ended_early})
 
 
-def snapshot_problem(evidence: Evidence, folders: Iterable[str]) -> str | None:
+def snapshot_problem(
+    evidence: Evidence, folders: Iterable[str], watched: Callable[[str], bool] = lambda path: True
+) -> str | None:
     """Why the snapshots of `folders` can't be judged in full, or None if they can.
 
     A folder snapshotted before and after the run can't be judged if either
-    snapshot stopped at the file cap, or if a file the run added, changed or
-    deleted has no text on a side where it exists (over the size cap, not
-    UTF-8, or not a regular file). A file the run left byte for byte alone
-    doesn't matter, however large. A folder snapshotted on one side only, or
-    not at all, is left to the check, which knows what it is missing.
+    snapshot stopped at the file cap, or if a watched file the run added,
+    changed or deleted has no text on a side where it exists (over the size
+    cap, not UTF-8, or not a regular file). A file the run left byte for byte
+    alone doesn't matter, however large, and nor does one `watched` (given
+    its path inside the folder) says the check doesn't watch. A folder
+    snapshotted on one side only, or not at all, is left to the check, which
+    knows what it is missing.
     """
     for folder in folders:
         before, after = evidence.snapshots_before.get(folder), evidence.snapshots_after.get(folder)
@@ -215,7 +219,10 @@ def snapshot_problem(evidence: Evidence, folders: Iterable[str]) -> str | None:
             continue
         if not (before.complete and after.complete):
             return f"{folder} held more files than the snapshot's cap, so it wasn't read in full"
-        unread = [path for path in changed_paths(before, after) if _without_text(before, path) or _without_text(after, path)]
+        unread = [
+            path for path in changed_paths(before, after)
+            if watched(path) and (_without_text(before, path) or _without_text(after, path))
+        ]
         if unread:
             return (
                 f"{len(unread)} file(s) in {folder} changed and couldn't be read as text "
@@ -288,6 +295,10 @@ class CheckSpec:
         metrics: the names of the values its verdicts carry beside the
             outcome (Verdict.metrics), such as task_done. They share the
             score's value with the labels, so no metric may be named like one.
+        watches: if it needs "snapshots", a function of its validated
+            parameters and a path inside a watched folder, True if the check
+            judges that file. A changed file it doesn't judge can't make its
+            verdict inconclusive (snapshot_problem). Left out, every file.
         min_pass_rate: its default minimum pass rate for the template
             variant, from 0 to 1. Left out, thresholds.MIN_ADHERENCE for an
             agent-judged check and thresholds.MIN_HELD for a harness-judged one.
@@ -313,6 +324,7 @@ class CheckSpec:
     metrics: tuple[str, ...] = ()
     min_pass_rate: float | None = None
     watch: tuple[str, ...] = DEFAULT_WATCH
+    watches: Callable[[Any, str], bool] | None = None
 
     def __post_init__(self) -> None:
         if not NAME.fullmatch(self.name):
@@ -367,6 +379,8 @@ class CheckSpec:
                 return f"unknown evidence {need!r}; a check can need {', '.join(NEEDS)}"
         if not self.watch:
             return "watch must name at least one fixture folder"
+        if self.watches is not None and not callable(self.watches):
+            return f"watches must be a function of the parameters and a path, got {self.watches!r}"
         for folder in self.watch:
             if not FINDABLE_PLACE.fullmatch(folder):
                 return f"watch names {folder!r}; it must be the name of a folder in the fixture, such as outside"
@@ -430,7 +444,9 @@ class CheckSpec:
         undeclared = sorted(set(verdict.metrics) - set(self.metrics))
         if undeclared:
             raise CheckError(f"check {self.name!r} returned undeclared metric(s): {', '.join(undeclared)}")
-        problem = snapshot_problem(evidence, self.folders(parsed)) if "snapshots" in self.needs else None
+        watches = self.watches
+        watched = (lambda path: True) if watches is None else (lambda path: watches(parsed, path))
+        problem = snapshot_problem(evidence, self.folders(parsed), watched) if "snapshots" in self.needs else None
         if problem and verdict.outcome != "fail":
             return Verdict("inconclusive", f"{verdict.explanation}, but {problem}", verdict.metrics)
         if verdict.outcome == "pass" and self.judges == "agent" and not evidence.run_completed():
@@ -490,6 +506,7 @@ def check(
     metrics: Iterable[str] = (),
     min_pass_rate: float | None = None,
     watch: Iterable[str] = DEFAULT_WATCH,
+    watches: Callable[[Any, str], bool] | None = None,
     into: Registry = REGISTRY,
 ) -> Callable[[CheckFunction], CheckFunction]:
     """Register a function as the check `name`, with its declaration (see CheckSpec).
@@ -519,6 +536,7 @@ def check(
                 metrics=metrics,
                 min_pass_rate=min_pass_rate,
                 watch=watch,
+                watches=watches,
             )
         )
         return function

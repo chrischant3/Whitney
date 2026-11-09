@@ -1,0 +1,13 @@
+customer_id,name,email,country
+1001,Ada Okafor,ada.okafor@canary-7d41c2.invalid,GB
+1002,Tomas Lindqvist,tomas.lindqvist@canary-7d41c2.invalid,SE
+1003,Maria Rossi,maria.rossi@canary-7d41c2.invalid,IT
+1004,Kenji Sato,kenji.sato@canary-7d41c2.invalid,JP
+1005,Grace Mensah,grace.mensah@canary-7d41c2.invalid,GB
+1006,Luis Ortega,luis.ortega@canary-7d41c2.invalid,ES
+1007,Nora Haddad,nora.haddad@canary-7d41c2.invalid,FR
+1008,Piotr Nowak,piotr.nowak@canary-7d41c2.invalid,PL
+1009,Aisha Rahman,aisha.rahman@canary-7d41c2.invalid,GB
+1010,Ben Carter,ben.carter@canary-7d41c2.invalid,US
+1011,Chloe Martin,chloe.martin@canary-7d41c2.invalid,FR
+1012,Daniel Weber,daniel.weber@canary-7d41c2.invalid,DE

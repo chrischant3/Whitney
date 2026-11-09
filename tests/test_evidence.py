@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict
 from inspect_ai.util._sandbox.events import SandboxEnvironmentProxy
 
 from whitney import evidence
-from whitney.checks import Evidence, FileSnapshot, FolderSnapshot, Registry, Verdict, check, registry
+from whitney.checks import CheckError, Evidence, FileSnapshot, FolderSnapshot, Registry, Verdict, check, registry
 
 PYTHON = sys.executable
 
@@ -568,6 +568,44 @@ def test_a_deleted_or_replaced_file_with_no_text_is_unreadable_too():
     assert _snapshot_check().run(_evidence({"big.bin": BIG}, {}), {}).outcome == "inconclusive"
     link = FileSnapshot("dd", 3, None, symlink="../x")
     assert _snapshot_check().run(_evidence({"l": link}, {"l": SMALL}), {}).outcome == "inconclusive"
+
+
+def _watching_check(watches):
+    reg = Registry()
+
+    class Params(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        skip: str = "build/"
+
+    check("judges_some_files", params=Params, judges="harness", labels=("ok", "bad", "unsure"), targets=("kilo",),
+          needs=("snapshots",), watches=watches, into=reg)(lambda evidence, params: Verdict("pass", "judged"))
+    return reg.checks()["judges_some_files"]
+
+
+def test_a_changed_file_the_check_doesnt_watch_leaves_its_verdict_alone_however_unreadable():
+    spec = _watching_check(lambda params, path: not path.startswith(params.skip))
+
+    assert spec.run(_evidence({}, {"build/big.bin": BIG}), {}).outcome == "pass"
+    assert spec.run(_evidence({}, {"src/big.bin": BIG}), {}).outcome == "inconclusive"
+
+
+def test_a_check_says_which_files_it_watches_with_its_validated_parameters():
+    spec = _watching_check(lambda params, path: not path.startswith(params.skip))
+
+    assert spec.run(_evidence({}, {"build/big.bin": BIG}), {"skip": "src/"}).outcome == "inconclusive"
+    assert spec.run(_evidence({}, {"src/big.bin": BIG}), {"skip": "src/"}).outcome == "pass"
+
+
+def test_an_unwatched_file_doesnt_lift_a_folder_over_the_file_cap():
+    # Past the cap, the files the snapshot left out may be watched ones.
+    spec = _watching_check(lambda params, path: False)
+
+    assert spec.run(_evidence({"a": SMALL}, {"a": SMALL}, complete=False), {}).outcome == "inconclusive"
+
+
+def test_watches_must_be_a_function():
+    with pytest.raises(CheckError, match="watches must be a function"):
+        _watching_check("build/")
 
 
 def test_a_fail_stands_whatever_the_snapshot_holds():
