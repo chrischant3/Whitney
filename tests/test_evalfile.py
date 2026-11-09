@@ -608,3 +608,16 @@ def run_in_latin1_locale(code, *args):
     env = {**os.environ, "PYTHONUTF8": "0", "LC_ALL": "en_US.ISO8859-1",
            "PYTHONPATH": str(Path(whitney.__file__).parent.parent)}
     return subprocess.run([sys.executable, "-c", code, *map(str, args)], capture_output=True, text=True, env=env, check=True)
+
+
+def test_a_file_read_carries_the_sha256_of_the_bytes_it_was_read_from(tmp_path):
+    import hashlib
+
+    v1 = ROOT / "tests" / "data" / "version-1" / "agents-md.json"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        old, upgraded = read(v1), load(v1)
+    v2 = ROOT / "evals" / "agents-md.json"
+
+    assert read(v2).sha256 == load(v2).sha256 == hashlib.sha256(v2.read_bytes()).hexdigest()
+    assert old.sha256 == upgraded.sha256 == hashlib.sha256(v1.read_bytes()).hexdigest()

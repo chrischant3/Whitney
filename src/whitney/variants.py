@@ -65,7 +65,7 @@ def default_baseline(source: str) -> Variant:
     is removed, because files beside SKILL.md belong to the skill too.
     """
     skill = SKILL_SOURCE.fullmatch(source)
-    return Variant(role="baseline", remove=[skill.group(1) if skill else source])
+    return Variant(remove=[skill.group(1) if skill else source])  # role defaults to "baseline"
 
 
 def declared_variants(eval_file: EvalFile | V1File) -> dict[str, Variant]:

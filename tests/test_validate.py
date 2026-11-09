@@ -498,6 +498,29 @@ def test_the_exceptions_ids_are_the_rows_of_the_exceptions_table(tmp_path):
     assert exception_ids(tmp_path / "none.md") == set()
 
 
+def test_the_exceptions_ids_are_read_as_utf_8_whatever_the_locale(tmp_path):
+    # CONSTRAINTS.md holds non-ASCII text (≥, —), which an ASCII locale's default encoding can't read.
+    path = write_constraints(tmp_path, "| E1 | naïve ≥ rule | café — reason |")
+    code = (
+        "import locale, sys; from whitney.validate import exception_ids; "
+        "print(locale.getencoding()); print(sorted(exception_ids(sys.argv[1])))"
+    )
+    import os
+
+    import whitney
+
+    env = {**os.environ, "LC_ALL": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": "0",
+           "PYTHONPATH": str(Path(whitney.__file__).parent.parent)}
+    run = subprocess.run([sys.executable, "-c", code, str(path)], capture_output=True, text=True, env=env)
+    # Also called here, so mutation testing, which maps tests to the functions they call in-process, runs this test.
+    in_process = exception_ids(path)
+
+    encoding, ids = (run.stdout.splitlines() + ["", ""])[:2]
+    assert encoding.replace("-", "").casefold() != "utf8", "the subprocess's locale must not be UTF-8, or this tests nothing"
+    assert ids == "['E1']", run.stderr
+    assert in_process == {"E1"}
+
+
 def test_with_constraints_a_known_gap_must_cite_a_row_in_its_exceptions_table(evals, tmp_path):
     constraints = write_constraints(tmp_path, "| E3 | gate | known gap |")
     path = write(evals, eval_file({"id": "a", "prompt": "p", "known_gap": "E3: fine"}, {"id": "b", "prompt": "p", "known_gap": "E9: not a row"}))

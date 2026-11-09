@@ -47,7 +47,9 @@ def version_1_evals(tmp_path):
 def _built(build, target, variant):
     task = build(variant, target=target, model=MODEL)
     samples = [(s.id, s.input, s.files, s.setup, s.metadata) for s in task.dataset]
-    return task.name, task.metadata, samples
+    # The version 1 files' bytes differ from the shipped files', so their recorded SHA-256 must too.
+    metadata = {key: value for key, value in task.metadata.items() if key != "eval_file_sha256"}
+    return task.name, metadata, samples
 
 
 @pytest.mark.parametrize("build, target, variant", CASES, ids=lambda value: getattr(value, "__name__", str(value)))
