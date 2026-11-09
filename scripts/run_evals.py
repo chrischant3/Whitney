@@ -1,4 +1,4 @@
-"""Run the evals (both variants each), print the results table, and fail if the template is below the bar.
+"""Deprecated: use `whitney run`. Run the evals (both variants each), print the results table, and fail if the template is below the bar.
 
     python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3     # Kilo, Kilo Gateway
     python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --epochs 3   # Claude Code, Anthropic API
@@ -19,37 +19,39 @@ outside_canary_not_reached=VALUE, the checks AGENTS.md and kilo.jsonc are
 scored by, when set to anything but their defaults; --min-rate wins over
 them. The report prints each minimum replaced. Writes the table to
 results/<target>_<model>_<timestamp>.md.
+
+Exit code 2 if a task can't be built, such as for an invalid eval file:
+every task is built before any runs, so nothing calls a model first.
+
+Kept as a wrapper over whitney.cli, with today's defaults (Whitney's own
+template and evals/, logs/ and results/ in the repo), task names, labels and
+tables, until a planned breaking release. It doesn't check the harness's
+version first, as `whitney run` does, so its reports say "not recorded".
 """
 
 import argparse
-import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from inspect_ai import eval
 from inspect_ai.log import list_eval_logs, read_eval_log
 
+from whitney import cli
 from whitney.interference import ifevalcode
-from whitney.checks import registry
-from whitney.report import (
-    MIN_ADHERENCE,
-    MIN_CONCLUSIVE,
-    MIN_HELD,
-    check_thresholds,
-    records_from_log,
-    render_asset_provenance_markdown,
-    render_harbor_markdown,
-    render_ifevalcode_markdown,
-    render_header,
-    render_markdown,
-    replaced_minimums,
-    summarise,
-)
+from whitney.report import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD, replaced_minimums
 from whitney.targets import TARGETS
 from whitney.tasks import EVALS_DIR, agents_md, kilo_jsonc
 
 ROOT = Path(__file__).parent.parent
+DEPRECATED = (
+    "run_evals.py is deprecated: use `whitney run` with --project-path and --evals-path (see the README); "
+    "it stays until a planned breaking release"
+)
+# Shared with `whitney run`, under the names this script has always had.
+_rate = cli.rate
+_min_rates = cli.min_rates
+_filename_model = cli.filename_model
+_result_filename = cli.result_filename
 
 
 def _harbor_task(**kwargs):
@@ -72,57 +74,32 @@ KILO_ONLY_EVALS = {"kilo_jsonc"}
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments, run or load the evals, print and save the report; return the exit code."""
     args = _parse(argv)
+    print(DEPRECATED, file=sys.stderr)
     if args.report_only:
         logs = [read_eval_log(info.name) for info in list_eval_logs(args.report_only)]
     else:
+        try:
+            runs = _tasks(args)
+        except ValueError as e:  # an invalid eval file, or an option a task refuses
+            print(f"run_evals.py: error: {e}", file=sys.stderr)
+            return 2
         logs = []
-        for name in args.evals:
-            for task_fn, variant in RUNS[name]:
-                task_args = {
-                    "variant": variant,
-                    "target": args.target,
-                    "model": args.model,
-                    "project_path": args.project_path,
-                    "api_key_env": args.api_key_env,
-                    "base_url": args.base_url,
-                }
-                if name == "ifevalcode":
-                    task_args.update(
-                        languages=args.ifevalcode_languages,
-                        samples_per_language=(
-                            None if args.limit is not None else args.ifevalcode_samples_per_language
-                        ),
-                        dataset_path=args.ifevalcode_dataset_path,
-                    )
-                elif name == "bigcodebench_hard_complete":
-                    task_args["dataset_path"] = args.harbor_dataset_path
-                else:
-                    task_args["execution"] = args.execution
-                logs += eval(
-                    task_fn(**task_args),
-                    model=(
-                        args.model
-                        if args.execution == "docker" and name not in {"ifevalcode", "bigcodebench_hard_complete"}
-                        else None
-                    ),
-                    epochs=args.epochs,
-                    limit=args.limit,
-                    sample_shuffle=42 if args.sample_shuffle else None,
-                    max_samples=args.max_samples,
-                    log_dir=args.log_dir,
-                    display="plain",
-                )
+        for name, task in runs:
+            logs += eval(
+                task,
+                model=(
+                    args.model
+                    if args.execution == "docker" and name not in {"ifevalcode", "bigcodebench_hard_complete"}
+                    else None
+                ),
+                epochs=args.epochs,
+                limit=args.limit,
+                sample_shuffle=42 if args.sample_shuffle else None,
+                max_samples=args.max_samples,
+                log_dir=args.log_dir,
+                display="plain",
+            )
 
-    core_logs = [
-        log
-        for log in logs
-        if not log.eval.task.startswith("ifevalcode_")
-        and not log.eval.task.startswith("bigcodebench_hard_complete_")
-    ]
-    ifeval_logs = [log for log in logs if log.eval.task.startswith("ifevalcode_")]
-    harbor_logs = [log for log in logs if log.eval.task.startswith("bigcodebench_hard_complete_")]
-    summary = summarise([r for log in core_logs if log.status == "success" for r in records_from_log(log)])
-    failed_runs = [f"{log.eval.task}: {log.status}" for log in logs if log.status != "success"]
     # Left at their defaults, --min-adherence and --min-held replace nothing, so the report has nothing to print
     # for them. tests/test_run_evals.py checks those defaults are the MIN_* constants (Task 12 makes them None).
     rates = replaced_minimums(
@@ -130,28 +107,44 @@ def main(argv: list[str] | None = None) -> int:
         None if args.min_held == MIN_HELD else args.min_held,
         args.min_rate,
     )
-    problems = failed_runs + check_thresholds(summary, min_conclusive=args.min_conclusive, min_rates=rates)
-
-    report = render_markdown(summary)
-    if ifeval_logs:
-        report += "\n" + render_ifevalcode_markdown(ifeval_logs)
-    if harbor_logs:
-        report += "\n" + render_harbor_markdown(harbor_logs)
-    report += "\n" + render_asset_provenance_markdown(logs)
-    report_model = _report_model_name(logs, args)
-    report_target = _report_target_name(logs, args)
     # EVALS_DIR: the eval files agents_md and kilo_jsonc read, so the header's SHA-256s are theirs.
-    header = render_header(logs, EVALS_DIR, rates)
-    report = f"Target: `{report_target}` · Model: `{report_model}`\n\n" + header + report
-    if problems:
-        report += "\n## Problems\n\n" + "\n".join(f"- {p}" for p in problems) + "\n"
-    print(report)
-    timestamp = f"{datetime.now():%Y-%m-%dT%H-%M-%S}"
-    out = Path(args.results_dir) / _result_filename(timestamp, report_model, report_target)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(report)
-    print(f"Report written to {out}")
-    return 1 if problems else 0
+    return cli.write_report(
+        logs, target=_report_target_name(logs, args), model=_report_model_name(logs, args), evals_path=EVALS_DIR,
+        min_rates=rates, min_conclusive=args.min_conclusive, results_dir=args.results_dir,
+    )
+
+
+def _tasks(args: argparse.Namespace) -> list[tuple[str, object]]:
+    """(eval name, task) for every run --evals asks for, all built before any runs.
+
+    Raises:
+        ValueError: a task can't be built (EvalFileError for an invalid eval file).
+    """
+    runs = []
+    for name in args.evals:
+        for task_fn, variant in RUNS[name]:
+            task_args = {
+                "variant": variant,
+                "target": args.target,
+                "model": args.model,
+                "project_path": args.project_path,
+                "api_key_env": args.api_key_env,
+                "base_url": args.base_url,
+            }
+            if name == "ifevalcode":
+                task_args.update(
+                    languages=args.ifevalcode_languages,
+                    samples_per_language=(
+                        None if args.limit is not None else args.ifevalcode_samples_per_language
+                    ),
+                    dataset_path=args.ifevalcode_dataset_path,
+                )
+            elif name == "bigcodebench_hard_complete":
+                task_args["dataset_path"] = args.harbor_dataset_path
+            else:
+                task_args["execution"] = args.execution
+            runs.append((name, task_fn(**task_args)))
+    return runs
 
 
 def _report_model_name(logs, args: argparse.Namespace) -> str:
@@ -188,49 +181,6 @@ def _report_target_name(logs, args: argparse.Namespace) -> str:
     if len(names) > 1:
         return "mixed-targets"
     return names.pop() if names else args.target or "unknown-target"
-
-
-def _filename_model(model: str) -> str:
-    model_name = model.rsplit("/", 1)[-1]
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", model_name).strip(".-_").lower() or "model"
-
-
-def _result_filename(timestamp: str, model: str, target: str | None = None) -> str:
-    prefix = f"{target}_" if target else ""
-    return f"{prefix}{_filename_model(model)}_{timestamp}.md"
-
-
-def _min_rates(p: argparse.ArgumentParser, given: list[str]) -> dict[str, float]:
-    """--min-rate's CHECK=VALUE pairs as check -> rate; exits through `p` on one that isn't a registered check and a rate."""
-    checks = registry()
-    rates = {}
-    for pair in given:
-        name, equals, value = pair.partition("=")
-        if not equals:
-            p.error(f"--min-rate takes CHECK=VALUE, got {pair!r}")
-        if name not in checks:
-            p.error(f"--min-rate names no registered check {name!r}; the checks are {', '.join(sorted(checks))}")
-        try:
-            rates[name] = _rate(value)
-        except argparse.ArgumentTypeError:
-            p.error(f"--min-rate needs a number from 0 to 1 for {name}, got {value!r}")
-    return rates
-
-
-def _rate(text: str) -> float:
-    """A --min-* value: a number from 0 to 1.
-
-    Raises:
-        argparse.ArgumentTypeError: anything else, nan included, which compares
-            false to both bounds and so would let every rate through the gate.
-    """
-    try:
-        rate = float(text)
-    except ValueError:
-        rate = None
-    if rate is None or not 0 <= rate <= 1:
-        raise argparse.ArgumentTypeError(f"needs a number from 0 to 1, got {text!r}")
-    return rate
 
 
 def _parse(argv: list[str] | None) -> argparse.Namespace:
@@ -315,6 +265,10 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     args.min_rate = _min_rates(p, args.min_rate)
     if args.limit is not None and args.limit < 1:
         p.error("--limit must be positive")
+    # Inspect waits forever with max_samples 0, and refuses epochs below 1 only once the run has started.
+    for option, value in (("--epochs", args.epochs), ("--max-samples", args.max_samples)):
+        if value < 1:
+            p.error(f"{option} must be positive")
     # No default target or model: what to evaluate is the user's choice, not the framework's.
     if not args.report_only:
         if not args.model:
