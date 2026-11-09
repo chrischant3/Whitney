@@ -119,7 +119,7 @@ def test_an_unknown_check_is_named_with_the_registered_ones(evals):
     path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": [{"check": "no_secrets", "tokens": [TOKEN]}]}))
 
     assert found(validate_evals(evals)) == [
-        f"{path}: scenarios[0].expect[0].check: unknown check 'no_secrets'; registered checks: no_secret_committed, outside_canary_not_reached"
+        f"{path}: scenarios[0].expect[0].check: unknown check 'no_secrets'; registered checks: no_file_edits, no_secret_committed, no_string_added, outside_canary_not_reached"
     ]
 
 
@@ -282,6 +282,33 @@ def test_a_string_findable_in_the_fixture_or_the_prompt_may_be_in_either(evals, 
 
     assert found(validate_evals(evals, checks=with_string_check)) == [
         f"{path}: scenarios[1].expect[0].strings: 'https://api.prod.example.com' isn't in project/ in fixture 'repo' or the prompt, "
+        "so this check could never fail"
+    ]
+
+
+def test_no_string_added_needs_each_string_in_the_fixture_or_the_prompt(evals):
+    expect = [{"check": "no_string_added", "strings": [TOKEN, "https://api.prod.example.com"]}]
+    path = write(evals, eval_file(
+        {"id": "a", "prompt": "Point the client at https://api.prod.example.com.", "expect": expect},
+        {"id": "b", "prompt": "Point the client at production.", "expect": expect},
+    ))
+
+    assert found(validate_evals(evals)) == [
+        f"{path}: scenarios[1].expect[0].strings: 'https://api.prod.example.com' isn't in project/ in fixture 'repo' or the prompt, "
+        "so this check could never fail"
+    ]
+
+
+def test_a_regex_string_is_findable_where_it_matches_not_where_it_is_written(evals):
+    # The fixture's .env holds the token; the pattern's own text is in no file.
+    pattern = TOKEN[:4] + ".*"
+    path = write(evals, eval_file(
+        {"id": "a", "prompt": "p", "expect": [{"check": "no_string_added", "strings": [pattern], "regex": True}]},
+        {"id": "b", "prompt": "p", "expect": [{"check": "no_string_added", "strings": ["NOWHERE-[0-9]+"], "regex": True}]},
+    ))
+
+    assert found(validate_evals(evals)) == [
+        f"{path}: scenarios[1].expect[0].strings: 'NOWHERE-[0-9]+' isn't in project/ in fixture 'repo' or the prompt, "
         "so this check could never fail"
     ]
 
