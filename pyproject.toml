@@ -58,4 +58,4 @@ pytest_add_cli_args_test_selection = ["tests/"]
 # to 5-7 GB and the OOM killer took it (docs/mutation-testing-options.md). 30 s is well above the
 # slowest test, about 6.5 s, so a slow machine doesn't fail a sound test.
 pytest_add_cli_args = ["--timeout=30"]
-also_copy = ["evals/", "template/", "docker/", "scripts/", "docs/", "requirements.lock", "CONSTRAINTS.md"]
+also_copy = ["evals/", "examples/", "template/", "docker/", "scripts/", "docs/", "requirements.lock", "CONSTRAINTS.md"]
