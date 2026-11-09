@@ -302,9 +302,9 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 ### Checkpoint A3: after Tasks 9 to 12
 
-- [ ] `whitney validate` and `whitney run` work on Whitney's own template and evals.
-- [ ] `python scripts/check.py task` passes.
-- [ ] Review with Christopher.
+- [x] `whitney validate` and `whitney run` work on Whitney's own template and evals. **2026-11-09, on `main` at `c37cc9d`:** `whitney validate` finds no problems and no warnings for `--target kilo` against `template/kilo`, `--target claude-code` against `template/claude-code`, and no target. `whitney run` with `--limit 1 --epochs 1` exits 0 on both targets: on `kilo` (Kilo 7.8.18, `kilo/anthropic/claude-haiku-4.5`), `agents_md` 1/1 on baseline and template, `kilo_jsonc` 1/1 on the template and 0/1 on `allow_control`; on `claude-code` (Claude Code 2.1.319, `anthropic/claude-haiku-4-5`), `agents_md` 1/1 on both, with `kilo_jsonc` listed as not run for the target. These were smoke runs, not measurements.
+- [x] `python scripts/check.py task` passes, with `--skip-mutation` (1,815 tests, project coverage 99.4%).
+- [x] Review with Christopher (2026-11-09).
 
 ### Task 13: Checks `no_string_added` and `no_file_edits`
 

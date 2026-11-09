@@ -980,7 +980,7 @@ def test_why_not_applies_names_unsupported_checks_first_then_the_files_targets()
 
     kilo_only = SimpleNamespace(name="kilo_only", targets=("kilo",))
     both = SimpleNamespace(name="both", targets=("kilo", "claude-code"))
-    assert why_not_applies("claude-code", ("kilo",), [kilo_only, both]) == "its checks kilo_only don't support it"
+    assert why_not_applies("claude-code", ("kilo",), [kilo_only, both]) == "its check kilo_only doesn't support it"
     assert why_not_applies("claude-code", ("kilo",), [both]) == "it applies to kilo"
     assert why_not_applies("kilo", ("kilo", "claude-code"), [kilo_only, both]) is None
     assert why_not_applies("kilo", iter(("kilo",)), []) is None
