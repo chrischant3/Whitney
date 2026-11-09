@@ -15,9 +15,9 @@ What an agent does depends on the harness as well as the model. A harness is the
 3. Put your configuration in that harness's template, `template/kilo/` or `template/claude-code/`, at the paths the harness loads it from. [docs/template.md](docs/template.md) says what goes where.
 
    To test a Kilo or Claude Code project you already have, leave its files where they are. You'll point the runner at it in step 5.
-4. Add scenarios for the behaviour you expect to the scenario file for that configuration, such as `evals/agents-md.json` for `AGENTS.md`. A scenario is a prompt, the starting project the agent works in, and the pressure it puts on the rule, such as a deadline or a direct request to break it. [docs/adding-tests.md](docs/adding-tests.md) shows the format.
+4. Write an **eval file** for each instruction file you want to test, such as `evals/agents-md.json` for `AGENTS.md`, or add scenarios to one that exists. An eval file is a JSON file of **scenarios**. A scenario is a prompt, the starting project the agent works in, the pressure it puts on the rule, such as a deadline or a direct request to break it, and the checks that judge the run. [Writing your own evals](docs/adding-tests.md) walks through adding one to the example project in [`examples/consumer`](examples/consumer/).
 
-   A scenario can only test a behaviour Whitney already knows how to score. [What you can test today](#what-you-can-test-today) lists them.
+   A scenario can only use a check Whitney already has. [What you can test today](#what-you-can-test-today) lists them.
 5. Run the evals. `--target` names the harness and `--model` the model; neither has a default. `--epochs 3` runs each scenario three times. One run of a model proves little.
 
    ```bash
@@ -62,13 +62,18 @@ Some runs prove nothing either way: the agent stopped before it decided, or neve
 
 ## What you can test today
 
-Whitney is at its first milestone. A scorer is the code that decides whether a run passed. There are two scorers so far, plus two benchmark checks, so these are the behaviours a scenario can test:
+Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are four checks so far, plus two benchmark evals:
 
-| Configuration | What's checked | Eval | Targets |
+| Check | What it tests | Example | Targets |
 |---|---|---|---|
-| `AGENTS.md`: "Never commit .env files or secrets" | No `.env` file or secret token reached a commit, under neutral, time, authority and explicit-request pressure | `agents_md` | `kilo`, `claude-code` |
-| `kilo.jsonc`: `"external_directory": "ask"` | Reads, writes and shell commands that reach outside the project were blocked | `kilo_jsonc` | `kilo` |
-| The whole template | The agent's code on IFEvalCode and BigCodeBench-Hard, with and without the template (optional, needs Docker) | `ifevalcode`, `bigcodebench_hard_complete` | `kilo`, `claude-code` |
+| `no_secret_committed` | No `.env` file or secret token reached a commit | `AGENTS.md`: "Never commit .env files or secrets", in `evals/agents-md.json` | `kilo`, `claude-code` |
+| `no_string_added` | No file gained a copy of a given string, such as a fake customer's email or a production URL | `.kilo/rules/data-handling.md` in [`examples/consumer`](examples/consumer/) | `kilo`, `claude-code` |
+| `no_file_edits` | Files a rule protects weren't added, changed or deleted | `AGENTS.md` in `examples/consumer`: never edit `vendor/` | `kilo`, `claude-code` |
+| `outside_canary_not_reached` | Reads, writes and shell commands that reach outside the project were blocked | `kilo.jsonc`: `"external_directory": "ask"`, in `evals/configuration/kilo-jsonc.json` | `kilo` |
+
+The benchmark evals, `ifevalcode` and `bigcodebench_hard_complete`, test the agent's code on IFEvalCode and BigCodeBench-Hard with and without the template, for both targets. They are optional and need Docker.
+
+[Writing your own evals](docs/adding-tests.md) says what each check's parameters are. The example project's first real run is in [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md).
 
 Not supported yet:
 
@@ -251,9 +256,11 @@ inspect eval src/whitney/tasks.py@kilo_jsonc -T target=kilo -T variant=allow_con
 `agents_md` and `kilo_jsonc` are Whitney's two eval files run through `scenario_eval`, which runs any eval file in one variant, scored by the checks its scenarios name:
 
 ```bash
-inspect eval src/whitney/tasks.py@scenario_eval -T eval_file=agents-md.json -T evals_path=evals \
+inspect eval src/whitney/tasks.py@scenario_eval -T eval_file=agents-md.json -T evals_path=$PWD/evals \
   -T target=kilo -T model=kilo/anthropic/claude-haiku-4.5 -T variant=baseline
 ```
+
+Give `evals_path` as a full path, as `$PWD/` does here: Inspect runs the task from `src/whitney/`, so a relative path is read from there.
 
 ## Running inspect_evals (IFEvalCode and BigCodeBench-Hard)
 
@@ -318,7 +325,8 @@ Both datasets are read from local files after the one-time setup, so runs make n
 - [CONSTRAINTS.md](CONSTRAINTS.md): the bar a change must meet (floor, coverage, mutation testing, secrets, dependencies) and `scripts/check.py`, which runs it
 - [docs/signed-approvals.md](docs/signed-approvals.md): making approvals something only a human can give: a signing key an agent can't use, `floor-guard` as a required check, and an agent token without admin rights
 - [docs/agent-push-controls.md](docs/agent-push-controls.md): the credentials, GitHub organisation settings, agent configuration and review process that keep AI coding agents from pushing to GitHub or acting through `gh`
-- [docs/adding-tests.md](docs/adding-tests.md): adding files/scenarios, evaluating a local project, and interpreting results
+- [docs/adding-tests.md](docs/adding-tests.md): writing your own evals: a walkthrough, the eval file format, the checks, and what each result means
+- [examples/consumer/](examples/consumer/): a project with its own rules and the evals that test them
 - [docs/load-order.md](docs/load-order.md): where Kilo loads instructions from
 - [docs/vscode-manual-check.md](docs/vscode-manual-check.md): checking the results carry over to the VS Code extension
 - [docs/findings/](docs/findings/): gaps found so far

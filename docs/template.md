@@ -24,7 +24,7 @@ Kilo loads `AGENTS.md` from the project root automatically. **Don't move it into
 - **Adding team rules:** add them under "Team rules" in `AGENTS.md`. Keep the core rules. `python -m whitney.static_checks` fails if one has been removed or reworded.
 - **Changing permissions:** edit `kilo.jsonc`. Actions are `allow`, `ask` and `deny`. Kilo also has built-in rules your config sits on top of. For example, it asks before reading `.env` files, and a blanket `"read": "allow"` does **not** override that; you have to name the `*.env` patterns.
 - **Adding files:** add text instruction/config assets anywhere under `template/kilo/` using Kilo's expected relative paths. See [adding-tests.md](adding-tests.md#adding-files-to-the-template); real `.env` files and secrets must not go in the template.
-- Then add or update scenarios so the change is tested: [adding-tests.md](adding-tests.md).
+- Then add or update scenarios so the change is tested: [Writing your own evals](adding-tests.md#the-loop-when-you-change-a-rule).
 
 ## Known limits
 
