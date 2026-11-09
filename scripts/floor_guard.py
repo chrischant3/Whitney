@@ -11,6 +11,12 @@ CONSTRAINTS.md, lowered eval-gate thresholds, new `known_gap` scenarios, and
 new entries in .constraintsignore or .gitleaksignore. Tightening is silent;
 loosening is loud.
 
+The eval-gate thresholds are also read by parsing the watched files at the
+merge base and now (eval_threshold_findings), because a line-by-line diff
+can't see a second `MIN_HELD = 0.1` lower in thresholds.py, an indented
+decoy, a value written as an expression, or a `--min-*` default split over
+several lines.
+
 Exit codes: 0 clean, 1 at least one violation (block), 2 the guard couldn't
 run (not a git repo, no merge base). Paths in .constraintsignore (one glob per
 line, each citing an Exceptions ID from CONSTRAINTS.md) are exempt from the
@@ -29,11 +35,13 @@ reference; keep its contract if you change the patterns.
 """
 
 import argparse
+import ast
 import fnmatch
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,11 +65,20 @@ NUMBER = re.compile(r"\d+(?:\.\d+)?")
 KNOWN_GAP = re.compile(r'"known_gap"\s*:')
 # The eval gate's thresholds outside CONSTRAINTS.md; lowering one passes runs the gate should fail.
 # The MIN_* constants live in thresholds.py; report.py held them first and stays watched.
-EVAL_THRESHOLD_FILES = {"scripts/run_evals.py", "src/whitney/report.py", "src/whitney/thresholds.py"}
+# cli.py holds whitney run's --min-* options, which gate a user's own evals.
+THRESHOLDS_FILE = "src/whitney/thresholds.py"
+EVAL_THRESHOLD_FILES = {"scripts/run_evals.py", "src/whitney/report.py", THRESHOLDS_FILE, "src/whitney/cli.py"}
 EVAL_THRESHOLD = re.compile(
     r"^\s*(?P<constant>MIN_[A-Z_]+)\s*=\s*(?P<value>\d+(?:\.\d+)?)\s*(?:#.*)?$"
     r'|"(?P<option>--min-[a-z-]+)".*\bdefault=(?P<default>\d+(?:\.\d+)?)'
 )
+# A --min-* option with no default, default=None or default=MIN_*: it replaces nothing, or reads a
+# guarded constant, so it doesn't remove a threshold. Any other default (an expression) doesn't match.
+OPTION_WITHOUT_NUMBER = re.compile(r'add_argument\(\s*"(?P<option>--min-[a-z-]+)"(?!.*\bdefault=(?!None\b|MIN_[A-Z_]+\b))')
+THRESHOLD_NAME = re.compile(r"MIN_[A-Z_]+")
+OPTION_NAME = re.compile(r"--min-[a-z-]+")
+# The modules a watched file may import a MIN_* name from, under its own name.
+THRESHOLD_SOURCES = {"whitney.thresholds", "whitney.report"}
 
 
 @dataclass(frozen=True)
@@ -168,29 +185,193 @@ def _first_id(text: str) -> str | None:
     return found.group(0) if found else None
 
 
-def _eval_threshold(line: Line) -> tuple[str, float] | None:
-    """(name, value) if `line` sets an eval-gate threshold: a MIN_* constant or a --min-* option default."""
+def _eval_threshold(line: Line) -> tuple[str, float | None] | None:
+    """(name, value) if `line` sets an eval-gate threshold: a MIN_* constant or a --min-* option default.
+
+    The value is None for a --min-* option whose default isn't written as a
+    number (left out, None or a MIN_* constant).
+    """
     if line.file not in EVAL_THRESHOLD_FILES:
         return None
     found = EVAL_THRESHOLD.search(line.text)
-    if not found:
-        return None
-    return found["constant"] or found["option"], float(found["value"] or found["default"])
+    if found:
+        return found["constant"] or found["option"], float(found["value"] or found["default"])
+    found = OPTION_WITHOUT_NUMBER.search(line.text)
+    return (found["option"], None) if found else None
 
 
 def _lowered_eval_thresholds(added: list[Line], removed: list[Line]) -> list[Finding]:
-    """An eval-gate threshold whose value went down, or whose line went with no replacement."""
+    """An eval-gate threshold whose value went down, or whose line went with no replacement.
+
+    An option whose new default isn't a number replaces nothing, so it isn't
+    a removal; eval_threshold_findings checks what such a default reads.
+    """
     after = dict(filter(None, map(_eval_threshold, added)))
     findings = []
     for r in removed:
         threshold = _eval_threshold(r)
-        if threshold is None:
+        if threshold is None or threshold[1] is None:
             continue
         name, old = threshold
-        new = after.get(name)
-        if new is None or new < old:
-            change = "removed" if new is None else f"{old:g} -> {new:g}"
-            findings.append(Finding("threshold-lowered", r.file, r.line, f"{name}: {change}"))
+        if name not in after:
+            findings.append(Finding("threshold-lowered", r.file, r.line, f"{name}: removed"))
+        elif after[name] is not None and after[name] < old:
+            findings.append(Finding("threshold-lowered", r.file, r.line, f"{name}: {old:g} -> {after[name]:g}"))
+    return findings
+
+
+@dataclass
+class _Thresholds:
+    """What parsing the watched files at one revision shows about the eval gate's thresholds.
+
+    constants: each MIN_* in thresholds.py set by one plain top-level line, with its value and line.
+    bound: every MIN_* name thresholds.py binds, however.
+    options: (file, --min-* option) -> its default (None: the check's own), whether that default
+        is written as a number rather than read from a MIN_* constant, and its line; the lowest
+        number wins when a file adds the option more than once.
+    problems: (file, text) -> line, for what the guard can't read as a plain threshold.
+    """
+
+    constants: dict[str, tuple[float, int]] = field(default_factory=dict)
+    bound: set[str] = field(default_factory=set)
+    options: dict[tuple[str, str], tuple[float | None, bool, int]] = field(default_factory=dict)
+    problems: dict[tuple[str, str], int] = field(default_factory=dict)
+
+
+def _number(node: ast.expr | None) -> float | None:
+    """The value of a plain int or float literal (not a bool), else None."""
+    if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+        return float(node.value)
+    return None
+
+
+def _empty_list(node: ast.expr) -> bool:
+    """`[]` or `()`: the default of an option that collects values, like --min-rate, which then replaces nothing."""
+    return isinstance(node, (ast.List, ast.Tuple)) and not node.elts
+
+
+def _threshold_bindings(tree: ast.Module) -> list[tuple[str, ast.AST]]:
+    """(name, node) for every place `tree` binds a MIN_* name, at any depth, by any statement."""
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            found.append((node.id, node))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            found.append((node.name, node))
+        elif isinstance(node, ast.arg):
+            found.append((node.arg, node))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            found += [((alias.asname or alias.name).split(".")[0], node) for alias in node.names]
+    return [(name, node) for name, node in found if THRESHOLD_NAME.fullmatch(name)]
+
+
+def _plain_constant(node: ast.AST, tree: ast.Module) -> float | None:
+    """The value if `node` is the target of a top-level `MIN_NAME = number` statement, else None."""
+    for statement in tree.body:
+        if (
+            isinstance(statement, ast.Assign)
+            and statement.targets == [node]
+            and isinstance(node, ast.Name)
+        ):
+            return _number(statement.value)
+    return None
+
+
+def _read_thresholds(path: str, tree: ast.Module, facts: _Thresholds) -> None:
+    """Add thresholds.py's MIN_* constants, and anything unclear about them, to `facts`."""
+    by_name: dict[str, list[ast.AST]] = {}
+    for name, node in _threshold_bindings(tree):
+        by_name.setdefault(name, []).append(node)
+    for name, nodes in by_name.items():
+        facts.bound.add(name)
+        if len(nodes) > 1:
+            facts.problems[(path, f"{name} is bound {len(nodes)} times")] = max(n.lineno for n in nodes)
+            continue
+        value = _plain_constant(nodes[0], tree)
+        if value is None:
+            facts.problems[(path, f"{name} is not a plain `{name} = number` line at the top level")] = nodes[0].lineno
+        else:
+            facts.constants[name] = (value, nodes[0].lineno)
+
+
+def _read_other(path: str, tree: ast.Module, facts: _Thresholds) -> None:
+    """Add a watched file's MIN_* bindings that aren't plain imports, and its --min-* defaults, to `facts`."""
+    for name, node in _threshold_bindings(tree):
+        imported = isinstance(node, ast.ImportFrom) and node.module in THRESHOLD_SOURCES and any(
+            alias.name == name and alias.asname in (None, name) for alias in node.names
+        )
+        if not imported:
+            facts.problems[(path, f"{name} is bound outside {THRESHOLDS_FILE}")] = node.lineno
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument"):
+            continue
+        if not (node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+            continue
+        option = node.args[0].value
+        if not OPTION_NAME.fullmatch(option):
+            continue
+        default = next((k.value for k in node.keywords if k.arg == "default"), None)
+        value: float | None
+        written = False
+        if default is None or (isinstance(default, ast.Constant) and default.value is None) or _empty_list(default):
+            value = None
+        elif (number := _number(default)) is not None:
+            value, written = number, True
+        elif isinstance(default, ast.Name) and default.id in facts.constants:
+            value = facts.constants[default.id][0]
+        else:
+            facts.problems[(path, f"{option}: the default is not None, a number or a MIN_* constant")] = node.lineno
+            continue
+        earlier = facts.options.get((path, option))
+        if earlier is None or (value is not None and (earlier[0] is None or value < earlier[0])):
+            facts.options[(path, option)] = (value, written, node.lineno)
+
+
+def _parse_thresholds(sources: Mapping[str, str | None]) -> _Thresholds:
+    """Parse the watched files at one revision; thresholds.py first, so option defaults can read its constants."""
+    facts = _Thresholds()
+    for path in sorted(EVAL_THRESHOLD_FILES, key=lambda p: p != THRESHOLDS_FILE):
+        text = sources.get(path)
+        if text is None:
+            continue
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            facts.problems[(path, "the file doesn't parse as Python")] = 0
+            continue
+        (_read_thresholds if path == THRESHOLDS_FILE else _read_other)(path, tree, facts)
+    return facts
+
+
+def eval_threshold_findings(before: Mapping[str, str | None], after: Mapping[str, str | None]) -> list[Finding]:
+    """Eval-gate thresholds that parsing the watched files shows fell, went or became unreadable.
+
+    Args:
+        before: each watched file's text at the merge base (None: it didn't exist).
+        after: each watched file's text now, including uncommitted changes.
+
+    Flags a thresholds.py constant that falls or goes; one bound more than
+    once, at any depth, or set by anything but a plain top-level
+    `MIN_NAME = number` line; a MIN_* name bound in another watched file
+    except by importing it under its own name; and a --min-* default that
+    falls, is written as a number where it was the check's own, or is an
+    expression. A problem already at the merge base isn't flagged again.
+    """
+    old, new = _parse_thresholds(before), _parse_thresholds(after)
+    findings = [Finding("threshold-unclear", path, line, text) for (path, text), line in new.problems.items() if (path, text) not in old.problems]
+    for name, (value, line) in old.constants.items():
+        if name in new.constants and new.constants[name][0] < value:
+            findings.append(Finding("threshold-lowered", THRESHOLDS_FILE, new.constants[name][1], f"{name}: {value:g} -> {new.constants[name][0]:g}"))
+        elif name not in new.bound:
+            findings.append(Finding("threshold-lowered", THRESHOLDS_FILE, line, f"{name}: removed"))
+    for (path, option), (value, written, line) in new.options.items():
+        if value is None:
+            continue
+        was = old.options.get((path, option), (None, False, 0))[0]
+        if was is None and written:
+            findings.append(Finding("threshold-lowered", path, line, f"{option}: default written as {value:g}; use None or a MIN_* constant"))
+        elif was is not None and value < was:
+            findings.append(Finding("threshold-lowered", path, line, f"{option}: {was:g} -> {value:g}"))
     return findings
 
 
@@ -317,6 +498,27 @@ def collect(base: str, root: Path = ROOT) -> tuple[list[Line], list[Line], list[
     return added, removed, deleted
 
 
+def watched_sources(base: str, root: Path = ROOT) -> tuple[dict[str, str | None], dict[str, str | None]] | None:
+    """Each eval-threshold file's text at the merge base with `base` and in the working tree; None if git can't say."""
+    merge_base = _git(root, "merge-base", base, "HEAD")
+    if not merge_base:
+        return None
+    before = {path: _git(root, "show", f"{merge_base.strip()}:{path}") for path in EVAL_THRESHOLD_FILES}
+    after = {path: (root / path).read_text(encoding="utf-8") if (root / path).is_file() else None for path in EVAL_THRESHOLD_FILES}
+    return before, after
+
+
+def _unique(findings: list[Finding]) -> list[Finding]:
+    """`findings` without repeats of the same rule, file and text (both layers can flag one lowering)."""
+    seen: set[tuple[str, str, str]] = set()
+    kept = []
+    for f in findings:
+        if (f.rule, f.file, f.text) not in seen:
+            seen.add((f.rule, f.file, f.text))
+            kept.append(f)
+    return kept
+
+
 def load_ignore(root: Path = ROOT) -> list[str]:
     """Globs from .constraintsignore; text after '#' is the Exceptions ID it cites."""
     path = root / IGNORE_FILE
@@ -335,7 +537,8 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     root = args.repo.resolve()
     diff = collect(args.base, root)
-    if diff is None:
+    sources = watched_sources(args.base, root)
+    if diff is None or sources is None:
         print(f"floor-guard: no merge base against {args.base}", file=sys.stderr)
         return 2
     messages = _git(root, "log", "--format=%B", f"{args.base}..HEAD") or ""
@@ -347,6 +550,7 @@ def main(argv: list[str] | None = None) -> int:
         approved_exceptions=approvals_from(messages),
         gitleaksignore_text=gitleaks_ignore.read_text() if gitleaks_ignore.is_file() else None,
     )
+    findings = _unique(findings + eval_threshold_findings(*sources))
     if not findings:
         print("floor-guard: clean")
         return 0
