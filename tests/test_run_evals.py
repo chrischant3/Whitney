@@ -321,12 +321,21 @@ def test_left_at_their_defaults_the_flags_replace_no_minimum(tmp_path, monkeypat
     assert "Minimum pass rates replaced" not in report
 
 
-def test_the_min_flags_defaults_are_the_constants_in_thresholds():
-    # The defaults are written as numbers the floor guard watches; Task 12 makes them None, so they can't drift.
-    from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
+def test_the_deprecated_min_flags_default_to_none_and_min_conclusive_to_its_constant():
+    # Left out, --min-adherence and --min-held replace nothing, so a raised MIN_* constant can't be undone
+    # by a number written here; --min-conclusive reads its constant.
+    from whitney.thresholds import MIN_CONCLUSIVE
 
     args = _parse(["--report-only", "logs"])
-    assert (args.min_adherence, args.min_held, args.min_conclusive) == (MIN_ADHERENCE, MIN_HELD, MIN_CONCLUSIVE)
+    assert (args.min_adherence, args.min_held, args.min_conclusive) == (None, None, MIN_CONCLUSIVE)
+
+
+def test_min_adherence_given_at_its_default_value_is_reported_as_replacing_the_minimum(tmp_path, monkeypatch):
+    # With no written default, a value given on the command line is always a replacement the report names.
+    logs = [_file_log("template", "template", ["followed"] * 4 + ["violated"])]  # 80%
+    code, report = _report_only(tmp_path, monkeypatch, logs, "--min-adherence", "0.8")
+    assert code == 0
+    assert "Minimum pass rates replaced for this run: `no_secret_committed=0.8`.\n" in report
 
 
 @pytest.mark.parametrize("flag", ["--min-adherence", "--min-held", "--min-conclusive"])

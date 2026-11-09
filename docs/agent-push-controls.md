@@ -13,6 +13,8 @@ There are four layers. Only the first two are boundaries. The third is a guardra
 3. [Agent configuration](#layer-3-agent-configuration)
 4. [Process](#layer-4-process)
 
+Agents in a cloud session hold their own credential, so they're [an exception](#an-exception-agents-in-a-cloud-session) to the first and third layers.
+
 At the end: [how Whitney can produce evidence](#evidence-that-the-agent-configuration-holds) and a [checklist](#checklist).
 
 ## Why tool rules alone don't stop pushes
@@ -286,6 +288,24 @@ Pushing by SHA matters because a branch name points at whatever was committed la
 
 With Layer 1 in place, step 3 asks for your passphrase or a touch. That prompt is the point: if a push ever happens without one, a credential is reachable that shouldn't be.
 
+## An exception: agents in a cloud session
+
+Everything above assumes the agent runs on a developer's machine, with that developer's credentials. A **cloud session** is different: the agent runs in a container the agent platform provides, such as a Claude Code session on the web, and the platform gives it a GitHub credential for the repositories attached to the session. That credential is how the agent clones, and it can push.
+
+Layers 1 and 3 don't reach it. There's no developer key to lock away, and the platform, not your managed settings, decides what the container's agent may run. So a cloud agent can push, and you should plan on it doing so.
+
+The boundary that's left is Layer 2. With a ruleset on the default branch, a cloud agent can push only to its own branches, and nothing reaches the default branch without a pull request that a person approves and merges. Layer 4 still applies to that person: review the pull request's diff, not the agent's summary of it.
+
+If your organisation allows cloud sessions, accept their pushes to their own branches as an exception, write the exception down, and check that:
+
+- the default branch's ruleset blocks direct pushes, force pushes and deletions, and requires a pull request with an approval
+- no bypass list includes the platform's GitHub App or the account its credential acts as
+- a person, not an agent, merges every pull request
+
+### How this repository applies it
+
+Whitney's own repository allows the exception, decided on 2026-11-08. Cloud sessions may push the branches they work on. `main` requires a pull request, signed commits and no direct pushes, and the maintainer reviews and merges every pull request. Changes that need an approver's signature, as [signed-approvals.md](signed-approvals.md) describes, are still made on the maintainer's own machine.
+
 ## Evidence that the agent configuration holds
 
 Whitney runs the real agent CLI against a template and records what the agent did. It can show whether a permission rule held when an agent tried a blocked command.
@@ -315,4 +335,5 @@ A `permission_held` check is planned. It will test pattern rules such as the one
 | Claude Code `PreToolUse` hook | More forms of `git push` than a deny rule | Scripts the agent writes; failures, unless `onFailure: "block"` | Platform team | Any |
 | Claude Code sandbox, no GitHub domains | Network access to GitHub from shell commands | Built-in tools; native Windows | Platform team | Any |
 | Kilo `bash` pattern denies | Plain `git push` and `gh` commands | Rewritten commands, edits to `kilo.jsonc` | Project or platform team | Any |
+| Cloud sessions allowed to push their own branches, with the default branch protected | Cloud agents changing the default branch without a reviewed pull request | Cloud agents pushing other branches, which is the exception | Org owner | Team or Enterprise (Free: unconfirmed for private repositories) |
 | Review and push by SHA | Pushing commits nobody reviewed | A reviewer missing something in the diff | Every person who pushes | Any |

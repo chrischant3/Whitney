@@ -108,8 +108,11 @@ the other of the two; and `simplefilter("ignore")` without `FutureWarning`
 in `tasks._loaded`, whose block can raise no warning but version 1's
 `FutureWarning`. Task 10 adds `package_version("WHITNEY")` in
 `tasks._whitney_version`, which finds the same installed package, since
-`importlib.metadata` matches a package's name whatever its case. None of
-these depends on the platform.
+`importlib.metadata` matches a package's name whatever its case. Task 11
+adds more codec-name cases (`cli.harness_version`, `cli.write_report`);
+the `", "` in `tasks._scenario_task` moved to `tasks.why_not_applies`, which
+`whitney run` uses too, and an eval file may now list each target only once.
+None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
 and 3.12 it is `re.TEMPLATE`, matching raises `re.error`, and

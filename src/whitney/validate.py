@@ -286,8 +286,11 @@ def _token_problems(
             continue
         for parameter, place in spec.findable.items():
             value = getattr(params, parameter)
+            # A check whose `regex` parameter is true takes its tokens as regular expressions (no_string_added).
+            regex = getattr(params, "regex", False) is True
             for token in [value] if isinstance(value, str) else value:
-                if not any(token in text for text in _searched(place, files, scenario.prompt, applies_pending)):
+                texts = _searched(place, files, scenario.prompt, applies_pending)
+                if not any(re.search(token, text) if regex else token in text for text in texts):
                     inherited = f" (scenario '{scenario.id}')" if block_at == "defaults" else ""
                     found.append((_parameter_at(eval_file, block_at, index, expectation.check, (parameter,)), (
                         f"{token!r} {_where(place, scenario.fixture, applies_pending)}, so this check could never fail{inherited}"

@@ -480,3 +480,52 @@ def test_a_distribution_installed_editable_is_left_out_with_every_other_copy_of_
     ]
 
     assert _check["installed_requirements"](distributions) == ["requests==2.32.3"]
+
+
+class _StageRecorder(_check["Checks"]):
+    """Checks whose steps only note that they ran, so main's choice of steps can be tested."""
+
+    def __init__(self, base, today):
+        super().__init__(base, today, run=lambda command: None, mutants=Path("unused"))
+        self.ran = []
+
+    def __getattribute__(self, name):
+        steps = ("floor", "secrets", "tests_and_coverage", "changed_line_coverage",
+                 "coverage_ratchet", "mutation", "dependencies", "touched_prefixes")
+        if name in steps:
+            return lambda *args, **kwargs: object.__getattribute__(self, "ran").append(name)
+        return object.__getattribute__(self, name)
+
+
+@pytest.fixture
+def recorded_stages(monkeypatch):
+    made = []
+
+    def make(base, today):
+        made.append(_StageRecorder(base, today))
+        return made[-1]
+
+    monkeypatch.setitem(_check["main"].__globals__, "Checks", make)
+    monkeypatch.setitem(_check["main"].__globals__, "read_ratchets", lambda text: RATCHETS)
+    return made
+
+
+@pytest.mark.parametrize("stage", ["task", "full"])
+def test_skip_mutation_runs_every_other_check_but_no_mutants_and_warns(recorded_stages, capsys, stage):
+    code = _check["main"]([stage, "--skip-mutation"])
+
+    checks = recorded_stages[0]
+    assert "mutation" not in checks.ran
+    assert "tests_and_coverage" in checks.ran
+    assert ("dependencies" in checks.ran) == (stage == "full")
+    assert _result(checks, "mutation testing")[1] == "warn"
+    assert "[warn] mutation testing: skipped (--skip-mutation)" in capsys.readouterr().out
+    assert code == 0
+
+
+@pytest.mark.parametrize("stage", ["task", "full"])
+def test_without_skip_mutation_the_stage_runs_mutation(recorded_stages, stage):
+    _check["main"]([stage])
+
+    assert "mutation" in recorded_stages[0].ran
+    assert _result(recorded_stages[0], "mutation testing") is None

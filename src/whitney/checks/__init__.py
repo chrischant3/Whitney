@@ -282,7 +282,9 @@ class CheckSpec:
             (see folders).
         findable: parameter -> where its tokens must be found ("fixture",
             "fixture_or_prompt" or a fixture folder), so validation can
-            prove the check can fail.
+            prove the check can fail. If the check's parameters have a
+            `regex` field set to true, each token is a regular expression,
+            which must match there instead.
         metrics: the names of the values its verdicts carry beside the
             outcome (Verdict.metrics), such as task_done. They share the
             score's value with the labels, so no metric may be named like one.
@@ -546,4 +548,4 @@ def combine(verdicts: Iterable[Verdict]) -> Outcome:
 
 
 # Whitney's own checks register themselves when imported. They import the names above, so they come last.
-from whitney.checks import git, outside
+from whitney.checks import files, git, outside

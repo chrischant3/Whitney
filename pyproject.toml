@@ -11,6 +11,9 @@ dependencies = [
     "pydantic>=2,<3",  # scenario validation; already required by inspect-ai
 ]
 
+[project.scripts]
+whitney = "whitney.cli:main"
+
 [project.entry-points.inspect_ai]
 whitney = "whitney._registry"
 
