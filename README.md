@@ -330,6 +330,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 - [docs/load-order.md](docs/load-order.md): where Kilo loads instructions from
 - [docs/vscode-manual-check.md](docs/vscode-manual-check.md): checking the results carry over to the VS Code extension
 - [docs/findings/](docs/findings/): gaps found so far
+- [docs/release-checklist.md](docs/release-checklist.md): what to check before tagging a release
 - [docs/proposal.md](docs/proposal.md): the original proposal, including the planned work on skills, agents and instruction order
 - [tasks/plan.md](tasks/plan.md): the MVP plan and open questions
 
