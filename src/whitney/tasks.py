@@ -481,6 +481,8 @@ def why_not_applies(target: str, file_targets: Iterable[str], checks: Iterable[C
     """
     file_targets = tuple(file_targets)
     unsupported = [spec.name for spec in checks if target not in spec.targets]
+    if len(unsupported) == 1:
+        return f"its check {unsupported[0]} doesn't support it"
     if unsupported:
         return f"its checks {', '.join(unsupported)} don't support it"
     if target not in file_targets:

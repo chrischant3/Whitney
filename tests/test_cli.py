@@ -425,7 +425,7 @@ def test_a_file_that_does_not_apply_to_the_target_is_listed_as_not_run(consumer,
     assert (
         "\n## Not run for this target\n\n"
         "- `configuration/kilo-only.json`: it applies to kilo\n"
-        "- `outside.json`: its checks outside_canary_not_reached don't support it\n"
+        "- `outside.json`: its check outside_canary_not_reached doesn't support it\n"
     ) in _report(consumer)
 
 
