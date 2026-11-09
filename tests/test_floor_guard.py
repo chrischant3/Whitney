@@ -242,6 +242,119 @@ def test_a_minimum_moved_from_report_py_to_the_thresholds_module_keeps_its_floor
     assert _rules(removed=moved_from, added=[Line("src/whitney/thresholds.py", 19, "MIN_ADHERENCE = 0.7")]) == ["threshold-lowered"]
 
 
+def test_lowering_an_option_default_in_cli_py_is_flagged():
+    # whitney run's --min-* defaults gate a user's own evals (criterion 11).
+    def arg(default):
+        return f'    run.add_argument("--min-conclusive", type=rate, default={default}, help=HELP["--min-conclusive"])'
+
+    at = "src/whitney/cli.py"
+    assert _rules(removed=[Line(at, 140, arg(0.5))], added=[Line(at, 140, arg(0.3))]) == ["threshold-lowered"]
+    assert _rules(removed=[Line(at, 140, arg(0.5))], added=[Line(at, 140, arg(0.6))]) == []
+
+
+def test_an_option_default_of_none_or_a_constant_is_not_a_removed_threshold():
+    # None means the check's own minimum, which the MIN_* constants guard.
+    at = "scripts/run_evals.py"
+    removed = [Line(at, 247, '    p.add_argument("--min-adherence", type=_rate, default=0.8, help="deprecated")')]
+    for after in (
+        '    p.add_argument("--min-adherence", type=_rate, help="deprecated")',
+        '    p.add_argument("--min-adherence", type=_rate, default=None, help="deprecated")',
+        '    p.add_argument("--min-adherence", type=_rate, default=MIN_ADHERENCE, help="deprecated")',
+    ):
+        assert _rules(removed=removed, added=[Line(at, 247, after)]) == [], after
+    hidden = '    p.add_argument("--min-adherence", type=_rate, default=float(os.environ["LOW"]), help="x")'
+    assert _rules(removed=removed, added=[Line(at, 247, hidden)]) == ["threshold-lowered"]
+
+
+eval_threshold_findings = _guard["eval_threshold_findings"]
+THRESHOLDS = "src/whitney/thresholds.py"
+CLI = "src/whitney/cli.py"
+TODAY = "MIN_CONCLUSIVE = 0.5\nMIN_ADHERENCE = 0.8\nMIN_HELD = 0.9\n"
+
+
+def _structural(after, before=None):
+    """Rules and texts of eval_threshold_findings, the base being today's thresholds.py unless `before` is given."""
+    before = {THRESHOLDS: TODAY} if before is None else before
+    return sorted((f.rule, f.text) for f in eval_threshold_findings(before, after))
+
+
+def test_an_unchanged_thresholds_module_is_clean():
+    assert _structural({THRESHOLDS: TODAY}) == []
+    assert _structural({THRESHOLDS: TODAY.replace("0.9", "0.95")}) == []
+
+
+def test_a_duplicate_threshold_lower_in_the_module_is_flagged():
+    found = _structural({THRESHOLDS: TODAY + "\n# later\nMIN_HELD = 0.1\n"})
+    assert found == [("threshold-unclear", "MIN_HELD is bound 2 times")]
+
+
+def test_an_indented_decoy_threshold_is_flagged():
+    found = _structural({THRESHOLDS: TODAY + "if True:\n    MIN_HELD = 0.1\n"})
+    assert found == [("threshold-unclear", "MIN_HELD is bound 2 times")]
+
+
+def test_a_threshold_written_as_an_expression_is_flagged():
+    for value in ("0.9 - 0.8", "-0.1", "float('0.1')", "True"):
+        found = _structural({THRESHOLDS: TODAY.replace("MIN_HELD = 0.9", f"MIN_HELD = {value}")})
+        assert found == [("threshold-unclear", "MIN_HELD is not a plain `MIN_HELD = number` line at the top level")], value
+
+
+def test_a_lowered_or_removed_threshold_is_flagged_by_parsing_too():
+    assert _structural({THRESHOLDS: TODAY.replace("0.9", "0.5")}) == [("threshold-lowered", "MIN_HELD: 0.9 -> 0.5")]
+    assert _structural({THRESHOLDS: TODAY.replace("MIN_HELD = 0.9\n", "")}) == [("threshold-lowered", "MIN_HELD: removed")]
+
+
+def test_a_threshold_bound_in_another_watched_file_is_flagged():
+    imports = "from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD\n"
+    assert _structural({THRESHOLDS: TODAY, CLI: imports}) == []
+    found = _structural({THRESHOLDS: TODAY, CLI: imports + "MIN_HELD = 0.1\n"})
+    assert found == [("threshold-unclear", "MIN_HELD is bound outside src/whitney/thresholds.py")]
+    renamed = "from whitney.thresholds import MIN_CONCLUSIVE as MIN_HELD\n"
+    assert _structural({THRESHOLDS: TODAY, CLI: renamed}) == [("threshold-unclear", "MIN_HELD is bound outside src/whitney/thresholds.py")]
+
+
+def test_an_option_default_read_from_a_constant_is_compared_by_its_value():
+    def cli(default):
+        return f'run.add_argument("--min-conclusive", type=rate,\n    default={default})\n'
+
+    before = {THRESHOLDS: TODAY, CLI: cli("MIN_CONCLUSIVE")}
+    assert _structural({THRESHOLDS: TODAY, CLI: cli("0.3")}, before) == [("threshold-lowered", "--min-conclusive: 0.5 -> 0.3")]
+    assert _structural({THRESHOLDS: TODAY, CLI: cli("0.5")}, before) == []
+    assert _structural({THRESHOLDS: TODAY, CLI: cli("None")}, before) == []
+
+
+def test_a_new_option_reading_a_constant_is_clean():
+    assert _structural({THRESHOLDS: TODAY, CLI: 'run.add_argument("--min-conclusive", default=MIN_CONCLUSIVE)\n'}) == []
+
+def test_an_option_whose_default_is_an_empty_list_replaces_nothing():
+    # --min-rate appends CHECK=VALUE pairs; left out, it replaces no check's minimum.
+    assert _structural({THRESHOLDS: TODAY, CLI: 'run.add_argument("--min-rate", action="append", default=[])\n'}) == []
+
+def test_a_number_written_where_the_default_was_the_checks_own_is_flagged():
+    before = {THRESHOLDS: TODAY, CLI: 'run.add_argument("--min-held", type=rate)\n'}
+    found = _structural({THRESHOLDS: TODAY, CLI: 'run.add_argument("--min-held", type=rate, default=0.95)\n'}, before)
+    assert found == [("threshold-lowered", "--min-held: default written as 0.95; use None or a MIN_* constant")]
+
+
+def test_an_option_default_the_guard_cannot_read_is_flagged():
+    before = {THRESHOLDS: TODAY, CLI: 'run.add_argument("--min-held", type=rate)\n'}
+    found = _structural({THRESHOLDS: TODAY, CLI: 'run.add_argument("--min-held", type=rate, default=low())\n'}, before)
+    assert found == [("threshold-unclear", "--min-held: the default is not None, a number or a MIN_* constant")]
+
+
+def test_a_watched_file_that_does_not_parse_is_flagged():
+    assert _structural({THRESHOLDS: TODAY + "MIN_HELD =\n"}) == [
+        ("threshold-lowered", "MIN_ADHERENCE: removed"),
+        ("threshold-lowered", "MIN_CONCLUSIVE: removed"),
+        ("threshold-lowered", "MIN_HELD: removed"),
+        ("threshold-unclear", "the file doesn't parse as Python"),
+    ]
+
+
+def test_a_problem_already_at_the_merge_base_is_not_flagged_again():
+    twice = TODAY + "MIN_HELD = 0.95\n"
+    assert _structural({THRESHOLDS: twice}, before={THRESHOLDS: twice}) == []
+
 def test_the_guard_checks_the_repository_it_is_pointed_at(tmp_path):
     # CI runs main's copy of the guard on the pull request's checkout, so a pull request
     # can't weaken the guard that checks it.
@@ -272,3 +385,28 @@ def test_the_guard_checks_the_repository_it_is_pointed_at(tmp_path):
     git("commit", "-q", "--amend", "-am", "the same change without the suppression")
 
     assert (guard().returncode, guard().stdout) == (0, "floor-guard: clean\n")
+
+
+def test_the_guard_flags_a_duplicate_threshold_added_to_the_thresholds_module(tmp_path):
+    # An added line alone looks harmless to the line rules; parsing the module shows the second binding.
+    import subprocess
+    import sys
+
+    def git(*args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    module = tmp_path / "src/whitney/thresholds.py"
+    module.parent.mkdir(parents=True)
+    module.write_text(TODAY)
+    git("init", "-q", "-b", "main")
+    git("add", ".")
+    git("commit", "-qm", "base")
+    git("checkout", "-q", "-b", "change")
+    module.write_text(TODAY + "MIN_HELD = 0.1\n")
+    git("commit", "-qam", "a second MIN_HELD")
+
+    script = Path(__file__).resolve().parents[1] / "scripts/floor_guard.py"
+    flagged = subprocess.run([sys.executable, "-I", str(script), "--repo", str(tmp_path), "--base", "main"], capture_output=True, text=True)
+
+    assert flagged.returncode == 1
+    assert "[threshold-unclear] src/whitney/thresholds.py:4: MIN_HELD is bound 2 times" in flagged.stderr

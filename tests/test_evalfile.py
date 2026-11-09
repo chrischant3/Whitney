@@ -169,6 +169,13 @@ def test_a_field_that_breaks_the_schema_is_named(tmp_path, overrides, location):
     assert location in [where for where, _ in problems(raised)]
 
 
+def test_a_target_listed_twice_is_refused(tmp_path):
+    with pytest.raises(EvalFileError) as raised:
+        load(write(tmp_path, v2(targets=["kilo", "kilo"])))
+
+    assert problems(raised) == [("targets", "Value error, lists kilo twice; name each target once")]
+
+
 @pytest.mark.parametrize("left_out", ["fixture", "expect"])
 def test_a_scenario_needs_a_fixture_and_an_expect_here_or_in_defaults(tmp_path, left_out):
     defaults = v2()["defaults"]
@@ -608,3 +615,16 @@ def run_in_latin1_locale(code, *args):
     env = {**os.environ, "PYTHONUTF8": "0", "LC_ALL": "en_US.ISO8859-1",
            "PYTHONPATH": str(Path(whitney.__file__).parent.parent)}
     return subprocess.run([sys.executable, "-c", code, *map(str, args)], capture_output=True, text=True, env=env, check=True)
+
+
+def test_a_file_read_carries_the_sha256_of_the_bytes_it_was_read_from(tmp_path):
+    import hashlib
+
+    v1 = ROOT / "tests" / "data" / "version-1" / "agents-md.json"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        old, upgraded = read(v1), load(v1)
+    v2 = ROOT / "evals" / "agents-md.json"
+
+    assert read(v2).sha256 == load(v2).sha256 == hashlib.sha256(v2.read_bytes()).hexdigest()
+    assert old.sha256 == upgraded.sha256 == hashlib.sha256(v1.read_bytes()).hexdigest()

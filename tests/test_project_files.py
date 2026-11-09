@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -1188,3 +1189,131 @@ def test_a_binary_skill_file_under_the_evals_path_is_not_named(tmp_path):
         "it is under the evals path, whose files are never staged"
     )
     assert files_not_staged("kilo", tmp_path) == [".claude/skills/x/logo.png"]
+
+
+def test_an_evals_path_that_names_a_root_file_leaves_that_file_out(tmp_path):
+    _kilo_project(tmp_path, {"AGENTS.md": "rules\n", "CONTEXT.md": "context\n", ".kilocoderules": "legacy\n"})
+
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / "CONTEXT.md")) == {"kilo.jsonc", "AGENTS.md", ".kilocoderules"}
+    assert set(load_project_files(tmp_path, evals_path=tmp_path / ".kilocoderules")) == {"kilo.jsonc", "AGENTS.md", "CONTEXT.md"}
+
+
+def test_the_reason_for_a_kilo_file_ignores_what_lies_under_the_evals_path(tmp_path):
+    # The loader never reads the evals folder, so a file there that isn't UTF-8 can't stop the reason being given.
+    _kilo_project(tmp_path, {"app.py": "source\n"})
+    (tmp_path / "evals").mkdir()
+    (tmp_path / "evals/bad.md").write_bytes(b"\xff not UTF-8")
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md"]}))
+    evals = tmp_path / "evals"
+    staged = load_project_files(tmp_path, evals_path=evals)
+
+    assert not_staged_reason("kilo", tmp_path, "app.py", staged, evals_path=evals).startswith("the kilo loader stages only")
+
+
+def test_a_broken_symlink_is_named_as_a_symlink_when_an_evals_path_is_given(tmp_path):
+    _kilo_project(tmp_path, {"evals/x.md": "x\n"})
+    (tmp_path / "broken.md").symlink_to(tmp_path / "missing.md")
+    evals = tmp_path / "evals"
+    staged = load_project_files(tmp_path, evals_path=evals)
+
+    assert not_staged_reason("kilo", tmp_path, "broken.md", staged, evals_path=evals) == (
+        "it is a symlink, or inside a symlinked folder, and nothing is staged through a link"
+    )
+
+
+def test_many_repeated_double_stars_are_expanded_as_one_without_walking_each(tmp_path):
+    # Walked one by one, 40 "**" in a row try every way of sharing the 7 folders above x.md between
+    # them (tens of millions of splits, which takes hours); folded into one, the walk is a single pass
+    # (a few milliseconds). The load runs in a subprocess first, so an unfolded walk fails at 60 s
+    # instead of hanging the run; counting directory listings instead would assert on a call count.
+    # A first segment pair keeps the fold honest about where the run of "**" starts.
+    _kilo_project(tmp_path, {"docs/rules/a/b/c/d/e/f/g/x.md": "x\n", "docs/rules/top.md": "top\n"})
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": ["docs/rules/" + "**/" * 40 + "*.md"]}))
+    expected = ["docs/rules/a/b/c/d/e/f/g/x.md", "docs/rules/top.md", "kilo.jsonc"]
+    code = "import sys; from whitney.project_files import load_project_files; print(sorted(load_project_files(sys.argv[1])))"
+
+    run = _run_whitney(code, tmp_path, timeout=60)
+    # Also called here, so mutation testing, which maps tests to the functions they call in-process, runs this test.
+    staged = load_project_files(tmp_path)
+
+    assert run.stdout.strip() == str(expected), run.stderr
+    assert sorted(staged) == expected
+
+
+def _run_whitney(code, *args, timeout, env=None):
+    """Run `code` in a fresh Python that imports the whitney this test imported; past `timeout` seconds it is killed and the test fails."""
+    import whitney
+
+    env = {**os.environ, **(env or {}), "PYTHONPATH": str(Path(whitney.__file__).parent.parent)}
+    return subprocess.run([sys.executable, "-c", code, *map(str, args)], capture_output=True, text=True, env=env, timeout=timeout, check=True)
+
+
+def test_on_a_case_sensitive_disk_the_exact_spelling_is_named_over_another_case(tmp_path):
+    # A case-sensitive folder can hold both CLAUDE.md and claude.md; the file found by its exact name is the one named.
+    # Such a folder can't be made on a case-insensitive disk, so the listing is given directly.
+    assert project_files._on_disk_name(["claude.md", "CLAUDE.md"], "CLAUDE.md") == "CLAUDE.md"
+    assert project_files._on_disk_name(["claude.md"], "CLAUDE.md") == "claude.md"
+
+
+def test_a_project_inside_a_folder_named_like_an_excluded_one_still_never_stages_env(tmp_path):
+    project = tmp_path / "node_modules" / "proj"
+    project.mkdir(parents=True)
+    _kilo_project(project, {"AGENTS.md": "rules\n", ".env": "SECRET=1\n"})
+    (project / "kilo.jsonc").write_text(json.dumps({"instructions": [".env"]}))
+
+    assert ".env" not in load_project_files(project)
+
+
+PROJECT_UNDER_TEST = {
+    "AGENTS.md": "rules\n",
+    ".kilo/rules/a.md": "rule a\n",
+    ".kilo/skills/x/SKILL.md": "skill\n",
+    "docs/notes.md": "notes\n",
+    "node_modules/pkg/x.md": "a dependency's file\n",
+    ".env": "SECRET=1\n",
+    "app.py": "source\n",
+}
+STAGED_FROM_PROJECT_UNDER_TEST = {"kilo.jsonc", "AGENTS.md", ".kilo/rules/a.md", ".kilo/skills/x/SKILL.md", "docs/notes.md"}
+
+
+@pytest.mark.parametrize("parent", ["plain", "node_modules", ".venv", ".git"])
+def test_a_project_stages_the_same_files_whatever_the_folders_above_it_are_called(tmp_path, parent):
+    # Only folders inside the project are excluded; the name of a folder above it says nothing about its files.
+    project = tmp_path / parent / "proj"
+    project.mkdir(parents=True)
+    _kilo_project(project, PROJECT_UNDER_TEST)
+    (project / "kilo.jsonc").write_text(json.dumps({"instructions": ["**/*.md", ".env"]}))
+
+    staged = load_project_files(project)
+
+    assert set(staged) == STAGED_FROM_PROJECT_UNDER_TEST
+    assert set(load_template_files(project)) == STAGED_FROM_PROJECT_UNDER_TEST | {"app.py"}  # a template stages every text file
+    assert not_staged_reason("kilo", project, "docs/notes.md", staged) is None
+    assert not_staged_reason("kilo", project, "node_modules/pkg/x.md", staged) == (
+        "it is inside node_modules/, which is never staged"
+    )
+    assert not_staged_reason("kilo", project, ".env", staged) == (
+        ".env files are never staged, except .env.example, .env.sample and .env.template"
+    )
+    assert not_staged_reason("kilo", project, "app.py", staged).startswith("the kilo loader stages only")
+
+
+def test_instructions_and_skill_folders_never_reach_into_an_excluded_folder(tmp_path):
+    _kilo_project(tmp_path, {
+        ".git/config": "[core]\n",
+        "node_modules/x.md": "dependency\n",
+        ".venv/a.md": "venv\n",
+        "x/config": "plain\n",
+        ".kilo/skills/s/SKILL.md": "skill\n",
+        ".kilo/skills/s/node_modules/y.md": "dependency in a skill\n",
+    })
+    (tmp_path / "kilo.jsonc").write_text(json.dumps({"instructions": [".git/config", "node_modules/x.md", ".venv/a.md", "{.git,x}/config"]}))
+
+    staged = load_project_files(tmp_path)
+
+    assert set(staged) == {"kilo.jsonc", "x/config", ".kilo/skills/s/SKILL.md"}
+    for relative, folder in [
+        (".git/config", ".git"), ("node_modules/x.md", "node_modules"), (".venv/a.md", ".venv"),
+        (".kilo/skills/s/node_modules/y.md", "node_modules"),
+    ]:
+        assert not_staged_reason("kilo", tmp_path, relative, staged) == f"it is inside {folder}/, which is never staged"

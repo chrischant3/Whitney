@@ -10,6 +10,22 @@
 
 The spec in `docs/specs/` is an unchanged copy of `~/workspace/package-and-expected-results.md` as it stood at 23:38 on 2026-11-05. Edit the repo copy from now on.
 
+## Where we are (2026-11-09)
+
+Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
+
+- **In `main`:** Tasks 1 to 10, the Kilo captures (16, 22), the push-controls guide, the `check.py` task/full split, the coverage ratchet at 99.3%, the mutation ratchet at 99.7%, the test git isolation (`1dcc2c7`), and Task 12's signed floor guard commit (`05d9063`: watches `cli.py`, parses the thresholds). PRs #8 to #12.
+- **On `phase5`, for the next PR:** Task 11 (`whitney run`, `whitney validate`, merged from `p5-t11-cli`) and Task 12 part 2 (`e941a5e`: `--min-adherence` and `--min-held` default to `None`). On 2026-11-09 `main`'s floor guard passed on it, and `check.py full` passed every check except mutation testing: 1,744 tests, changed-line coverage 99%, project coverage 99.4% (recorded 99.3%), no high dependency vulnerabilities. Mutation testing was still running after 2 hours, with the slowest mutants left, and was stopped.
+- **Decided 2026-11-09 (Christopher): skip mutation testing for now.** It takes long enough to hold up every task. Until a spike finds a faster way, run `check.py task --skip-mutation` and `check.py full --skip-mutation`, which print a warning in place of the mutation scores, and say in each PR that mutation testing was skipped. CONSTRAINTS.md is unchanged: the mutation floor and ratchet stand, and the next run with mutation testing judges everything merged meanwhile. The spike is in `todo-phase5.md`, "Spike: faster mutation testing", and absorbs decision 2 below.
+- **Decided 2026-11-08 (Christopher):**
+  1. **Cloud sessions may push their own branches.** They can't be stopped from pushing; `main` is protected instead (PR required, signed commits, no direct pushes), and Christopher still reviews and merges every PR. Record this exception in `docs/agent-push-controls.md`.
+  2. **Bring `check.py full` down from about 35 minutes (70 on a 4-core cloud machine) to 10 to 15 minutes**, in this order:
+     - **Step 1, reuse results.** `full` currently deletes `mutants/mutmut-stats.json` (`2c24500`), because mutmut 3.8.1 only partly updates its test map when a test is added, so every full run re-tests all 6,874 mutants. Instead: rebuild the map, keep results for functions whose code and covering tests are unchanged, and re-test changed functions, functions whose covering tests changed, and every current survivor. Add a weekly from-scratch `check.py full` in GitHub Actions to catch a weakened test.
+     - **Step 2, faster tests, not weaker ones.** From the stats map: `test_evidence.py::test_a_fake_agent_that_prints_its_key_and_writes_it_to_a_file_leaves_no_trace_in_the_log` (5.5 s alone) and `test_a_folder_over_the_file_cap_makes_a_real_runs_check_inconclusive` (2.5 s) are 56% of the worst-case mutation time; about 20 other end-to-end Inspect tests make up most of the rest. Profiling the first: Whitney's code takes about 30 ms; about 3.6 s is the event loop waiting on child processes. Find out what it waits for (a fixed poll interval in Inspect or in `agent.py`'s wait loop?) and cut it without changing what the test checks.
+- **Push-controls exception (decision 1):** written on `docs/cloud-push-exception` (`9615158`, off `origin/main`, worktree `../Whitney-cloud-push`, not pushed). `check.py fast` passes; `check.py task` still to run.
+- **Then:** the mutation spike, and Tasks 13 to 15.
+- **Working rules:** one `check.py full` lane at a time, other lanes `check.py task`; seed new worktrees' `mutants/` from the main checkout, `rm -rf mutants/tests`, touch the sources; use `.venv/bin/python`; git's `merge.ff=only` is set globally on Christopher's Mac, so merges there need `--no-ff`. Never commit `.env` files; never name a company, team or other repository in Whitney; changes to `floor_guard.py` or `check_approvals.py` need Christopher's signed commit.
+
 ## Overview
 
 Today a user can add scenarios only for the two rules Whitney already knows how to score. After Phase 5 they can:
@@ -154,6 +170,10 @@ Spec open questions that block a task here, so they need an answer before that t
 ## Later
 
 Not planned in detail:
+
+- **The Python API (found in the Task 11 review, 2026-11-07):** the spec's `whitney.run`, `whitney.validate` and `whitney.discover`, which the CLI should be a thin layer over. Task 11's `cli._run` takes an argparse Namespace and prints its findings, so it needs splitting into a library call that returns results and a CLI that prints them. Plan it with Task 25 or before the `v0.2.0` release.
+
+- **Security, found in the Task 9 review (2026-11-06), do before a release:** a literal `apiKey` in the user's global Kilo `provider` settings is copied into the `KILO_CONFIG` overlay, which the agent can read, and neither the agent nor `evidence.run_secrets` redacts it; the same goes for proxy credentials passed through `LOCAL_ENV_PASSTHROUGH` (for example `HTTP_PROXY=user:pass@...`). Refuse literal keys in the overlay (use `{env:NAME}`), or redact them, with a test.
 
 - `no_test_newly_skipped`, with presets for each test framework (spec slice 12).
 - Claude Code skills and agents: its own capture of `--output-format stream-json`, and staging `.claude/skills/` and `.claude/agents/` without `.claude/settings.json`, whose hooks run commands.
