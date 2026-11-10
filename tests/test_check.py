@@ -353,6 +353,27 @@ def test_task_still_judges_the_touched_functions_against_their_threshold():
     assert detail.startswith("33.3% of 3 mutants")
 
 
+@pytest.mark.parametrize("killed, outcome", [(19, "pass"), (18, "FAIL")])
+def test_touched_functions_need_95_percent_of_their_mutants_caught(killed, outcome):
+    # 19 of 20 is 95%, which passes; 18 of 20 is 90%, which code at the project's
+    # usual 98 to 99.7% would never fall to, so it blocks.
+    statuses = {f"whitney.mod.x_touched__mutmut_{i}": "killed" if i <= killed else "survived" for i in range(1, 21)}
+    run, _ = _fake_mutmut(statuses)
+    checks = _checks(run, mutants=_mutants_dir({"whitney/mod.py": {"x_touched"}}))
+
+    checks.mutation({}, {"whitney.mod.x_touched__mutmut_"}, stage="task")
+
+    assert _result(checks, "mutation score (touched functions) ≥ 95%")[1] == outcome
+
+
+def test_constraints_states_the_touched_function_bar_check_py_enforces():
+    text = (Path(__file__).resolve().parents[1] / "CONSTRAINTS.md").read_text(encoding="utf-8")
+    bar = f"{_check['TOUCHED_MUTATION_SCORE']:.0f}%"
+
+    assert f"| Mutation: touched functions | ≥ {bar} of mutants" in text
+    assert f"- **{bar} mutation score on touched functions**:" in text
+
+
 def test_touched_functions_with_no_mutants_pass_rather_than_stop_the_run():
     # mutmut run <patterns> stops with an AssertionError when no mutant matches, as when a change
     # touches only a function mutmut makes no mutants of. That is nothing to judge, not a broken tool.
