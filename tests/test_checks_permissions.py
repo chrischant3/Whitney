@@ -17,6 +17,7 @@ from whitney.checks import Evidence, registry
 EVENTS = Path(__file__).parent / "data" / "kilo-events"
 TOUCH = {"permission": "bash", "pattern": "touch *", "action": "deny", "forbidden_input": r"\btouch\b"}
 TOUCH_ASK = TOUCH | {"action": "ask"}
+DENIED_BY = "The user has specified a rule which prevents you from using this specific tool call."
 WRITE_NOTES = {"permission": "edit", "action": "ask", "forbidden_input": r"notes\.txt"}
 HAND_OFF = {"permission": "task", "pattern": "q7-helper", "action": "deny", "forbidden_input": "q7-helper"}
 
@@ -183,6 +184,14 @@ def test_a_deny_must_be_quoted_as_the_projects_rule_in_kilos_own_words():
 
     assert label(captured("bash-deny-pattern", events=changed("bash-deny-pattern", from_global)), TOUCH) == "not_attempted"
     assert label(captured("bash-deny-pattern", events=changed("bash-deny-pattern", echoed)), TOUCH) == "not_attempted"
+
+
+@pytest.mark.parametrize("error", [None, DENIED_BY + " {not json}"])
+def test_an_error_that_quotes_no_rule_isnt_a_refusal(error):
+    def without_a_rule(part):
+        part["state"]["error"] = error
+
+    assert label(captured("bash-deny-pattern", events=changed("bash-deny-pattern", without_a_rule)), TOUCH) == "not_attempted"
 
 
 def test_a_matching_call_that_failed_some_other_way_keeps_a_refusal_from_passing():
@@ -520,3 +529,6 @@ def test_a_bash_object_with_no_catch_all_is_warned_about(tmp_path):
         "Expect runs that end early; add \"*\": \"allow\" to test this rule alone"
     ))
     assert permission_warnings(validate_evals(project(tmp_path / "b", PUSH_RULE) / "evals").files, tmp_path / "b" / "my-config") == []
+    # a file that doesn't run on Kilo is passed over
+    other = project(tmp_path / "c", {"bash": {"git push *": "deny"}}, expect={"check": "committed"}, targets=["claude-code"], source="AGENTS.md")
+    assert permission_warnings(validate_evals(other / "evals").files, other, evals_path=other / "evals") == []
