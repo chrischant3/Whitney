@@ -417,25 +417,43 @@ def _empty_except(line: Line, following: Line | None) -> bool:
 
 
 def _lowered_thresholds(added: list[Line], removed: list[Line]) -> list[Finding]:
-    """A CONSTRAINTS.md line whose numbers went down, or a floor bullet that disappeared."""
+    """A CONSTRAINTS.md line whose numbers went down, or a floor bullet that disappeared.
+
+    A removed line is matched to every added line with the same key (_row_key); if any of them
+    has a lower number in the same place, it's flagged, so a raised copy can't hide a lowered one.
+    """
     after = [a for a in added if a.file == CONSTRAINTS]
     findings = []
     for r in (r for r in removed if r.file == CONSTRAINTS):
         key = _row_key(r.text)
-        match = next((a for a in after if _row_key(a.text) == key), None)
-        if match is None:
+        matches = [a for a in after if _row_key(a.text) == key]
+        if not matches:
             if r.text.lstrip().startswith("- "):
                 findings.append(Finding("threshold-lowered", r.file, r.line, f"removed: {r.text.strip()[:110]}"))
             continue
-        old, new = NUMBER.findall(r.text), NUMBER.findall(match.text)
-        if any(float(n) < float(o) for o, n in zip(old, new)):
+        old = NUMBER.findall(r.text)
+        lower = next((m for m in matches if any(float(n) < float(o) for o, n in zip(old, NUMBER.findall(m.text)))), None)
+        if lower is not None:
             findings.append(
-                Finding("threshold-lowered", r.file, r.line, f"{r.text.strip()[:55]} -> {match.text.strip()[:55]}")
+                Finding("threshold-lowered", r.file, r.line, f"{r.text.strip()[:55]} -> {lower.text.strip()[:55]}")
             )
     return findings
 
 
+# A bullet's bold label, "- **60% mutation score on touched functions**: ...".
+BULLET_LABEL = re.compile(r"^\s*- \*\*(?P<label>.+?)\*\*")
+
+
 def _row_key(text: str) -> str:
+    """What stays the same when a CONSTRAINTS.md line's numbers change.
+
+    A table row: its first cell. A bullet with a bold label: the label with each number replaced
+    by `#`, so its numbers keep their places and moving one out of the label changes the key. Any
+    other line: the line itself, so editing it reads as removing it.
+    """
+    bullet = BULLET_LABEL.match(text)
+    if bullet:
+        return f"- **{NUMBER.sub('#', bullet['label'])}**"
     cells = [c.strip() for c in text.strip().strip("|").split("|")]
     return cells[0] if cells else ""
 

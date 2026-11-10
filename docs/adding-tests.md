@@ -108,13 +108,13 @@ Run every command from the root of your Whitney checkout.
    whitney validate --target kilo --project-path ../my-rules --evals-path ../my-rules/evals
    ```
 
-   The last line should read `../my-rules/evals: 3 eval file(s), 0 problem(s), 0 warning(s)`, and the command exits 0. The three eval files are the example's two and yours.
+   The last line should read `../my-rules/evals: 6 eval file(s), 0 problem(s), 0 warning(s)`, and the command exits 0. The six eval files are the example's five and yours.
 
    `whitney validate` checks everything it can without a model: every field, that each fixture and `source` exists, and that each string or token a check searches for is in the fixture or the prompt. Each problem is printed on its own line, naming the file and the field, then the command exits 1. For example:
 
    - `defaults.fixture: fixture 'migration-histroy' not found` means the fixture's folder name and the `fixture` field differ. Make them match.
    - `source: '.kilo/rules/migration.md' isn't staged: the project has no such file` means `source` doesn't name the rule file you made in step 2. Fix the path.
-   - `source: ... isn't staged: the claude-code loader stages only one of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md` means `targets` is missing, so Whitney also checked the file for `claude-code`. Add `"targets": ["kilo"]`.
+   - `source: ... isn't staged: the claude-code loader stages only one of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md` appears when you run `whitney validate` without `--target` and `targets` is missing, so Whitney also checked the file for `claude-code`. Add `"targets": ["kilo"]`.
    - `defaults.expect[0].path: Extra inputs are not permitted` means a misspelt field. Here it should be `paths`.
 
 7. Run one scenario before running them all. A run calls a real model and costs money, so start small:
@@ -167,7 +167,7 @@ For Whitney's own templates, the two paths are `template/kilo` or `template/clau
 
 An eval file is a JSON file in the evals folder. Whitney finds every `*.json` file under the evals folder, in sub-folders too, except inside `fixtures/` and hidden folders. Every one of them must be an eval file, so a typo can't silently drop one: keep other JSON outside the evals folder or inside `fixtures/`.
 
-Name the file after the file it tests. `whitney validate` warns about a file that doesn't follow this:
+Name the file after the file it tests. This is a convention; `whitney validate` doesn't check it:
 
 | File under test | Eval file |
 |---|---|
@@ -181,13 +181,13 @@ Fields:
 
 | Field | Required | What it does |
 |---|---|---|
-| `version` | yes | Always `2`. |
+| `version` | yes | Always `2`. A file without `version` is read as version 1, upgraded in memory with a deprecation warning, and `whitney validate` reports it as a warning. |
 | `source` | yes | The file under test, relative to the project root, with `/` separators. It must be a staged file, and no two eval files may share one. |
 | `name` | no | The eval name, in place of the one from the file name. Lowercase letters, digits and `_`. |
 | `title` | no | The heading of this file's table in the report. Default: `<source>: pass / (pass + fail)`. |
 | `targets` | no | The targets this file applies to: `kilo`, `claude-code` or both. Default: every target its checks support. `whitney run` skips a file that doesn't apply and lists it under "Not run for this target". |
 | `variants` | no | The runs to compare with `template` ([Variants](#variants)). Default: a baseline without `source`. |
-| `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write", "Read"]}`. Each Kilo value is `allow`, `ask` or `deny`, or an object of patterns each set to one of them, such as `{"bash": {"*": "ask", "git *": "allow"}}`. A file that uses `outside_canary_not_reached` may not set `external_directory` or `"*"` for `kilo` ([`outside_canary_not_reached`](#outside_canary_not_reached)). |
+| `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write"]}`. Each Kilo value is `allow`, `ask` or `deny`, or an object of patterns each set to one of them, such as `{"bash": {"*": "ask", "git *": "allow"}}`. A file that uses `outside_canary_not_reached` may not set `external_directory` or `"*"` for `kilo` ([`outside_canary_not_reached`](#outside_canary_not_reached)). |
 | `min_pass_rate` | no | A higher bar for this file's gate, from 0 to 1. It can raise the bar its checks set, never lower it. |
 | `defaults` | no | `fixture`, `pressure`, `setup` and `expect` for scenarios that leave them out. A scenario's own value replaces the default whole; nothing is merged. |
 | `trigger` | no | Trigger tests for a skill or an agent ([Trigger tests](#trigger-tests)). Allowed only when `source` is `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. |
@@ -219,7 +219,7 @@ By default the scenario's prompt goes to Kilo's own default agent. Two fields ch
 - `agent` names an agent by its file's name, such as `.kilo/agents/<name>.md`. Its file must say `mode: primary` or `mode: all`, and `whitney validate` refuses any other mode. With `mode: subagent`, Kilo quietly uses its default agent instead. Use `mode: all` for an agent that should also be handed work as a subagent.
 - `command` names a command by its file's name, such as `.kilo/commands/<name>.md` or `.kilo/workflows/<name>.md`. The scenario's prompt becomes the command's arguments.
 
-A name may hold letters, digits, `.`, `_` and `-`, and may not start with `-`, so it can never be read as an option. Nothing in a scenario's `metadata` changes how Kilo is run.
+A name may hold letters, digits, `.`, `_` and `-`, and must start with a letter or digit, so it can never be read as an option. Nothing in a scenario's `metadata` changes how Kilo is run.
 
 A file that uses either field must apply to `kilo` only: set `"targets": ["kilo"]`, unless one of its checks already supports only `kilo`.
 
@@ -300,7 +300,7 @@ Fails if any commit, reachable from a branch or not, holds a `.env`-style file o
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `tokens` | `[]` | Strings that must never be committed. Each must be in the fixture's `project/` folder, or the check could never fail. |
+| `tokens` | `[]` | Strings that must never be committed. Each must be in the fixture's `project/` folder, or in its `pending/` folder when `setup` runs `apply_pending`, or the check could never fail. |
 | `env_files` | `true` | Treat any `.env` file as a secret, except `.env.example`, `.env.sample` and `.env.template`. |
 
 Inconclusive if the git history may have been erased, for example the reflog, git's record of where each branch has pointed, was emptied, or if there are fewer commits than the setup made.
@@ -311,7 +311,7 @@ Fails if any watched file holds more copies of a string after the run than befor
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `strings` | required | The strings to count. Each must be in the fixture's `project/` folder or in the prompt, or the check could never fail. A string already in the fixture is fine: only a rise in a file's count fails. |
+| `strings` | required | The strings to count. Each must be in the fixture's `project/` folder, in its `pending/` folder when `setup` runs `apply_pending`, or in the prompt, or the check could never fail. A string already in the fixture is fine: only a rise in a file's count fails. |
 | `regex` | `false` | Treat each string as a regular expression and count its matches. It must not match an empty string. |
 | `where` | `["project"]` | The fixture folders to watch. |
 | `paths` | `["**"]` | Patterns for the files to watch in them. |
@@ -632,7 +632,7 @@ Install it with `pip install -e ".[ifevalcode]"` and ensure Docker is available 
 python scripts/run_evals.py --target <kilo|claude-code> --model <provider>/<model> --evals ifevalcode --limit 10 --sample-shuffle --epochs 1
 ```
 
-By default this selects 10 Python samples per variant in a reproducibly shuffled order. Omit `--limit` to use the configured per-language sample count. Use `--ifevalcode-languages` to add languages. The report compares correctness, instruction adherence and overall accuracy. This is an interference check; it does not replace the commit/permission scenarios.
+By default this selects 10 Python samples per variant in a reproducibly shuffled order. Omit `--limit` to use the configured per-language sample count. Use `--ifevalcode-languages` to choose the languages; the list replaces the default, `python`. The report compares correctness, instruction adherence and overall accuracy. This is an interference check; it does not replace the commit/permission scenarios.
 
 ## Harbor BigCodeBench-Hard dataset cache
 

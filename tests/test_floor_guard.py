@@ -78,6 +78,60 @@ def test_floor_bullet_removed_from_constraints_is_flagged():
     assert _rules(removed=removed) == ["threshold-lowered"]
 
 
+def _why(label: str, body: str = "typical for a suite that has never been mutated; 80% is mature.") -> str:
+    return f"- **{label}**: {body}"
+
+
+MUTATION_BULLET = _why("60% mutation score on touched functions")
+
+
+def test_a_labelled_bullet_whose_number_rises_is_silent():
+    added = [Line("CONSTRAINTS.md", 52, _why("95% mutation score on touched functions"))]
+    assert _rules(removed=[Line("CONSTRAINTS.md", 52, MUTATION_BULLET)], added=added) == []
+
+
+def test_a_labelled_bullet_reworded_after_its_label_is_silent():
+    added = [Line("CONSTRAINTS.md", 52, _why("60% mutation score on touched functions", "reworded; 80% is mature."))]
+    assert _rules(removed=[Line("CONSTRAINTS.md", 52, MUTATION_BULLET)], added=added) == []
+
+
+def test_a_labelled_bullet_whose_number_falls_is_flagged():
+    added = [Line("CONSTRAINTS.md", 52, _why("40% mutation score on touched functions"))]
+    assert _rules(removed=[Line("CONSTRAINTS.md", 52, MUTATION_BULLET)], added=added) == ["threshold-lowered"]
+
+
+def test_a_labelled_bullet_removed_is_flagged():
+    assert _rules(removed=[Line("CONSTRAINTS.md", 52, MUTATION_BULLET)]) == ["threshold-lowered"]
+
+
+def test_a_labelled_bullet_whose_label_changes_is_flagged_as_removed():
+    added = [Line("CONSTRAINTS.md", 52, _why("60% mutation score on changed lines"))]
+    found = find_violations(added, [Line("CONSTRAINTS.md", 52, MUTATION_BULLET)], [])
+    assert [(f.rule, f.text[:9]) for f in found] == [("threshold-lowered", "removed: ")]
+
+
+def test_a_number_taken_out_of_a_bullets_label_is_flagged_as_removed():
+    added = [Line("CONSTRAINTS.md", 52, _why("mutation score on touched functions", "60%; 80% is mature."))]
+    assert _rules(removed=[Line("CONSTRAINTS.md", 52, MUTATION_BULLET)], added=added) == ["threshold-lowered"]
+
+
+def test_a_raised_decoy_with_the_same_label_does_not_hide_a_lowered_bullet():
+    added = [
+        Line("CONSTRAINTS.md", 52, _why("95% mutation score on touched functions")),
+        Line("CONSTRAINTS.md", 53, _why("10% mutation score on touched functions")),
+    ]
+    assert _rules(removed=[Line("CONSTRAINTS.md", 52, MUTATION_BULLET)], added=added) == ["threshold-lowered"]
+
+
+def test_a_raised_decoy_with_the_same_key_does_not_hide_a_lowered_table_row():
+    removed = [Line("CONSTRAINTS.md", 12, "| Coverage | Changed lines ≥ 80% covered | diff-cover | task end |")]
+    added = [
+        Line("CONSTRAINTS.md", 12, "| Coverage | Changed lines ≥ 90% covered | diff-cover | task end |"),
+        Line("CONSTRAINTS.md", 13, "| Coverage | Changed lines ≥ 10% covered | diff-cover | task end |"),
+    ]
+    assert _rules(added=added, removed=removed) == ["threshold-lowered"]
+
+
 def test_findings_name_the_location():
     [finding] = find_violations([Line("src/a.py", 7, "x = 1  # noqa")], [], [])
     assert (finding.file, finding.line) == ("src/a.py", 7)

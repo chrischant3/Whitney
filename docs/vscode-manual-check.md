@@ -12,7 +12,11 @@ The extension runs its own bundled copy of Kilo's runtime. Find that binary insi
 python -m whitney.parity --cli "$(which kilo)" --other /path/to/extension/kilo
 ```
 
-It passes if the runtime versions match and both resolve the same `permission` and `instructions` from `template/kilo/`. If the versions differ, re-run the evals with `KILO_VERSION` in `src/whitney/sandbox/Dockerfile` set to the extension's version, or record the gap.
+To check your own project instead of the shipped template, add `--template /path/to/project`.
+
+It passes if the runtime versions match and both resolve the same `permission` and `instructions` from `template/kilo/`. If the versions differ, re-run the evals on the extension's version: install that Kilo CLI version on the host for a local run, or set `KILO_VERSION` in `src/whitney/sandbox/Dockerfile` for `--execution docker`. Otherwise record the gap.
+
+The parity check compares only `permission` and `instructions`, and steps 3 and 4 cover only `AGENTS.md` and `external_directory`. Nothing yet checks that the extension finds the same skills, agents, commands and rules as the CLI.
 
 **Not yet verified:** where the current extension keeps its runtime. It wasn't installed when this was written, so update this step once someone has found it.
 

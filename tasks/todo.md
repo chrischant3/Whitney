@@ -2,7 +2,7 @@
 
 See [plan.md](plan.md) for decisions, risks and open questions.
 
-> **Status, 2026-11-03.** Tasks 1–8 and 11 are built and covered by the test suite; many of their boxes below were never ticked as the work landed, so read [plan.md](plan.md)'s task list for the current state. Still open: Task 9's extension run and manual checklist, Task 10's fresh-clone walkthrough, a CI pipeline, and Task 12 (publish). Phase 4 (the `kilo` and `claude-code` targets) is tracked in plan.md.
+> **Status, 2026-11-03.** Tasks 1–8 and 11 are built and covered by the test suite; many of their boxes below were never ticked as the work landed, so read [plan.md](plan.md)'s task list for the current state. Still open: Task 9's extension run and manual checklist, and Task 10's fresh-clone walkthrough. Since then the repository was published (Task 12, root commit `255c015`) and CI was added (`.github/workflows/`); Task 12's steps below are kept as a record and name a branch and commit that no longer apply. Phase 4 (the `kilo` and `claude-code` targets) is tracked in plan.md.
 
 ## Phase 0: Prove it can work
 
