@@ -9,6 +9,7 @@ license-files = ["LICENSE"]
 dependencies = [
     "inspect-ai==0.3.287",
     "pydantic>=2,<3",  # scenario validation; already required by inspect-ai
+    "agent-client-protocol>=0.12,<1",  # inspect-ai 0.3.287 imports acp.helpers, which 1.0.0 removed, and doesn't bound it
 ]
 
 [project.scripts]

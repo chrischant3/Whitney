@@ -191,3 +191,19 @@ def test_installed_inspect_resolves_whitneys_tasks_by_name(installed, tmp_path):
     done = run_installed(installed, "python", "-c", code, cwd=tmp_path)
 
     assert (done.returncode, done.stdout) == (0, "whitney.tasks\n"), done.stderr[-2000:]
+
+
+@pytest.mark.packaging
+def test_a_plain_install_resolves_an_agent_client_protocol_that_inspect_can_import(tmp_path):
+    # inspect-ai 0.3.287 imports acp.helpers, which agent-client-protocol 1.0.0 removed. `pip install -e ".[dev]"`
+    # resolves from pyproject.toml, not requirements.lock, so pyproject.toml must keep it below 1.
+    uv = _uv()
+    assert uv, "resolving without installing needs uv: put it on PATH (it was also looked for beside python and in ~/.local/bin)"
+    done = subprocess.run(
+        [uv, "pip", "compile", "--quiet", "--no-header", "--extra", "dev", str(ROOT / "pyproject.toml")],
+        capture_output=True, encoding="utf-8", timeout=BUILD_TIMEOUT, cwd=tmp_path,
+    )
+
+    assert done.returncode == 0, done.stderr[-2000:]
+    [pinned] = [line for line in done.stdout.splitlines() if line.startswith("agent-client-protocol==")]
+    assert int(pinned.removeprefix("agent-client-protocol==").split(".")[0]) < 1, pinned
