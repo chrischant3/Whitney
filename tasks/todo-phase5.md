@@ -709,3 +709,30 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 
 **Estimated scope:** S. A person's time, and a few model calls.
 
+### Task 31: Record what was sent to the model, and the agent's reasoning
+
+**Description:** Added on 2026-11-10 from Christopher's request: being able to verify exactly what was sent and the agent's reasoning would be very useful. The findings are in [docs/results/2026-11-10-kilo-prompt-capture.md](../docs/results/2026-11-10-kilo-prompt-capture.md). A run's log keeps the agent's text and tool calls, but not the request, so a report can't show that a rule reached the model, or where it sat. Kilo hands `AGENTS.md` to the model under a bare `Instructions from:` line, where Claude Code says it overrides the defaults. That is the likeliest reason the same file scored 81% on Kilo and 96% on Claude Code.
+
+Two ways were shown to work on Kilo 7.8.27:
+
+- **A Kilo plugin** on `experimental.chat.system.transform` and `experimental.chat.messages.transform` sees the system prompt and messages before they're sent. It needs Kilo to run without `--pure`, which also lets any plugin in the project run. Today Whitney stages only instruction and config files.
+- **A logging proxy** set as the provider's `baseURL` sees the whole request, including the tool definitions, but only on the provider key route, not the Kilo Gateway.
+
+Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in the same session.
+
+**Acceptance criteria:**
+- [ ] A spike decides between the plugin, the proxy and a mix, for each target, and says what each costs in isolation. It tries the plugin once on the Kilo Gateway route.
+- [ ] Christopher has decided whether a run may drop `--pure`, and if so whether only Whitney's own plugin may load or the project's plugins too.
+- [ ] With capture turned on, each run's log holds the system prompt and messages the model was sent, and for Kilo the tool definitions if the chosen way gives them. No key or token reaches the log: headers are never recorded, and the text passes through the same redaction as the rest of the log.
+- [ ] A run can turn on the model's extended thinking, and its thinking is kept in the log beside the agent's text. A run without it records that thinking was off.
+- [ ] The report says, for each eval file, whether its `source` file's text was found in what was sent, so a reader can see the rule reached the model.
+- [ ] Capture is opt-in, and a run without it behaves as today. Each test whose expectation changes is named and confirmed by Christopher first.
+
+**Verification:**
+- [ ] `python scripts/check.py task`
+- [ ] Manual: one scenario run on each target with capture on, and the log read to confirm the prompt, the `source` text and the thinking are there.
+
+**Dependencies:** None. After `v0.2.0`.
+
+**Estimated scope:** M. Start with the spike (S, a few cents in model calls).
+
