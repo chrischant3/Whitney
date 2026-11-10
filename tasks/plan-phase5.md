@@ -21,7 +21,7 @@ Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
   3. `MIN_HELD` stays at 0.9; Task 27 looks at raising it.
   4. `permission_held` covers pattern rules and `ask` only; Task 28 is a spike on evidence for a scalar deny.
   5. The packaging test is split: the wheel's contents in the default suite, the install in `check.py full` only.
-- **Next:** Checkpoint C's review with Christopher, then Task 26 (release `v0.2.0`). Tasks 23 (`permission_held`) and 24 (package data) are built.
+- **Next:** Task 26 (release `v0.2.0`), whose docs and version are merged; the release checklist is what remains. Checkpoint C was reviewed with Christopher on 2026-11-10 (todo-phase5.md). Tasks 23 (`permission_held`) and 24 (package data) are built.
 - **Mutation testing (2026-11-10):** nothing skips it any more. Locally, run `check.py task`, which mutates the functions a change touches; the bar for those is 95%. `check.py full` runs on GitHub only (Christopher, 2026-11-10; CONSTRAINTS.md, "How to run"). The project score fell to 98.0% over Tasks 17 to 25 and PR #31 brought it back to 99.3%, inside the 0.5-point drift from the recorded 99.7%. 71 mutants survive, most of them equivalent and not yet listed in CONSTRAINTS.md. The numbered checks block from `WARN_UNTIL` (2026-11-16 in `scripts/check.py`).
 - **A flaky test, not from this work:** `tests/test_parity.py::test_cli_resolves_the_shipped_template` runs the real `kilo debug config --pure`. That takes 1 to 4 seconds alone, but twice it hung past its 120-second limit inside `check.py`'s parallel run.
 - **Decided 2026-11-09 (Christopher): build on `main`.** The `phase5` branch is retired. Each task gets its own branch and worktree off `main` and its own PR into `main`.
@@ -102,6 +102,7 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | | **Checkpoint D: release** | | 24–26 | | |
 | 27 | Raise `MIN_HELD` to 1.0, or decide not to (after `v0.2.0`) | after D | 23 | S | no |
 | 28 | Spike: evidence for a scalar deny (after `v0.2.0`) | after D | 23 | S | yes, cents |
+| 29 | Gate positive and negative trigger prompts separately (after `v0.2.0`) | after D | none | S | no |
 
 Lanes that can run beside the main one:
 

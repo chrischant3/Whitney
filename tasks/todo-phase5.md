@@ -573,7 +573,11 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 ### Checkpoint C: any Kilo permission
 
 - [x] A consumer can test a `bash` pattern, `edit` or `read` rule, and the control shows the check can fail. **2026-11-10:** for a `bash` pattern and for `edit` under `ask`. Not for `read`: no refusal was captured for a `read` rule, so validation refuses one by name.
-- [ ] Review with Christopher.
+- [x] Review with Christopher. **2026-11-10, his decisions:**
+  1. `permission_held` keeps its required `action` parameter, which the spec didn't have.
+  2. A file that uses `permission_held` must write its `variants`; leaving them out stays a validation problem.
+  3. Positive and negative trigger prompts stay pooled in one gate for `v0.2.0`. Task 29 splits them after the release.
+  4. The benchmark tasks (`ifevalcode`, `bigcodebench_hard_complete`) stay unregistered under the package's name. They need a clone for their datasets and extras anyway.
 
 ---
 
@@ -675,3 +679,20 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Dependencies:** Task 23.
 
 **Estimated scope:** S. A few cents in model calls.
+
+### Task 29: Gate positive and negative trigger prompts separately
+
+**Description:** Added on 2026-11-10 from Christopher's Checkpoint C decision. A file's trigger tests are gated as one pool, so positive prompts that all pass can carry negative prompts that don't: 12 of 12 positives and 0 of 3 negatives is 80%. Judge each kind against the file's minimum and `min_conclusive`, as scenarios and trigger tests already are.
+
+**Acceptance criteria:**
+- [ ] `check_thresholds` judges a file's positive prompts and its negative prompts separately, and a problem names which kind fell short.
+- [ ] The report's gate line gives a rate for each kind.
+- [ ] The docs that say the two are pooled say they are separate. Each test whose expectation changes is named and confirmed by Christopher first.
+
+**Verification:**
+- [ ] `python scripts/check.py task`
+- [ ] `whitney report` on the logs of the 2026-11-10 skills and agents run still exits as that write-up says, or the write-up says what changed.
+
+**Dependencies:** None. After `v0.2.0`.
+
+**Estimated scope:** S.
