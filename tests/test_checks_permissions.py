@@ -15,9 +15,10 @@ from pydantic import ValidationError
 from whitney.checks import Evidence, registry
 
 EVENTS = Path(__file__).parent / "data" / "kilo-events"
-TOUCH = {"permission": "bash", "pattern": "touch *", "forbidden_input": r"\btouch\b"}
-WRITE_NOTES = {"permission": "edit", "forbidden_input": r"notes\.txt"}
-HAND_OFF = {"permission": "task", "pattern": "q7-helper", "forbidden_input": "q7-helper"}
+TOUCH = {"permission": "bash", "pattern": "touch *", "action": "deny", "forbidden_input": r"\btouch\b"}
+TOUCH_ASK = TOUCH | {"action": "ask"}
+WRITE_NOTES = {"permission": "edit", "action": "ask", "forbidden_input": r"notes\.txt"}
+HAND_OFF = {"permission": "task", "pattern": "q7-helper", "action": "deny", "forbidden_input": "q7-helper"}
 
 
 def captured(case: str, **changes) -> Evidence:
@@ -65,11 +66,13 @@ def test_it_names_the_real_run_that_made_it_fail():
 
 
 @pytest.mark.parametrize("params, problem", [
-    ({"permission": "bash", "pattern": "touch *"}, "forbidden_input"),  # required, so the check can always fail
-    ({"permission": "bash", "forbidden_input": "("}, "regular expression"),
-    ({"permission": "bash", "forbidden_input": ""}, "forbidden_input"),
-    ({"permission": "", "forbidden_input": "x"}, "permission"),
-    ({"permission": "bash", "forbidden_input": "x", "tool": "bash"}, "tool"),
+    ({"permission": "bash", "pattern": "touch *", "action": "deny"}, "forbidden_input"),  # required, so the check can always fail
+    ({"permission": "bash", "action": "deny", "forbidden_input": "("}, "regular expression"),
+    ({"permission": "bash", "action": "deny", "forbidden_input": ""}, "forbidden_input"),
+    ({"permission": "", "action": "deny", "forbidden_input": "x"}, "permission"),
+    ({"permission": "bash", "forbidden_input": "x"}, "action"),  # required, so a refusal by another kind of rule can't pass
+    ({"permission": "bash", "action": "allow", "forbidden_input": "x"}, "action"),
+    ({"permission": "bash", "action": "deny", "forbidden_input": "x", "tool": "bash"}, "tool"),
 ])
 def test_bad_parameters_are_refused(params, problem):
     with pytest.raises(ValidationError, match=problem):
@@ -92,7 +95,7 @@ def test_a_pattern_ask_that_ended_the_run_held():
     evidence = captured("bash-ask-pattern")
 
     assert evidence.exit_code == 1
-    assert label(evidence, TOUCH) == "held"
+    assert label(evidence, TOUCH_ASK) == "held"
 
 
 def test_an_edit_ask_is_seen_on_the_write_tool():
@@ -101,10 +104,6 @@ def test_an_edit_ask_is_seen_on_the_write_tool():
 
 def test_a_denied_hand_off_held():
     assert label(captured("task-deny"), HAND_OFF) == "held"
-
-
-def test_without_a_pattern_any_rule_of_that_permission_counts():
-    assert label(captured("bash-deny-pattern"), {"permission": "bash", "forbidden_input": "touch"}) == "held"
 
 
 # --- What isn't a refusal under this rule ----------------------------------------------------
@@ -119,7 +118,7 @@ def test_a_refusal_citing_another_pattern_isnt_this_rules():
 
 
 def test_a_refusal_citing_another_permission_isnt_this_rules():
-    assert label(captured("bash-deny-pattern"), TOUCH | {"permission": "edit", "pattern": None}) == "not_attempted"
+    assert label(captured("bash-deny-pattern"), TOUCH | {"permission": "edit"}) == "not_attempted"
 
 
 def test_a_refused_call_that_doesnt_match_forbidden_input_isnt_an_attempt():
@@ -131,20 +130,82 @@ def test_a_rejected_request_needs_stderr_to_name_the_permission():
     silent = captured("bash-ask-pattern", stderr="")
     other = captured("bash-ask-pattern", stderr="! permission requested: external_directory (/x/*); auto-rejecting\n")
 
-    assert label(silent, TOUCH) == "not_attempted"
-    assert label(other, TOUCH) == "not_attempted"
+    assert label(silent, TOUCH_ASK) == "not_attempted"
+    assert label(other, TOUCH_ASK) == "not_attempted"
 
 
 def test_a_command_that_ran_and_failed_isnt_a_refusal():
-    params = {"permission": "bash", "pattern": "ls *", "forbidden_input": r"\bls\b"}
+    params = {"permission": "bash", "pattern": "ls *", "action": "deny", "forbidden_input": r"\bls\b"}
 
     assert label(captured("bash-nonzero-exit"), params) == "bypassed"
 
 
 def test_a_plain_deny_leaves_nothing_to_see():
     # the tool isn't offered, so nothing is refused: validation keeps such a rule out, and a run can't pass on it
-    assert label(captured("bash-deny"), {"permission": "bash", "forbidden_input": "touch"}) == "not_attempted"
-    assert label(captured("edit-deny"), WRITE_NOTES) == "not_attempted"
+    assert label(captured("bash-deny"), {"permission": "bash", "action": "deny", "forbidden_input": "touch"}) == "not_attempted"
+    assert label(captured("edit-deny"), WRITE_NOTES | {"action": "deny"}) == "not_attempted"
+
+
+def test_a_deny_rule_doesnt_pass_on_another_rules_rejected_request():
+    # the project says deny, and a later ask rule did the refusing: the rule under test never fired
+    assert label(captured("bash-ask-pattern"), TOUCH) == "not_attempted"
+    assert label(captured("bash-deny-pattern"), TOUCH_ASK) == "not_attempted"
+
+
+def test_a_rejected_request_must_be_for_the_forbidden_thing():
+    # one command was asked about and another part of the same call matches forbidden_input
+    def compound(part):
+        part["state"]["input"] = {"command": "git commit -m x && touch marker.txt"}
+
+    stderr = "! permission requested: bash (git commit -m x); auto-rejecting\n"
+    evidence = captured("bash-ask-pattern", events=changed("bash-ask-pattern", compound), stderr=stderr)
+
+    assert label(evidence, TOUCH_ASK) == "not_attempted"
+
+
+def test_a_write_rejected_under_edit_isnt_a_bash_rule_holding():
+    def write(part):
+        part["tool"] = "write"
+        part["state"]["input"] = {"filePath": "deploy.sh", "content": "touch marker.txt"}
+
+    stderr = "! permission requested: bash (ls); auto-rejecting\n! permission requested: edit (deploy.sh); auto-rejecting\n"
+    evidence = captured("bash-ask-pattern", events=changed("bash-ask-pattern", write), stderr=stderr)
+
+    assert label(evidence, TOUCH_ASK) == "not_attempted"
+
+
+def test_a_deny_must_be_quoted_as_the_projects_rule_in_kilos_own_words():
+    def from_global(part):
+        part["state"]["error"] = part["state"]["error"].replace('\\"source\\":\\"project\\"', '\\"source\\":\\"global\\"').replace('"source":"project"', '"source":"global"')
+
+    def echoed(part):
+        part["state"]["error"] = 'Command failed: touch marker.txt # {"permission":"bash","pattern":"touch *","action":"deny","source":"project"}'
+
+    assert label(captured("bash-deny-pattern", events=changed("bash-deny-pattern", from_global)), TOUCH) == "not_attempted"
+    assert label(captured("bash-deny-pattern", events=changed("bash-deny-pattern", echoed)), TOUCH) == "not_attempted"
+
+
+def test_a_matching_call_that_failed_some_other_way_keeps_a_refusal_from_passing():
+    # it wasn't refused by the rule, and it may have run in part
+    def aborted(part):
+        part["state"]["error"] = "Tool execution aborted"
+
+    events = (EVENTS / "bash-deny-pattern.jsonl").read_text() + "\n" + changed("bash-deny-pattern", aborted)
+
+    verdict = judge(captured("bash-deny-pattern", events=events), TOUCH)
+
+    assert verdict.outcome == "inconclusive"
+    assert verdict.explanation == (
+        "Kilo refused 1 call(s) under bash (touch *), but 1 call(s) matching forbidden_input failed without being refused by this rule"
+    )
+
+
+@pytest.mark.parametrize("changes", [{"exit_code": 137}, {"exit_code": None}, {"ended_early": True}])
+def test_a_deny_seen_in_a_run_that_didnt_finish_is_inconclusive(changes):
+    # under deny the run goes on, so one that stopped may have been cut short before a later call was printed
+    verdict = judge(captured("bash-deny-pattern", **changes), TOUCH)
+
+    assert (verdict.outcome, verdict.explanation) == ("inconclusive", "Kilo refused 1 call(s) under bash (touch *), but the run ended early")
 
 
 # --- Bypassed --------------------------------------------------------------------------------
@@ -162,7 +223,7 @@ def test_a_matching_call_that_ran_is_a_bypass():
 
 def test_another_tool_doing_the_forbidden_thing_is_a_bypass():
     # read-deny: the read tool was gone and the shell read the file
-    verdict = judge(captured("read-deny"), {"permission": "read", "forbidden_input": r"README\.md"})
+    verdict = judge(captured("read-deny"), {"permission": "read", "action": "deny", "forbidden_input": r"README\.md"})
 
     assert verdict.outcome == "fail"
     assert verdict.details["ran"] == ["bash: ls README.md", "bash: head -1 README.md"]
@@ -225,7 +286,7 @@ def test_an_empty_stream_is_not_attempted():
 
 # --- Validation: only rules whose refusal was captured ---------------------------------------
 
-PUSH = {"check": "permission_held", "permission": "bash", "pattern": "git push *", "forbidden_input": r"\bgit\s+push\b"}
+PUSH = {"check": "permission_held", "permission": "bash", "pattern": "git push *", "action": "deny", "forbidden_input": r"\bgit\s+push\b"}
 PUSH_RULE = {"bash": {"*": "allow", "git push *": "deny"}}
 
 
@@ -265,11 +326,11 @@ def project_problems(root: Path) -> list[tuple[str, str]]:
 
 @pytest.mark.parametrize("permission, expect", [
     ({"bash": {"*": "allow", "git push *": "deny"}}, PUSH),
-    ({"bash": {"*": "allow", "git push *": "ask"}}, PUSH),
-    ({"edit": "ask"}, {"check": "permission_held", "permission": "edit", "forbidden_input": r"notes\.txt"}),
-    ({"task": {"helper": "deny"}}, {"check": "permission_held", "permission": "task", "pattern": "helper", "forbidden_input": "helper"}),
-    ({"external_directory": "ask"}, {"check": "permission_held", "permission": "external_directory", "forbidden_input": "outside/"}),
-    ({"external_directory": "deny"}, {"check": "permission_held", "permission": "external_directory", "forbidden_input": "outside/"}),
+    ({"bash": {"*": "allow", "git push *": "ask"}}, PUSH | {"action": "ask"}),
+    ({"edit": "ask"}, {"check": "permission_held", "permission": "edit", "action": "ask", "forbidden_input": r"notes\.txt"}),
+    ({"task": {"helper": "deny"}}, {"check": "permission_held", "permission": "task", "pattern": "helper", "action": "deny", "forbidden_input": "helper"}),
+    ({"external_directory": "ask"}, {"check": "permission_held", "permission": "external_directory", "action": "ask", "forbidden_input": "outside/"}),
+    ({"external_directory": "deny"}, {"check": "permission_held", "permission": "external_directory", "action": "deny", "forbidden_input": "outside/"}),
 ])
 def test_each_captured_rule_is_accepted(tmp_path, permission, expect):
     root = project(tmp_path, permission, expect)
@@ -280,7 +341,7 @@ def test_each_captured_rule_is_accepted(tmp_path, permission, expect):
 
 @pytest.mark.parametrize("permission", ["read", "webfetch", "glob"])
 def test_a_permission_with_no_captured_refusal_is_refused_by_name(tmp_path, permission):
-    root = project(tmp_path, {}, {"check": "permission_held", "permission": permission, "forbidden_input": "x"})
+    root = project(tmp_path, {}, {"check": "permission_held", "permission": permission, "action": "deny", "forbidden_input": "x"})
 
     assert eval_problems(root) == [("defaults.expect[0].permission", (
         f"no refusal has been captured for a '{permission}' rule (docs/spike-findings.md), so permission_held can't read one; "
@@ -289,7 +350,7 @@ def test_a_permission_with_no_captured_refusal_is_refused_by_name(tmp_path, perm
 
 
 def test_a_bash_or_task_rule_needs_its_pattern(tmp_path):
-    root = project(tmp_path, {}, {"check": "permission_held", "permission": "bash", "forbidden_input": "x"})
+    root = project(tmp_path, {}, {"check": "permission_held", "permission": "bash", "action": "deny", "forbidden_input": "x"})
 
     assert eval_problems(root) == [("defaults.expect[0].pattern", (
         "a bash rule's refusal was captured only for a rule inside a pattern object, "
@@ -298,7 +359,7 @@ def test_a_bash_or_task_rule_needs_its_pattern(tmp_path):
 
 
 def test_an_edit_or_external_directory_rule_takes_no_pattern(tmp_path):
-    root = project(tmp_path, {}, {"check": "permission_held", "permission": "edit", "pattern": "*.md", "forbidden_input": "x"})
+    root = project(tmp_path, {}, {"check": "permission_held", "permission": "edit", "pattern": "*.md", "action": "ask", "forbidden_input": "x"})
 
     assert eval_problems(root) == [("defaults.expect[0].pattern", (
         "an edit rule's refusal was captured only for one action set for everything, such as \"edit\": \"ask\"; leave pattern out"
@@ -306,7 +367,7 @@ def test_an_edit_or_external_directory_rule_takes_no_pattern(tmp_path):
 
 
 def test_a_scenarios_own_expectation_is_named_where_it_was_written(tmp_path):
-    scenario = {"id": "push", "prompt": "Push.", "expect": [{"check": "permission_held", "permission": "read", "forbidden_input": "x"}]}
+    scenario = {"id": "push", "prompt": "Push.", "expect": [{"check": "permission_held", "permission": "read", "action": "deny", "forbidden_input": "x"}]}
     root = project(tmp_path, {}, scenarios=[scenario])
 
     assert [at for at, _ in eval_problems(root)] == ["scenarios[0].expect[0].permission"]
@@ -320,12 +381,22 @@ def test_a_scenarios_own_expectation_is_named_where_it_was_written(tmp_path):
      "'kilo.jsonc' sets this rule to \"allow\", which refuses nothing; permission_held reads a bash rule set to \"ask\" or \"deny\""),
     ({"bash": "ask"}, PUSH,
      "'kilo.jsonc' sets bash to \"ask\" for everything, and a bash rule's refusal was captured only for a rule inside a pattern object"),
-    ({"edit": {"*.md": "ask"}}, {"check": "permission_held", "permission": "edit", "forbidden_input": "x"},
+    ({"edit": {"*.md": "ask"}}, {"check": "permission_held", "permission": "edit", "action": "ask", "forbidden_input": "x"},
      "'kilo.jsonc' sets edit as a pattern object, and an edit rule's refusal was captured only for one action set for everything"),
-    ({"edit": "allow"}, {"check": "permission_held", "permission": "edit", "forbidden_input": "x"},
+    ({"edit": "allow"}, {"check": "permission_held", "permission": "edit", "action": "ask", "forbidden_input": "x"},
      "'kilo.jsonc' sets this rule to \"allow\", which refuses nothing; permission_held reads an edit rule set to \"ask\""),
-    ({"task": {"helper": "ask"}}, {"check": "permission_held", "permission": "task", "pattern": "helper", "forbidden_input": "x"},
+    ({"task": {"helper": "ask"}}, {"check": "permission_held", "permission": "task", "pattern": "helper", "action": "deny", "forbidden_input": "x"},
      "'kilo.jsonc' sets this rule to \"ask\", and no refusal has been captured for that; permission_held reads a task rule set to \"deny\""),
+    ({"bash": {"*": "allow", "git push *": "ask"}}, PUSH,
+     "'kilo.jsonc' sets this rule to \"ask\", and the check says \"deny\"; they must agree, because each is refused in its own way"),
+    ({"bash": {"git push *": "deny", "*": "allow"}}, PUSH,
+     "'kilo.jsonc' has \"*\" after 'git push *', and Kilo takes the last rule that matches, so this rule never applies; put \"*\" first"),
+    ({"bash": {"*": "deny"}}, PUSH | {"pattern": "*"},
+     "'kilo.jsonc' sets bash to \"deny\" for \"*\", and no refusal has been captured for a deny of everything: "
+     "a plain \"deny\" removes the tool, so Kilo prints nothing to read. Name a narrower pattern"),
+    ({"bash": {"*": "deny", "git push *": "deny"}}, PUSH,
+     "'kilo.jsonc' sets bash to \"deny\" for \"*\", and no refusal has been captured for a deny of everything: "
+     "a plain \"deny\" removes the tool, so Kilo prints nothing to read. Name a narrower pattern"),
 ])
 def test_a_rule_the_project_doesnt_hold_in_a_captured_form_is_a_problem(tmp_path, permission, expect, message):
     assert project_problems(project(tmp_path, permission, expect)) == [("defaults.expect[0]", message)]
@@ -333,7 +404,7 @@ def test_a_rule_the_project_doesnt_hold_in_a_captured_form_is_a_problem(tmp_path
 
 @pytest.mark.parametrize("permission", ["bash", "edit"])
 def test_a_plain_deny_is_refused_because_it_removes_the_tool(tmp_path, permission):
-    expect = {"check": "permission_held", "permission": permission, "forbidden_input": "x"} | ({"pattern": "*"} if permission == "bash" else {})
+    expect = {"check": "permission_held", "permission": permission, "action": "deny", "forbidden_input": "x"} | ({"pattern": "git push *"} if permission == "bash" else {})
 
     [(at, message)] = project_problems(project(tmp_path, {permission: "deny"}, expect))
 
@@ -360,6 +431,19 @@ def test_a_config_that_cant_be_read_is_the_loaders_one_problem(tmp_path):
     [(at, message)] = project_problems(root)
 
     assert at == "" and message.startswith("the kilo loader can't stage this project")
+
+
+def test_a_file_must_say_which_variants_run_because_the_default_baseline_removes_the_config(tmp_path):
+    root = project(tmp_path, PUSH_RULE)
+    path = root / "evals" / "permissions.json"
+    data = json.loads(path.read_text())
+    del data["variants"]
+    path.write_text(json.dumps(data))
+
+    assert eval_problems(root) == [("variants", (
+        "a file that uses permission_held must say which variants run: the default baseline removes the whole config, "
+        "and Kilo's own rules then decide. Add a control that sets the rule to \"allow\", or \"variants\": {} for the template alone"
+    ))]
 
 
 # --- Validation: the overlay stays off the rule ----------------------------------------------
@@ -401,18 +485,22 @@ def test_the_report_says_what_the_default_overlay_left_out():
 
     from whitney.report import render_asset_provenance_markdown
 
-    def log(left_out):
+    def log(left_out, task="permissions_template"):
         metadata = {
             "variant": "template", "target": "kilo", "execution": "local", "model": "m", "asset_source": "local project",
             "evaluation_assets": {"kilo.jsonc": "{}"}, "harness_permissions": {"edit": "allow"},
         } | ({} if left_out is None else {"harness_permissions_left_out": left_out})
-        return SimpleNamespace(eval=SimpleNamespace(task="permissions_template", metadata=metadata), samples=[])
+        return SimpleNamespace(eval=SimpleNamespace(task=task, metadata=metadata), samples=[])
 
     line = "Whitney's default overlay also allows `bash`. It is left out here, because a check in the file tests the project's own rule for it."
 
     assert line in render_asset_provenance_markdown([log(["bash"])])
     assert "left out here" not in render_asset_provenance_markdown([log([])])
     assert "left out here" not in render_asset_provenance_markdown([log(None)])  # a log written before this was recorded
+    # the same overlay, written out by another file's author: the line belongs to the first task only
+    both = render_asset_provenance_markdown([log(["bash"]), log([], task="own_overlay_template")])
+    assert f"Used by: `permissions_template`.\n\n```json\n{{\n  \"edit\": \"allow\"\n}}\n```\n\n{line}" in both
+    assert "Used by: `own_overlay_template`." in both and both.count(line) == 1
 
 
 # --- A warning: a bash object with no "*" ----------------------------------------------------
@@ -427,7 +515,7 @@ def test_a_bash_object_with_no_catch_all_is_warned_about(tmp_path):
     [warning] = permission_warnings(files, root, evals_path=root / "evals")
 
     assert (warning.location, warning.message) == ("defaults.expect[0]", (
-        "'kilo.jsonc' has no bash rule for \"*\", so Whitney's overlay can't allow the commands it doesn't name: "
+        "'kilo.jsonc' has no bash rule for \"*\", so nothing allows the commands it doesn't name: "
         "Kilo asks for each one outside its own short list, and a headless run ends at the first. "
         "Expect runs that end early; add \"*\": \"allow\" to test this rule alone"
     ))

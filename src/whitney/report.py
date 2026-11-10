@@ -831,8 +831,8 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
     """
     task_inputs: dict[str, dict[str, object]] = {}
     file_copies: dict[tuple[str, str], set[str]] = defaultdict(set)
-    permission_overlays: dict[str, set[str]] = defaultdict(set)
-    left_out_of_overlay: dict[str, set[str]] = defaultdict(set)
+    # (the overlay as JSON, the default overlay's keys left out of it) -> the tasks that ran with it
+    permission_overlays: dict[tuple[str, tuple[str, ...]], set[str]] = defaultdict(set)
     prompt_preambles: dict[str, set[str]] = defaultdict(set)
     not_staged: dict[str, list[str]] = {}
     not_staged_reasons: dict[str, dict[str, str]] = {}
@@ -861,8 +861,8 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
         harness_permissions = metadata.get("harness_permissions")
         if harness_permissions is not None:
             overlay = json.dumps(harness_permissions, indent=2, sort_keys=True)
-            permission_overlays[overlay].add(task)
-            left_out_of_overlay[overlay].update(metadata.get("harness_permissions_left_out") or [])  # absent from older logs
+            left_out = tuple(sorted(metadata.get("harness_permissions_left_out") or []))  # absent from older logs
+            permission_overlays[(overlay, left_out)].add(task)
         preamble = metadata.get("evaluation_preamble")
         if preamble:
             prompt_preambles[str(preamble)].add(task)
@@ -927,9 +927,9 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
 
     if permission_overlays:
         sections.extend(["### Harness Permission Overlays", ""])
-        for overlay, users in sorted(permission_overlays.items(), key=lambda item: sorted(item[1])):
+        for (overlay, left_out), users in sorted(permission_overlays.items(), key=lambda item: sorted(item[1])):
             sections.extend([f"Used by: {', '.join(f'`{task}`' for task in sorted(users))}.", "", "```json", overlay, "```", ""])
-            for key in sorted(left_out_of_overlay[overlay]):
+            for key in left_out:
                 sections.extend([(
                     f"Whitney's default overlay also allows `{key}`. It is left out here, "
                     "because a check in the file tests the project's own rule for it."

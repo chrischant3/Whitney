@@ -38,14 +38,23 @@ def build_wheel(tmp: Path) -> Path:
     out = tmp / "dist"
     if importlib.util.find_spec("pip"):
         command = [sys.executable, "-m", "pip", "wheel", "--quiet", "--no-deps", "-w", str(out), str(source)]
-    elif uv := shutil.which("uv"):
+    elif uv := _uv():
         command = [uv, "build", "--quiet", "--wheel", "--out-dir", str(out), str(source)]
     else:
-        pytest.fail("building the wheel needs pip in this environment, or uv on PATH")
+        pytest.fail(
+            "building the wheel needs pip in this environment or uv: install pip in the venv, "
+            "or put uv on PATH (it was also looked for beside python and in ~/.local/bin)"
+        )
     done = subprocess.run(command, capture_output=True, encoding="utf-8", timeout=BUILD_TIMEOUT)
     assert done.returncode == 0, done.stderr[-2000:]
     [wheel] = out.glob("whitney-*.whl")
     return wheel
+
+
+def _uv() -> str | None:
+    """uv, from PATH, from beside this python, or from where its installer puts it."""
+    beside = [Path(sys.executable).parent / "uv", Path.home() / ".local" / "bin" / "uv"]
+    return shutil.which("uv") or next((str(path) for path in beside if path.is_file()), None)
 
 
 @pytest.fixture(scope="module")
@@ -80,6 +89,17 @@ def test_version_prints_the_packages_version(capsys):
     assert cli.main(["--version"]) == 0
 
     assert capsys.readouterr().out == f"whitney {importlib.metadata.version('whitney')}\n"
+
+
+def test_a_checkout_that_isnt_installed_still_runs_and_says_so(monkeypatch, capsys):
+    def not_found(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr("whitney.tasks.package_version", not_found)
+
+    assert cli.main(["--version"]) == 0
+    assert capsys.readouterr().out == "whitney not installed\n"
+    assert cli.main(["checks"]) == 0
 
 
 @pytest.mark.parametrize("name", ["scenario_eval", "agents_md", "kilo_jsonc"])

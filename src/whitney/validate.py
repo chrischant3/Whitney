@@ -23,7 +23,11 @@ Rules, numbered as in docs/specs/package-and-expected-results.md ("Validation"):
    file, that ID is a row in its Exceptions table.
 8. Each Kilo action in `harness_permissions` is "allow", "ask" or "deny",
    alone or per pattern, and the Kilo overlay sets neither "*" nor a key a
-   check in the file guards (CheckSpec.guards).
+   check in the file guards (CheckSpec.guarded).
+   Criterion 17: a permission_held check names a rule whose refusal was
+   captured (CAPTURED_REFUSALS), the file says which variants run, and, with
+   the project (validate_project), the rule is in the file's `source` in
+   that form, set to the action the check names, where it can apply.
 9. A file's `min_pass_rate` isn't below the default minimum of any check it uses.
 
 Each problem names the file and the location, such as
@@ -749,7 +753,13 @@ def _permission_held_problems(eval_file: EvalFile) -> list[Found]:
     """Criterion 17, the half that needs no project: the permission, and whether it takes a pattern, were captured."""
     found = []
     captured = sorted(CAPTURED_REFUSALS)
-    for at, params in _permission_expectations(eval_file):
+    expectations = _permission_expectations(eval_file)
+    if expectations and eval_file.variants is None:
+        found.append(("variants", (
+            f"a file that uses {PERMISSION_HELD} must say which variants run: the default baseline removes the whole config, "
+            "and Kilo's own rules then decide. Add a control that sets the rule to \"allow\", or \"variants\": {} for the template alone"
+        )))
+    for at, params in expectations:
         permission = params["permission"]
         if permission not in CAPTURED_REFUSALS:
             found.append((f"{at}.permission", (
@@ -790,7 +800,7 @@ def _permission_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) ->
     rules = config.get("permission") if isinstance(config, dict) else None
     problems = []
     for at, params in expectations:
-        message = _rule_problem(source, rules if isinstance(rules, dict) else {}, params["permission"], params.get("pattern"))
+        message = _rule_problem(source, rules if isinstance(rules, dict) else {}, params)
         if message:
             problems.append(Problem(eval_file.path, at, message))
     return problems
@@ -801,8 +811,9 @@ def _permission_form_problem(params: dict) -> bool:
     return permission not in CAPTURED_REFUSALS or (CAPTURED_REFUSALS[permission][0] == "pattern") != (params.get("pattern") is not None)
 
 
-def _rule_problem(source: str, rules: dict, permission: str, pattern: str | None) -> str | None:
-    """Why the project's rule for `permission` (and `pattern`) isn't one permission_held can read, or None."""
+def _rule_problem(source: str, rules: dict, params: dict) -> str | None:
+    """Why the project's rule isn't one a permission_held check with these parameters can read, or None."""
+    permission, pattern = params["permission"], params.get("pattern")
     form, actions = CAPTURED_REFUSALS[permission]
     rule = rules.get(permission)
     if rule is None:
@@ -819,8 +830,19 @@ def _rule_problem(source: str, rules: dict, permission: str, pattern: str | None
                 f"'{source}' sets {permission} to {json.dumps(rule)} for everything, "
                 f"and {_a(permission)} rule's refusal was captured only for a rule inside a pattern object"
             )
+        if rule.get(EVERY_PERMISSION) == "deny":
+            return (
+                f"'{source}' sets {permission} to \"deny\" for \"*\", and no refusal has been captured for a deny of everything: "
+                "a plain \"deny\" removes the tool, so Kilo prints nothing to read. Name a narrower pattern"
+            )
         if pattern not in rule:
             return f"'{source}' has no {permission} rule for the pattern '{pattern}'; its patterns: {', '.join(rule) or 'none'}"
+        order = list(rule)
+        if EVERY_PERMISSION in rule and order.index(EVERY_PERMISSION) > order.index(pattern):
+            return (
+                f"'{source}' has \"*\" after '{pattern}', and Kilo takes the last rule that matches, "
+                "so this rule never applies; put \"*\" first"
+            )
         action = rule[pattern]
     elif isinstance(rule, dict):
         return (
@@ -830,6 +852,11 @@ def _rule_problem(source: str, rules: dict, permission: str, pattern: str | None
     else:
         action = rule
     if action in actions:
+        if action != params["action"]:
+            return (
+                f"'{source}' sets this rule to {json.dumps(action)}, and the check says {json.dumps(params['action'])}; "
+                "they must agree, because each is refused in its own way"
+            )
         return None
     reads = f"{PERMISSION_HELD} reads {_a(permission)} rule set to {' or '.join(json.dumps(a) for a in actions)}"
     if action == "allow":
@@ -840,8 +867,9 @@ def _rule_problem(source: str, rules: dict, permission: str, pattern: str | None
 def permission_warnings(eval_files: list[EvalFile], project_path: Path, *, evals_path: Path | None = None) -> list[Problem]:
     """Warn where a permission_held check tests a `bash` rule in a pattern object that has no "*".
 
-    Kilo replaces Whitney's overlay `"bash": "allow"` with the project's
-    object, so a command the object doesn't name meets Kilo's own rules,
+    Whitney's overlay leaves `bash` to the project in such a file, and Kilo
+    would replace an overlay's `"bash": "allow"` with the project's object
+    anyway. So a command the object doesn't name meets Kilo's own rules,
     which ask for all but a short list; a headless run ends at the first
     (docs/spike-findings.md, "The overlay's bash against a project's bash
     patterns"). The run is still a fair test of the project as it is, so this
@@ -864,7 +892,7 @@ def permission_warnings(eval_files: list[EvalFile], project_path: Path, *, evals
             continue
         warnings += [
             Problem(eval_file.path, at, (
-                f"'{eval_file.source}' has no bash rule for \"*\", so Whitney's overlay can't allow the commands it doesn't name: "
+                f"'{eval_file.source}' has no bash rule for \"*\", so nothing allows the commands it doesn't name: "
                 "Kilo asks for each one outside its own short list, and a headless run ends at the first. "
                 "Expect runs that end early; add \"*\": \"allow\" to test this rule alone"
             ))

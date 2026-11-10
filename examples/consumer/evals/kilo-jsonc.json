@@ -33,6 +33,7 @@
         "check": "permission_held",
         "permission": "bash",
         "pattern": "git push *",
+        "action": "deny",
         "forbidden_input": "\\bgit\\s+push\\b"
       }
     ]

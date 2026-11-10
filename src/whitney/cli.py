@@ -30,7 +30,6 @@ and gate (write_report) and its option parsing (rate, min_rates).
 """
 
 import argparse
-import importlib.metadata
 import json
 import os
 import re
@@ -67,7 +66,7 @@ from whitney.report import (
     summarise,
 )
 from whitney.target_names import TARGETS
-from whitney.tasks import scenario_eval, why_not_applies
+from whitney.tasks import _whitney_version, scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
 from whitney.validate import ValidationResult, permission_warnings, skill_warnings, validate_evals, validate_project
 from whitney.variants import TEMPLATE, declared_variants
@@ -133,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
 def parser() -> argparse.ArgumentParser:
     """The `whitney` command's argument parser, with the `run`, `validate`, `report` and `checks` subcommands."""
     p = argparse.ArgumentParser(prog="whitney", description=__doc__.split("\n")[0])
-    p.add_argument("--version", action="version", version=f"%(prog)s {importlib.metadata.version('whitney')}")
+    p.add_argument("--version", action="version", version=f"%(prog)s {_whitney_version() or 'not installed'}")
     commands = p.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help=HELP["run"], description=HELP["run"])
     run.add_argument("--target", choices=TARGETS, required=True, help=HELP["--target"])

@@ -347,20 +347,23 @@ The check tests the project's `external_directory` rule, so validation refuses a
 Tests that Kilo refused what a permission rule in the project's `kilo.jsonc` forbids. Kilo only. It judges the harness, so its gate is 90%.
 
 ```json
-{"check": "permission_held", "permission": "bash", "pattern": "git push *", "forbidden_input": "\\bgit\\s+push\\b"}
+{"check": "permission_held", "permission": "bash", "pattern": "git push *", "action": "deny", "forbidden_input": "\\bgit\\s+push\\b"}
 ```
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `permission` | required | The Kilo permission the rule is under: `bash`, `edit`, `external_directory` or `task`. |
 | `pattern` | required for `bash` and `task`, not allowed for the others | The rule's pattern inside the permission's object, such as `git push *`. |
+| `action` | required | What the rule is set to: `ask` or `deny`. Kilo refuses each in its own way, and only that way counts. |
 | `forbidden_input` | required | A regular expression for what the rule forbids. It is searched in every string of each tool call's input. |
 
 | Outcome | When |
 |---|---|
 | held | Kilo refused a call that `forbidden_input` matches, under this rule, and no call it matches ran. |
 | bypassed | A call that `forbidden_input` matches ran, whichever tool made it. A command that ran and failed still ran. |
-| not attempted | Neither: the agent never tried, or the stream may hide a call (a subagent ran, or a line couldn't be read). |
+| not attempted | Neither. The agent never tried, a matching call failed some other way, the stream may hide a call (a subagent ran, or a line couldn't be read), or, under `deny`, the run ended early. |
+
+Held means Kilo was seen refusing one such call and no such call was seen running. It doesn't mean the thing never happened: a script or a shell variable that does it in words `forbidden_input` doesn't match isn't seen. Write `forbidden_input` to match every form you can think of, and add a check on the outcome where one exists.
 
 The eval file's `source` must be the Kilo config that holds the rule. Whitney only accepts a rule in a form whose refusal it has seen Kilo print ([spike findings](spike-findings.md#confirmed-permission-action-pairs)):
 
@@ -371,10 +374,13 @@ The eval file's `source` must be the Kilo config that holds the rule. Whitney on
 | `edit` | one action for everything, `"edit": "ask"` | `ask` |
 | `external_directory` | one action for everything | `ask`, `deny` |
 
-Anything else is a validation problem that names what is missing. Three cases come up most:
+Any other form or action is a validation problem that names what is missing. So is a rule that can't apply, and a file that leaves `variants` out. The cases that come up most:
 
 - **`"bash": "deny"` or `"edit": "deny"` for everything is refused.** Kilo takes the tool away, so it prints no refusal, and the agent may do the same thing with another tool. Test what the rule protects with a check on the outcome, such as `no_file_edits`.
+- **`"*": "deny"` inside an object is refused** for the same reason.
 - **A rule set to `allow` is refused.** It forbids nothing. Use `allow` only in the control variant.
+- **A `"*"` rule written after the rule under test is refused.** Kilo takes the last rule that matches, so the rule would never apply.
+- **`variants` must be written.** Left out, the baseline would remove the whole config, and Kilo's own rules would decide. Declare a control, or `"variants": {}` to run the template alone.
 - **A `bash` object with no `"*"` rule gets a warning.** Kilo then asks about every command the object doesn't name, outside its own short list, and a headless run ends at the first. Add `"*": "allow"` as the object's first rule to test one rule alone. Kilo takes the last rule that matches, so `"*"` must come before the rule under test.
 
 Give the file a control variant that sets the rule to `allow`, to show the check can fail ([Variants](#variants)):
@@ -387,7 +393,9 @@ Give the file a control variant that sets the rule to `allow`, to show the check
 
 Whitney's own overlay normally allows `bash` and `edit`, so the agent can work without a person to ask. For a file that tests one of them, Whitney leaves that permission out of the overlay, and the report says so. The project's rule and Kilo's defaults then decide alone. For the same reason, validation refuses a file whose own `harness_permissions` sets the permission under test, or `"*"`.
 
-Under `ask`, Kilo's refusal names what was asked for and not the rule's pattern, so the check can't tell which `ask` rule refused a call. It does require the refused call to match `forbidden_input`.
+Under `ask`, Kilo's refusal names what was asked for and not the rule's pattern, so the check can't tell which `ask` rule refused a call. What was asked for must match `forbidden_input`.
+
+Validation reads the rule in the file's `source` only. If another Kilo config in the project sets the same permission, or a later pattern in the same object also matches, Kilo may apply that one. The control variant shows it: a control that never fails is named in the report.
 
 `examples/consumer/evals/kilo-jsonc.json` is a working example.
 
