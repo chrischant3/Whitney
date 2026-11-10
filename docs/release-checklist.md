@@ -20,10 +20,11 @@ Claude Code users can run `/release <version>`, which works through these steps 
 
 ## 3. The evidence still holds
 
-- `whitney validate` exits 0 on Whitney's own template and on the consumer example:
+- `whitney validate` exits 0 on Whitney's own templates and on the consumer example:
 
   ```bash
   whitney validate --project-path template/kilo --evals-path evals --target kilo --constraints CONSTRAINTS.md
+  whitney validate --project-path template/claude-code --evals-path evals --target claude-code
   whitney validate --project-path examples/consumer --evals-path examples/consumer/evals --target kilo
   ```
 
@@ -42,7 +43,7 @@ Claude Code users can run `/release <version>`, which works through these steps 
 ## 4. A new user can get started
 
 - Clone the public repo into an empty folder. Follow the README from "Setup" to a first eval run, then the walkthrough in [adding-tests.md](adding-tests.md#walkthrough-test-a-new-rule), which adds an eval for a new rule to a copy of `examples/consumer`, using only the docs. Fix whatever doesn't work before tagging.
-- After tagging, install from the tag into a new virtual environment, a Python install kept apart from your others. `whitney --version` must print the new version, and the two `whitney validate` commands in step 3 must exit 0.
+- After tagging, install from the tag into a new virtual environment, a Python install kept apart from your others. `whitney --version` must print the new version, and the `whitney validate` commands in step 3 must exit 0.
 
 ## 5. The project files are current
 

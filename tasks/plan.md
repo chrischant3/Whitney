@@ -46,7 +46,7 @@ Tasks and checkpoints are tracked in [todo.md](todo.md).
 - [ ] T9: VS Code parity check and manual checklist — parity check built and unit-tested; **open:** run it against the extension, and run the manual checklist (needs a person with the extension installed)
 - [ ] T10: Docs and README — written; **open:** someone new follows docs/adding-tests.md from a clean clone
 - [x] T11 (optional): IFEvalCode interference check
-- [ ] Checkpoint: MVP complete — **open:** CI (no pipeline yet), T9, T10
+- [ ] Checkpoint: MVP complete — **open:** T9, T10 (CI runs `check.py task` on every pull request; see `.github/workflows/`)
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |

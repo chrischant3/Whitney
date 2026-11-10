@@ -45,7 +45,7 @@ Regenerating the lock also added the hashed entries for `pyyaml-ft` and `zipfile
 
 **Faster tests (step 2).** After the fix, the worst case is dominated by a few end-to-end tests that reach many functions. `test_evidence.py::test_a_fake_agent_that_prints_its_key_and_writes_it_to_a_file_leaves_no_trace_in_the_log` alone is 27% of the worst case, `test_safe_staging.py::test_the_project_is_unchanged_after_a_run` 8%, and the `test_tasks.py::test_the_wrappers_give_todays_score_answers_on_the_same_runs` cases about 26% between them. The plan's profiling (3.6 of 5.5 seconds spent waiting on child processes) still applies.
 
-**Run `full` in CI, sharded.** CI runs only the floor guard, so nothing but a developer's machine runs the whole mutation suite. A GitHub Actions matrix that runs `mutmut run "whitney.<module>*"` per group of modules, then merges the `.meta` files, would take it off the laptop entirely. It costs Actions minutes, and any shard needs the full stats run first, so four shards won't be four times faster.
+**Run `full` in CI, sharded.** When this was written, CI ran only the floor guard, so nothing but a developer's machine ran the whole mutation suite; CI now runs `full` weekly ([Next steps](#next-steps)), unsharded. A GitHub Actions matrix that runs `mutmut run "whitney.<module>*"` per group of modules, then merges the `.meta` files, would take it off the laptop entirely. It costs Actions minutes, and any shard needs the full stats run first, so four shards won't be four times faster.
 
 **`--max-children`.** Peak memory is now 7.3 GB with four workers here. If the Mac still struggles, `check.py` could pass a lower `--max-children` (a command-line flag only, not a config key). Wall time grows in proportion.
 

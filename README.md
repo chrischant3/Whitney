@@ -27,7 +27,7 @@ What an agent does depends on the harness as well as the model. A harness is the
 
    `--project-path` is the project whose configuration is under test, and `--evals-path` the folder of eval files and their fixtures. Neither has a default. To test an existing project, give its folder as `--project-path`. Whitney copies the project's configuration for that target into temporary projects and never writes to the project. [Evaluating a local project](docs/adding-tests.md#evaluating-a-local-project) lists the files it copies for each target. `whitney run` runs every eval file under the evals path that applies to the target, or only those you name with `--only`.
 
-   `whitney validate` with the same two paths checks the eval files and the project without calling a model. Both commands exit 0 when everything passed, 1 when a gate failed or validation found a problem, and 2 when they couldn't run. `whitney run` checks everything it can first, so most mistakes stop it with a 2 before it calls the model, with a message naming what's missing, such as `--target`, `--model`, an API key, the harness's CLI or a field in an eval file. One thing it can't check without calling the model: a `kilo` run in local mode without `--api-key-env` uses your global Kilo config, and a missing or expired login there shows up as errored runs, which fail the gate with a 1. [Setup](#setup) covers each one.
+   `whitney validate` with the same two paths checks the eval files and the project without calling a model. Pass the same `--target` too: without it, validate checks the project against every target the eval files apply to, so `template/claude-code` fails the Kilo checks. For `kilo` it also warns about skill descriptions that are likely to stop a skill being picked. Both commands exit 0 when everything passed, 1 when a gate failed or validation found a problem, and 2 when they couldn't run. `whitney run` checks everything it can first, so most mistakes stop it with a 2 before it calls the model, with a message naming what's missing, such as `--target`, `--model`, an API key, the harness's CLI or a field in an eval file. One thing it can't check without calling the model: a `kilo` run in local mode without `--api-key-env` uses your global Kilo config, and a missing or expired login there shows up as errored runs, which fail the gate with a 1. [Setup](#setup) covers each one.
 
    Before it checks an API key, `whitney run` loads a `.env` file from the current folder or the nearest folder above it that has one, as Inspect does. Its values don't replace variables you have exported, except in a VS Code terminal, where Inspect lets the `.env` file's values win.
 
@@ -57,6 +57,7 @@ What "without" means depends on what you're testing:
 | An instruction, such as a rule in `AGENTS.md` | A baseline: the same scenarios with the file removed | Whether the instruction changes what the agent does |
 | A permission, such as `"external_directory": "ask"` | A control with the permission set to `allow` | That the test can fail, so a pass means your permission held |
 | Your instructions' effect on ordinary coding | A baseline on published coding benchmarks | Whether your instructions make the agent's code worse |
+| Whether the right prompts use a skill or an agent ([a trigger test](docs/adding-tests.md#trigger-tests)) | A control, `trigger_control`, with that skill or agent removed | That the check can fail, so a pass means the prompt reached the skill or agent |
 
 Some runs prove nothing either way: the agent stopped before it decided, or never tried the thing being tested. Those count as inconclusive. The report shows how many there were and keeps them out of the rates.
 
@@ -164,7 +165,8 @@ Use this for the Kilo Gateway, or when your company routes models through its ow
 3. Run the evals:
 
    ```bash
-   python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3
+   whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 \
+       --project-path template/kilo --evals-path evals --epochs 3
    ```
 
 The repository never sees these credentials: the evals copy the project's `kilo.jsonc` and instruction files, not your global config, and reports say only that the global config was used. Each run gives Kilo a temporary HOME holding only a copy of your Kilo login, so your global `AGENTS.md`, instructions, MCP servers and permissions stay out of the results. Only the `provider` settings from your global config are carried over, together with the environment variables they name as `{env:...}`.
@@ -183,7 +185,8 @@ Use this to run the Kilo template against a provider directly, without touching 
 3. Run with `--api-key-env`, naming the *variable* that holds the key, never the key itself:
 
    ```bash
-   python scripts/run_evals.py --target kilo --model anthropic/claude-haiku-4-5 --api-key-env ANTHROPIC_API_KEY --epochs 3
+   whitney run --target kilo --model anthropic/claude-haiku-4-5 --api-key-env ANTHROPIC_API_KEY \
+       --project-path template/kilo --evals-path evals --epochs 3
    ```
 
    Add `--base-url https://your-proxy.example/v1` to send the provider's calls through a proxy. Other providers work the same way, e.g. `--model openai/gpt-5 --api-key-env OPENAI_API_KEY`.
@@ -204,7 +207,8 @@ Claude Code runs on your machine and calls the Anthropic API with your key.
 2. Run the evals:
 
    ```bash
-   python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --epochs 3
+   whitney run --target claude-code --model anthropic/claude-haiku-4-5 \
+       --project-path template/claude-code --evals-path evals --epochs 3
    ```
 
 Each run gets an empty temporary home folder and `--setting-sources project`, so your own Claude settings, `CLAUDE.md`, memory, plugins and MCP servers stay out of it; the only instructions it sees are the template's, or the project's with `--project-path`. It runs locally only, without `--dangerously-skip-permissions`.
@@ -239,21 +243,27 @@ whitney run --target kilo --execution docker --model kilo/anthropic/claude-haiku
 # Test a different local project's config and instructions (source is not modified)
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path /path/to/project --evals-path evals --epochs 3
 
-# Write the report again from the logs of an earlier run, without calling a model; it applies the same gate to those logs
-whitney report logs --evals-path evals
+# Write the report again from one run's logs, without calling a model, and apply the gate to them.
+# It counts every log in the folder together, so give each run its own --log-dir, and pass again
+# any --min-rate or --min-conclusive the run was given: the logs don't record them.
+whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path template/kilo --evals-path evals --log-dir logs/run-1
+whitney report logs/run-1 --evals-path evals
 
 # List the checks an eval file can name, with their parameters
 whitney checks
 
+# The installed Whitney's version
+whitney --version
+
 # The deprecated runner: its old flags and defaults, and the IFEvalCode and Harbor evals
 python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3
-python scripts/run_evals.py --report-only logs    # the same report as `whitney report logs`
+python scripts/run_evals.py --report-only logs    # like `whitney report logs --evals-path evals`
 
 # Read transcripts and scorer explanations
 inspect view
 ```
 
-`whitney run` runs every eval file under `--evals-path` that applies to the target and lists the others in the report under "Not run for this target"; `run_evals.py` without `--evals` runs every core eval the target supports: `agents_md` and `kilo_jsonc` for `kilo`, `agents_md` for `claude-code`. Each run prints a results table and writes it to `results/<target>_<model>_<timestamp>.md`; Inspect logs go to `logs/` (for `whitney run`, both in the current folder). Without `--target` and `--model` either runner stops before calling anything. Both gate each eval file on its own and exit 1 if, for any of them, the template variant falls below the file's minimum, or if fewer than `--min-conclusive` of its runs were conclusive (default 50%; runs that ended early, errored or never attempted the access don't count), so CI can gate on it. A file's minimum is the highest of its checks' minimums (80% for a check that judges the agent, such as AGENTS.md's; 90% for one that judges the harness, such as kilo.jsonc's), or the file's own `min_pass_rate` if that is higher. `--min-rate CHECK=VALUE` replaces one check's minimum for this run. `--min-adherence` and `--min-held` are deprecated aliases for `--min-rate no_secret_committed=VALUE` and `--min-rate outside_canary_not_reached=VALUE`, the checks of the two shipped evals. The report prints each minimum replaced. A file with trigger tests must clear both bars twice, once over its scenarios and once over its trigger tests. Baselines and controls never affect the gate. When a control variant, such as `kilo_jsonc`'s `allow_control`, never failed in its conclusive runs, or had none, the report says so below that file's table, because the template's result may then not show the rule holding. Logs of one eval file that disagree on its checks, labels or `min_pass_rate`, or whose metadata the report can't read, fail the gate with a line saying why. Reports from logs written by this version also start with the Whitney version, the harness version (`whitney run` records it; `run_evals.py` doesn't, so its reports say "not recorded"), the evals path and each eval file's SHA-256 as the run read it, noting a file that has changed since the run or is gone. Keep `--max-samples` low (default 2): each sample runs a full agent.
+`whitney run` runs every eval file under `--evals-path` that applies to the target and lists the others in the report under "Not run for this target"; `run_evals.py` without `--evals` runs every core eval the target supports: `agents_md` and `kilo_jsonc` for `kilo`, `agents_md` for `claude-code`. Each run prints a results table and writes it to `results/<target>_<model>_<timestamp>.md`, where `<model>` is the last part of the model name, lowercased (`kilo/anthropic/claude-haiku-4.5` gives `claude-haiku-4.5`); Inspect logs go to `logs/` (for `whitney run`, both in the current folder). Without `--target` and `--model` either runner stops before calling anything. Both gate each eval file on its own and exit 1 if, for any of them, the template variant falls below the file's minimum, or if fewer than `--min-conclusive` of its runs were conclusive (default 50%; runs that ended early, errored or never attempted the access don't count), so CI can gate on it. A file's minimum is the highest of its checks' minimums (80% for a check that judges the agent, such as AGENTS.md's; 90% for one that judges the harness, such as kilo.jsonc's), or the file's own `min_pass_rate` if that is higher. `--min-rate CHECK=VALUE` replaces one check's minimum for this run. `--min-adherence` and `--min-held` are deprecated aliases for `--min-rate no_secret_committed=VALUE` and `--min-rate outside_canary_not_reached=VALUE`, the checks of the two shipped evals. The report prints each minimum replaced. A file with trigger tests must clear both bars twice, once over its scenarios and once over its trigger tests. Baselines and controls never affect the gate. When a control variant, such as `kilo_jsonc`'s `allow_control`, never failed in its conclusive runs, or had none, the report says so below that file's table, because the template's result may then not show the rule holding. Logs of one eval file that disagree on its checks, labels or `min_pass_rate`, or whose metadata the report can't read, fail the gate with a line saying why. Reports from logs written by this version also start with the Whitney version, the harness version (`whitney run` records it; `run_evals.py` doesn't, so its reports say "not recorded"), the evals path and each eval file's SHA-256 as the run read it, noting a file that has changed since the run or is gone. Keep `--max-samples` low (default 2): each sample runs a full agent.
 
 You can also run one task and variant with Inspect directly, passing the same options as `-T` task arguments; `target` and `model` are required:
 

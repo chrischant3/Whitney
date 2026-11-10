@@ -155,7 +155,7 @@ On Linux, node-glob matches case-sensitively. **What Whitney does:** it expands 
 - **Precedence when several sources conflict.** Kilo's docs rank: agent prompt > project `instructions` > root `AGENTS.md` > global `instructions`. That ordering is out of MVP scope (it's "test hierarchy" in the proposal's future work), but the same token method extends to it.
 - Per-directory `AGENTS.md` files, which the docs say load lazily when the agent reads files in that folder.
 - Whether the VS Code extension resolves the same files. That's T9.
-- Agents and commands in folders above a staged project. Skills above it were checked in Task 8 ([above](#rules-skill-folders-and-instructions-globs)); `check_no_inherited_instructions` refuses a run with `.kilo/`, `.kilocode/`, `.claude/skills/` or `.agents/skills/` above the project.
+- Agents and commands in folders above a staged project. Skills above it were checked in Task 8 ([above](#rules-skill-folders-and-instructions-globs)); `check_no_inherited_instructions` refuses a run with `.kilo/` or `.kilocode/` above the project, and with `.claude/skills/` or `.agents/skills/` above it inside a git repository ([above](#rules-skill-folders-and-instructions-globs)).
 
 ## Practical notes
 
