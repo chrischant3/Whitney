@@ -69,7 +69,7 @@ from whitney.report import (
 from whitney.target_names import TARGETS
 from whitney.tasks import scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
-from whitney.validate import ValidationResult, skill_warnings, validate_evals, validate_project
+from whitney.validate import ValidationResult, permission_warnings, skill_warnings, validate_evals, validate_project
 from whitney.variants import TEMPLATE, declared_variants
 
 # The CLI each target runs, checked with `<name> --version` before a run.
@@ -221,8 +221,9 @@ def _validate(args: argparse.Namespace) -> int:
         applicable = [f for f in result.files if why_not_run(f, target, checks) is None]
         if applicable:
             result.problems += validate_project(applicable, Path(args.project_path), target, evals_path=evals)
-        if target == "kilo":  # only Kilo runs stage skills
+        if target == "kilo":  # only Kilo runs stage skills, and only Kilo's permission rules are tested
             result.warnings += skill_warnings(Path(args.project_path), evals_path=evals)
+            result.warnings += permission_warnings(applicable, Path(args.project_path), evals_path=evals)
     _print_findings(result)
     print(f"{evals}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
     return 1 if result.problems else 0

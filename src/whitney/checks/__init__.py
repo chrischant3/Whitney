@@ -310,7 +310,9 @@ class CheckSpec:
             runs hasn't shown it can fail in one (`whitney checks` says which).
         guards: the Kilo permission keys whose project rule it tests. An eval
             file using it may not set them, or "*", in its harness_permissions,
-            or the overlay and not the project would decide the outcome.
+            or the overlay and not the project would decide the outcome. A
+            check whose parameters have a `permission` field tests the key
+            given there too (guarded).
         min_pass_rate: its default minimum pass rate for the template
             variant, from 0 to 1. Left out, thresholds.MIN_ADHERENCE for an
             agent-judged check and thresholds.MIN_HELD for a harness-judged one.
@@ -409,6 +411,15 @@ class CheckSpec:
                     "or the name of a folder in the fixture, such as outside"
                 )
         return None
+
+    def guarded(self, params: Mapping[str, Any]) -> tuple[str, ...]:
+        """The Kilo permission keys this check tests with these parameters.
+
+        `guards`, and for a check whose parameters have a `permission` field,
+        the key given there.
+        """
+        named = params.get("permission") if "permission" in self.params.model_fields else None
+        return (*self.guards, *([named] if isinstance(named, str) and named else []))
 
     def label(self, outcome: Outcome) -> str:
         """This check's word for `outcome`, as scores and reports show it."""

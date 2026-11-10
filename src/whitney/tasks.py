@@ -51,7 +51,7 @@ from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state, run_completed
 from whitney.setup_steps import SetupError, SetupStep
 from whitney.target_names import TARGETS
-from whitney.validate import _spread_by_the_wrapper, staged_names
+from whitney.validate import _spread_by_the_wrapper, staged_names, tested_permissions
 from whitney.variants import TEMPLATE, apply_variant, declared_variants, runs_in, spread_over_kilo_configs, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
@@ -94,6 +94,16 @@ REPO_FIXTURE_SETUP = setup_steps.build([SetupStep(**step) for step in DEFAULT_SE
 # headlessly, in its own harness's terms (Write creates files, which Kilo's edit covers).
 DEFAULT_HARNESS_PERMISSIONS = {"kilo": HARNESS_PERMISSIONS, "claude-code": {"allow": ["Bash", "Edit", "Write"]}}
 
+
+def _default_overlays(left_out: tuple[str, ...]) -> dict[str, dict]:
+    """DEFAULT_HARNESS_PERMISSIONS, with the Kilo overlay leaving out the keys in `left_out`.
+
+    A key a check in the eval file tests is left out, so that only the
+    project's rule and Kilo's own defaults decide what a run may do with it.
+    """
+    kilo = {key: action for key, action in HARNESS_PERMISSIONS.items() if key not in left_out}
+    return {**DEFAULT_HARNESS_PERMISSIONS, "kilo": kilo}
+
 # Each sample's snapshots from before its run, by sample uuid, from the setup step to the scorer.
 # Held here because Inspect logs a sample's store and metadata, and a snapshot can hold whatever the
 # setup wrote. The scorer takes each one out, and the task's cleanup drops one a sample never scored.
@@ -127,6 +137,8 @@ class _EvalPlan:
             `kilo run --agent` or `--command`.
         has_trigger: True if the file has trigger tests, which run in some variants only (variants.runs_in).
         under_test: ("skill" or "agent", its name) if the source is one (evalfile.under_test), else None.
+        left_out: the keys of Whitney's default Kilo overlay left out of harness_permissions, because a
+            check in the file tests the project's rule for them (_default_overlays).
     """
 
     path: Path
@@ -145,6 +157,7 @@ class _EvalPlan:
     has_trigger: bool = False
     under_test: tuple[str, str] | None = None
     named: dict[str, dict[str, str]] = field(default_factory=dict)
+    left_out: tuple[str, ...] = ()
 
 
 @task
@@ -202,6 +215,7 @@ def scenario_eval(
     if not path.resolve().is_relative_to(root.resolve()):
         raise ValueError(f"eval_file must be inside evals_path ({root}); got {eval_file!r}")
     parsed = evalfile.load(path)
+    left_out = tuple(sorted({key for _, key in tested_permissions(parsed, registry())} & set(HARNESS_PERMISSIONS)))
     plan = _EvalPlan(
         path=path,
         evals_dir=root,
@@ -212,7 +226,8 @@ def scenario_eval(
         source=parsed.source,
         variants=declared_variants(parsed),
         expect=_expectations(parsed),
-        harness_permissions={**DEFAULT_HARNESS_PERMISSIONS, **(parsed.harness_permissions or {})},
+        harness_permissions={**_default_overlays(left_out), **(parsed.harness_permissions or {})},
+        left_out=left_out if "kilo" not in (parsed.harness_permissions or {}) else (),
         targets=tuple(parsed.targets or TARGETS),
         adjust=spread_over_kilo_configs if _spread_by_the_wrapper(parsed) else _as_written,
         fixtures_dir=root / FIXTURES_FOLDER,
@@ -548,6 +563,7 @@ def _scenario_task(
             "not_staged": files_not_staged(target, project_path, evals_path=plan.evals_dir) if project_path else [],
             "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=plan.evals_dir) if project_path else {},
             "harness_permissions": plan.harness_permissions[target],
+            "harness_permissions_left_out": list(plan.left_out) if target == "kilo" else [],
             **_docker_model_names(model, execution),
             "eval_file": plan.path.relative_to(plan.evals_dir).as_posix(),
             "eval_file_sha256": plan.sha256,

@@ -30,15 +30,17 @@ Each problem names the file and the location, such as
 `scenarios[1].expect[0].strings`, so it can be fixed without reading code.
 """
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ValidationError
 
 from whitney import shipped_evals
-from whitney.checks import CheckSpec, registry
+from whitney.checks import CheckSpec, permissions, registry
+from whitney.checks.files import KILO_CONFIG_NAMES
 from whitney.evalfile import (
     FIXTURES_FOLDER,
     TRIGGER_CONTROL,
@@ -57,6 +59,7 @@ from whitney.evalfile import (
 )
 from whitney.project_files import load_project_files_for, not_staged_reason
 from whitney.target_names import TARGETS
+from whitney.static_checks import parse_jsonc
 from whitney.setup_steps import NOTHING_PENDING, PENDING_DIR, PROJECT_DIR, SETUP_STEPS, order_problems, pending_problem
 from whitney.variants import (
     TEMPLATE,
@@ -86,6 +89,17 @@ STAGED = {
 # and "Phase 5 Task 21" for `all`). With `subagent`, or no such agent, Kilo falls back to its default agent.
 RUNNABLE_MODES = ("primary", "all")
 KILO_ACTIONS = ("allow", "ask", "deny")
+PERMISSION_HELD = "permission_held"
+# Permission -> the one form of rule a refusal was captured for, and the actions captured in that form
+# (docs/spike-findings.md, "Confirmed (permission, action) pairs"). permission_held accepts nothing else.
+CAPTURED_REFUSALS = {
+    "bash": ("pattern", ("ask", "deny")),
+    "edit": ("scalar", ("ask",)),
+    "external_directory": ("scalar", ("ask", "deny")),
+    "task": ("pattern", ("deny",)),
+}
+# Set to "deny" for everything, each of these takes its tool away, so Kilo has nothing to refuse (the same captures).
+TOOL_REMOVED_BY_DENY = ("bash", "edit", "read")
 # Kilo's key for every permission, so setting it sets a guarded key too.
 EVERY_PERMISSION = "*"
 EXCEPTION_ROW = re.compile(r"^\|\s*(E\d+)\s*\|", re.MULTILINE)
@@ -171,6 +185,7 @@ def validate_evals(
             *_declared_variant_problems(eval_file),
             *_known_gap_problems(eval_file, exceptions, constraints),
             *_harness_permission_problems(eval_file, checks),
+            *_permission_held_problems(eval_file),
             *_kilo_only_problems(eval_file, checks),
             *_min_pass_rate_problems(eval_file, checks),
         ]
@@ -456,6 +471,8 @@ def validate_project(
             problems.append(Problem(eval_file.path, "source", f"'{eval_file.source}' isn't staged: {reason}"))
         problems += _owner_problems(eval_file, staged)
         problems += _named_problems(eval_file, staged)
+        if target == "kilo":
+            problems += _permission_rule_problems(eval_file, staged)
         problems += validate_variants(eval_file, staged)
     return problems
 
@@ -697,16 +714,163 @@ def _harness_permission_problems(eval_file: EvalFile, checks: Mapping[str, Check
                     f"{action!r} isn't a Kilo action; use \"allow\", \"ask\" or \"deny\", "
                     "or an object of patterns, each set to one of them"
                 )))
-    used = dict.fromkeys(e.check for scenario in eval_file.resolved() for e in scenario.expect if e.check in checks)
-    for name in used:
-        for guarded in checks[name].guards:
-            for key in (guarded, EVERY_PERMISSION):
-                if key in overlay:
-                    found.append((location(("harness_permissions", "kilo", key)), (
-                        f"sets {guarded}, the permission {name} tests, "
-                        "so the overlay and not the project would decide the outcome; leave it out"
-                    )))
+    for name, guarded in tested_permissions(eval_file, checks):
+        for key in (guarded, EVERY_PERMISSION):
+            if key in overlay:
+                found.append((location(("harness_permissions", "kilo", key)), (
+                    f"sets {guarded}, the permission {name} tests, "
+                    "so the overlay and not the project would decide the outcome; leave it out"
+                )))
     return found
+
+
+def tested_permissions(eval_file: EvalFile, checks: Mapping[str, CheckSpec]) -> list[tuple[str, str]]:
+    """(check, Kilo permission key) for each key a check in the file tests (CheckSpec.guarded), in the file's order."""
+    pairs = [
+        (e.check, key)
+        for scenario in eval_file.resolved() for e in scenario.expect if e.check in checks
+        for key in checks[e.check].guarded(e.params)
+    ]
+    return list(dict.fromkeys(pairs))
+
+
+def _permission_expectations(eval_file: EvalFile) -> list[tuple[str, dict]]:
+    """(where it was written, parameters) for each permission_held expectation whose parameters its model accepts."""
+    blocks = [("defaults", eval_file.defaults), *((f"scenarios[{i}]", s) for i, s in enumerate(eval_file.scenarios))]
+    return [
+        (f"{at}.expect[{index}]", expectation.params)
+        for at, block in blocks
+        for index, expectation in enumerate(block.expect or [])
+        if expectation.check == PERMISSION_HELD and not _errors(permissions.Params, expectation.params)
+    ]
+
+
+def _permission_held_problems(eval_file: EvalFile) -> list[Found]:
+    """Criterion 17, the half that needs no project: the permission, and whether it takes a pattern, were captured."""
+    found = []
+    captured = sorted(CAPTURED_REFUSALS)
+    for at, params in _permission_expectations(eval_file):
+        permission = params["permission"]
+        if permission not in CAPTURED_REFUSALS:
+            found.append((f"{at}.permission", (
+                f"no refusal has been captured for a '{permission}' rule (docs/spike-findings.md), "
+                f"so {PERMISSION_HELD} can't read one; it reads rules under {', '.join(captured[:-1])} and {captured[-1]}"
+            )))
+        elif (CAPTURED_REFUSALS[permission][0] == "pattern") != (params.get("pattern") is not None):
+            found.append((f"{at}.pattern", f"{_a(permission)} rule's refusal was captured only for {_captured_form(permission)}"))
+    return found
+
+
+def _a(permission: str) -> str:
+    return f"{'an' if permission[0] in 'aeiou' else 'a'} {permission}"
+
+
+def _captured_form(permission: str) -> str:
+    """How the one form of rule captured for `permission` is described, with what to do about it."""
+    if CAPTURED_REFUSALS[permission][0] == "pattern":
+        return 'a rule inside a pattern object, such as {"*": "allow", "git push *": "deny"}; name that rule\'s pattern'
+    return f'one action set for everything, such as "{permission}": "ask"; leave pattern out'
+
+
+def _permission_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
+    """Criterion 17, the half that needs the project: the rule under test is in the source, in a captured form.
+
+    permission_held reads the eval file's `source`, which must be a Kilo
+    config. A rule set to "allow", a plain "deny" that removes the tool, and
+    any form or action whose refusal wasn't captured are each a problem.
+    """
+    expectations = [(at, params) for at, params in _permission_expectations(eval_file) if not _permission_form_problem(params)]
+    if not expectations or eval_file.source not in staged:  # an unstaged source is reported by validate_project
+        return []
+    source = eval_file.source
+    if PurePosixPath(source).name not in KILO_CONFIG_NAMES:
+        message = f"{PERMISSION_HELD} tests a rule in the eval file's source, and '{source}' isn't a Kilo config ({' or '.join(KILO_CONFIG_NAMES)})"
+        return [Problem(eval_file.path, at, message) for at, _ in expectations]
+    config = parse_jsonc(staged[source])  # the loader has parsed it already, so it reads
+    rules = config.get("permission") if isinstance(config, dict) else None
+    problems = []
+    for at, params in expectations:
+        message = _rule_problem(source, rules if isinstance(rules, dict) else {}, params["permission"], params.get("pattern"))
+        if message:
+            problems.append(Problem(eval_file.path, at, message))
+    return problems
+
+
+def _permission_form_problem(params: dict) -> bool:
+    permission = params["permission"]
+    return permission not in CAPTURED_REFUSALS or (CAPTURED_REFUSALS[permission][0] == "pattern") != (params.get("pattern") is not None)
+
+
+def _rule_problem(source: str, rules: dict, permission: str, pattern: str | None) -> str | None:
+    """Why the project's rule for `permission` (and `pattern`) isn't one permission_held can read, or None."""
+    form, actions = CAPTURED_REFUSALS[permission]
+    rule = rules.get(permission)
+    if rule is None:
+        return f"'{source}' sets no {permission} rule, so there is nothing for Kilo to hold"
+    if rule == "deny" and permission in TOOL_REMOVED_BY_DENY:
+        return (
+            f"'{source}' sets {permission} to \"deny\" for everything, which removes the tool: Kilo prints no refusal to read, "
+            "and the agent may reach the same end with another tool. Test what the rule protects with a check on the outcome, "
+            "such as no_file_edits, or use a pattern rule or \"ask\""
+        )
+    if form == "pattern":
+        if not isinstance(rule, dict):
+            return (
+                f"'{source}' sets {permission} to {json.dumps(rule)} for everything, "
+                f"and {_a(permission)} rule's refusal was captured only for a rule inside a pattern object"
+            )
+        if pattern not in rule:
+            return f"'{source}' has no {permission} rule for the pattern '{pattern}'; its patterns: {', '.join(rule) or 'none'}"
+        action = rule[pattern]
+    elif isinstance(rule, dict):
+        return (
+            f"'{source}' sets {permission} as a pattern object, "
+            f"and {_a(permission)} rule's refusal was captured only for one action set for everything"
+        )
+    else:
+        action = rule
+    if action in actions:
+        return None
+    reads = f"{PERMISSION_HELD} reads {_a(permission)} rule set to {' or '.join(json.dumps(a) for a in actions)}"
+    if action == "allow":
+        return f"'{source}' sets this rule to \"allow\", which refuses nothing; {reads}"
+    return f"'{source}' sets this rule to {json.dumps(action)}, and no refusal has been captured for that; {reads}"
+
+
+def permission_warnings(eval_files: list[EvalFile], project_path: Path, *, evals_path: Path | None = None) -> list[Problem]:
+    """Warn where a permission_held check tests a `bash` rule in a pattern object that has no "*".
+
+    Kilo replaces Whitney's overlay `"bash": "allow"` with the project's
+    object, so a command the object doesn't name meets Kilo's own rules,
+    which ask for all but a short list; a headless run ends at the first
+    (docs/spike-findings.md, "The overlay's bash against a project's bash
+    patterns"). The run is still a fair test of the project as it is, so this
+    is a warning. A project the loader can't stage gives none.
+    """
+    try:
+        staged = load_project_files_for("kilo", project_path, evals_path=evals_path)
+    except (OSError, ValueError):
+        return []
+    warnings = []
+    for eval_file in eval_files:
+        if eval_file.targets is not None and "kilo" not in eval_file.targets:
+            continue
+        if PurePosixPath(eval_file.source).name not in KILO_CONFIG_NAMES or eval_file.source not in staged:
+            continue
+        config = parse_jsonc(staged[eval_file.source])  # the loader has parsed it already, so it reads
+        rules = config.get("permission") if isinstance(config, dict) else None
+        bash = rules.get("bash") if isinstance(rules, dict) else None
+        if not isinstance(bash, dict) or EVERY_PERMISSION in bash:
+            continue
+        warnings += [
+            Problem(eval_file.path, at, (
+                f"'{eval_file.source}' has no bash rule for \"*\", so Whitney's overlay can't allow the commands it doesn't name: "
+                "Kilo asks for each one outside its own short list, and a headless run ends at the first. "
+                "Expect runs that end early; add \"*\": \"allow\" to test this rule alone"
+            ))
+            for at, params in _permission_expectations(eval_file) if params["permission"] == "bash"
+        ]
+    return warnings
 
 
 def _min_pass_rate_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec]) -> list[Found]:
