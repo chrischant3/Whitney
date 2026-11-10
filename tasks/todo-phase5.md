@@ -627,7 +627,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Acceptance criteria:**
 - [ ] Criterion 19 in full, including installing from the tag. **2026-11-10, prepared:** the README gains "Install from a release" and "Running it in CI" (the shell commands, the three exit codes, the report file and the log folder), and says there are two ways in. `CHANGELOG.md` is new, and `pyproject.toml` says `0.2.0`. Still open: the tag itself, and someone who hasn't seen Whitney adding a scenario from the docs alone.
 - [ ] A fresh install from the tag passes criteria 1 to 4.
-- [ ] `docs/release-checklist.md` worked through for `v0.2.0`, with its results row filled in (`/release 0.2.0` in Claude Code).
+- [x] `docs/release-checklist.md` worked through for `v0.2.0`, with its results row filled in (`/release 0.2.0` in Claude Code). **2026-11-10, Christopher's decisions:** the VS Code extension check (step 3) moves to the next release; the full mutation run passed on `35eeaa4` and isn't re-run on the release commit; the security read (step 6) is left out.
 
 **Verification:**
 - [ ] A fresh-venv install from the tag, then `whitney --version` and `whitney validate` against both examples.
@@ -696,3 +696,16 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Dependencies:** None. After `v0.2.0`.
 
 **Estimated scope:** S.
+
+### Task 30: The VS Code extension check
+
+**Description:** Added on 2026-11-10: Christopher moved step 3's VS Code extension check from `v0.2.0` to the next release. Its results table in `docs/vscode-manual-check.md` has no row yet, so the extension has never been checked against the template.
+
+**Acceptance criteria:**
+- [ ] The extension is installed, step 1 of `docs/vscode-manual-check.md` says where it keeps its runtime, and the parity check has run.
+- [ ] Steps 3 and 4 are done by a person, with a row in its results table.
+
+**Dependencies:** None. Before the release after `v0.2.0`.
+
+**Estimated scope:** S. A person's time, and a few model calls.
+
