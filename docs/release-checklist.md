@@ -79,4 +79,4 @@ gh release create "v$VERSION" --verify-tag --title "Whitney $VERSION" --notes-fi
 
 | Date | Version | Who | 1. Disclosure | 2. `check.py full` | 3. Evals (kilo, claude-code) | 4. Fresh clone | 5. Project files | 6. Security read |
 |---|---|---|---|---|---|---|---|---|
-| | | | | | | | | |
+| 2026-11-10 | 0.2.0 | Christopher Chant; checks run by Claude Code | Pass: gitleaks clean; only the audit file tracked; no machine paths; finding 001 reported as Kilo-Org/kilocode#16028 | Pass on `35eeaa4` (mutation 99.5%, coverage 99.6%); not re-run on the release commit (Christopher) | Pass: kilo 15/18 rule, 15/15 permission; claude-code 16/18 (Haiku, 3 epochs). VS Code extension check moved to the next release (Christopher) | Pass after fixes: a fresh clone found the README's install broken and step 7 needing a Kilo login, both fixed before the tag; install from the tag still to check | Pass | Not done (optional) |

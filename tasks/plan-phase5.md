@@ -103,6 +103,7 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | 27 | Raise `MIN_HELD` to 1.0, or decide not to (after `v0.2.0`) | after D | 23 | S | no |
 | 28 | Spike: evidence for a scalar deny (after `v0.2.0`) | after D | 23 | S | yes, cents |
 | 29 | Gate positive and negative trigger prompts separately (after `v0.2.0`) | after D | none | S | no |
+| 30 | The VS Code extension check (moved from `v0.2.0`) | after D | none | S | yes, cents |
 
 Lanes that can run beside the main one:
 

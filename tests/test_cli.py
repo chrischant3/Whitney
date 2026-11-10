@@ -969,6 +969,20 @@ def test_a_run_that_stops_partway_still_reports_what_it_collected(consumer, monk
     assert "## Team rule: followed / (followed + violated)\n" in report  # the first task's log, collected before it stopped
 
 
+
+def test_a_broken_install_exits_2_and_says_how_to_reinstall(consumer, monkeypatch):
+    def broken(task, **options):
+        raise ModuleNotFoundError("No module named 'acp.helpers'")
+
+    monkeypatch.setattr(cli, "inspect_eval", broken)
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: "1")
+
+    assert cli.main(_run_args(consumer)) == 2  # nothing ran, so no gate was judged
+    assert _report(consumer).endswith(
+        "- stopped after 0 of 1 tasks: ModuleNotFoundError: No module named 'acp.helpers'; "
+        "Whitney's dependencies don't fit together, so reinstall them from requirements.lock (README, \"Setup\")\n"
+    )
+
 def test_files_left_out_by_only_are_listed(consumer, recorded):
     _write(consumer.evals, {
         "more/other-md.json": _eval_file(source="kilo.jsonc", name="other"),

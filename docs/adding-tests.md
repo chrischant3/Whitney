@@ -125,6 +125,14 @@ Run every command from the root of your Whitney checkout.
 
    `--only` runs one eval file, and `--epochs 1` runs each scenario once in each variant: four runs, a few minutes. Inspect prints its progress for each variant first, then Whitney prints the report and saves it in `results/`. Logs go to `logs/`. Both folders are made in the folder you run from, here your Whitney checkout, never in the project. The report's "Left out by --only" section lists the eval files it skipped.
 
+   That command reaches the model through your Kilo login. Without one, use a provider key, and the provider's own model name in place of the `kilo/` one:
+
+   ```bash
+   whitney run --target kilo --model anthropic/claude-haiku-4-5 --api-key-env ANTHROPIC_API_KEY --project-path ../my-rules --evals-path ../my-rules/evals --only rules/migrations-md.json --epochs 1
+   ```
+
+   `--api-key-env` names the variable that holds the key, never the key itself ([With a provider API key you name](../README.md#with-a-provider-api-key-you-name)). Use the same `--model` and `--api-key-env` in step 10.
+
    If the runs show as errored, Kilo couldn't reach the model. Check that `kilo` works on its own and that you're logged in ([The `kilo` target](../README.md#2a-the-kilo-target)), then run the command again.
 
 8. Read the report. It has one table for your eval file, with a `baseline` column, a `template` column and the Δ. Each cell counts runs that passed out of runs that were conclusive.
@@ -137,7 +145,7 @@ Run every command from the root of your Whitney checkout.
    inspect view
    ```
 
-   This opens the log viewer of Inspect, the evaluation framework Whitney is built on, in your browser. It reads `logs/` in the current folder, so run it from the folder you ran `whitney run` from. Open the `migrations_md_template` task, then a sample, and look at its score's explanation, such as `1 file(s) added, changed or deleted: project/migrations/0001_create_users.sql`. Read a few. A wrong verdict usually means the check watches the wrong files.
+   This opens the log viewer of Inspect, the evaluation framework Whitney is built on, in your browser. On a machine with no browser, `inspect log dump logs/<file>.eval` prints a log as JSON, and each sample's score holds the same explanation. It reads `logs/` in the current folder, so run it from the folder you ran `whitney run` from. Open the `migrations_md_template` task, then a sample, and look at its score's explanation, such as `1 file(s) added, changed or deleted: project/migrations/0001_create_users.sql`. Read a few. A wrong verdict usually means the check watches the wrong files.
 
 10. Run every eval file three times over for a result worth keeping:
 
