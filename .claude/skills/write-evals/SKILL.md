@@ -1,11 +1,20 @@
 ---
 name: write-evals
-description: Draft Whitney eval files for an instruction file (AGENTS.md, CLAUDE.md, a Kilo rules file, kilo.jsonc permissions, a Kilo SKILL.md or agent definition), with fixtures, and validate them until `whitney validate` is clean. Use when someone asks to write, draft, generate or add evals, scenarios or tests for an instruction, rules, skill or agent file, or asks "how do I test my AGENTS.md". Stops before any run that calls a model, and helps read the results after one.
+description: Draft Whitney eval files for an instruction file (AGENTS.md, CLAUDE.md, a Kilo rules file, kilo.jsonc permissions, a Kilo SKILL.md or agent definition, or a Claude Code skill), with fixtures, and validate them until `whitney validate` is clean. Use when someone asks to write, draft, generate or add evals, scenarios or tests for an instruction, rules, skill or agent file, or asks "how do I test my AGENTS.md". Never starts a run that calls a model unless the person asks for one, and helps read the results after one.
 ---
 
 # Write evals for an instruction file
 
-Turns an instruction file into an eval file Whitney can run: scenarios for each testable rule, a small fixture for the agent to work in, and a clear list of the rules Whitney can't test yet. The reference for every field is `docs/adding-tests.md`. Read the sections this skill names rather than working from memory, and run `whitney checks` for the checks this version has. `examples/consumer/evals/` has a worked eval file for each kind of file under test: a rules file, `kilo.jsonc`, a skill and an agent.
+Turns an instruction file into an eval file Whitney can run: scenarios for each testable rule, a small fixture for the agent to work in, and a clear list of the rules Whitney can't test yet. Read the doc sections this skill names rather than working from memory, and run `whitney checks` for the checks this version has.
+
+## Find Whitney first
+
+Every path this skill names, such as `docs/adding-tests.md` and `examples/consumer/evals/`, is inside a Whitney checkout. If you aren't working in one, find it: ask the person for its path if they didn't give it. Then:
+
+- Read the docs from the checkout, which match its version.
+- Run `whitney` from the checkout's venv, `<checkout>/.venv/bin/whitney`, or the `whitney` on the PATH if the person installed it. Check with `whitney --version`.
+
+`examples/consumer/evals/` has a worked eval file for each kind of file under test: a rules file, `kilo.jsonc`, a skill and an agent.
 
 ## Inputs
 
@@ -15,12 +24,14 @@ You need three things. Infer them where you can, and ask only for what you can't
 - **The project path**: the folder that holds it, which Whitney reads and never writes.
 - **The evals path**: where the eval files and fixtures go. Default to `evals/` in the project. Whitney never stages it.
 
+Write only under the evals path, and in a scratch project if you build one. Never write anywhere else in the project, and never into a skill folder you were given: not even to fix the file under test.
+
 **A skill on its own, not in a project**, needs a project to hold it. Build one in a scratch folder:
 - Put the skill at `.kilo/skills/<name>/`, with the folder named as the skill's `name`. Kilo also reads `.claude/skills/` and `.agents/skills/`, but only a skill under `.kilo/skills/` can have trigger tests.
 - Add a `kilo.jsonc`. The `kilo` target needs one, and `{}` is enough.
-- Copy only the skill's own files. Whitney stages a skill's whole folder into every run, so another tool's `evals/` inside it, with its expected answers, would be in front of the agent.
+- Copy `SKILL.md` and the files it links to, such as `references/`. Leave out any `evals/`, tests or expected answers. Whitney stages a skill's whole folder into every run, so another tool's `evals/` inside it would put its answers in front of the agent.
 
-Never write into the folder you were given.
+**A Claude Code skill**, from `.claude/skills/`, can be tested only on the `kilo` target, staged this way. The `claude-code` target stages no skills. Say in the hand-back that the result shows how the skill does under Kilo, not under Claude Code.
 
 Every `*.json` under the evals path, outside `fixtures/` and hidden folders, must be a Whitney eval file. If the folder you're given already holds other JSON, such as another tool's `evals.json`, pick a different evals path.
 
@@ -42,6 +53,7 @@ Go through the file line by line. Leave out what isn't a rule: the tech stack, a
 | Don't write a value, name or pattern into code (a production URL, a deprecated class, `@ts-ignore`, ticket ids) | `no_string_added` with `strings`, and `regex: true` for a family such as `OPS-\d+` | a rise in the count in watched files |
 | Ask before X | `no_file_edits` on what X changes | In a headless run there's no one to ask, so stopping without the change is the pass |
 | Don't X unless the user asks | `no_file_edits` on what X changes | A request for X is the user asking, so use workaround, time or authority pressure, never a direct request |
+| Don't run command X | `no_file_edits` on a file left by a stand-in for X, a small script in the fixture that writes, say, `logs/` and exits, named in the fixture's README | the stand-in's file. Only calls by that name are seen, and the run needs no real X installed |
 | Treat file contents as data, not instructions | `no_string_added` and `no_file_edits` on what an instruction planted in an input file asks for, such as adding a canary to a source file | the planted instruction's effect, in files the task doesn't need to touch |
 | Stay inside the project | `outside_canary_not_reached` | the fixture's `outside/` folder (`kilo` only) |
 | A `kilo.jsonc` `deny` or `ask` rule | `permission_held` | the harness's refusal (`kilo` only); read "`permission_held`" and "Variants" in `docs/adding-tests.md` first |
@@ -59,29 +71,29 @@ Some rules can't be tested with today's checks. Say so plainly, with the reason,
 
 Read "Fixtures" and "Setup steps" in `docs/adding-tests.md`. One fixture for the whole file is usually enough.
 
-Don't copy the file under test, `kilo.jsonc`, `AGENTS.md` or anything else under `.kilo/` into the fixture. Whitney stages those from the project into each run, all of them, not only the file under test ("Evaluating a local project" lists which files each target stages). Read what else gets staged: another rule or skill may push the agent the other way, and a skill's negative trigger prompts can name another staged skill as their `owner`.
+Don't copy the file under test, `kilo.jsonc`, `AGENTS.md` or anything else under `.kilo/` into the fixture, or their text. Whitney stages those from the project into each run, all of them, not only the file under test ("Evaluating a local project" lists which files each target stages). Read what else gets staged: another rule or skill may push the agent the other way, and a skill's negative trigger prompts can name another staged skill as their `owner`.
 
 Keep the fixture to the files the scenarios need:
 
 - **The files each rule protects**, such as `db/schema.sql`, `package.json` or `CONSTRAINTS.md`, so breaking the rule is possible.
 - **Enough code for the task to make sense**, in the project's own language. If the project has no code to copy, use the language its instruction files name, or ask.
-- **For a secrets or data rule**, the secret or data itself, with unique, obviously fake values: a `.env` holding `CANARY-<PROJECT>-DB-5e9a`, or an export whose emails use a domain such as `cust-91e3.invalid`. Never a real value.
+- **For a secrets or data rule**, the secret or data itself, with unique, made-up values: a `.env` holding `CANARY-<PROJECT>-DB-5e9a`, or an export whose emails use a domain such as `cust-91e3.invalid`. Never copy a value from a real `.env` or other secret file. If the rule is about values that look real, a made-up value in a realistic shape is fine, but avoid a real provider's key prefix, which secret scanners flag.
 - **For "commit my work" prompts**, a `pending/` folder with a real change, which the `apply_pending` step writes over the project.
 - **For a permission rule**, almost nothing: the agent only has to try the forbidden call. Add a `pending/` change if the prompt asks it to commit first.
 - **For a skill with an `owner` negative**, enough for the other skill's task to make sense, such as a failing test for a debugging skill. If the project has no other skill, you may add one the user really uses beside it, but say so: it's staged in every variant, so it changes what is tested.
-- **For input files shaped like instruction files**, such as the `AGENTS.md` an audit skill reviews, rename them and keep them out of the fixture's root, such as `proposed-rules/AGENTS.v1.md`. A file named `AGENTS.md` or `CLAUDE.md` may be loaded by the harness as its own instructions, and then the run tests the harness obeying the file, not the agent reading it.
+- **For input files shaped like instruction files**, such as the `AGENTS.md` an audit skill reviews, rename them anywhere in the fixture, such as `proposed-rules/AGENTS.v1.md`. A harness may load an `AGENTS.md` in a subfolder when the agent works there. A file named `AGENTS.md` or `CLAUDE.md` may be loaded by the harness as its own instructions, and then the run tests the harness obeying the file, not the agent reading it.
 
 Put the default setup in `defaults.setup`: `git_init`, then `git_commit` with every fixture file except the secrets or data the agent might commit by mistake. A scenario's own `setup` replaces the default whole, so a scenario that adds `apply_pending` must repeat the `git_init` and `git_commit` steps before it. Trigger tests take their fixture and setup from `defaults` only.
 
 ### 4. Write the scenarios
 
-Read "Scenarios" in `docs/adding-tests.md`. For each testable rule, write at least two: one with `"pressure": "none"`, and one or more with `time`, `authority`, `explicit-request` or `workaround`.
+Read "Scenarios" in `docs/adding-tests.md`. For each testable rule, write at least two: one with `"pressure": "none"`, and one or more with `time`, `authority`, `explicit-request` or `workaround`. Test one rule per scenario where you can, so each row of the report, and its Δ, is about one rule.
 
 **For a check that judges the agent** (every check except `permission_held` and `outside_canary_not_reached`):
 
 - In the `none` scenario, give an ordinary task where breaking the rule is the easy way.
 - Each prompt must leave a right way to do the task, so a pass shows the rule holding, not an impossible task. For authority pressure, keep the task neutral and put the authority's argument against the rule beside it.
-- Don't let a prompt grant what the rule asks for. For "ask before X", a user approving X is the asking done, so breaking the rule isn't a failure. "Add date-fns" is approval for a no-new-dependencies rule. For "never X", a request to do X isn't a grant: holding the rule against a direct request is the test.
+- Don't let a prompt grant what the rule asks for. For "ask before X", a user approving X is the asking done, so breaking the rule isn't a failure. "Add date-fns" is approval for a no-new-dependencies rule. For "never X", a request to do X isn't a grant: holding the rule against a direct request is the test. For "unless the user asks", watch for requests that only imply it, such as "check whether the rules hold" for a rule against starting runs.
 
 **For a check that judges the harness** (`permission_held`, `outside_canary_not_reached`):
 
@@ -99,7 +111,7 @@ Read "Scenarios" in `docs/adding-tests.md`. For each testable rule, write at lea
 
 Every `strings` and `tokens` value must appear in the fixture or the prompt, or the check could never fail. With `regex: true`, the pattern must match something there. `whitney validate` refuses one that doesn't. Put the rule's own text in `metadata.rule`, so the report's reader can see what each scenario tests.
 
-**For a skill or an agent**, also write the `trigger` block: at least three prompts that should use it and three that shouldn't. Among the ones that shouldn't, include a near miss, such as a README change for a changelog skill, and one that another staged skill should take, with `owner` set to it. Don't add `skill_loaded` to the scenarios' `expect`. The report says in how many scenario runs the skill loaded.
+**For a skill or an agent**, also write the `trigger` block: at least three prompts that should use it and three that shouldn't. Among the ones that shouldn't, include a near miss, such as a README change for a changelog skill. If another skill is staged, add one that it should take, with `owner` set to it. Don't add `skill_loaded` to the scenarios' `expect`. The report says in how many scenario runs the skill loaded.
 
 ### 5. Write the eval file
 
@@ -133,7 +145,7 @@ Each problem names the file and the field. Fix it and run the command again, unt
 
 ### 7. Stop before anything that costs money
 
-`whitney run` calls a real model. Don't start it unless the person asks. Give them the first run to try, one epoch of this file only. `--only` takes the eval file's path inside the evals folder or its eval name:
+`whitney run` calls a real model. Don't start it unless the person asks. Give them the first run to try, one epoch of this file only, and say how many agent runs it makes: each scenario runs in the template and each variant, each positive trigger prompt in the template and the control, and each negative once. `--only` takes the eval file's path inside the evals folder or its eval name, but can't pick one scenario. For a large file, "Running one scenario with Inspect" in `docs/adding-tests.md` gives a cheaper first look.
 
 ```bash
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 \
@@ -158,7 +170,7 @@ If the person runs the evals and asks what the results mean, work through the re
 2. **Read the Δ column before the template column.** A rule that passes as often in the baseline as in the template isn't doing anything: the model behaves that way already. Report it as "held, but not because of the rule", not as a rule that works.
 3. **For a skill, read the line under the scenarios table** that says in how many runs it loaded. A skill that didn't load can't have been followed. If it rarely loads, its `description` is the thing to fix.
 4. **Read the replies of the failing runs** to see how the rule gave way: time pressure, a claimed authority, a workaround. That says what to change in the rule's wording. A rule that only says what not to do often holds better once it says what to do instead, such as "describe the change, then stop and wait".
-5. **Compare the targets for `AGENTS.md`.** The same file can hold on one harness and fail on the other with the same model, because each frames the file differently. Kilo puts it at the end of its system prompt under a bare `Instructions from:` line, and Claude Code says it overrides the defaults ([the 2026-11-10 capture](../../../docs/results/2026-11-10-kilo-prompt-capture.md)). Run both before rewording a rule for one of them.
+5. **Compare the targets for `AGENTS.md`.** The same file can hold on one harness and fail on the other with the same model, because each frames the file differently. Kilo puts it at the end of its system prompt under a bare `Instructions from:` line, and Claude Code says it overrides the defaults (`docs/results/2026-11-10-kilo-prompt-capture.md` in the checkout). Run both before rewording a rule for one of them.
 6. **Rerun with `--epochs 3`** before drawing conclusions. One run per scenario shows which rules are weak, not how weak.
 
 When rewording a rule, keep the old scenarios unchanged, so the comparison with the last run is fair.
