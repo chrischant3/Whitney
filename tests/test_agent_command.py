@@ -557,3 +557,13 @@ def test_the_solver_built_for_options_runs_each_sample_with_its_own_agent(monkey
 
     assert ran == [("a", {"kilo_agent": "reviewer"}), ("b", {"kilo_command": "shout"}), ("c", "plain")]
     assert registry_info(by_option).name.split("/")[-1] == "kilo_by_option"
+
+
+def test_a_project_with_no_command_at_all_says_none_is_staged_and_names_the_eval_file(project):
+    (project / ".kilo" / "commands" / "shout.md").unlink()
+    path = write(project, eval_file({"id": "a", "prompt": "p", "command": "shout"}, {"id": "b", "prompt": "p", "agent": "counter"}))
+
+    found = validate_project(validate_evals(project / "evals").files, project, "kilo", evals_path=project / "evals")
+
+    assert [(p.file, p.location) for p in found] == [(path, "scenarios[0].command"), (path, "scenarios[1].agent")]
+    assert found[0].message == "no staged command is named 'shout'; staged commands: none"

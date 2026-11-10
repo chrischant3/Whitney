@@ -905,3 +905,23 @@ def test_the_tasks_scorer_counts_a_run_as_the_agent_under_test_only_for_the_scen
 
     assert _used_by(task, run, "as-reviewer", monkeypatch) is True
     assert _used_by(task, run, "plain", monkeypatch) is False
+
+
+@pytest.mark.parametrize("written, value", [
+    ("'a # b'", "a # b"),  # a quoted value keeps its hash
+    ('""', None),  # the shortest quoted value is two quotes, and it is empty
+    ("XaX", "XaX"),  # only quotes are taken off the ends
+    (">\n\tfolded text\n  more", "folded text more"),  # a continuation line may start with a tab
+])
+def test_a_frontmatter_value_is_read_as_kilo_would_read_it(written, value):
+    from whitney.validate import frontmatter_value
+
+    assert frontmatter_value(f"---\nname: n\ndescription: {written}\n---\nbody\n", "description") == value
+
+
+def test_a_skill_kept_in_two_folders_is_named_once_by_its_first_path():
+    from whitney.validate import staged_names
+
+    staged = {".kilo/skills/a/SKILL.md": "", ".claude/skills/a/SKILL.md": "", ".kilocode/skills/a/SKILL.md": "", ".kilo/skills/b/SKILL.md": ""}
+
+    assert staged_names(staged, "skill") == {"a": ".claude/skills/a/SKILL.md", "b": ".kilo/skills/b/SKILL.md"}
