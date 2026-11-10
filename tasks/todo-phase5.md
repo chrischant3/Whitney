@@ -461,12 +461,12 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Added 2026-11-06 (Task 16):** one saved run suggests Kilo routes subagents by description, but its prompt asked for a hand-off, so it isn't enough on its own. Warn for skills; add agents only after a run that shows routing by description alone.
 
 **Acceptance criteria:**
-- [ ] Tests cover a missing description, a near-collision, and two distinct descriptions that give no warning.
-- [ ] The docstring states the similarity measure, its threshold and why that threshold was chosen.
-- [ ] Warnings never change the exit code.
+- [x] Tests cover a missing description, a near-collision, and two distinct descriptions that give no warning. **2026-11-10:** in `tests/test_validate.py`, with one in `tests/test_cli.py`. Skills only, as the 2026-11-06 note says. The frontmatter is read by a small reader of its own, not a YAML library, so no dependency was added; it reads a plain, quoted, `>` or `|` description.
+- [x] The docstring states the similarity measure, its threshold and why that threshold was chosen. Shared distinct words over all distinct words (Jaccard), at 0.8 or more: a 22-word description with one word changed scores 0.91, with two 0.83; descriptions written apart scored 0.33 at most.
+- [x] Warnings never change the exit code.
 
 **Verification:**
-- [ ] `pytest -q tests/test_validate.py`
+- [x] `pytest -q tests/test_validate.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Task 11.

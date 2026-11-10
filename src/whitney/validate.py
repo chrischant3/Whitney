@@ -86,6 +86,12 @@ EXCEPTION_ROW = re.compile(r"^\|\s*(E\d+)\s*\|", re.MULTILINE)
 # The Exceptions section runs from its heading to the next level-2 heading.
 EXCEPTIONS_SECTION = re.compile(r"^## Exceptions[ \t]*$(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 
+# Two skill descriptions sharing at least this share of their distinct words are warned about (skill_description_warnings).
+SIMILAR_DESCRIPTIONS = 0.8
+WORD = re.compile(r"[a-z0-9]+")
+# A YAML block scalar's header: `>` or `|`, with an optional chomping or indentation mark.
+BLOCK_SCALAR = re.compile(r"[>|][+-]?\d?")
+
 Found = tuple[str, str]  # (location, message) within one file
 
 # The eval file the kilo_jsonc task (whitney.tasks) runs: Whitney's own configuration/kilo-jsonc.json. That
@@ -456,6 +462,98 @@ def _owner_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Prob
         for index, prompt in enumerate(eval_file.trigger.negative)
         if prompt.owner is not None and prompt.owner not in names
     ]
+
+
+def skill_warnings(project_path: Path, *, evals_path: Path | None = None) -> list[Problem]:
+    """skill_description_warnings for the skills a Kilo run of the project would stage.
+
+    A project the loader can't stage gives none: validate_project reports that.
+
+    Args:
+        project_path: the project folder. It is read, never written.
+        evals_path: the evals root, whose files are never staged.
+    """
+    try:
+        staged = load_project_files_for("kilo", project_path, evals_path=evals_path)
+    except (OSError, ValueError):
+        return []
+    return skill_description_warnings(staged, Path(project_path))
+
+
+def skill_description_warnings(staged: Mapping[str, str], project_path: Path) -> list[Problem]:
+    """Warnings about the staged skills' descriptions, which are what Kilo picks a skill by.
+
+    One for each SKILL.md with no `description` in its frontmatter, and one
+    for each pair whose descriptions are nearly the same, named at the
+    later of the two paths. Both are routing hazards: the agent can't tell
+    when to load a skill with no description, or which of two alike to load.
+
+    The measure is the share of distinct words two descriptions have in
+    common, of all the distinct words in either (Jaccard similarity), on
+    lowercase words with punctuation dropped, and the threshold is
+    SIMILAR_DESCRIPTIONS, 0.8. That catches a copied description with a word
+    or two changed: on a 22-word description, one changed word scores 0.91
+    and two score 0.83. Descriptions written apart score far lower, even on
+    one subject: two for a changelog skill scored 0.16, and no unrelated
+    pair tried passed 0.33. It compares wording, not meaning, so two
+    descriptions that say the same in different words aren't caught.
+
+    Args:
+        staged: the files a Kilo run stages, project-relative path to text.
+        project_path: the project, so each warning names the skill's file in it.
+    """
+    warnings = []
+    described: dict[str, set[str]] = {}
+    for path in sorted(staged):
+        if not STAGED["skill"].fullmatch(path):
+            continue
+        words = set(WORD.findall((skill_description(staged[path]) or "").lower()))
+        if not words:
+            warnings.append(Problem(project_path / path, "description", (
+                "no description in its frontmatter; Kilo picks a skill by its description, "
+                "so the agent can't tell when to load this one"
+            )))
+            continue
+        for other, others_words in described.items():
+            shared = len(words & others_words) / len(words | others_words)
+            if shared >= SIMILAR_DESCRIPTIONS:
+                warnings.append(Problem(project_path / path, "description", (
+                    f"its description is nearly the same as {other}'s ({shared:.0%} of their words are shared), "
+                    "so Kilo can't tell which to load; make each say when it alone applies"
+                )))
+        described[path] = words
+    return warnings
+
+
+def skill_description(text: str) -> str | None:
+    """The `description` in a SKILL.md's frontmatter, on one line, or None if it has none.
+
+    The frontmatter is the lines between a first line `---` and the next
+    `---`. This reads the forms a description is written in, not all of
+    YAML: a plain or quoted value on the key's line, a `>` or `|` block, and
+    indented lines that continue any of them.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    try:
+        end = next(index for index, line in enumerate(lines[1:], 1) if line.strip() == "---")
+    except StopIteration:
+        return None
+    for index, line in enumerate(lines[1:end], 1):
+        if not line.startswith("description:"):
+            continue
+        first = line.removeprefix("description:").strip()
+        parts = [] if BLOCK_SCALAR.fullmatch(first) else [first]
+        for more in lines[index + 1 : end]:
+            if more.strip() and not more.startswith((" ", "\t")):
+                break
+            parts.append(more.strip())
+        value = " ".join(part for part in parts if part)
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        return value or None
+    return None
 
 
 def _spread_by_the_wrapper(eval_file: EvalFile) -> bool:

@@ -603,6 +603,25 @@ def test_validate_exits_1_on_a_problem_and_0_with_only_warnings(consumer, capsys
     assert f"error: {consumer.evals / 'broken.json'}: scenarios[0].known_gap: " in capsys.readouterr().out
 
 
+def test_validate_warns_about_skill_descriptions_and_still_exits_0(consumer, capsys):
+    text = "---\nname: {name}\ndescription: Write release notes for this project when asked.\n---\n# Skill\n"
+    _write(consumer.project, {f".kilo/skills/{name}/SKILL.md": text.format(name=name) for name in ("notes", "changelog")})
+    _write(consumer.project, {".kilo/skills/bare/SKILL.md": "# No frontmatter\n"})
+    args = ["validate", "--project-path", str(consumer.project), "--evals-path", str(consumer.evals)]
+
+    assert cli.main([*args, "--target", "kilo"]) == 0
+    out = capsys.readouterr().out
+    assert f"warning: {consumer.project / '.kilo/skills/bare/SKILL.md'}: description: no description in its frontmatter" in out
+    assert f"warning: {consumer.project / '.kilo/skills/notes/SKILL.md'}: description: its description is nearly the same as" in out
+    assert out.endswith("1 eval file(s), 0 problem(s), 2 warning(s)\n")
+
+    assert cli.main(args) == 0  # no target named: kilo is among them, and the warnings are given once
+    assert capsys.readouterr().out.endswith("0 problem(s), 2 warning(s)\n")
+
+    assert cli.main([*args, "--target", "claude-code"]) == 0  # Claude Code runs stage no skills
+    assert capsys.readouterr().out.endswith("0 problem(s), 0 warning(s)\n")
+
+
 @pytest.mark.parametrize("which", ["--project-path", "--evals-path"])
 def test_validate_exits_2_when_a_path_is_missing_or_not_a_folder(consumer, capsys, which):
     args = ["validate", "--project-path", str(consumer.project), "--evals-path", str(consumer.evals)]

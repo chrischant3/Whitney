@@ -424,6 +424,15 @@ In the report, a file with trigger tests gets a table for its scenarios, then "T
 
 For any file that tests a skill or an agent, the report also says in how many of the template's scenario runs the skill loaded, or the agent was handed work. A scenario that passed in a run where the skill never loaded shows what the model does anyway, not what the skill adds.
 
+### Warnings about skill descriptions
+
+Kilo picks a skill by the `description` in its `SKILL.md`. For the `kilo` target, `whitney validate` reads every skill a run would copy, and warns when:
+
+- a `SKILL.md` has no `description`, so the agent can't tell when to load it;
+- two skills' descriptions are nearly the same, so the agent can't tell which to load. "Nearly the same" means the two share at least four in five of their distinct words, which is what a copied description with a word or two changed looks like.
+
+It compares wording, not meaning, so it won't catch two descriptions that say the same thing in different words. A warning never changes the exit code. No model is called.
+
 ## Known gaps
 
 A **known gap** is a scenario you expect to fail, recorded so that it can't hide a pass rate. It is still run and reported, but left out of the overall rate and the gate.

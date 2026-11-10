@@ -61,7 +61,7 @@ from whitney.report import (
 from whitney.target_names import TARGETS
 from whitney.tasks import scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
-from whitney.validate import ValidationResult, validate_evals, validate_project
+from whitney.validate import ValidationResult, skill_warnings, validate_evals, validate_project
 from whitney.variants import TEMPLATE, declared_variants
 
 # The CLI each target runs, checked with `<name> --version` before a run.
@@ -178,7 +178,11 @@ def _check_args(args: argparse.Namespace) -> None:
 
 
 def _validate(args: argparse.Namespace) -> int:
-    """`whitney validate`: print every problem and warning, then a count; 1 if there is a problem."""
+    """`whitney validate`: print every problem and warning, then a count; 1 if there is a problem.
+
+    For the kilo target it also warns about the project's skill descriptions
+    (validate.skill_warnings), whether or not an eval file tests a skill.
+    """
     evals = Path(args.evals_path)
     result = validate_evals(evals, constraints=_constraints(args))
     checks = registry()
@@ -186,6 +190,8 @@ def _validate(args: argparse.Namespace) -> int:
         applicable = [f for f in result.files if why_not_run(f, target, checks) is None]
         if applicable:
             result.problems += validate_project(applicable, Path(args.project_path), target, evals_path=evals)
+        if target == "kilo":  # only Kilo runs stage skills
+            result.warnings += skill_warnings(Path(args.project_path), evals_path=evals)
     _print_findings(result)
     print(f"{evals}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
     return 1 if result.problems else 0
