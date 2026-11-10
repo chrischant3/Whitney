@@ -202,6 +202,7 @@ check(
     needs=("snapshots",),
     findable={"strings": "fixture_or_prompt"},
     watches=_watched,
+    proven="docs/results/2026-11-09-own-rules.md",
 )(no_string_added)
 
 check(
@@ -212,4 +213,5 @@ check(
     targets=("kilo", "claude-code"),
     needs=("snapshots",),
     watches=_watched,
+    proven="docs/results/2026-11-09-own-rules.md",
 )(no_file_edits)

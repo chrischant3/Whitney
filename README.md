@@ -77,7 +77,7 @@ For `kilo`, an eval file can also test a skill or an agent: whether the agent do
 
 The benchmark evals, `ifevalcode` and `bigcodebench_hard_complete`, test the agent's code on IFEvalCode and BigCodeBench-Hard with and without the template, for both targets. They are optional and need Docker.
 
-[Writing your own evals](docs/adding-tests.md) says what each check's parameters are. The example project's real runs are in [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent.
+[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent.
 
 Not supported yet:
 
@@ -238,9 +238,15 @@ whitney run --target kilo --execution docker --model kilo/anthropic/claude-haiku
 # Test a different local project's config and instructions (source is not modified)
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path /path/to/project --evals-path evals --epochs 3
 
-# The deprecated runner: its old flags and defaults, the IFEvalCode and Harbor evals, and re-rendering a report from logs
+# Write the report again from the logs of an earlier run, without calling a model; it gates and exits as the run did
+whitney report logs --evals-path evals
+
+# List the checks an eval file can name, with their parameters
+whitney checks
+
+# The deprecated runner: its old flags and defaults, and the IFEvalCode and Harbor evals
 python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3
-python scripts/run_evals.py --report-only logs
+python scripts/run_evals.py --report-only logs    # the same report as `whitney report logs`
 
 # Read transcripts and scorer explanations
 inspect view

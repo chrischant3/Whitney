@@ -61,6 +61,7 @@ NAME = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 # the share of runs that must be conclusive, and taking it as a pass rate would halve a check's bar.
 PASS_RATE_CONSTANTS = ("MIN_ADHERENCE", "MIN_HELD")
 FINDABLE_PLACE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+PROVEN = re.compile(r"docs/results/[A-Za-z0-9][A-Za-z0-9_.-]*\.md")
 
 CheckFunction = TypeVar("CheckFunction", bound=Callable[..., "Verdict"])
 # The fixture folder a check that needs snapshots watches unless it says otherwise.
@@ -303,6 +304,10 @@ class CheckSpec:
             parameters and a path inside a watched folder, True if the check
             judges that file. A changed file it doesn't judge can't make its
             verdict inconclusive (snapshot_problem). Left out, every file.
+        proven: the write-up, a Markdown file under docs/results/, of a
+            recorded real run in which a control or baseline made the check
+            fail; None until one has. A check that has only passed in real
+            runs hasn't shown it can fail in one (`whitney checks` says which).
         guards: the Kilo permission keys whose project rule it tests. An eval
             file using it may not set them, or "*", in its harness_permissions,
             or the overlay and not the project would decide the outcome.
@@ -333,6 +338,7 @@ class CheckSpec:
     watch: tuple[str, ...] = DEFAULT_WATCH
     watches: Callable[[Any, str], bool] | None = None
     guards: tuple[str, ...] = ()
+    proven: str | None = None
 
     def __post_init__(self) -> None:
         if not NAME.fullmatch(self.name):
@@ -387,6 +393,8 @@ class CheckSpec:
                 return f"unknown evidence {need!r}; a check can need {', '.join(NEEDS)}"
         if not self.watch:
             return "watch must name at least one fixture folder"
+        if self.proven is not None and (not isinstance(self.proven, str) or not PROVEN.fullmatch(self.proven)):
+            return f"proven must be a Markdown file under docs/results/, such as docs/results/2026-11-09-own-rules.md, got {self.proven!r}"
         if self.watches is not None and not callable(self.watches):
             return f"watches must be a function of the parameters and a path, got {self.watches!r}"
         for folder in self.watch:
@@ -517,6 +525,7 @@ def check(
     watch: Iterable[str] = DEFAULT_WATCH,
     watches: Callable[[Any, str], bool] | None = None,
     guards: Iterable[str] = (),
+    proven: str | None = None,
     into: Registry = REGISTRY,
 ) -> Callable[[CheckFunction], CheckFunction]:
     """Register a function as the check `name`, with its declaration (see CheckSpec).
@@ -548,6 +557,7 @@ def check(
                 watch=watch,
                 watches=watches,
                 guards=guards,
+                proven=proven,
             )
         )
         return function

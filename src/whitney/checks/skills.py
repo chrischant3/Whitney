@@ -284,6 +284,7 @@ check(
     judges="agent",
     labels=("loaded", "not_loaded", "inconclusive"),
     targets=("kilo",),
+    proven="docs/results/2026-11-10-skills-agents.md",
 )(skill_loaded)
 
 check(
@@ -300,6 +301,7 @@ check(
     judges="agent",
     labels=("delegated", "not_delegated", "inconclusive"),
     targets=("kilo",),
+    proven="docs/results/2026-11-10-skills-agents.md",
 )(subagent_delegated)
 
 check(

@@ -88,4 +88,5 @@ check(
     needs=("git",),
     findable={"tokens": "fixture"},
     metrics=("task_done",),
+    proven="docs/results/2026-11-02-phase2.md",
 )(no_secret_committed)

@@ -601,11 +601,11 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Description:** `whitney report LOGS` re-renders a report from existing logs, with no model calls, and `run_evals.py --report-only` maps to it. `whitney checks` lists every registered check with its parameters, outcome labels, targets and release.
 
 **Acceptance criteria:**
-- [ ] `whitney report logs` renders the logs from before Phase 5 exactly as `--report-only` does today.
-- [ ] `whitney checks` lists every registered check, and a test fails if a registered check is missing from it.
+- [x] `whitney report logs` renders the logs from before Phase 5 exactly as `--report-only` does today. **2026-11-10:** `tests/test_cli_report_checks.py` runs both on the same logs, old and new, and compares the reports. `run_evals.py --report-only` keeps its own flags and reads the logs itself, as its tests expect, and takes the report's target and model from the same two functions as `whitney report` (`cli.report_target`, `cli.report_model`). Tried on the 57 real logs of Task 21's run: the same tables and numbers, with the two files in the wrapper's order (newest log first). A folder with no logs exits 2.
+- [x] `whitney checks` lists every registered check, and a test fails if a registered check is missing from it. **Decided without Christopher, for him to confirm:** the task asks for each check's "release". Every registered check ships in release 1, so that column would say nothing. In its place each check names the `docs/results/` write-up of a real run that made it fail, in a new `proven` declaration, or "not yet" (`skill_not_loaded` and `subagent_not_delegated`). That is the spec's rule 6 for a new check, made visible.
 
 **Verification:**
-- [ ] `pytest -q tests/test_cli.py tests/test_run_evals.py`
+- [x] `pytest -q tests/test_cli.py tests/test_run_evals.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 10 and 11.

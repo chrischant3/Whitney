@@ -3,6 +3,8 @@
     whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 \\
         --project-path . --evals-path evals --epochs 3
     whitney validate --project-path . --evals-path evals [--target kilo] [--constraints CONSTRAINTS.md]
+    whitney report logs [--evals-path evals]      # render a report from saved logs; calls no model
+    whitney checks                                # list the checks an eval file can name
 
 Exit codes, for every subcommand (docs/specs/package-and-expected-results.md):
 
@@ -15,7 +17,10 @@ Exit codes, for every subcommand (docs/specs/package-and-expected-results.md):
 `whitney run` validates everything, checks the credential variable it was
 named and runs `kilo --version` (or `claude --version`) before any sample,
 so each of those fails with a 2 and a message rather than a run of errored
-samples. There is no default for the two paths, the target or the model: a
+samples. `whitney report` exits as `whitney run` does for the same logs: 0, 1
+if a gate failed or a log isn't `success`, and 2 if it couldn't run (the
+folder is missing or holds no logs). `whitney checks` exits 0.
+There is no default for the two paths, the target or the model: a
 consumer who forgot one would otherwise get a green run that tested
 something else. Whitney reads no CI-specific environment variable, so the
 same invocation works on any CI system.
@@ -25,6 +30,7 @@ and gate (write_report) and its option parsing (rate, min_rates).
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -34,6 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 from inspect_ai import eval as inspect_eval
+from inspect_ai.log import list_eval_logs, read_eval_log
 
 # Inspect loads a .env file from the current folder (or above) when an eval
 # starts; loading it the same way first lets the credential check below see
@@ -76,6 +83,10 @@ SAMPLE_SHUFFLE_SEED = 42  # as run_evals.py: the same order across variants and 
 HELP = {
     "run": "run the eval files against a harness and model, print and save the report, and gate on it",
     "validate": "check the eval files and the project without calling a model",
+    "report": "render the report from Inspect logs already written, and gate on it, without calling a model",
+    "checks": "list every check an eval file can name, with its parameters, outcomes, targets and minimum",
+    "LOGS": "the folder holding the Inspect logs, such as logs",
+    "report --evals-path": "the evals root the logs were run from, so the report can say if an eval file has changed since",
     "--target": "the harness under test",
     "--model": "the model under evaluation, as provider/model, e.g. kilo/anthropic/claude-haiku-4.5",
     "--project-path": "the project whose config and instruction files are under test; it is read, never written",
@@ -119,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    """The `whitney` command's argument parser, with the `run` and `validate` subcommands."""
+    """The `whitney` command's argument parser, with the `run`, `validate`, `report` and `checks` subcommands."""
     p = argparse.ArgumentParser(prog="whitney", description=__doc__.split("\n")[0])
     commands = p.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help=HELP["run"], description=HELP["run"])
@@ -145,6 +156,15 @@ def parser() -> argparse.ArgumentParser:
     validate.add_argument("--target", choices=TARGETS, help=HELP["--target"] + "; left out, every target a file applies to")
     _add_paths(validate)
     validate.set_defaults(handler=_validate)
+    report = commands.add_parser("report", help=HELP["report"], description=HELP["report"])
+    report.add_argument("logs", metavar="LOGS", help=HELP["LOGS"])
+    report.add_argument("--evals-path", help=HELP["report --evals-path"])
+    report.add_argument("--results-dir", default="results", help=HELP["--results-dir"])
+    report.add_argument("--min-rate", action="append", default=[], metavar="CHECK=VALUE", help=HELP["--min-rate"])
+    report.add_argument("--min-conclusive", type=rate, default=MIN_CONCLUSIVE, help=HELP["--min-conclusive"])
+    report.set_defaults(handler=_report, parser=report)
+    checks = commands.add_parser("checks", help=HELP["checks"], description=HELP["checks"])
+    checks.set_defaults(handler=_checks)
     return p
 
 
@@ -162,6 +182,13 @@ def _check_args(args: argparse.Namespace) -> None:
         SystemExit: through the subcommand's parser, for a bad option value.
         CannotRun: a path that isn't a folder, or a constraints file that isn't a file.
     """
+    if args.command == "checks":
+        return
+    if args.command == "report":
+        args.min_rate = min_rates(args.parser, args.min_rate)
+        if not Path(args.logs).is_dir():
+            raise CannotRun(f"{args.logs} isn't a folder")
+        return
     if args.command == "run":
         args.min_rate = min_rates(args.parser, args.min_rate)
         if args.limit is not None and args.limit < 1:
@@ -195,6 +222,91 @@ def _validate(args: argparse.Namespace) -> int:
     _print_findings(result)
     print(f"{evals}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
     return 1 if result.problems else 0
+
+
+def _report(args: argparse.Namespace) -> int:
+    """`whitney report`: read the logs in a folder and report on them as a run would, calling no model.
+
+    The report's target and model are the logs' own (report_target, report_model).
+
+    Raises:
+        CannotRun: the folder holds no Inspect log.
+    """
+    logs = [read_eval_log(info.name) for info in list_eval_logs(args.logs)]
+    if not logs:
+        raise CannotRun(f"no Inspect logs under {args.logs}")
+    return write_report(
+        logs, target=report_target(logs), model=report_model(logs), evals_path=args.evals_path,
+        min_rates=replaced_minimums(None, None, args.min_rate), min_conclusive=args.min_conclusive, results_dir=args.results_dir,
+    )
+
+
+def report_model(logs: list, given: str | None = None) -> str:
+    """The model a report on saved `logs` names: the one they all record, "mixed-models", or `given` if none records one.
+
+    A Docker run's model is the log's own; a local run's is in its metadata
+    or task arguments, as `model` or, in logs written before the rename, `kilo_model`.
+    """
+    model_ids = set()
+    for log in logs:
+        metadata = log.eval.metadata or {}
+        task_args = log.eval.task_args or {}
+        execution = metadata.get("execution") if isinstance(metadata, dict) else None
+        if execution == "docker":
+            candidate = getattr(log.eval, "model", None)
+        else:
+            candidate = (metadata.get("model") or metadata.get("kilo_model")) if isinstance(metadata, dict) else None
+            if candidate is None and isinstance(task_args, dict):
+                candidate = task_args.get("model") or task_args.get("kilo_model")
+        if candidate and candidate != "none/none":
+            model_ids.add(str(candidate))
+    if len(model_ids) == 1:
+        return model_ids.pop()
+    if len(model_ids) > 1:
+        return "mixed-models"
+    return given or "unknown-model"
+
+
+def report_target(logs: list, given: str | None = None) -> str:
+    """The target a report on saved `logs` names: the one they all record, "mixed-targets", or `given` if there are no logs.
+
+    Logs written before targets existed were all Kilo runs.
+    """
+    names = {(log.eval.metadata or {}).get("target", "kilo") for log in logs}
+    if len(names) > 1:
+        return "mixed-targets"
+    return names.pop() if names else given or "unknown-target"
+
+
+def _checks(args: argparse.Namespace) -> int:
+    """`whitney checks`: print every registered check, by name, with what it declares."""
+    print("\n\n".join(describe_check(spec) for _, spec in sorted(registry().items())))
+    return 0
+
+
+def describe_check(spec: CheckSpec) -> str:
+    """One check as `whitney checks` lists it: what it judges, its targets, outcomes, minimum, parameters and proof.
+
+    The last line names the write-up of a recorded real run that made the
+    check fail (CheckSpec.proven), or says none has yet.
+    """
+    lines = [
+        spec.name,
+        f"  judges: {spec.judges}",
+        f"  targets: {', '.join(spec.targets)}",
+        f"  outcomes: {' / '.join(spec.labels)}",
+        f"  minimum pass rate: {spec.min_pass_rate:.0%}",
+    ]
+    fields = spec.params.model_fields
+    if fields:
+        lines.append("  parameters:")
+        for name, info in fields.items():
+            said = "required" if info.is_required() else f"default {json.dumps(info.get_default(call_default_factory=True))}"
+            lines.append(f"    {name}: {said}")
+    else:
+        lines.append("  parameters: none")
+    lines.append(f"  shown to fail in a real run: {spec.proven or 'not yet'}")
+    return "\n".join(lines)
 
 
 def _run(args: argparse.Namespace) -> int:

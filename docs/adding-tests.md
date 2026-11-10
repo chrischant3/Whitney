@@ -261,6 +261,8 @@ For example, `examples/consumer/evals/rules/data-handling-md.json` commits every
 
 ## Checks
 
+`whitney checks` lists every check with its parameters and their defaults, its outcomes, its targets and its gate. Its last line for each check names the write-up of a real run in which the check failed, or says "not yet": a check that has only ever passed in real runs hasn't been shown able to fail in one.
+
 Each entry in `expect` names a check in `check`, and its other fields are that check's parameters:
 
 ```json
@@ -497,6 +499,9 @@ A **known gap** is a scenario you expect to fail, recorded so that it can't hide
 `known_gap` starts with the ID of a row in the Exceptions table of a constraints file, then a colon and why. Pass that file with `--constraints` to `whitney validate` and `whitney run`, and each ID must then be a row in it. Whitney's own `CONSTRAINTS.md` needs a person to approve each row, and its floor guard blocks a new `known_gap` that has no approved row.
 
 ## What a result means
+
+To read a result again later, `whitney report logs` writes the report from the logs of an earlier run. It calls no model, and it gates and exits as the run did. Give it `--evals-path` and the report also says whether an eval file has changed since the run.
+
 
 | Check | Pass | Fail | Neither |
 |---|---|---|---|
