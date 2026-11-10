@@ -2,6 +2,8 @@
 
 This guide shows how to test your own rules with Whitney: what an eval file is, how to write one, and how to check and run it. It has a walkthrough, then reference sections for each part of an eval file.
 
+Claude Code users can ask for evals for a file, such as "write evals for AGENTS.md". The `write-evals` skill (`.claude/skills/write-evals/SKILL.md`) follows this guide: it maps each rule to a check, builds a fixture, writes the scenarios, and runs `whitney validate` until it's clean. It doesn't start a run, which calls a model, unless you ask.
+
 ## How an eval works
 
 You give Whitney two folders:
