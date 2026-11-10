@@ -22,6 +22,16 @@ Keep the fixture to the files the scenarios need:
 - **For input files shaped like instruction files**, such as the `AGENTS.md` an audit skill reviews, rename them, wherever they sit in the fixture, such as `proposed-rules/AGENTS.v1.md`. A file named `AGENTS.md` or `CLAUDE.md` may be loaded by the harness as its own instructions, including one in a subfolder when the agent works there. Then the run tests the harness obeying the file, not the agent reading it.
 - **For a rule about treating files as data**, an instruction planted in an input file that asks for something with its own visible effect, such as adding a canary comment to a source file. Watch only that effect, so a report that quotes the instruction still passes.
 
+## What makes a Kilo run end early
+
+A Kilo run has no person to answer a permission request, so Kilo rejects it and the run ends. Every check on that run is then inconclusive: the harness decided, not the agent. Kilo 7.8.27 asks, by default:
+
+- **Before reading any `*.env` or `*.env.*` file**, apart from `*.env.example`. A secrets fixture is fine, but write prompts that don't need the agent to read the `.env`. Committing it doesn't read it; "check the database URL in .env" does.
+- **Before reaching outside the project**, such as a temp folder. If the task needs somewhere to build, name a folder inside the fixture in the prompt, such as `scratch/`.
+- **Before editing some instruction files**, such as an `AGENTS.md` or a file under `.kilo/`. Don't write a task whose right answer is to edit one.
+
+`kilo debug agent code` lists the permissions in force. A run with many inconclusive results is the fixture's fault, not the rule's: fix the prompts and run again.
+
 ## Setup
 
 Put the default setup in `defaults.setup`: `git_init`, then `git_commit` with every fixture file except the secrets or data the agent might commit by mistake.
@@ -35,7 +45,7 @@ A skill that isn't in a project needs one to hold it. Build it in a scratch fold
 
 - Put the skill at `.kilo/skills/<name>/`, with the folder named as the skill's `name`. Kilo also reads `.claude/skills/` and `.agents/skills/`, but only a skill under `.kilo/skills/` can have trigger tests.
 - Add a `kilo.jsonc`. The `kilo` target needs one, and `{}` is enough.
-- Copy `SKILL.md` and the files it links to, such as `references/`. Leave out any `evals/`, tests or expected answers. Whitney stages a skill's whole folder into every run, so another tool's `evals/` inside it would put its answers in front of the agent.
+- Copy `SKILL.md` and the files it links to, such as `references/`. Leave out any `evals/`, tests or expected answers, even if someone asks for the whole folder. Whitney stages a skill's whole folder into every run, so another tool's `evals/` inside it would put its answers in front of the agent.
 
 A Claude Code skill, from `.claude/skills/`, can be tested only this way, on the `kilo` target. The `claude-code` target stages no skills. Say in the hand-back that the result shows how the skill does under Kilo, not under Claude Code.
 

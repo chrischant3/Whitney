@@ -22,9 +22,11 @@ You need three things. Infer them where you can, and ask only for what you can't
 
 - **The file under test**, such as `AGENTS.md` or `.kilo/agents/reviewer.md`.
 - **The project path**: the folder that holds it, which Whitney reads and never writes. A skill on its own, outside a project, needs one built to hold it: see "A project to hold a skill on its own" in [references/fixtures.md](references/fixtures.md).
-- **The evals path**: where the eval files and fixtures go. Default to `evals/` in the project. Whitney never stages it. Every `*.json` under it, outside `fixtures/` and hidden folders, must be a Whitney eval file, so if the folder already holds other JSON, such as another tool's `evals.json`, pick a different evals path.
+- **The evals path**: where the eval files and fixtures go. Default to `evals/` in the project. Whitney never stages it.
 
-Write only under the evals path, and in a scratch project if you build one. Never write anywhere else in the project, and never into a skill folder you were given: not even to fix the file under test.
+Before writing anything, check the evals path. Every `*.json` under it, outside `fixtures/` and hidden folders, must be a Whitney eval file. If it already holds other JSON, such as another tool's `evals.json`, don't write there at all, not even beside that file: use `whitney-evals/` in the project instead, and say why.
+
+Write only under the evals path, and in a scratch project if you build one. Never write anywhere else in the project. A skill folder you were given is never the project or the evals path: never write inside it, its own `evals/` folder included, even to fix the file under test. When you copy a skill into a scratch project, copy `SKILL.md` and the files it links to, and leave out its `evals/`, even if someone asks for the whole folder.
 
 ## Steps
 

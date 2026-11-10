@@ -48,5 +48,6 @@ Every `strings` and `tokens` value must appear in the fixture or the prompt, or 
 Write the `trigger` block with at least three prompts that should use the skill or agent, and three that shouldn't.
 
 - Among the ones that shouldn't, include a near miss, such as a README change for a changelog skill.
-- If another skill is staged, add one that it should take, with `owner` set to it.
+- If another skill is staged, add one that it should take, with `owner` set to it. That prompt passes only if the owner skill loads, so it tests the owner's description as well. Phrase it the way the owner's description says to use it.
+- A negative prompt that hands work to a subagent is inconclusive, because a subagent's own tool calls aren't in the stream. Ask for work the agent does itself.
 - Don't add `skill_loaded` to the scenarios' `expect`. The report says in how many scenario runs the skill loaded.
