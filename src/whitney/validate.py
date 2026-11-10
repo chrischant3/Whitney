@@ -82,8 +82,9 @@ STAGED = {
     # Kilo turns the .md files in its workflows folders into commands too (docs/load-order.md).
     "command": re.compile(r"(?:\.kilo|\.kilocode)/(?:commands?|workflows)/([^/]+)\.md"),
 }
-# The only `mode` an agent was captured running under with `kilo run --agent` (docs/spike-findings.md, "Case 4").
-RUNNABLE_MODE = "primary"
+# The `mode`s an agent was captured running under with `kilo run --agent` (docs/spike-findings.md, "Case 4",
+# and "Phase 5 Task 21" for `all`). With `subagent`, or no such agent, Kilo falls back to its default agent.
+RUNNABLE_MODES = ("primary", "all")
 KILO_ACTIONS = ("allow", "ask", "deny")
 # Kilo's key for every permission, so setting it sets a guarded key too.
 EVERY_PERMISSION = "*"
@@ -502,10 +503,10 @@ def _named_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Prob
                 )))
             elif field == "agent":
                 mode = frontmatter_value(staged[names[name]], "mode")
-                if mode != RUNNABLE_MODE:
+                if mode not in RUNNABLE_MODES:
                     said = f"its mode is '{mode}'" if mode else "it has no mode"
                     problems.append(Problem(eval_file.path, at, (
-                        f"{said}, and `kilo run --agent` was only captured working with `mode: {RUNNABLE_MODE}`; "
+                        f"{said}, and `kilo run --agent` was only captured working with `mode: primary` or `mode: all`; "
                         "with a subagent Kilo falls back to its default agent"
                     )))
     return problems

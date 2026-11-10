@@ -216,7 +216,7 @@ A prompt with no pressure mostly shows what the model does anyway. Include scena
 
 By default the scenario's prompt goes to Kilo's own default agent. Two fields change that, one per scenario and never both:
 
-- `agent` names an agent by its file's name, such as `.kilo/agents/<name>.md`. Its file must say `mode: primary`, and `whitney validate` refuses any other mode. With `mode: subagent`, Kilo quietly uses its default agent instead.
+- `agent` names an agent by its file's name, such as `.kilo/agents/<name>.md`. Its file must say `mode: primary` or `mode: all`, and `whitney validate` refuses any other mode. With `mode: subagent`, Kilo quietly uses its default agent instead. Use `mode: all` for an agent that should also be handed work as a subagent.
 - `command` names a command by its file's name, such as `.kilo/commands/<name>.md` or `.kilo/workflows/<name>.md`. The scenario's prompt becomes the command's arguments.
 
 A name may hold letters, digits, `.`, `_` and `-`, and may not start with `-`, so it can never be read as an option. Nothing in a scenario's `metadata` changes how Kilo is run.
@@ -288,7 +288,7 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `subagent_delegated` | agent | `kilo` | The agent finished without handing work to the `agent` | 80% |
 | `subagent_not_delegated` | agent | `kilo` | The agent handed work to the `agent` | 80% |
 
-The four skill and subagent checks are new. They are tested against event streams saved from real Kilo runs, but no recorded real run has made them fail in a control yet, so treat their results as unproven until one has.
+`skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo output that makes them fail, so treat a pass from them as likely, not proven.
 
 The **gate** is the pass rate the template variant must reach for `whitney run` to exit 0. A file's gate is the highest among its checks, or its `min_pass_rate` if that is higher. At least half of the template's runs must also be conclusive. `--min-rate CHECK=VALUE` replaces one check's gate for a run, and the report prints it.
 
@@ -412,6 +412,32 @@ Every eval file runs the `template` variant: your staged files as they are. A va
 A test of a rule needs a baseline: does the rule change what the agent does? A test of a permission needs a control: with the permission set to `allow`, the check must fail, or a pass proves nothing.
 
 The report has one Δ column for each variant: the template's rate minus that variant's.
+
+## Testing a skill or an agent
+
+A **skill** is a folder of instructions, `.kilo/skills/<name>/SKILL.md`, that Kilo loads only when the agent decides it fits the request. An **agent** is a file, `.kilo/agents/<name>.md`, holding a second set of instructions that Kilo can run in place of its default agent, or that the default agent can hand work to as a **subagent**. Both are `kilo` only.
+
+Each gets one eval file, which asks two different questions:
+
+| Question | Asked by | Compared with |
+|---|---|---|
+| Does the agent do what the skill or agent says? | The file's `scenarios`, with any check | A baseline without the skill or agent |
+| Is the skill or agent used when it should be, and left alone when it shouldn't? | The file's [trigger tests](#trigger-tests) | A control without it, for the prompts that should use it |
+
+The example project has one of each:
+
+- [`examples/consumer/evals/skills/release-notes.json`](../examples/consumer/evals/skills/release-notes.json) tests a skill that must keep internal ticket ids out of `CHANGELOG.md`. Its scenarios use `no_string_added`.
+- [`examples/consumer/evals/agents/reviewer.json`](../examples/consumer/evals/agents/reviewer.json) tests a reviewer that must never change a file. Its scenarios run it with `"agent": "reviewer"` and use `no_file_edits`.
+
+To write your own:
+
+1. Name the eval file after the skill or agent: `evals/skills/<name>.json` or `evals/agents/<name>.json`.
+2. Set `source` to the skill's `SKILL.md` or the agent's file. The default baseline then removes the skill's whole folder, or the agent's file.
+3. Write scenarios for what the skill or agent says to do. For an agent, add `"agent": "<name>"` to each, so the agent itself does the work ([Running a named agent or command](#running-a-named-agent-or-command)).
+4. Add a `trigger` block with prompts that should and shouldn't use it.
+5. Run `whitney validate`, then `whitney run`.
+
+When you read the result, look first at the line under the scenarios table that says in how many runs the skill loaded. A skill that didn't load can't have been followed. In the example's first run the skill's scenarios scored 0 of 2, and that line showed why: the skill never loaded for prompts that named the files to change. Its description was rewritten to say when to use it, and it then loaded ([the recorded run](results/2026-11-10-skills-agents.md)).
 
 ## Trigger tests
 

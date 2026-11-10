@@ -503,12 +503,12 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Changed 2026-11-06 (Task 16):** the reviewer must be delegated to (trigger tests) and run with `--agent` (behaviour), and only `mode: all` could serve both. That mode is untested: start this task with a one-run capture of a `mode: all` agent, both ways.
 
 **Acceptance criteria:**
-- [ ] Both eval files validate, and the skill file has at least one negative prompt owned by another skill.
-- [ ] In the recorded run, `skill_loaded` and `subagent_delegated` fail in the automatic control. For the negative checks, the write-up says whether any negative prompt made them fail; if none did, they're marked unproven. Written up in `docs/results/<date>-skills-agents.md`.
-- [ ] `docs/adding-tests.md` and the README describe skill and agent evals, including triggers.
+- [x] Both eval files validate, and the skill file has at least one negative prompt owned by another skill. **2026-11-10:** `skills/release-notes.json` and `agents/reviewer.json`, with a new fixture, `till`. The `mode: all` capture came first: such an agent runs with `--agent` and is delegated to (`docs/spike-findings.md`, "Phase 5 Task 21"), so validation now accepts `mode: all`.
+- [x] In the recorded run, `skill_loaded` and `subagent_delegated` fail in the automatic control. For the negative checks, the write-up says whether any negative prompt made them fail; if none did, they're marked unproven. Written up in `docs/results/<date>-skills-agents.md`. **2026-11-10:** `docs/results/2026-11-10-skills-agents.md`, 57 runs on Haiku. Both positive checks failed in the control, 6 of 6 each. No negative prompt made a negative check fail, so both are marked unproven. Both files passed the gate (83% and 87%). A first one-epoch run found the skill never loaded for the scenario prompts; its description was rewritten before the recorded run, and the write-up says so. For an agent's own scenarios, which run it with `--agent`, the score's `used` is true unless Kilo fell back, and the report's note now says "was used".
+- [x] `docs/adding-tests.md` and the README describe skill and agent evals, including triggers.
 
 **Verification:**
-- [ ] `whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer --evals-path examples/consumer/evals --only skills/<name>.json agents/<name>.json --epochs 3`. This calls a real model.
+- [x] `whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer --evals-path examples/consumer/evals --only skills/<name>.json agents/<name>.json --epochs 3`. This calls a real model.
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 14 and 17 to 20.

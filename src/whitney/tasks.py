@@ -705,15 +705,16 @@ def _checks_scorer(
             before=_BEFORE_SNAPSHOTS.pop(state.uuid, {}), secrets=secrets,
         )
         verdicts = [(spec, spec.run(found, params)) for spec, params in checks]
-        verdicts = _without_the_named_agent(verdicts, (chosen or {}).get(str(state.sample_id)), run)
-        return _scenario_score(verdicts, labels, metrics, run, secrets, under_test=under_test)
+        option = (chosen or {}).get(str(state.sample_id))
+        verdicts = _without_the_named_agent(verdicts, option, run)
+        return _scenario_score(verdicts, labels, metrics, run, secrets, under_test=under_test, option=option)
 
     return score
 
 
 def _scenario_score(
     verdicts: list[tuple[CheckSpec, Verdict]], labels: list[str], metrics: list[str], run: dict, secrets: list[str],
-    *, under_test: tuple[str, str] | None = None,
+    *, under_test: tuple[str, str] | None = None, option: dict[str, str] | None = None,
 ) -> Score:
     """One scenario's Inspect score from its checks' verdicts (see whitney.checks.combine).
 
@@ -729,12 +730,16 @@ def _scenario_score(
     name), the metadata's `used` says whether this run loaded the skill or
     delegated to the agent: True, False, or None if the event stream can't
     say (skills.was_used) or the run ended early without using it, since it
-    might have gone on to. The report counts it over the template's runs,
+    might have gone on to. A run of that agent with `kilo run --agent`
+    (`option`) used it, unless Kilo fell back to its default agent, which
+    is None. The report counts it over the template's runs,
     because a scenario that passed without the skill shows the model's
     default, not the skill.
     """
     used = {}
-    if under_test:
+    if under_test and option == {"agent": under_test[1]} and under_test[0] == "agent":
+        used = {"used": None if FELL_BACK in run.get("stderr", "") else True}
+    elif under_test:
         seen = was_used(run.get("events", ""), *under_test)
         used = {"used": None if seen is False and not run_completed(run) else seen}
     answer = labels[OUTCOMES.index(combine(verdict for _, verdict in verdicts))]

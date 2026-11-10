@@ -60,7 +60,8 @@ JUDGES = ("agent", "harness")
 TRIGGER_KINDS = ("positive", "negative")
 TRIGGER_HEADINGS = {"positive": "Triggered on positive prompts", "negative": "Stayed quiet on negative prompts"}
 # How the report says a skill or an agent was used, by the kind a log records (evalfile.under_test).
-USE_WORDS = {"skill": "was loaded", "agent": "was delegated to"}
+# An agent is used when a run delegates to it or runs it with `kilo run --agent`.
+USE_WORDS = {"skill": "was loaded", "agent": "was used"}
 # Logs written before they named their checks ran Whitney's own two evals, each scored by one check.
 LEGACY_CHECKS = {"agents_md": "no_secret_committed", "kilo_jsonc": "outside_canary_not_reached"}
 LEGACY_MINIMUMS = {"agents_md": MIN_ADHERENCE, "kilo_jsonc": MIN_HELD}

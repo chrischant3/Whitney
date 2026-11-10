@@ -495,6 +495,27 @@ def test_the_score_says_whether_the_skill_under_test_was_used():
     assert "used" not in score(None).metadata
 
 
+def test_a_run_of_the_agent_under_test_with_the_agent_option_used_it_unless_kilo_fell_back():
+    """Such a run never delegates to the agent: it is the agent, so the `task` call was_used looks for isn't there."""
+    from whitney.checks import Verdict, registry
+
+    verdicts = [(registry()["no_file_edits"], Verdict("pass", "no watched file was added"))]
+    events = (KILO_EVENTS / "agent-option-all.jsonl").read_text()
+
+    def used(option, stderr="", name="a-reviewer"):
+        run = {"events": events, "stderr": stderr, "exit_code": 0}
+        return tasks._scenario_score(verdicts, ["unchanged", "edited", "inconclusive"], [], run, [],
+                                     under_test=("agent", name), option=option).metadata["used"]
+
+    assert used({"agent": "a-reviewer"}) is True
+    assert used({"agent": "a-reviewer"}, stderr="! agent \"a-reviewer\" not found. Falling back to default agent") is None
+    assert used(None) is False  # the default agent ran, and never delegated to it
+    assert used({"agent": "someone-else"}) is False
+    assert used({"command": "a-reviewer"}) is False
+    assert tasks._scenario_score(verdicts, ["unchanged", "edited", "inconclusive"], [], {"events": events, "exit_code": 0}, [],
+                                 under_test=("skill", "a-reviewer"), option={"agent": "a-reviewer"}).metadata["used"] is False
+
+
 def test_a_run_that_ended_early_without_using_it_might_have_gone_on_to():
     from whitney.checks import Verdict, registry
 
@@ -595,11 +616,11 @@ def test_the_gate_counts_the_templates_trigger_tests():
     assert problems(failing) == ["release_notes: template 67% is below the minimum 80%"]
 
 
-def test_an_agents_note_says_delegated_and_counts_runs_that_couldnt_be_told():
+def test_an_agents_note_says_used_and_counts_runs_that_couldnt_be_told():
     logs = [log("template", "template", "writes-notes", ["pass"] * 4, used=[True, False, "?", "?"], kind="agent", name="reviewer")]
 
     assert (
-        "In the template's 4 scenario runs, the agent `reviewer` was delegated to in 1, wasn't in 1 and couldn't be told in 2."
+        "In the template's 4 scenario runs, the agent `reviewer` was used in 1, wasn't in 1 and couldn't be told in 2."
         in rendered(logs)
     )
 

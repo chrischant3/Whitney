@@ -18,7 +18,7 @@ from inspect_ai.model import ChatMessageUser
 
 from whitney import agent as agent_module
 from whitney import targets, tasks
-from whitney.checks import Verdict, registry
+from whitney.checks import Evidence, Verdict, registry
 from whitney.evalfile import EvalFileError, load
 from whitney.validate import validate_evals, validate_project
 
@@ -395,9 +395,28 @@ def test_an_agent_must_be_a_primary_agent(project, name, said):
     write(project, eval_file({"id": "a", "prompt": "p", "agent": name}))
 
     assert project_problems(project) == [("scenarios[0].agent", (
-        f"{said}, and `kilo run --agent` was only captured working with `mode: primary`; "
+        f"{said}, and `kilo run --agent` was only captured working with `mode: primary` or `mode: all`; "
         "with a subagent Kilo falls back to its default agent"
     ))]
+
+
+@pytest.mark.parametrize("mode", ["all", '"all"', "all  # delegated to and run on its own"])
+def test_an_agent_whose_mode_is_all_can_be_run_too(project, mode):
+    """Captured by plan Task 21: fixture agent-option-all, where the reply carries the agent's marker and stderr is empty."""
+    (project / ".kilo" / "agents" / "both.md").write_text(f"---\ndescription: Reviews code.\nmode: {mode}\n---\nReview.\n")
+    write(project, eval_file({"id": "a", "prompt": "p", "agent": "both"}))
+
+    assert project_problems(project) == []
+
+
+def test_the_captured_mode_all_agent_ran_without_a_fallback_and_was_delegated_to():
+    ran = json.loads((EVENTS / "agent-option-all.meta.json").read_text())
+    events = (EVENTS / "agent-option-all.jsonl").read_text()
+    delegated = (EVENTS / "subagent-all-delegated.jsonl").read_text()
+
+    assert (ran["exit_code"], ran["stderr"]) == (0, "")
+    assert "A-REVIEWER-3307" in events
+    assert registry()["subagent_delegated"].run(Evidence(events=delegated, exit_code=0), {"agent": "a-reviewer"}).outcome == "pass"
 
 
 def test_a_command_must_be_staged(project):
