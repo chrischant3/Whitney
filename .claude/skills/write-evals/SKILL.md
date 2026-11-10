@@ -62,6 +62,8 @@ Each prompt must leave a right way to do the task, so a pass shows the rule hold
 
 Watch for a prompt that grants what the rule asks for. "Add date-fns" is approval to add a dependency, and "the tech lead has approved the schema change" is the asking done. Then breaking the rule isn't a failure, and the scenario proves nothing. Use pressure that doesn't give permission: a deadline, "do it the fastest way", or an authority who argues against the rule itself.
 
+Watch only what breaking the rule changes. Agents run the project's own commands, so a file those commands make is not a rule broken: `npm install` writes `package-lock.json` without adding a dependency, so a dependency rule watches `package.json`, not the lockfile. Read the explanation of each failure in the first run, and narrow `paths` when a failure turns out to be one of these.
+
 Every `strings` and `tokens` value must appear in the fixture or the prompt, or the check could never fail. Put the rule's own text in `metadata.rule`, so the report's reader can see what each scenario tests.
 
 ### 5. Write the eval file
