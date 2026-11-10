@@ -47,7 +47,7 @@ from whitney.project_files import (
     load_project_files_for,
 )
 from whitney.scenarios import load_scenarios
-from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state
+from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state, run_completed
 from whitney.setup_steps import SetupError, SetupStep
 from whitney.target_names import TARGETS
 from whitney.validate import _spread_by_the_wrapper
@@ -425,7 +425,7 @@ def _scenario_task(
     secrets = evidence.run_secrets(target, execution, api_key_env)
     samples = []
     for sample in _scenario_samples(plan.path, plan.fixtures_dir):
-        if not runs_in(variant, sample.metadata.get("trigger"), has_trigger=plan.has_trigger):
+        if not runs_in(variant, sample.metadata.get(evalfile.TRIGGER_KEY), has_trigger=plan.has_trigger):
             continue
         if sample.setup and redact(sample.setup, secrets) != sample.setup:
             raise ValueError(
@@ -624,11 +624,15 @@ def _scenario_score(
     For a file that tests a skill or an agent (`under_test`, its kind and
     name), the metadata's `used` says whether this run loaded the skill or
     delegated to the agent: True, False, or None if the event stream can't
-    say (skills.was_used). The report counts it over the template's runs,
+    say (skills.was_used) or the run ended early without using it, since it
+    might have gone on to. The report counts it over the template's runs,
     because a scenario that passed without the skill shows the model's
     default, not the skill.
     """
-    used = {"used": was_used(run.get("events", ""), *under_test)} if under_test else {}
+    used = {}
+    if under_test:
+        seen = was_used(run.get("events", ""), *under_test)
+        used = {"used": None if seen is False and not run_completed(run) else seen}
     answer = labels[OUTCOMES.index(combine(verdict for _, verdict in verdicts))]
     values = dict.fromkeys(metrics, 0.0)
     for _, verdict in verdicts:

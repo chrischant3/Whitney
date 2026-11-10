@@ -63,6 +63,9 @@ TRIGGER_CHECKS = {
     "skill": ("skill_loaded", "skill_not_loaded", "skill"),
     "agent": ("subagent_delegated", "subagent_not_delegated", "agent"),
 }
+# The sample metadata key that marks a trigger test, "positive" or "negative". Only Whitney writes it:
+# whitney.scenarios drops a scenario's own metadata of that name, so a note can't pass for the mark.
+TRIGGER_KEY = "whitney_trigger"
 # The control whitney.variants adds for a file's positive trigger prompts.
 TRIGGER_CONTROL = "trigger_control"
 
@@ -487,10 +490,11 @@ class EvalFile(BaseModel):
                 if prompt.id in seen:
                     problems.append((f"trigger.{which}[{index}].id", f"duplicate scenario id '{prompt.id}'"))
                 seen.add(prompt.id)
-                if getattr(prompt, "owner", None) == name:
-                    problems.append((f"trigger.{which}[{index}].owner", (
-                        f"'{name}' is the {kind} under test; an owner is another {kind}, the one that should load instead"
-                    )))
+        for index, prompt in enumerate(self.trigger.negative):
+            if prompt.owner == name:
+                problems.append((f"trigger.negative[{index}].owner", (
+                    f"'{name}' is the {kind} under test; an owner is another {kind}, the one that should load instead"
+                )))
         if TRIGGER_CONTROL in (self.variants or {}):
             problems.append((f"variants.{TRIGGER_CONTROL}", (
                 "is the name of the control Whitney adds for a file's trigger tests; give this variant another name"

@@ -321,13 +321,25 @@ def test_the_template_runs_every_scenario_and_marks_the_trigger_tests(project):
 
     samples = task_for(project, "template").dataset
 
-    assert [(sample.id, sample.metadata.get("trigger")) for sample in samples] == [
+    assert [(sample.id, sample.metadata.get("whitney_trigger")) for sample in samples] == [
         ("writes-notes", None),
         ("asks-for-release-notes", "positive"),
         ("asks-for-a-bug-fix", "negative"),
         ("asks-the-time", "negative"),
     ]
-    assert "trigger" not in samples[0].metadata
+    assert "whitney_trigger" not in samples[0].metadata
+
+
+def test_a_scenarios_own_metadata_cant_pass_for_the_mark(project):
+    """Free-form metadata named like the mark, or `trigger`, leaves a scenario a scenario: it keeps its baseline."""
+    noted = {"id": "writes-notes", "prompt": "Draft the notes.", "metadata": {"whitney_trigger": "negative", "trigger": "positive", "route": "x"}}
+    write(project, eval_file(scenarios=[noted]))
+
+    [sample] = task_for(project, "baseline").dataset
+
+    assert (sample.id, sample.metadata.get("trigger"), sample.metadata.get("route")) == ("writes-notes", "positive", "x")
+    assert "whitney_trigger" not in sample.metadata
+    assert [s.id for s in task_for(project, TRIGGER_CONTROL).dataset] == ["asks-for-release-notes"]
 
 
 def test_no_trigger_prompt_runs_in_a_baseline(project):
@@ -384,6 +396,29 @@ def test_a_skill_that_isnt_staged_is_named_at_source_for_the_control_too(project
 
     assert [(p.file, p.location) for p in found] == [(path, "source"), (path, "source")]
     assert found[1].message.startswith("the control for the trigger tests removes the source: ")
+
+
+def test_apply_pending_in_defaults_with_nothing_pending_is_named_once_for_a_trigger_test(project):
+    setup = [{"step": "git_init"}, {"step": "git_commit", "files": ["."], "message": "Start"}, {"step": "apply_pending"}]
+    data = eval_file(defaults={"fixture": "repo", "setup": setup, "expect": [{"check": "no_file_edits"}]},
+                     scenarios=[{"id": "writes-notes", "prompt": "Draft.", "setup": []}], trigger={"positive": POSITIVE})
+    write(project, data)
+
+    found = [(p.location, p.message) for p in validate_evals(project / "evals").problems]
+
+    assert [location for location, _ in found] == ["defaults.setup[2]"]
+    assert found[0][1].endswith("(scenario 'asks-for-release-notes')")
+
+
+def test_the_run_orders_the_control_last_and_leaves_a_skills_file_out_for_claude_code(project):
+    from whitney import cli
+    from whitney.checks import registry
+
+    parsed = load(write(project, eval_file()))
+
+    assert cli.variant_order(parsed) == ["baseline", "template", TRIGGER_CONTROL]
+    assert cli.why_not_run(parsed, "kilo", registry()) is None
+    assert "skill_loaded" in cli.why_not_run(parsed, "claude-code", registry())
 
 
 def test_an_owner_must_be_a_staged_skill(project):
@@ -460,6 +495,22 @@ def test_the_score_says_whether_the_skill_under_test_was_used():
     assert "used" not in score(None).metadata
 
 
+def test_a_run_that_ended_early_without_using_it_might_have_gone_on_to():
+    from whitney.checks import Verdict, registry
+
+    verdicts = [(registry()["no_file_edits"], Verdict("pass", "no watched file was added"))]
+    events = (KILO_EVENTS / "skill-named.jsonl").read_text()
+
+    def used(under_test, **run):
+        return tasks._scenario_score(verdicts, ["unchanged", "edited", "inconclusive"], [], {"events": events, "stderr": ""} | run,
+                                     [], under_test=under_test).metadata["used"]
+
+    assert used(("skill", "debugging"), exit_code=1) is None
+    assert used(("skill", "debugging"), exit_code=0, ended_early=True) is None
+    assert used(("skill", "release-notes"), exit_code=1) is True
+    assert tasks._scenario_score(verdicts, ["unchanged", "edited", "inconclusive"], [], {}, [], under_test=("skill", "x")).metadata["used"] is None
+
+
 # --- The report ------------------------------------------------------------------------------
 
 
@@ -479,7 +530,7 @@ def log(variant, role, scenario, outcomes, *, trigger=None, used=None, kind="ski
     used = used if used is not None else [None] * len(outcomes)
     samples = [
         SimpleNamespace(
-            id=scenario, error=None, metadata={"trigger": trigger} if trigger else {},
+            id=scenario, error=None, metadata={"whitney_trigger": trigger} if trigger else {},
             scores={"s": SimpleNamespace(answer=outcome, metadata={} if was is None else {"used": None if was == "?" else was})},
         )
         for outcome, was in zip(outcomes, used, strict=True)
@@ -597,10 +648,69 @@ In the template's 2 scenario runs, the skill `release-notes` was loaded in 2, wa
 """
 
 
-def test_logs_that_dont_record_use_get_no_note():
+def test_runs_whose_scores_dont_say_are_counted_as_couldnt_be_told():
     logs = [log("template", "template", "writes-notes", ["pass"] * 2)]
 
-    assert "scenario runs" not in rendered(logs)
+    assert "In the template's 2 scenario runs, the skill `release-notes` was loaded in 0, wasn't in 0 and couldn't be told in 2." in rendered(logs)
+
+
+def test_a_file_that_tests_no_skill_or_agent_gets_no_note():
+    plain = log("template", "template", "writes-notes", ["pass"] * 2, used=[True, True])
+    plain.eval.metadata["under_test"] = None
+
+    assert "scenario run" not in rendered([plain])
+
+
+@pytest.mark.parametrize("recorded", ["skill", {"kind": "rule", "name": "x"}, {"kind": "skill"}, {"kind": "skill", "name": ""}, {"name": "x"}])
+def test_a_log_that_names_what_it_tests_in_a_way_the_report_doesnt_know_gets_no_note(recorded):
+    odd = log("template", "template", "writes-notes", ["pass"] * 2, used=[True, True])
+    odd.eval.metadata["under_test"] = recorded
+
+    assert "scenario run" not in rendered([odd])
+
+
+def test_an_errored_run_and_a_malformed_score_are_counted_as_couldnt_be_told():
+    entry = log("template", "template", "writes-notes", ["pass"] * 4, used=[True, True, True, True])
+    entry.samples[0].error = "boom"
+    entry.samples[1].scores = {}
+    entry.samples[2].scores["s"].metadata = {"used": ["x"]}
+
+    text = rendered([entry])
+
+    assert "| writes-notes | 2/2 (2 inconclusive) |" in text
+    assert "In the template's 4 scenario runs, the skill `release-notes` was loaded in 1, wasn't in 0 and couldn't be told in 3." in text
+
+
+def test_one_run_is_a_run():
+    assert "In the template's 1 scenario run, the skill" in rendered([log("template", "template", "writes-notes", ["pass"], used=[True])])
+
+
+def test_a_file_run_in_one_variant_that_isnt_the_template_isnt_said_to_have_run_the_template_only():
+    alone = rendered([log("baseline", "baseline", "writes-notes", ["fail"] * 2)])
+    template = rendered([log("template", "template", "writes-notes", ["pass"] * 2, used=[True, True])])
+
+    assert "Only `template` ran" not in alone
+    assert "Only `template` ran for this file, so there is no Δ." in template
+
+
+def test_sample_metadata_named_trigger_isnt_the_mark_in_a_report():
+    """A log whose samples hold their author's own `trigger` note renders as a file without trigger tests."""
+    entry = log("template", "template", "writes-notes", ["pass"] * 2, used=[True, True])
+    for sample in entry.samples:
+        sample.metadata["trigger"] = "positive"
+
+    text = rendered([entry])
+
+    assert "### Triggered" not in text
+    assert "The gate reads" not in text
+
+
+def test_a_mark_the_report_doesnt_know_leaves_a_scenario_a_scenario():
+    entry = log("template", "template", "writes-notes", ["pass"] * 2, used=[True, True])
+    for sample in entry.samples:
+        sample.metadata["whitney_trigger"] = "neutral"
+
+    assert "| writes-notes | 2/2 |" in rendered([entry]).split("###")[0]
 
 
 def test_a_known_gap_among_the_scenarios_stays_out_of_their_overall_row():

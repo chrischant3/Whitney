@@ -35,6 +35,7 @@ import re
 
 # The gate's minimums live in whitney.thresholds, which whitney.checks reads too; they are
 # re-exported here under their old names, report.MIN_CONCLUSIVE and the rest.
+from whitney.evalfile import TRIGGER_KEY
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
 
 # Only for annotations: importing inspect_ai.log loads most of Inspect.
@@ -186,22 +187,27 @@ def records_from_log(log: EvalLog) -> list[Record]:
         else:
             outcome = next(iter(sample.scores.values())).answer or "error"
         sample_metadata = dict(sample.metadata or {})
-        trigger = sample_metadata.get("trigger")
+        trigger = sample_metadata.get(TRIGGER_KEY)
         out.append(Record(
             eval_name, variant, str(sample.id), outcome, sample_metadata, role, info,
-            trigger=trigger if trigger in TRIGGER_KINDS else None, use=_use(sample),
+            trigger=trigger if trigger in TRIGGER_KINDS else None, use=_use(sample, info),
         ))
     return out
 
 
-def _use(sample: object) -> str | None:
-    """What a sample's score says of the skill or agent under test: "used", "unused", "unknown", or None if it says nothing."""
+def _use(sample: object, info: FileInfo | None) -> str | None:
+    """Whether a run used the skill or agent its file tests: "used", "unused" or "unknown"; None if the file tests neither.
+
+    A sample that errored or has no score is "unknown", so the count of runs
+    matches the table's. So is a score that doesn't say, or says anything but true or false.
+    """
+    if info is None or info.under_test is None:
+        return None
     if sample.error or not sample.scores:
-        return None
-    metadata = getattr(next(iter(sample.scores.values())), "metadata", None) or {}
-    if "used" not in metadata:
-        return None
-    return {True: "used", False: "unused"}.get(metadata["used"], "unknown")
+        return "unknown"
+    metadata = getattr(next(iter(sample.scores.values())), "metadata", None)
+    used = metadata.get("used") if isinstance(metadata, dict) else None
+    return "used" if used is True else "unused" if used is False else "unknown"
 
 
 def _file_info(metadata: dict) -> FileInfo | None:
@@ -468,7 +474,7 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
         if s.known_gaps:
             parts.append("\nKnown gaps, excluded from overall and thresholds:")
             parts.extend(f"- {scenario}: {note}" for scenario, note in sorted(s.known_gaps.items()))
-        if len(variants) == 1:
+        if not [v for v in variants if v != TEMPLATE_VARIANT]:
             parts.append(f"\nOnly `{TEMPLATE_VARIANT}` ran for this file, so there is no Δ.")
         if s.usage and s.file and s.file.under_test:
             parts.append(f"\n{_usage_note(s.usage, *s.file.under_test)}")
@@ -521,8 +527,9 @@ def _usage_note(usage: dict[str, int], kind: str, name: str) -> str:
     model's default, not the skill, so the count belongs beside the table.
     """
     used, unused, unknown = (usage.get(word, 0) for word in ("used", "unused", "unknown"))
+    runs = used + unused + unknown
     return (
-        f"In the template's {used + unused + unknown} scenario runs, the {kind} `{_escaped(name)}` "
+        f"In the template's {runs} scenario {'run' if runs == 1 else 'runs'}, the {kind} `{_escaped(name)}` "
         f"{USE_WORDS[kind]} in {used}, wasn't in {unused} and couldn't be told in {unknown}."
     )
 
