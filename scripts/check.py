@@ -42,7 +42,7 @@ CONSTRAINTS = ROOT / "CONSTRAINTS.md"
 
 WARN_UNTIL = date(2026, 11, 16)  # numbered checks block from this date (CONSTRAINTS.md, "Enforced with numbers")
 CHANGED_LINE_COVERAGE = 80.0
-TOUCHED_MUTATION_SCORE = 60.0
+TOUCHED_MUTATION_SCORE = 95.0
 RATCHET_TOLERANCE = 0.5  # percentage points
 CACHED_SHARE_NOT_CHECKED = 0.05  # above this share of mutants left out, a cached score only warns
 NO_MATCHING_MUTANTS = "Filtered for specific mutants, but nothing matches"  # mutmut 3.8's message

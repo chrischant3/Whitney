@@ -44,12 +44,12 @@ Numbered checks **warn until 2026-11-16, then block** (`WARN_UNTIL` in
 | Tests | Whole suite passes (blocks now; a hard constraint in CLAUDE.md) | `pytest` | task end |
 | Secrets | No secrets in history or uncommitted changes (floor, blocks now) | `gitleaks git --redact` (+ `--pre-commit`) | every edit |
 | Coverage: changed lines | ≥ 80% of lines changed since `origin/main` covered | `pytest --cov` + `diff-cover --fail-under=80` | task end |
-| Mutation: touched functions | ≥ 60% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end and on every pull request in CI (`check.py task`); weekly in CI (`check.py full`) |
+| Mutation: touched functions | ≥ 95% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end and on every pull request in CI (`check.py task`); weekly in CI (`check.py full`) |
 | Dependencies | Nothing at high or above in the installed environment | `osv-scanner scan --no-resolve` on the installed distributions | weekly in CI (`check.py full`), and before a pull request that changes `requirements.lock` |
 
 Why these numbers:
 - **80% changed-line coverage**: high enough to force a test for new code, low enough to allow a config line or an error message.
-- **60% mutation score on touched functions**: typical for a suite that has never been mutated; 80% is mature. It's scoped to functions a change touched, so you're judged on code you wrote, not on code you inherited.
+- **95% mutation score on touched functions**: this project's score is 98 to 99.7%, so the 60% it started at (typical for a suite that has never been mutated) let new code with many surviving mutants through every pull request while the project score fell; the full run on main at `1ef449b` measured 98.0% after Tasks 17 to 25. Raised by Christopher Chant on 2026-11-10. It's scoped to functions a change touched, so you're judged on code you wrote, not on code you inherited. An equivalent mutant in a touched function is explained in this file, as the others are, or the change waits.
 - **High or above**: below that, dependency advisories are mostly noise for a local evaluation tool.
 
 Mutation score = (killed + timeout) / (all mutants − segfaults). A segfault
