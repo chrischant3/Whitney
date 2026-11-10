@@ -76,7 +76,7 @@ def test_unknown_variants_are_rejected(build, bad):
 def test_execution_picks_the_sandbox_and_unknown_execution_is_rejected():
     assert agents_md(target="kilo", model=MODEL, execution="local").sandbox.type == "local"
     docker = kilo_jsonc(target="kilo", model="anthropic/claude-haiku-4-5", execution="docker").sandbox  # Docker needs a bridge-servable model
-    assert docker.type == "docker" and docker.config.endswith("docker/compose.yaml")
+    assert docker.type == "docker" and docker.config.endswith("whitney/sandbox/compose.yaml")
     with pytest.raises(ValueError, match="execution must be 'local' or 'docker'"):
         agents_md(target="kilo", model=MODEL, execution="vm")
 

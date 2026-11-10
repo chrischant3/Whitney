@@ -66,9 +66,9 @@ from whitney.report import (
     summarise,
 )
 from whitney.target_names import TARGETS
-from whitney.tasks import scenario_eval, why_not_applies
+from whitney.tasks import _whitney_version, scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
-from whitney.validate import ValidationResult, skill_warnings, validate_evals, validate_project
+from whitney.validate import ValidationResult, permission_warnings, skill_warnings, validate_evals, validate_project
 from whitney.variants import TEMPLATE, declared_variants
 
 # The CLI each target runs, checked with `<name> --version` before a run.
@@ -132,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
 def parser() -> argparse.ArgumentParser:
     """The `whitney` command's argument parser, with the `run`, `validate`, `report` and `checks` subcommands."""
     p = argparse.ArgumentParser(prog="whitney", description=__doc__.split("\n")[0])
+    p.add_argument("--version", action="version", version=f"%(prog)s {_whitney_version() or 'not installed'}")
     commands = p.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help=HELP["run"], description=HELP["run"])
     run.add_argument("--target", choices=TARGETS, required=True, help=HELP["--target"])
@@ -219,8 +220,9 @@ def _validate(args: argparse.Namespace) -> int:
         applicable = [f for f in result.files if why_not_run(f, target, checks) is None]
         if applicable:
             result.problems += validate_project(applicable, Path(args.project_path), target, evals_path=evals)
-        if target == "kilo":  # only Kilo runs stage skills
+        if target == "kilo":  # only Kilo runs stage skills, and only Kilo's permission rules are tested
             result.warnings += skill_warnings(Path(args.project_path), evals_path=evals)
+            result.warnings += permission_warnings(applicable, Path(args.project_path), evals_path=evals)
     _print_findings(result)
     print(f"{evals}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
     return 1 if result.problems else 0

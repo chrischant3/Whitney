@@ -12,7 +12,7 @@ The extension runs its own bundled copy of Kilo's runtime. Find that binary insi
 python -m whitney.parity --cli "$(which kilo)" --other /path/to/extension/kilo
 ```
 
-It passes if the runtime versions match and both resolve the same `permission` and `instructions` from `template/kilo/`. If the versions differ, re-run the evals with `KILO_VERSION` in `docker/Dockerfile` set to the extension's version, or record the gap.
+It passes if the runtime versions match and both resolve the same `permission` and `instructions` from `template/kilo/`. If the versions differ, re-run the evals with `KILO_VERSION` in `src/whitney/sandbox/Dockerfile` set to the extension's version, or record the gap.
 
 **Not yet verified:** where the current extension keeps its runtime. It wasn't installed when this was written, so update this step once someone has found it.
 

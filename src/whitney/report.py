@@ -58,6 +58,7 @@ NOT_GIVEN = "not given"
 GENERIC_LABELS = ("pass", "fail", "inconclusive")
 JUDGES = ("agent", "harness")
 TRIGGER_KINDS = ("positive", "negative")
+SCENARIO_PART, TRIGGER_PART = "scenario", "trigger test"  # the gate's two parts of a file with trigger tests
 TRIGGER_HEADINGS = {"positive": "Triggered on positive prompts", "negative": "Stayed quiet on negative prompts"}
 # How the report says a skill or an agent was used, by the kind a log records (evalfile.under_test).
 # An agent is used when a run delegates to it or runs it with `kilo run --agent`.
@@ -164,6 +165,9 @@ class EvalSummary:
     roles: dict[str, str] = field(default_factory=dict)  # variant -> role, where the logs record it
     problems: list[str] = field(default_factory=list)  # why the gate can't judge these runs; each fails it
     triggers: dict[str, str] = field(default_factory=dict)  # trigger test -> "positive" or "negative"
+    # For a file with trigger tests, what the gate judges: "scenario" and "trigger test" -> variant -> cell,
+    # excluding known gaps. Each run is counted in the part its own log puts it in. A part is here if any run was.
+    parts: dict[str, dict[str, Cell]] = field(default_factory=dict)
     # In the template's runs of the file's scenarios: how often the skill or agent under test was used ("used",
     # "unused", "unknown" -> runs). Empty when no such run recorded it.
     usage: dict[str, int] = field(default_factory=dict)
@@ -312,6 +316,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
     roles: dict[str, dict[str, str]] = defaultdict(dict)
     triggers: dict[str, dict[str, str]] = defaultdict(dict)
     usage: dict[str, dict[str, int]] = defaultdict(dict)
+    parts: dict[str, dict[str, dict[str, Cell]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(Cell)))
     for r in records:
         key = r.file.eval_file if r.file else r.eval_name
         if r.file:
@@ -330,8 +335,9 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
         if r.metadata.get("known_gap"):
             gaps[key][r.scenario] = r.metadata["known_gap"]
         targets = [rows[key][r.scenario][r.variant]]
+        part = parts[key][TRIGGER_PART if r.trigger else SCENARIO_PART]
         if not r.metadata.get("known_gap"):
-            targets.append(overall[key][r.variant])
+            targets += [overall[key][r.variant], part[r.variant]]
         for cell in targets:
             if r.outcome == passing:
                 cell.passed += 1
@@ -349,6 +355,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             problems=_problems(differ[key], malformed[key]),
             triggers=triggers[key],
             usage=usage[key],
+            parts={name: dict(cells) for name, cells in sorted(parts[key].items())} if triggers[key] else {},
         )
         for key in rows
     }
@@ -406,12 +413,16 @@ def check_thresholds(
 ) -> list[str]:
     """Problems, if the template variant falls short for any eval present.
 
-    Two bars per eval file: the overall rate must reach its minimum, and at
+    Two bars: the overall rate must reach its minimum, and at
     least `min_conclusive` of the template's runs must be conclusive. The
     rate leaves inconclusive runs out, so without the second bar one followed
     run among many that ended early (an outage, a spent credit balance) would
     pass at 100%. Errored and not-attempted runs count as not conclusive.
     Only the template counts: baselines and controls never affect the gate.
+
+    A file with trigger tests must clear both bars twice, once for its
+    scenarios and once for its trigger tests: read together, trigger tests
+    that all pass would carry a skill the agent loads and then doesn't follow.
 
     A file's minimum is file_minimum's, from the checks its logs record, with
     the rates replaced_minimums gives. Logs written before they recorded them
@@ -431,18 +442,36 @@ def check_thresholds(
             minimum = file_minimum(eval_summary.file, rates)
         else:
             minimum = rates.get(LEGACY_CHECKS[key], LEGACY_MINIMUMS[key])
-        cell = eval_summary.overall.get(TEMPLATE_VARIANT, Cell())
-        rate = cell.rate
-        if rate is None or rate < minimum:
-            shown = "no conclusive runs" if rate is None else f"{rate:.0%}"
-            problems.append(f"{name}: template {shown} is below the minimum {minimum:.0%}")
-        conclusive = cell.passed + cell.failed
-        runs = conclusive + cell.inconclusive
-        if conclusive and conclusive / runs < min_conclusive:  # no conclusive runs at all is reported above
-            problems.append(
-                f"{name}: only {conclusive}/{runs} template runs were conclusive, below the minimum {min_conclusive:.0%}"
-            )
+        for part, cell in _gated_parts(eval_summary):
+            of_part, part_runs = (f"{part}s ", f"{part} runs") if part else ("", "runs")
+            rate = cell.rate
+            if part and rate is None:
+                problems.append(f"{name}: template {part}s had no conclusive runs, so they are below the minimum {minimum:.0%}")
+            elif rate is None or rate < minimum:
+                shown = "no conclusive runs" if rate is None else f"{rate:.0%}"
+                problems.append(f"{name}: template {of_part}{shown} is below the minimum {minimum:.0%}")
+            conclusive = cell.passed + cell.failed
+            runs = conclusive + cell.inconclusive
+            if conclusive and conclusive / runs < min_conclusive:  # no conclusive runs at all is reported above
+                problems.append(
+                    f"{name}: only {conclusive}/{runs} template {part_runs} were conclusive, "
+                    f"below the minimum {min_conclusive:.0%}"
+                )
     return problems
+
+
+def _gated_parts(s: EvalSummary) -> list[tuple[str, Cell]]:
+    """The template's counts the gate judges for one eval file, each with its name in a problem line.
+
+    One part, unnamed, for a file without trigger tests. A file with them has
+    "scenario" and "trigger test", each judged alone, and only the second if
+    it has no scenarios. A part whose runs were all known gaps, or all in
+    other variants, is still judged, and fails for want of conclusive runs,
+    as a file without trigger tests does.
+    """
+    if not s.parts:
+        return [("", s.overall.get(TEMPLATE_VARIANT, Cell()))]
+    return [(part, cells.get(TEMPLATE_VARIANT, Cell())) for part, cells in s.parts.items()]
 
 
 def render_markdown(summary: dict[str, EvalSummary]) -> str:
@@ -459,8 +488,8 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
     A file that tests a skill or an agent says in how many of the template's
     scenario runs it was used. Its trigger tests get a table each for the
     positive and the negative prompts, with the variants those ran in, and a
-    line giving the template's rate over scenarios and trigger tests
-    together, which is what the gate reads.
+    line giving the template's two rates the gate reads: over its scenarios,
+    and over its trigger tests.
     """
     parts = []
     for key, s in summary.items():
@@ -485,12 +514,24 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
                 parts.append(f"\n### {TRIGGER_HEADINGS[kind]}\n")
                 parts.extend(_table("Prompt", prompts, _overall(prompts, {}), _variants(s, prompts), neither, {}))
         if s.triggers:
-            together = _cell(s.overall.get(TEMPLATE_VARIANT), neither)
-            parts.append(f"\nThe gate reads the template's scenarios and trigger tests together: {together}.")
+            parts.append(f"\n{_gate_note(_gated_parts(s), neither)}")
         parts.extend(f"\n{warning}" for warning in _control_warnings(s, _variants(s, s.rows) if s.file else variants))
         parts.extend(f"\nThe gate fails this file: {problem}." for problem in s.problems)
         parts.append("")
     return "\n".join(parts)
+
+
+def _gate_note(gated: list[tuple[str, Cell]], neither: str) -> str:
+    """The line under a skill's or an agent's tables giving the template's counts the gate reads, part by part."""
+    counts = [
+        (f"{part}s", _cell(cell, neither) if cell.passed + cell.failed + cell.inconclusive else "no runs")
+        for part, cell in gated
+    ]
+    if len(counts) == 1:
+        [(part, count)] = counts
+        return f"The gate reads the template's {part}: {count}."
+    read = ", ".join(f"{part} {count}" for part, count in counts)
+    return f"The gate reads the template's scenarios and its trigger tests separately: {read}."
 
 
 def _table(
@@ -790,7 +831,8 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
     """
     task_inputs: dict[str, dict[str, object]] = {}
     file_copies: dict[tuple[str, str], set[str]] = defaultdict(set)
-    permission_overlays: dict[str, set[str]] = defaultdict(set)
+    # (the overlay as JSON, the default overlay's keys left out of it) -> the tasks that ran with it
+    permission_overlays: dict[tuple[str, tuple[str, ...]], set[str]] = defaultdict(set)
     prompt_preambles: dict[str, set[str]] = defaultdict(set)
     not_staged: dict[str, list[str]] = {}
     not_staged_reasons: dict[str, dict[str, str]] = {}
@@ -819,7 +861,8 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
         harness_permissions = metadata.get("harness_permissions")
         if harness_permissions is not None:
             overlay = json.dumps(harness_permissions, indent=2, sort_keys=True)
-            permission_overlays[overlay].add(task)
+            left_out = tuple(sorted(metadata.get("harness_permissions_left_out") or []))  # absent from older logs
+            permission_overlays[(overlay, left_out)].add(task)
         preamble = metadata.get("evaluation_preamble")
         if preamble:
             prompt_preambles[str(preamble)].add(task)
@@ -884,8 +927,13 @@ def render_asset_provenance_markdown(logs: list[EvalLog]) -> str:
 
     if permission_overlays:
         sections.extend(["### Harness Permission Overlays", ""])
-        for overlay, users in sorted(permission_overlays.items(), key=lambda item: sorted(item[1])):
+        for (overlay, left_out), users in sorted(permission_overlays.items(), key=lambda item: sorted(item[1])):
             sections.extend([f"Used by: {', '.join(f'`{task}`' for task in sorted(users))}.", "", "```json", overlay, "```", ""])
+            for key in left_out:
+                sections.extend([(
+                    f"Whitney's default overlay also allows `{key}`. It is left out here, "
+                    "because a check in the file tests the project's own rule for it."
+                ), ""])
 
     if prompt_preambles:
         sections.extend(["### Evaluation Prompt Preambles", ""])

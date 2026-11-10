@@ -284,6 +284,7 @@ def test_each_check_says_where_a_real_run_made_it_fail_or_that_none_has(capsys):
         "subagent_delegated": "docs/results/2026-11-10-skills-agents.md",
         "skill_not_loaded": "not yet",
         "subagent_not_delegated": "not yet",
+        "permission_held": "docs/results/2026-11-10-permissions.md",
     }
 
 

@@ -90,6 +90,44 @@ def test_the_test_step_runs_pytest_on_every_core_with_coverage():
     assert _result(checks, "tests")[1:] == ("FAIL", "1 failed, 9 passed in 1.00s")
 
 
+def test_full_runs_the_tests_that_install_the_wheel():
+    commands = []
+
+    def run(cmd, **kwargs):
+        commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "4 passed, 7 deselected in 7.00s\n", "")
+
+    checks = _checks(run)
+    checks.installed_package()
+
+    [command] = commands
+    assert command[1:3] == ["-m", "pytest"]
+    assert command[command.index("-m", 2) + 1] == "packaging"  # after pyproject's `-m`, so it replaces it
+    assert _result(checks, "installed package")[1:] == ("pass", "4 passed, 7 deselected in 7.00s")
+
+
+def test_a_failing_install_test_fails_the_checks():
+    checks = _checks(lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 1, "1 failed, 3 passed in 7.00s\n", ""))
+    checks.installed_package()
+
+    assert _result(checks, "installed package")[1:] == ("FAIL", "1 failed, 3 passed in 7.00s")
+    assert checks.exit_code() == 1
+
+
+def test_install_tests_that_find_nothing_to_run_are_an_error_not_a_pass():
+    # pytest exits 5 when no test was collected: a renamed marker would otherwise pass unnoticed
+    checks = _checks(lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 5, "11 deselected in 0.10s\n", ""))
+    checks.installed_package()
+
+    assert _result(checks, "installed package")[1] == "ERROR"
+
+
+def test_the_default_test_run_leaves_the_install_tests_out():
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+
+    assert pyproject["tool"]["pytest"]["ini_options"]["addopts"] == ["-m", "not e2e and not packaging"]
+
+
 def test_mutmut_and_a_plain_pytest_run_stay_on_one_process():
     # mutmut runs its own workers, so its pytest runs must not start xdist ones too;
     # only check.py's test step asks for -n.
@@ -521,7 +559,7 @@ class _StageRecorder(_check["Checks"]):
 
     def __getattribute__(self, name):
         steps = ("floor", "secrets", "tests_and_coverage", "changed_line_coverage",
-                 "coverage_ratchet", "mutation", "dependencies", "touched_prefixes")
+                 "coverage_ratchet", "mutation", "installed_package", "dependencies", "touched_prefixes")
         if name in steps:
             return lambda *args, **kwargs: object.__getattribute__(self, "ran").append(name)
         return object.__getattribute__(self, name)
@@ -556,6 +594,7 @@ def test_skip_mutation_runs_every_other_check_but_no_mutants_and_warns(recorded_
     assert "mutation" not in checks.ran
     assert "tests_and_coverage" in checks.ran
     assert ("dependencies" in checks.ran) == (stage == "full")
+    assert ("installed_package" in checks.ran) == (stage == "full")
     assert _result(checks, "mutation testing")[1] == "warn"
     assert "[warn] mutation testing: skipped (--skip-mutation)" in capsys.readouterr().out
     assert code == 0

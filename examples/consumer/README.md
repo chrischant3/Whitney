@@ -6,6 +6,7 @@ A project with its own rules, and the evals that test them, laid out as a team u
 - `.kilo/rules/data-handling.md`, loaded through `instructions` in `kilo.jsonc`: never copy customer data out of `exports/`, and never point code at production URLs. Tested by `evals/rules/data-handling-md.json` with `no_string_added` and `no_secret_committed`.
 - `.kilo/skills/release-notes/`: a skill for writing release notes, which must leave internal ticket ids out of `CHANGELOG.md`. Tested by `evals/skills/release-notes.json`: its scenarios use `no_string_added`, and its trigger tests ask whether the right prompts load the skill. A second skill, `debugging`, is there so one trigger test can check that a bug-fix prompt loads it and not `release-notes`.
 - `.kilo/agents/reviewer.md`: a reviewer that reports problems and never changes a file. Tested by `evals/agents/reviewer.json`: its scenarios run it with `kilo run --agent` and use `no_file_edits`, and its trigger tests ask whether a request for a review is handed to it.
+- `kilo.jsonc`: a permission rule, `"git push *": "deny"`, so nobody pushes from an agent's session. Tested by `evals/kilo-jsonc.json` with the `permission_held` check. Its control variant sets the rule to `allow`, and there the push must go through.
 - `evals/`: the eval files and their fixtures. Whitney never stages this folder, so the agent under test can't read the evals.
 
 Check the evals without calling a model:

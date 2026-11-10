@@ -13,6 +13,7 @@ Modelled on inspect_swe's opencode() agent, with deliberate differences:
 
 import asyncio
 import contextlib
+import importlib.resources
 import json
 import os
 import re
@@ -32,9 +33,11 @@ from whitney.project_files import KILO_CONFIG_DIRS, KILO_SKILL_DIRS, ROOT_INSTRU
 from whitney.static_checks import parse_jsonc
 
 PROJECT_DIR = "project"
-COMPOSE_FILE = Path(__file__).parent.parent.parent / "docker" / "compose.yaml"
+# Package data, so an installed Whitney has it too. Docker needs a real file with its Dockerfile beside it,
+# which an ordinary install gives; Whitney can't run its Docker sandbox from a zipped package.
+COMPOSE_FILE = Path(str(importlib.resources.files("whitney") / "sandbox" / "compose.yaml"))
 RUN_STORE_KEY = "kilo_run"
-DOCKER_HOME = "/home/node"  # the sandbox image's unprivileged user (docker/Dockerfile)
+DOCKER_HOME = "/home/node"  # the sandbox image's unprivileged user (sandbox/Dockerfile)
 
 # What a local Kilo run keeps of the caller's environment: enough to find
 # programs, set the locale and reach the network through a proxy. The agent's

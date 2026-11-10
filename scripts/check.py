@@ -2,7 +2,7 @@
 
     python scripts/check.py fast    # after an edit: floor guard + secrets (seconds)
     python scripts/check.py task    # before handing work back: + tests (on every core), coverage, mutation of touched functions (~1 min)
-    python scripts/check.py full    # before a pull request: + every mutant, dependency vulnerabilities
+    python scripts/check.py full    # before a pull request: + every mutant, the wheel installed in a venv, dependency vulnerabilities
     python scripts/check.py full --max-children 6   # the same with at most 6 mutmut workers, to spare memory
 
 `--skip-mutation` (task or full) runs everything except mutmut and prints a warning
@@ -354,6 +354,17 @@ class Checks:
 
     # full ---------------------------------------------------------------
 
+    def installed_package(self) -> None:
+        """Run the tests that install the built wheel in a temporary venv (tests/test_packaging.py).
+
+        They are marked `packaging` and left out of the default run, which builds the wheel
+        and reads its contents but doesn't install it.
+        """
+        result = self.run([PYTHON, "-m", "pytest", "-q", "-m", "packaging", "tests/test_packaging.py"])
+        outcome = {0: PASS, 1: FAIL}.get(result.returncode, ERROR)
+        last = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else result.stderr.strip()[-300:]
+        self.record("installed package", outcome, last)
+
     def dependencies(self, distributions: Iterable | None = None) -> None:
         """Scan the installed distributions for advisories at high or above.
 
@@ -414,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             checks.mutation(ratchets, checks.touched_prefixes(), args.stage)
     if args.stage == "full":
+        checks.installed_package()
         checks.dependencies()
 
     code = checks.exit_code()

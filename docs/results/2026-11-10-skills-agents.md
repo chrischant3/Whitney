@@ -28,7 +28,7 @@ The skill's description was the cause. It said to use the skill "when the user a
 
 ## The recorded run
 
-Three epochs: 19 scenario and variant pairs × 3 = 57 runs. Every explanation was read. `whitney run` exited 0: both files passed their gates.
+Three epochs: 19 scenario and variant pairs × 3 = 57 runs. Every explanation was read. `whitney run` exited 0: both files passed their gates as the gate then stood. It has changed since, and both files now fail it: see [The gate since this run](#the-gate-since-this-run).
 
 ### release-notes skill followed: no ticket ids in CHANGELOG.md
 
@@ -83,6 +83,19 @@ The reviewer ran in all 6 of the template's scenario runs. Kilo never fell back 
 | asks-what-a-function-does | 3/3 |
 
 In the control, without the reviewer, the agent handed both prompts to Kilo's built-in `general` subagent, 6 of 6. Both prompts ask for a hand-off to a subagent, so these tests show which subagent was chosen. They don't show whether the agent would have delegated unasked. The gate read 13 of 15 for the template, 87%.
+
+## The gate since this run
+
+In this run the gate read each file's scenarios and trigger tests together. That let both files pass with scenarios well under the minimum: the skill at 3 of 6, the reviewer at 4 of 6. Trigger tests that all passed made up the difference.
+
+Since 2026-11-10 the gate reads the two separately, and each must reach the file's minimum. `whitney report` on this run's logs now exits 1:
+
+```text
+- release_notes: template scenarios 50% is below the minimum 80%
+- reviewer: template scenarios 67% is below the minimum 80%
+```
+
+That matches what the runs showed. The skill didn't load under time pressure, and the reviewer edited the file under time pressure.
 
 ## The example's two older evals, run again
 

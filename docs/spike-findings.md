@@ -48,7 +48,7 @@ Implications:
 
 ## T1: Kilo in Docker through the Inspect bridge (done, 2026-11-02)
 
-[`spikes/kilo_bridge.py`](../spikes/kilo_bridge.py) runs Kilo 7.8.18 in [`docker/`](../docker/) (node:22-bookworm-slim, Kilo pinned by `KILO_VERSION`). Run it with `inspect eval spikes/kilo_bridge.py --model anthropic/claude-haiku-4-5 -T model=anthropic/claude-haiku-4-5`.
+[`spikes/kilo_bridge.py`](../spikes/kilo_bridge.py) runs Kilo 7.8.18 in [`src/whitney/sandbox/`](../src/whitney/sandbox/) (`docker/` until 2026-11-10) (node:22-bookworm-slim, Kilo pinned by `KILO_VERSION`). Run it with `inspect eval spikes/kilo_bridge.py --model anthropic/claude-haiku-4-5 -T model=anthropic/claude-haiku-4-5`.
 
 How it works:
 - `sandbox_agent_bridge(state, model="inspect")` starts a proxy in the sandbox. Kilo's global config (`/root/.config/kilo/kilo.json`) sets `provider.anthropic.options.baseURL` to `http://localhost:<port>/v1`, with `ANTHROPIC_API_KEY=sk-none`. The real key stays on the host.

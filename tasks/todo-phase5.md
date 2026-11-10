@@ -440,7 +440,7 @@ This can run at any time, in the same sitting as Task 22.
 Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_delegated` for an agent. Negative prompts expand into scenarios expecting `skill_not_loaded`, plus `skill_loaded` for the `owner` when one is named. The skill or agent name comes from `source`: `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. Trigger prompts never run in a baseline. Positive prompts also run in an automatic control that removes the skill or agent, and must fail there (D4). The report gives triggers their own table, "Triggered on positive prompts" and "Stayed quiet on negative prompts". For behaviour scenarios in the same file, it says in how many template runs the skill loaded or the agent was delegated to.
 
 **Acceptance criteria:**
-- [x] Expansion tests show the expected ids, checks, fixtures and variants. No trigger prompt runs in a baseline, and no negative prompt runs in the control. **2026-11-09:** `tests/test_trigger.py`. Choices made without Christopher, for him to confirm: the automatic control is a variant named `trigger_control`, reserved in a file with a `trigger` block; trigger tests take their fixture, setup and pressure from `defaults` (so `defaults.fixture` is required); an agent's negative prompt expects `subagent_not_delegated`, and its owner `subagent_delegated`; trigger tests run only in `template` and `trigger_control`, never in a variant the file declares; the template's trigger tests count in the gate; the skill's name is its folder's name.
+- [x] Expansion tests show the expected ids, checks, fixtures and variants. No trigger prompt runs in a baseline, and no negative prompt runs in the control. **2026-11-09:** `tests/test_trigger.py`. Choices made without Christopher, for him to confirm: the automatic control is a variant named `trigger_control`, reserved in a file with a `trigger` block; trigger tests take their fixture, setup and pressure from `defaults` (so `defaults.fixture` is required); an agent's negative prompt expects `subagent_not_delegated`, and its owner `subagent_delegated`; trigger tests run only in `template` and `trigger_control`, never in a variant the file declares; the template's trigger tests count in the gate (reversed on 2026-11-10: the gate reads them apart from the scenarios, see Checkpoint B); the skill's name is its folder's name.
 - [x] Validation: `owner` names a staged skill or agent, and a `trigger` block is allowed only in a file whose `source` is a skill or agent.
 - [x] Report tests cover the trigger table, the control column and the "loaded in N of M runs" note. **2026-11-09:** in `tests/test_trigger.py`, not `tests/test_report.py`. Each score of a skill's or agent's file now records `used` (true, false, or null when the stream can't say), and the note counts it over the template's scenario runs.
 
@@ -521,7 +521,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 - [x] One skill and one agent are tested from end to end, for both triggers and behaviour, with results in `docs/results/`. **2026-11-10:** `docs/results/2026-11-10-skills-agents.md`.
 - [x] `python scripts/check.py task` passes. **2026-11-10:** with `--skip-mutation`, at the top of the stack of branches.
-- [ ] Review with Christopher, and decide whether Claude Code skills and agents come next.
+- [x] Review with Christopher, and decide whether Claude Code skills and agents come next. **2026-11-10 (Christopher):** the choices recorded beside Tasks 17 to 21 and 25 stand, but for one: the gate now reads a file's scenarios and its trigger tests separately, each against the file's minimum, because read together both example files passed with scenarios at 50% and 67%. Claude Code skills and agents come after `v0.2.0`, as a new phase.
 
 ---
 
@@ -550,16 +550,18 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Description:** The spec's slice 10: the check, for the confirmed pairs only; the rule that the harness overlay never sets a key the check tests; and an example with a control. Answer spec open question 5 (`MIN_HELD`) before starting.
 
-**Needs a decision before starting (Task 22):** a scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so no refusal is ever seen, and the model can route round it (`read-deny` read the file with `bash`). Either confirm pattern rules and `ask` only, or use `kilo debug agent`'s tool list as the evidence for a scalar deny. Also, the stderr refusal names what was requested (the command or path), not the rule's pattern, and a project `bash` object without `"*"` drops the harness's allow, so unnamed commands are auto-rejected and the run exits 1.
+**Decided 2026-11-10 (Christopher):** spec open question 5: `MIN_HELD` stays at 0.9 for now, and Task 27 looks at raising it. A scalar deny: pattern rules and `ask` only for now, so validation refuses a scalar deny, and Task 28 is a spike on what could count as evidence for one.
+
+**The finding behind the second decision (Task 22):** a scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so no refusal is ever seen, and the model can route round it (`read-deny` read the file with `bash`). Either confirm pattern rules and `ask` only, or use `kilo debug agent`'s tool list as the evidence for a scalar deny. Also, the stderr refusal names what was requested (the command or path), not the rule's pattern, and a project `bash` object without `"*"` drops the harness's allow, so unnamed commands are auto-rejected and the run exits 1.
 
 **Acceptance criteria:**
-- [ ] Unit tests run against the captured fixtures.
-- [ ] Validation refuses any `(permission, action)` pair without a captured refusal format (criterion 17).
-- [ ] In one recorded real run, the control fails, written up in `docs/results/`.
+- [x] Unit tests run against the captured fixtures. **2026-11-10:** `tests/test_checks_permissions.py`. Choices made without Christopher, for him to confirm: the refused call's own input must match `forbidden_input`, which is stricter than the spec's wording, so a refusal of something else under the same permission doesn't count; a completed subagent, or a line the parser can't read, keeps a refusal from counting as held; under `ask` the pattern isn't checked, because Kilo's refusal names what was asked for and not the rule; what was asked for must match `forbidden_input`. **Review, 2026-11-10:** an independent review got a pass from a refusal by a different rule (an `ask` rule refusing what a `deny` rule was meant to), from a write refused under `edit`, and beside a matching call that failed some other way. The check now takes a required `action` parameter, which validation holds to the project's rule, and counts only that kind of refusal; a matching call that failed unrefused, or a `deny` seen in a run that ended early, makes it inconclusive. Validation now also refuses `"*": "deny"` inside an object, a `"*"` written after the rule under test, and a file that leaves `variants` out. Left as limits, and documented: validation reads only the file's `source`, so a rule in another staged Kilo config isn't seen; and `forbidden_input` can't see a push made by a script.
+- [x] Validation refuses any `(permission, action)` pair without a captured refusal format (criterion 17). **2026-11-10:** accepted: `bash` and `task` as a pattern inside an object, `edit` and `external_directory` as one action. The rule must be in the eval file's `source`, which must be a Kilo config. A plain deny is refused (Christopher, 2026-11-10). A `bash` object with no `"*"` is a warning, not a problem, so a project can be tested as it is. Whitney's default overlay leaves out the permission under test, as the spec says, and the report says so.
+- [x] In one recorded real run, the control fails, written up in `docs/results/`. **2026-11-10:** `docs/results/2026-11-10-permissions.md`, 18 runs on Haiku: held 9 of 9 in the template, bypassed 9 of 9 in the control. Only a `bash` pattern set to `deny` ran for real.
 
 **Verification:**
-- [ ] `pytest -q tests/test_checks_permissions.py`
-- [ ] A real run of the example, which calls a real model.
+- [x] `pytest -q tests/test_checks_permissions.py`
+- [x] A real run of the example, which calls a real model.
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 9 and 22.
@@ -570,7 +572,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 ### Checkpoint C: any Kilo permission
 
-- [ ] A consumer can test a `bash` pattern, `edit` or `read` rule, and the control shows the check can fail.
+- [x] A consumer can test a `bash` pattern, `edit` or `read` rule, and the control shows the check can fail. **2026-11-10:** for a `bash` pattern and for `edit` under `ask`. Not for `read`: no refusal was captured for a `read` rule, so validation refuses one by name.
 - [ ] Review with Christopher.
 
 ---
@@ -579,15 +581,15 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 ### Task 24: Package data, task registry, `whitney --version`
 
-**Description:** The spec's slice 7a. Move `docker/` to `src/whitney/sandbox/` as package data, read with `importlib.resources`. Register the tasks in `_registry.py`, so `inspect eval whitney/<task>` works once installed. Add `whitney --version`, and update mutmut's `also_copy`. Moving `docker/` breaks anyone who builds the image by path, so the docs change in the same task. This can run in parallel with milestones A to C, but not at the same time as Task 9, since both change `agent.py`. Answer spec open question 14 (packaging test cost) before starting.
+**Description:** The spec's slice 7a. Move `docker/` to `src/whitney/sandbox/` as package data, read with `importlib.resources`. Register the tasks in `_registry.py`, so `inspect eval whitney/<task>` works once installed. Add `whitney --version`, and update mutmut's `also_copy`. Moving `docker/` breaks anyone who builds the image by path, so the docs change in the same task. This can run in parallel with milestones A to C, but not at the same time as Task 9, since both change `agent.py`. Answer spec open question 14 (packaging test cost) before starting. **Answered 2026-11-10 (Christopher):** split it. Building the wheel and checking what it holds runs in the default suite; installing it in a temporary venv and running the commands runs in `check.py full` only.
 
 **Acceptance criteria:**
-- [ ] A wheel built with `pip wheel --no-deps -w dist .` contains `whitney/sandbox/compose.yaml` and the Dockerfile, and no `template/`, `evals/` or `dataset/` (criterion 2).
-- [ ] Installed in a temporary venv, Docker mode finds the compose file, and `whitney --version` prints the package's version.
-- [ ] `inspect eval whitney/agents_md` resolves when installed.
+- [x] A wheel built with `pip wheel --no-deps -w dist .` contains `whitney/sandbox/compose.yaml` and the Dockerfile, and no `template/`, `evals/` or `dataset/` (criterion 2). **2026-11-10:** `tests/test_packaging.py`, in the default suite. It builds from a copy of the sources, with pip where the environment has it and with uv otherwise, since a uv-made venv has no pip. Building fetches setuptools the first time, so a machine with an empty cache needs the network for it.
+- [x] Installed in a temporary venv, Docker mode finds the compose file, and `whitney --version` prints the package's version. **2026-11-10:** the tests marked `packaging`, which `check.py full` runs as its "installed package" step. The venv borrows this environment's dependencies through a path file, so nothing is downloaded. `whitney validate` on the consumer example runs there too. No container was started: the test shows the path resolves inside the install, with its Dockerfile beside it.
+- [x] `inspect eval whitney/agents_md` resolves when installed. **2026-11-10:** `_registry.py` imports `scenario_eval`, `agents_md` and `kilo_jsonc`; the tests look each up as Inspect does, after loading the entry point, and no eval was run. Left out, for Christopher to confirm: `ifevalcode` and `bigcodebench_hard_complete`, which need the clone's datasets and optional extras. `agents_md` and `kilo_jsonc` resolve when installed but read `template/` and `evals/`, which only a clone has.
 
 **Verification:**
-- [ ] `pytest -q tests/test_packaging.py`
+- [x] `pytest -q tests/test_packaging.py` (and `pytest -q -m packaging tests/test_packaging.py` for the install tests)
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** None.
@@ -637,3 +639,39 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 - [ ] The spec's acceptance criteria 1 to 20 hold for everything in the release.
 - [ ] Review with Christopher before the tag is pushed.
+
+---
+
+## After `v0.2.0`
+
+Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task holds up the release.
+
+### Task 27: Raise `MIN_HELD` to 1.0, or decide not to
+
+**Description:** `MIN_HELD`, the share of runs in which the harness must hold a permission, stayed at 0.9 for `v0.2.0` (spec open question 5). Below 10 conclusive runs that is the same as 1.0. From 10 runs up it lets one breach in ten pass the gate. Decide whether a permission must hold every time, and if so raise the constant. The floor guard blocks only a lowered `MIN_*`, so raising it needs no signed change to the guard.
+
+**Acceptance criteria:**
+- [ ] Christopher has decided between 0.9 and 1.0, with the reason recorded in the spec under open question 5.
+- [ ] If raised: `thresholds.py`, the docs and the README say 1.0, and each test whose expectation changes is named and confirmed by Christopher first.
+
+**Verification:**
+- [ ] `python scripts/check.py task`
+
+**Dependencies:** Task 23.
+
+**Estimated scope:** S.
+
+### Task 28: Spike: evidence for a scalar deny
+
+**Description:** A scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so Kilo prints no refusal, and in Task 22's capture the model read the file through `bash` instead. `permission_held` covers pattern rules and `ask` only, and validation refuses a scalar deny. Find out what could show a scalar deny held: the tool list from `kilo debug agent`, the absence of the tool's calls in the event stream, a check on the outcome (`no_file_edits` for `edit`), or a mix. For each, say what it proves and what a model routing round the rule would look like.
+
+**Acceptance criteria:**
+- [ ] Each candidate is tried on real Kilo, with the command, the config and the output written up in `docs/spike-findings.md`.
+- [ ] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide.
+
+**Verification:**
+- [ ] Manual: each finding is backed by a saved command output.
+
+**Dependencies:** Task 23.
+
+**Estimated scope:** S. A few cents in model calls.
