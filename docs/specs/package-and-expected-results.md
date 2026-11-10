@@ -95,7 +95,7 @@ whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 \
 
 whitney validate --project-path . --evals-path evals [--target kilo] [--constraints CONSTRAINTS.md]
 whitney report logs                 # re-render a report from existing logs; no model calls
-whitney checks                      # list registered checks: parameters, outcomes, targets, release
+whitney checks                      # list registered checks: parameters, outcomes, targets, and the real run that made each fail (plan Task 25, in place of "release")
 whitney --version
 ```
 

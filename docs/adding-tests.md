@@ -500,7 +500,7 @@ A **known gap** is a scenario you expect to fail, recorded so that it can't hide
 
 ## What a result means
 
-To read a result again later, `whitney report logs` writes the report from the logs of an earlier run. It calls no model, and it gates and exits as the run did. Give it `--evals-path` and the report also says whether an eval file has changed since the run.
+To read a result again later, `whitney report logs` writes the report from the logs of an earlier run. It calls no model, and it applies the same gate to the logs it reads, so pass any `--min-rate` you gave the run. It knows only what the logs hold: a run that failed because an eval file left no log at all will read as a pass here. Keep one run's logs to a folder, because every log in the folder is counted. Give it `--evals-path` and the report also says whether an eval file has changed since the run.
 
 
 | Check | Pass | Fail | Neither |

@@ -143,6 +143,49 @@ def test_a_logs_path_that_isnt_a_folder_exits_2(tmp_path, monkeypatch, capsys):
     assert "whitney: error: nowhere isn't a folder" in capsys.readouterr().err
 
 
+def test_a_logs_path_that_is_a_file_exits_2(tmp_path, monkeypatch, capsys):
+    (tmp_path / "a-file").write_text("not a folder")
+
+    code, report = whitney_report(tmp_path, monkeypatch, [], folder="a-file")
+
+    assert (code, report) == (2, None)
+    assert "whitney: error: a-file isn't a folder" in capsys.readouterr().err
+
+
+def test_an_evals_path_that_isnt_a_folder_exits_2(tmp_path, monkeypatch, capsys):
+    code, report = whitney_report(tmp_path, monkeypatch, [file_log("template", "template", ["followed"])], "--evals-path", "nowhere")
+
+    assert (code, report) == (2, None)
+    assert "whitney: error: --evals-path nowhere isn't a folder" in capsys.readouterr().err
+
+
+def test_a_log_that_cant_be_read_exits_2_not_1(tmp_path, monkeypatch, capsys):
+    """Exit 1 means a gate failed. A damaged log means the report couldn't be made at all."""
+    (tmp_path / "logs").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "list_eval_logs", lambda path: [NS(name="logs/broken.eval")])
+
+    def broken(name):
+        raise ValueError("EOCD not found")
+
+    monkeypatch.setattr(cli, "read_eval_log", broken)
+
+    code = cli.main(["report", "logs", "--results-dir", str(tmp_path / "whitney-results")])
+
+    assert code == 2
+    assert "whitney: error: couldn't read the log logs/broken.eval: ValueError: EOCD not found" in capsys.readouterr().err
+    assert not (tmp_path / "whitney-results").exists()
+
+
+def test_a_real_file_that_isnt_an_inspect_log_exits_2(tmp_path, monkeypatch, capsys):
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "2026-11-10T00-00-00+00-00_x_abc.eval").write_bytes(b"not a zip file")
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main(["report", "logs", "--results-dir", str(tmp_path / "whitney-results")]) == 2
+    assert "couldn't read the log" in capsys.readouterr().err
+
+
 def test_a_folder_with_no_logs_exits_2_and_writes_nothing(tmp_path, monkeypatch, capsys):
     code, report = whitney_report(tmp_path, monkeypatch, [])
 
@@ -244,11 +287,37 @@ def test_each_check_says_where_a_real_run_made_it_fail_or_that_none_has(capsys):
     }
 
 
+# The first results were written before the checks had names: each is known there by the words its scorer used.
+WORDS_IN_THE_FIRST_WRITE_UP = {"no_secret_committed": "followed / (followed + violated)", "outside_canary_not_reached": "accessed 3/3"}
+
+
 def test_every_write_up_a_check_names_is_in_the_repo_and_names_the_check():
     for name, spec in registry().items():
         if spec.proven is not None:
-            assert name in (ROOT / spec.proven).read_text() or spec.proven.endswith("phase2.md"), name
-            assert (ROOT / spec.proven).is_file()
+            assert (ROOT / spec.proven).is_file(), name
+            assert WORDS_IN_THE_FIRST_WRITE_UP.get(name, name) in (ROOT / spec.proven).read_text(), name
+
+
+def test_a_default_that_isnt_json_or_cant_be_computed_alone_is_still_shown(capsys, monkeypatch):
+    from pydantic import BaseModel, ConfigDict, Field
+
+    class OddParams(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        folder: Path = Path("project")
+        word: str = "café"
+        copy: str = Field(default_factory=lambda data: data["word"])
+
+    into = Registry()
+    check("demo_odd", params=OddParams, judges="agent", labels=("a", "b", "c"), targets=("kilo",),
+          into=into)(lambda evidence, params: Verdict("pass", ""))
+    monkeypatch.setattr(cli, "registry", into.checks)
+
+    out = listing(capsys)
+
+    assert '    folder: default "project"\n' in out
+    assert '    word: default "café"\n' in out
+    assert "    copy: default computed from the other parameters\n" in out
 
 
 @pytest.mark.parametrize("proven", ["", "results.md", "docs/results/x.txt", "/abs/docs/results/x.md", "docs/results/../x.md", 7])

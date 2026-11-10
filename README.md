@@ -238,7 +238,7 @@ whitney run --target kilo --execution docker --model kilo/anthropic/claude-haiku
 # Test a different local project's config and instructions (source is not modified)
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path /path/to/project --evals-path evals --epochs 3
 
-# Write the report again from the logs of an earlier run, without calling a model; it gates and exits as the run did
+# Write the report again from the logs of an earlier run, without calling a model; it applies the same gate to those logs
 whitney report logs --evals-path evals
 
 # List the checks an eval file can name, with their parameters

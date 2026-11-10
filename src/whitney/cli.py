@@ -17,9 +17,9 @@ Exit codes, for every subcommand (docs/specs/package-and-expected-results.md):
 `whitney run` validates everything, checks the credential variable it was
 named and runs `kilo --version` (or `claude --version`) before any sample,
 so each of those fails with a 2 and a message rather than a run of errored
-samples. `whitney report` exits as `whitney run` does for the same logs: 0, 1
-if a gate failed or a log isn't `success`, and 2 if it couldn't run (the
-folder is missing or holds no logs). `whitney checks` exits 0.
+samples. `whitney report` applies a run's gate to the logs it reads: 0, 1 if
+a gate failed or a log isn't `success`, and 2 if it couldn't run (the folder
+is missing, or holds no log or one it can't read). `whitney checks` exits 0.
 There is no default for the two paths, the target or the model: a
 consumer who forgot one would otherwise get a green run that tested
 something else. Whitney reads no CI-specific environment variable, so the
@@ -188,6 +188,8 @@ def _check_args(args: argparse.Namespace) -> None:
         args.min_rate = min_rates(args.parser, args.min_rate)
         if not Path(args.logs).is_dir():
             raise CannotRun(f"{args.logs} isn't a folder")
+        if args.evals_path is not None and not Path(args.evals_path).is_dir():
+            raise CannotRun(f"--evals-path {args.evals_path} isn't a folder")
         return
     if args.command == "run":
         args.min_rate = min_rates(args.parser, args.min_rate)
@@ -229,10 +231,20 @@ def _report(args: argparse.Namespace) -> int:
 
     The report's target and model are the logs' own (report_target, report_model).
 
+    It applies a run's gate to the logs it reads, and knows no more than they
+    hold: not which eval files a run expected and never logged, nor whether
+    it was stopped early, nor the minimums it was given, which must be given
+    again. Logs of several runs in one folder are counted together.
+
     Raises:
-        CannotRun: the folder holds no Inspect log.
+        CannotRun: the folder holds no Inspect log, or one that can't be read.
     """
-    logs = [read_eval_log(info.name) for info in list_eval_logs(args.logs)]
+    logs = []
+    for info in list_eval_logs(args.logs):
+        try:
+            logs.append(read_eval_log(info.name))
+        except Exception as e:  # whatever a damaged log raises: the report couldn't be made, which isn't a failed gate
+            raise CannotRun(f"couldn't read the log {info.name}: {type(e).__name__}: {e}") from e
     if not logs:
         raise CannotRun(f"no Inspect logs under {args.logs}")
     return write_report(
@@ -301,12 +313,20 @@ def describe_check(spec: CheckSpec) -> str:
     if fields:
         lines.append("  parameters:")
         for name, info in fields.items():
-            said = "required" if info.is_required() else f"default {json.dumps(info.get_default(call_default_factory=True))}"
-            lines.append(f"    {name}: {said}")
+            lines.append(f"    {name}: {'required' if info.is_required() else _default_shown(info)}")
     else:
         lines.append("  parameters: none")
     lines.append(f"  shown to fail in a real run: {spec.proven or 'not yet'}")
     return "\n".join(lines)
+
+
+def _default_shown(info) -> str:
+    """A parameter's default as `whitney checks` prints it: as JSON where it can be, so it reads as an eval file would write it."""
+    try:
+        value = info.get_default(call_default_factory=True)
+    except (TypeError, ValueError):  # a factory that needs the other parameters' values
+        return "default computed from the other parameters"
+    return f"default {json.dumps(value, default=str, ensure_ascii=False)}"
 
 
 def _run(args: argparse.Namespace) -> int:
