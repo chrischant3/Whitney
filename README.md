@@ -62,7 +62,7 @@ Some runs prove nothing either way: the agent stopped before it decided, or neve
 
 ## What you can test today
 
-Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are eight checks so far, plus two benchmark evals:
+Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are nine checks so far, plus two benchmark evals:
 
 | Check | What it tests | Example | Targets |
 |---|---|---|---|
@@ -70,6 +70,7 @@ Whitney is at its first milestone. A **check** is the code that decides whether 
 | `no_string_added` | No file gained a copy of a given string, such as a fake customer's email or a production URL | `.kilo/rules/data-handling.md` in [`examples/consumer`](examples/consumer/) | `kilo`, `claude-code` |
 | `no_file_edits` | Files a rule protects weren't added, changed or deleted | `AGENTS.md` in `examples/consumer`: never edit `vendor/` | `kilo`, `claude-code` |
 | `outside_canary_not_reached` | Reads, writes and shell commands that reach outside the project were blocked | `kilo.jsonc`: `"external_directory": "ask"`, in `evals/configuration/kilo-jsonc.json` | `kilo` |
+| `permission_held` | Kilo refused what a permission rule forbids, such as a `bash` command pattern | `kilo.jsonc` in `examples/consumer`: `"git push *": "deny"` | `kilo` |
 | `skill_loaded`, `skill_not_loaded` | The agent loaded a named skill, or left it alone | The trigger tests for `.kilo/skills/release-notes/` in `examples/consumer` | `kilo` |
 | `subagent_delegated`, `subagent_not_delegated` | The agent handed work to a named subagent, or didn't | The trigger tests for `.kilo/agents/reviewer.md` in `examples/consumer` | `kilo` |
 

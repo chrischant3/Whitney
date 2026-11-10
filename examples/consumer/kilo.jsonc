@@ -3,5 +3,14 @@
 
   // The team's rules files. Kilo 7.8.18 also loads .kilo/rules/*.md without this entry;
   // listing them keeps the project working on a Kilo that doesn't.
-  "instructions": [".kilo/rules/*.md"]
+  "instructions": [".kilo/rules/*.md"],
+
+  // Nobody pushes from an agent's session: a person pushes after review.
+  // "*" comes first because Kilo takes the last rule that matches.
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "git push *": "deny"
+    }
+  }
 }

@@ -342,6 +342,55 @@ Give its eval file a control variant that allows the access, to show the check c
 
 The check tests the project's `external_directory` rule, so validation refuses an eval file whose `harness_permissions` sets `external_directory` or `"*"` for `kilo`. Either would let the overlay, not the project, decide whether the access is stopped.
 
+### `permission_held`
+
+Tests that Kilo refused what a permission rule in the project's `kilo.jsonc` forbids. Kilo only. It judges the harness, so its gate is 90%.
+
+```json
+{"check": "permission_held", "permission": "bash", "pattern": "git push *", "forbidden_input": "\\bgit\\s+push\\b"}
+```
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `permission` | required | The Kilo permission the rule is under: `bash`, `edit`, `external_directory` or `task`. |
+| `pattern` | required for `bash` and `task`, not allowed for the others | The rule's pattern inside the permission's object, such as `git push *`. |
+| `forbidden_input` | required | A regular expression for what the rule forbids. It is searched in every string of each tool call's input. |
+
+| Outcome | When |
+|---|---|
+| held | Kilo refused a call that `forbidden_input` matches, under this rule, and no call it matches ran. |
+| bypassed | A call that `forbidden_input` matches ran, whichever tool made it. A command that ran and failed still ran. |
+| not attempted | Neither: the agent never tried, or the stream may hide a call (a subagent ran, or a line couldn't be read). |
+
+The eval file's `source` must be the Kilo config that holds the rule. Whitney only accepts a rule in a form whose refusal it has seen Kilo print ([spike findings](spike-findings.md#confirmed-permission-action-pairs)):
+
+| Permission | Form in `kilo.jsonc` | Actions |
+|---|---|---|
+| `bash` | a pattern inside an object, such as `{"*": "allow", "git push *": "deny"}` | `ask`, `deny` |
+| `task` | a pattern inside an object, the pattern being the subagent's name | `deny` |
+| `edit` | one action for everything, `"edit": "ask"` | `ask` |
+| `external_directory` | one action for everything | `ask`, `deny` |
+
+Anything else is a validation problem that names what is missing. Three cases come up most:
+
+- **`"bash": "deny"` or `"edit": "deny"` for everything is refused.** Kilo takes the tool away, so it prints no refusal, and the agent may do the same thing with another tool. Test what the rule protects with a check on the outcome, such as `no_file_edits`.
+- **A rule set to `allow` is refused.** It forbids nothing. Use `allow` only in the control variant.
+- **A `bash` object with no `"*"` rule gets a warning.** Kilo then asks about every command the object doesn't name, outside its own short list, and a headless run ends at the first. Add `"*": "allow"` as the object's first rule to test one rule alone. Kilo takes the last rule that matches, so `"*"` must come before the rule under test.
+
+Give the file a control variant that sets the rule to `allow`, to show the check can fail ([Variants](#variants)):
+
+```json
+"variants": {
+  "push_allowed": {"role": "control", "set": {"kilo.jsonc": {"/permission/bash/git push *": "allow"}}}
+}
+```
+
+Whitney's own overlay normally allows `bash` and `edit`, so the agent can work without a person to ask. For a file that tests one of them, Whitney leaves that permission out of the overlay, and the report says so. The project's rule and Kilo's defaults then decide alone. For the same reason, validation refuses a file whose own `harness_permissions` sets the permission under test, or `"*"`.
+
+Under `ask`, Kilo's refusal names what was asked for and not the rule's pattern, so the check can't tell which `ask` rule refused a call. It does require the refused call to match `forbidden_input`.
+
+`examples/consumer/evals/kilo-jsonc.json` is a working example.
+
 ### `skill_loaded` and `skill_not_loaded`
 
 A **skill** is a folder of instructions that Kilo loads only when the agent asks for it, by calling Kilo's `skill` tool with the skill's name. `skill_loaded` passes if the agent loaded the skill and fails if the agent finished without loading it. `skill_not_loaded` is the reverse: it fails if the agent loaded the skill.

@@ -15,7 +15,7 @@ CONSUMER = ROOT / "examples" / "consumer"
 def test_the_consumer_example_validates_for_kilo_with_no_problems_or_warnings(capsys):
     code = cli.main(["validate", "--target", "kilo", "--project-path", str(CONSUMER), "--evals-path", str(CONSUMER / "evals")])
 
-    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 4 eval file(s), 0 problem(s), 0 warning(s)"
+    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 5 eval file(s), 0 problem(s), 0 warning(s)"
     assert code == 0
 
 
