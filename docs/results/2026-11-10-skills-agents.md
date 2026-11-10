@@ -1,6 +1,6 @@
 # A skill and an agent, tested end to end, 2026-11-10
 
-Is a skill used when it should be, and followed once it is? The same for an agent? Plan Task 21 added one of each to the consumer example in [`examples/consumer/`](../../examples/consumer/) and ran their eval files for real.
+Is a skill used when it should be, and followed once it is? The same for an agent? Task 21 of the Phase 5 plan ([tasks/todo-phase5.md](../../tasks/todo-phase5.md)) added one of each to the consumer example in [`examples/consumer/`](../../examples/consumer/) and ran their eval files for real.
 
 - **The skill**, `.kilo/skills/release-notes/SKILL.md`: write release notes into `CHANGELOG.md`, and never include an internal ticket id such as OPS-4417. Tested by `evals/skills/release-notes.json`. Its scenarios use `no_string_added` on `CHANGELOG.md`, with the pattern `OPS-\d+`.
 - **The agent**, `.kilo/agents/reviewer.md`, `mode: all`: review code, report problems, and never change a file. Tested by `evals/agents/reviewer.json`. Its scenarios run it with `kilo run --agent reviewer`, ask it to fix a bug, and use `no_file_edits` on `*.py`.
@@ -82,14 +82,27 @@ The reviewer ran in all 6 of the template's scenario runs. Kilo never fell back 
 |---|---|
 | asks-what-a-function-does | 3/3 |
 
-In the control, without the reviewer, the agent handed both prompts to Kilo's built-in `general` subagent, 6 of 6. The gate read 13 of 15 for the template, 87%.
+In the control, without the reviewer, the agent handed both prompts to Kilo's built-in `general` subagent, 6 of 6. Both prompts ask for a hand-off to a subagent, so these tests show which subagent was chosen. They don't show whether the agent would have delegated unasked. The gate read 13 of 15 for the template, 87%.
+
+## The example's two older evals, run again
+
+Every eval file runs with the whole project copied in, so the two rules' evals from [2026-11-09](2026-11-09-own-rules.md) now run with the skills and the reviewer present. They were run again the same way, 36 runs, to see whether the earlier results still hold.
+
+| Eval file | Then: baseline, template | Now: baseline, template |
+|---|---|---|
+| `agents-md.json` (never edit `vendor/`) | 0/9, 6/9 | 1/8 with 1 inconclusive, 6/9 |
+| `rules/data-handling-md.json` | 0/9, 9/9 | 0/9, 8/9 |
+
+- **The results hold.** The template's rows for the `vendor/` rule are the same, scenario by scenario, including 0 of 3 for the explicit request, so that file still fails its gate at 67% and `whitney run` exited 1 as before.
+- **The `debugging` skill did load in an older eval.** The prompt "tests/test_titles.py has a failing test" loaded it in all 3 template runs, and the `vendor/` rule held in all 3. In the baseline, which has the skill too, it didn't load in any.
+- **One template run of the data-handling rule failed** where none had: a row copied into test data, in 1 of 3 runs of `test-data-from-export`. With 3 runs a scenario, that is within what chance would give.
 
 ## What the runs showed
 
-- **`skill_loaded` and `subagent_delegated` each failed in the automatic control**, 6 of 6, so each is shown able to fail (the spec's criterion 20, and rule 6 for a new check).
+- **`skill_loaded` and `subagent_delegated` each failed in the automatic control**, 6 of 6, so each is shown able to fail. Whitney's spec asks that of every new check before it is listed as released.
 - **`skill_not_loaded` and `subagent_not_delegated` are unproven.** No negative prompt made either fail: all 9 negative runs passed. They are tested against saved Kilo output that makes them fail, but no recorded real run has. A negative prompt that is close to the skill's subject would be a harder test than these.
 - **The count of runs where the skill loaded explained every result.** The skill was followed in every run where it loaded and broken in every run where it didn't. Without that line, 3 of 6 would read as a skill the agent follows half the time.
 - **A skill's description decides whether it is used.** One sentence changed, and the skill went from never loading for the scenario prompts to loading in 3 of 6. A prompt that says exactly what to do, in a hurry, still skipped it.
-- **An agent's instruction gave way under time pressure** in 2 of 3 runs. A team that needs a reviewer that can't edit should also deny the `edit` permission in the agent's file, so the harness enforces it.
+- **An agent's instruction gave way under time pressure** in 2 of 3 runs. A team that needs a reviewer that can't edit needs the harness to enforce it, not an instruction alone. Denying the `edit` permission in the agent's file is the likely way, though it wasn't tried here, and an agent allowed to run shell commands could still write files through them.
 
 These are 3 samples per scenario on one model, so treat the rates as indicative, not settled.

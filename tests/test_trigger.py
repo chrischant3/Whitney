@@ -510,6 +510,10 @@ def test_a_run_of_the_agent_under_test_with_the_agent_option_used_it_unless_kilo
     assert used({"agent": "a-reviewer"}) is True
     assert used({"agent": "a-reviewer"}, stderr="! agent \"a-reviewer\" not found. Falling back to default agent") is None
     assert used(None) is False  # the default agent ran, and never delegated to it
+    assert tasks._scenario_score(verdicts, ["unchanged", "edited", "inconclusive"], [], {"events": " \n", "exit_code": 1, "stderr": ""}, [],
+                                 under_test=("agent", "a-reviewer"), option={"agent": "a-reviewer"}).metadata["used"] is None
+    assert tasks._scenario_score(verdicts, ["unchanged", "edited", "inconclusive"], [], {}, [],
+                                 under_test=("agent", "a-reviewer"), option={"agent": "a-reviewer"}).metadata["used"] is None
     assert used({"agent": "someone-else"}) is False
     assert used({"command": "a-reviewer"}) is False
     assert tasks._scenario_score(verdicts, ["unchanged", "edited", "inconclusive"], [], {"events": events, "exit_code": 0}, [],

@@ -431,10 +431,12 @@ The example project has one of each:
 
 To write your own:
 
-1. Name the eval file after the skill or agent: `evals/skills/<name>.json` or `evals/agents/<name>.json`.
+1. Create the eval file. By convention it is named after the skill or agent: `evals/skills/<name>.json` or `evals/agents/<name>.json`.
 2. Set `source` to the skill's `SKILL.md` or the agent's file. The default baseline then removes the skill's whole folder, or the agent's file.
-3. Write scenarios for what the skill or agent says to do. For an agent, add `"agent": "<name>"` to each, so the agent itself does the work ([Running a named agent or command](#running-a-named-agent-or-command)).
+3. Write scenarios for what the skill or agent says to do. Each needs a fixture and at least one check, as any scenario does ([Scenarios](#scenarios)). For an agent, add `"agent": "<name>"` to each, so the agent itself does the work ([Running a named agent or command](#running-a-named-agent-or-command)).
 4. Add a `trigger` block with prompts that should and shouldn't use it.
+   - An agent that has both scenarios with `agent` and trigger tests must say `mode: all` in its file. A `mode: primary` agent can be run but not handed work, so every prompt that should use it would fail.
+   - For an agent, write prompts that ask for a hand-off, such as "hand the review to a subagent". Whitney has only seen Kilo delegate when the prompt asked for one. The test then shows which subagent was chosen, not whether the agent decided to delegate at all.
 5. Run `whitney validate`, then `whitney run`.
 
 When you read the result, look first at the line under the scenarios table that says in how many runs the skill loaded. A skill that didn't load can't have been followed. In the example's first run the skill's scenarios scored 0 of 2, and that line showed why: the skill never loaded for prompts that named the files to change. Its description was rewritten to say when to use it, and it then loaded ([the recorded run](results/2026-11-10-skills-agents.md)).
@@ -468,7 +470,7 @@ The skill's name is its folder's name. If the `name` inside `SKILL.md` differs, 
 
 In the report, a file with trigger tests gets a table for its scenarios, then "Triggered on positive prompts" and "Stayed quiet on negative prompts". The gate reads the template's rate over the scenarios and the trigger tests together, and the report prints that rate under the tables.
 
-For any file that tests a skill or an agent, the report also says in how many of the template's scenario runs the skill loaded, or the agent was handed work. A scenario that passed in a run where the skill never loaded shows what the model does anyway, not what the skill adds.
+For any file that tests a skill or an agent, the report also says in how many of the template's scenario runs the skill loaded, or the agent was used. An agent is used when work is handed to it, or when the scenario runs it with `agent`. A scenario that passed in a run where the skill never loaded shows what the model does anyway, not what the skill adds.
 
 ### Warnings about skill descriptions
 

@@ -731,14 +731,16 @@ def _scenario_score(
     delegated to the agent: True, False, or None if the event stream can't
     say (skills.was_used) or the run ended early without using it, since it
     might have gone on to. A run of that agent with `kilo run --agent`
-    (`option`) used it, unless Kilo fell back to its default agent, which
-    is None. The report counts it over the template's runs,
+    (`option`) used it, unless Kilo fell back to its default agent or
+    printed no events at all, which are None. The report counts it over the template's runs,
     because a scenario that passed without the skill shows the model's
     default, not the skill.
     """
     used = {}
     if under_test and option == {"agent": under_test[1]} and under_test[0] == "agent":
-        used = {"used": None if FELL_BACK in run.get("stderr", "") else True}
+        # No events at all means Kilo never started the agent, whatever it was told to run.
+        ran = bool(run.get("events", "").strip()) and FELL_BACK not in run.get("stderr", "")
+        used = {"used": True if ran else None}
     elif under_test:
         seen = was_used(run.get("events", ""), *under_test)
         used = {"used": None if seen is False and not run_completed(run) else seen}

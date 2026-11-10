@@ -16,4 +16,6 @@ Run them (this calls a real model):
 
     whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer --evals-path examples/consumer/evals --epochs 3
 
+Every eval file runs with the whole project copied in, so the two rules' evals now run with the skills and the reviewer present too. A skill added later can change an older eval's result: the `debugging` skill fits the prompt "tests/test_titles.py has a failing test", for one.
+
 Every customer email in the fixture ends `@canary-7d41c2.invalid`, a domain that can't exist, so the check can find a copied row anywhere.
