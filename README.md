@@ -115,7 +115,7 @@ You need Python 3.11+ and the CLI for each target you run: the [Kilo CLI](https:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate      # keep it active: the checks expect `python` on PATH
+source .venv/bin/activate      # keep it active: scripts/check.py expects `python` on PATH
 pip install -e ".[dev]"
 ```
 
@@ -316,7 +316,7 @@ Give `evals_path` as a full path, as `$PWD/` does here: Inspect runs the task fr
 
 ## Running it in CI
 
-Any CI system that can run a shell command can run Whitney. This is the whole job:
+Any CI system that can run a shell command can run Whitney. For a project of your own, this is the whole job. It runs in local mode, straight on the runner; `--execution docker` is for runs you want kept apart from the machine, and needs Docker there.
 
 ```bash
 pip install "git+https://github.com/chrischant3/Whitney.git@v0.2.0"
@@ -330,7 +330,7 @@ A CI runner has no Kilo login, so this names a provider and its key, as in [With
 | Exit code | Meaning | What to do |
 |---|---|---|
 | 0 | Every gate passed. | Nothing. |
-| 1 | A gate failed, or `whitney validate` found a problem. | Read the report: the agent didn't follow the configuration often enough, or too many runs were inconclusive. |
+| 1 | A gate failed, or `whitney validate` found a problem. | After `run`, read the report: the agent didn't follow the configuration often enough, or too many runs were inconclusive. A gate is the pass rate a file must reach. After `validate`, read the lines starting `error:`. |
 | 2 | Whitney couldn't run: a missing option, key, CLI or folder. | Read the last lines of the output, which name what is missing. No model was called. |
 
 Each run leaves two things in the folder it ran in. Keep both as build artefacts:
@@ -415,6 +415,10 @@ Both datasets are read from local files after the one-time setup, so runs make n
 ## Limits
 
 This tests the Kilo CLI and the Claude Code CLI with the model you name. Kilo's VS Code extension is covered by a parity check and a manual checklist, not by the automated evals; Claude Code's IDE integrations aren't covered. Results come from small samples (6 scenarios × 3 repeats), which is enough to show large effects but not small ones.
+
+## Reporting a vulnerability
+
+Report it privately, not in a public issue. [SECURITY.md](SECURITY.md) says how, and what counts.
 
 ## Licence
 

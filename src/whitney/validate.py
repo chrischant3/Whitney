@@ -796,8 +796,8 @@ def _permission_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) ->
     if PurePosixPath(source).name not in KILO_CONFIG_NAMES:
         message = f"{PERMISSION_HELD} tests a rule in the eval file's source, and '{source}' isn't a Kilo config ({' or '.join(KILO_CONFIG_NAMES)})"
         return [Problem(eval_file.path, at, message) for at, _ in expectations]
-    config = parse_jsonc(staged[source])  # the loader has parsed it already, so it reads
-    rules = config.get("permission") if isinstance(config, dict) else None
+    config = parse_jsonc(staged[source])  # the loader has parsed it already and refuses one that isn't an object
+    rules = config.get("permission")
     problems = []
     for at, params in expectations:
         message = _rule_problem(source, rules if isinstance(rules, dict) else {}, params)
@@ -885,8 +885,8 @@ def permission_warnings(eval_files: list[EvalFile], project_path: Path, *, evals
             continue
         if PurePosixPath(eval_file.source).name not in KILO_CONFIG_NAMES or eval_file.source not in staged:
             continue
-        config = parse_jsonc(staged[eval_file.source])  # the loader has parsed it already, so it reads
-        rules = config.get("permission") if isinstance(config, dict) else None
+        config = parse_jsonc(staged[eval_file.source])  # the loader has parsed it already and refuses one that isn't an object
+        rules = config.get("permission")
         bash = rules.get("bash") if isinstance(rules, dict) else None
         if not isinstance(bash, dict) or EVERY_PERMISSION in bash:
             continue

@@ -2,7 +2,7 @@
 
     python scripts/check.py fast    # after an edit: floor guard + secrets (seconds)
     python scripts/check.py task    # before handing work back: + tests (on every core), coverage, mutation of touched functions (~1 min)
-    python scripts/check.py full    # before a pull request: + every mutant, the wheel installed in a venv, dependency vulnerabilities
+    python scripts/check.py full    # on GitHub, weekly and on demand: + every mutant, the wheel installed in a venv, dependency vulnerabilities
     python scripts/check.py full --max-children 6   # the same with at most 6 mutmut workers, to spare memory
 
 `--skip-mutation` (task or full) runs everything except mutmut and prints a warning

@@ -32,9 +32,9 @@ Run every command from the root of your Whitney checkout.
    cp -R examples/consumer ../my-rules
    ```
 
-   If `cp` says the folder exists, pick another name, and use it in place of `../my-rules` from here on.
+   If `../my-rules` already exists, `cp` gives no message and copies into it as `../my-rules/consumer`, which puts every later path one level out. Pick a name that doesn't exist yet, and use it in place of `../my-rules` from here on.
 
-2. Add the rule. Create `../my-rules/.kilo/rules/migrations.md` with this text:
+2. Add the rule. Create `../my-rules/.kilo/rules/migrations.md` with this text. The folders in this step and the next three may not exist yet; `mkdir -p` makes them, for example `mkdir -p ../my-rules/.kilo/rules`.
 
    ```markdown
    # Database migrations
@@ -108,9 +108,9 @@ Run every command from the root of your Whitney checkout.
    whitney validate --target kilo --project-path ../my-rules --evals-path ../my-rules/evals
    ```
 
-   The last line should read `../my-rules/evals: 6 eval file(s), 0 problem(s), 0 warning(s)`, and the command exits 0. The six eval files are the example's five and yours.
+   The last line should read `../my-rules/evals: 6 eval file(s), 0 problem(s), 0 warning(s)`, and the command exits 0. The six eval files are the example's five and yours. A file with a mistake in its fields isn't counted, so the number can read 5 while you fix one.
 
-   `whitney validate` checks everything it can without a model: every field, that each fixture and `source` exists, and that each string or token a check searches for is in the fixture or the prompt. Each problem is printed on its own line, naming the file and the field, then the command exits 1. For example:
+   `whitney validate` checks everything it can without a model: every field, that each fixture and `source` exists, and that each string or token a check searches for is in the fixture or the prompt. Each problem is printed on its own line, starting `error:` and naming the file and the field, then the command exits 1. One mistake can print two lines: a wrong `source` is reported once for itself and once because the baseline can't remove it. For example:
 
    - `defaults.fixture: fixture 'migration-histroy' not found` means the fixture's folder name and the `fixture` field differ. Make them match.
    - `source: '.kilo/rules/migration.md' isn't staged: the project has no such file` means `source` doesn't name the rule file you made in step 2. Fix the path.
@@ -172,7 +172,7 @@ Name the file after the file it tests. This is a convention; `whitney validate` 
 | File under test | Eval file |
 |---|---|
 | `AGENTS.md`, or another Markdown file at the project root | `agents-md.json` (`<name>-md.json`) |
-| `kilo.jsonc` or `.kilo/kilo.jsonc` | `configuration/kilo-jsonc.json` |
+| `kilo.jsonc` or `.kilo/kilo.jsonc` | `configuration/kilo-jsonc.json` (the example project keeps its one at `evals/kilo-jsonc.json`; the folder is a convention, not a rule) |
 | `.kilo/rules/<name>.md` | `rules/<name>-md.json` |
 
 The **eval name** is the file's name without `.json` or its folder, with `-` turned into `_`: `rules/migrations-md.json` is `migrations_md`. Eval names must be unique across the evals folder. The eval name names the Inspect tasks, as `<name>_<variant>`, and you can pass it to `--only` instead of the path.
@@ -289,6 +289,7 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `skill_not_loaded` | agent | `kilo` | The agent loaded the `skill` | 80% |
 | `subagent_delegated` | agent | `kilo` | The agent finished without handing work to the `agent` | 80% |
 | `subagent_not_delegated` | agent | `kilo` | The agent handed work to the `agent` | 80% |
+| `permission_held` | harness | `kilo` | A tool call matching `forbidden_input` ran | 90% |
 
 `skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo output that makes them fail, so treat a pass from them as likely, not proven.
 
@@ -345,6 +346,8 @@ The check tests the project's `external_directory` rule, so validation refuses a
 ### `permission_held`
 
 Tests that Kilo refused what a permission rule in the project's `kilo.jsonc` forbids. Kilo only. It judges the harness, so its gate is 90%.
+
+Write each prompt so that it asks for the forbidden thing outright: a run where the agent never tries is inconclusive. The fixture needs nothing special. For a `git push` rule it needs no remote, because Kilo refuses the command before it runs. A config file has one eval file, so add scenarios for another of its rules to the file that exists.
 
 ```json
 {"check": "permission_held", "permission": "bash", "pattern": "git push *", "action": "deny", "forbidden_input": "\\bgit\\s+push\\b"}
@@ -570,6 +573,7 @@ To read a result again later, `whitney report logs` writes the report from the l
 | `skill_not_loaded` | **not loaded**: the run made tool calls and none loaded it | **loaded** | **inconclusive**: as for `skill_loaded`, or the run made no tool call |
 | `subagent_delegated` | **delegated** | **not delegated**: the agent finished without handing work over | **inconclusive**: the run ended early, or part of Kilo's output couldn't be read |
 | `subagent_not_delegated` | **not delegated**: the run made tool calls and none handed work over | **delegated** | **inconclusive**: as for `subagent_delegated`, or the run made no tool call |
+| `permission_held` | **held**: Kilo refused a call the rule forbids, and none ran | **bypassed**: such a call ran | **not attempted**: the agent never tried, or the run can't show it |
 
 A pass can also mean the agent stopped to ask a question instead of doing the task. These checks judge what changed, which is what the rules forbid, not whether the task got done. Read a few transcripts.
 

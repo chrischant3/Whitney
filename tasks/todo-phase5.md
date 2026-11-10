@@ -6,7 +6,7 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 - Write a failing test first, then the code.
 - Don't delete a test, skip it or loosen its assertions. If a test's expectation has to change because the behaviour is meant to change, name the test and get Christopher's confirmation before changing it.
-- `python scripts/check.py task` passes on the task's final commit. Until the mutation spike lands, run it with `--skip-mutation` and say so in the PR (decided 2026-11-09).
+- `python scripts/check.py task` passes on the task's final commit, with mutation testing on. `--skip-mutation` was a stopgap from 2026-11-09 to 2026-11-10; the boxes below that name it record what ran then.
 - Update every doc the task makes wrong, in the same task.
 - Work on the task's own branch, preferably in its own worktree, because other sessions share the main working tree.
 - Stop and show Christopher when the task is done.
@@ -295,7 +295,7 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 **Acceptance criteria:**
 - [ ] `docs/spike-findings.md` records each option's measured time and what it would stop catching, if anything.
-- [ ] A recommendation, reviewed with Christopher, on how mutation testing runs from now on and when `--skip-mutation` goes.
+- [x] A recommendation, reviewed with Christopher, on how mutation testing runs from now on and when `--skip-mutation` goes. **2026-11-10:** decided. `check.py task` locally and on every pull request, with a 95% bar on touched functions; `check.py full` on GitHub only, weekly and on demand. `--skip-mutation` is no longer used. The write-up is [docs/mutation-testing-options.md](../docs/mutation-testing-options.md).
 - [ ] Nothing in CONSTRAINTS.md is weakened. Any change to how the ratchet is measured is agreed with Christopher first.
 
 **Estimated scope:** M. Needs Christopher for the decision.
@@ -573,7 +573,11 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 ### Checkpoint C: any Kilo permission
 
 - [x] A consumer can test a `bash` pattern, `edit` or `read` rule, and the control shows the check can fail. **2026-11-10:** for a `bash` pattern and for `edit` under `ask`. Not for `read`: no refusal was captured for a `read` rule, so validation refuses one by name.
-- [ ] Review with Christopher.
+- [x] Review with Christopher. **2026-11-10, his decisions:**
+  1. `permission_held` keeps its required `action` parameter, which the spec didn't have.
+  2. A file that uses `permission_held` must write its `variants`; leaving them out stays a validation problem.
+  3. Positive and negative trigger prompts stay pooled in one gate for `v0.2.0`. Task 29 splits them after the release.
+  4. The benchmark tasks (`ifevalcode`, `bigcodebench_hard_complete`) stay unregistered under the package's name. They need a clone for their datasets and extras anyway.
 
 ---
 
@@ -627,7 +631,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [ ] A fresh-venv install from the tag, then `whitney --version` and `whitney validate` against both examples.
-- [ ] `python scripts/check.py full`
+- [ ] `python scripts/check.py full`, as the "Mutation (full)" workflow on GitHub, on the release commit.
 
 **Dependencies:** All tasks above that are in the release (decision 2).
 
@@ -675,3 +679,20 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Dependencies:** Task 23.
 
 **Estimated scope:** S. A few cents in model calls.
+
+### Task 29: Gate positive and negative trigger prompts separately
+
+**Description:** Added on 2026-11-10 from Christopher's Checkpoint C decision. A file's trigger tests are gated as one pool, so positive prompts that all pass can carry negative prompts that don't: 12 of 12 positives and 0 of 3 negatives is 80%. Judge each kind against the file's minimum and `min_conclusive`, as scenarios and trigger tests already are.
+
+**Acceptance criteria:**
+- [ ] `check_thresholds` judges a file's positive prompts and its negative prompts separately, and a problem names which kind fell short.
+- [ ] The report's gate line gives a rate for each kind.
+- [ ] The docs that say the two are pooled say they are separate. Each test whose expectation changes is named and confirmed by Christopher first.
+
+**Verification:**
+- [ ] `python scripts/check.py task`
+- [ ] `whitney report` on the logs of the 2026-11-10 skills and agents run still exits as that write-up says, or the write-up says what changed.
+
+**Dependencies:** None. After `v0.2.0`.
+
+**Estimated scope:** S.

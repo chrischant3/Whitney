@@ -1317,3 +1317,15 @@ def test_instructions_and_skill_folders_never_reach_into_an_excluded_folder(tmp_
         (".kilo/skills/s/node_modules/y.md", "node_modules"),
     ]:
         assert not_staged_reason("kilo", tmp_path, relative, staged) == f"it is inside {folder}/, which is never staged"
+
+
+@pytest.mark.parametrize("text, kind", [("[1]", "an array"), ('"text"', "a string"), ("2", "a number"), ("true", "a boolean"), ("null", "null")])
+def test_a_kilo_config_that_isnt_a_json_object_is_refused_by_name(tmp_path, text, kind):
+    (tmp_path / "AGENTS.md").write_text("- A rule.\n")
+    (tmp_path / ".kilo").mkdir()
+    (tmp_path / ".kilo" / "kilo.jsonc").write_text(text)
+
+    with pytest.raises(ValueError) as raised:
+        load_project_files_for("kilo", tmp_path)
+
+    assert str(raised.value) == f".kilo/kilo.jsonc holds {kind}, not a JSON object, so Kilo can't read it as a config"

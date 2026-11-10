@@ -134,8 +134,7 @@ now kills it on every disk by simulating a case-sensitive one.
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
 python scripts/check.py task       # before handing work back: about a minute for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants)
-python scripts/check.py full       # reruns every mutant, and the dependency scan; CI runs it weekly
-python scripts/check.py full --max-children 6   # the same on a laptop, with fewer mutmut workers to spare memory
+python scripts/check.py full       # reruns every mutant, and the dependency scan; run it on GitHub, not on a laptop (below)
 ```
 
 `task` runs the test suite with `pytest -n auto` (pytest-xdist, in the `dev`
@@ -151,9 +150,14 @@ run's mutmut results, so it mutates only the functions the diff touches.
 `check.py full` runs from scratch every Sunday and on demand from the Actions
 tab (`.github/workflows/mutation-full.yml`); a fall in the project score fails
 that run, and GitHub emails the owner. Neither workflow edits this file: a
-person records a new ratchet value, in its own commit. Run `full` yourself
-before a pull request that changes `requirements.lock`, so the dependency scan
-sees the new versions before the weekly run does. The ratchet's mutation score
+person records a new ratchet value, in its own commit.
+
+Run `full` on GitHub only (Christopher, 2026-11-10): `gh workflow run
+mutation-full.yml --ref <branch>`, or "Run workflow" on the Actions tab. On a
+Mac at background priority the slower tests run past mutmut's 30-second limit,
+and the run stops before it judges a mutant. Start one on your branch before a
+pull request that changes `requirements.lock`, so the dependency scan sees the
+new versions before the weekly run does, and on main before a release. The ratchet's mutation score
 was measured on a Mac; once the weekly run on main has a result, re-baseline it
 from that run and say so here, since macOS and Linux differ by a few survivors.
 `task` mutates only the functions the diff touches and judges them as above;

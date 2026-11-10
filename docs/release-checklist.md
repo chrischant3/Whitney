@@ -13,8 +13,16 @@ Claude Code users can run `/release <version>`, which works through these steps 
 
 ## 2. The bar holds on the release commit
 
-- `python scripts/check.py full` exits 0 in a fresh clone, installed as in CONSTRAINTS.md ("How to run"). Warnings are allowed; exit 2 is not a pass.
-- That run includes mutation testing. `--skip-mutation` is a stopgap for day-to-day work, and its warning in place of the mutation scores is not a pass for a release.
+- The "Mutation (full)" workflow passes on the release commit. It runs `python scripts/check.py full` in a fresh clone on GitHub. Start it from the Actions tab, or with the command below, and wait for it to finish. Warnings are allowed; exit 2 is not a pass.
+
+  ```bash
+  gh workflow run mutation-full.yml --ref main
+  gh run list --workflow mutation-full.yml --limit 1
+  ```
+
+  If the run fails on the mutation score, open its log: the line starting `[fail] mutation score` names the survivors. Kill them or explain them in CONSTRAINTS.md, then run it again.
+- Don't run `check.py full` on a laptop in its place. On a Mac at background priority its tests run past mutmut's time limit, and the run stops before it judges a mutant (CONSTRAINTS.md, "How to run").
+- That run includes mutation testing. A run with `--skip-mutation` prints a warning in place of the mutation scores, and is not a pass for a release.
 - The `floor-guard` check passed on the pull request that made the release commit.
 - No row in CONSTRAINTS.md's Exceptions table has expired, and each one is still needed.
 

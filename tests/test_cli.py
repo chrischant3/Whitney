@@ -1014,3 +1014,19 @@ def test_a_log_written_before_eval_files_were_recorded_counts_as_read(tmp_path, 
 
     assert code == 1
     assert capsys.readouterr().out.count("no log of its runs was read") == 1
+
+
+def test_validate_gives_no_warning_about_files_inside_the_evals_folder(consumer, capsys):
+    evals = consumer.project / ".kilo"  # an evals root inside the project: its files are never staged
+    shutil.copytree(consumer.evals, evals)
+    push = {"check": "permission_held", "permission": "bash", "pattern": "git push *", "action": "deny", "forbidden_input": "\\bgit\\s+push\\b"}
+    (evals / "permissions.json").write_text(json.dumps({
+        "version": 2, "source": ".kilo/kilo.jsonc", "targets": ["kilo"], "variants": {},
+        "defaults": {"fixture": "repo", "expect": [push]}, "scenarios": [{"id": "push", "prompt": "Push the branch."}],
+    }))
+    _write(evals, {"kilo.jsonc": '{"permission": {"bash": {"git push *": "deny"}}}', "skills/bare/SKILL.md": "# No frontmatter\n"})
+
+    cli.main(["validate", "--project-path", str(consumer.project), "--evals-path", str(evals), "--target", "kilo"])
+
+    out = capsys.readouterr().out
+    assert "warning:" not in out and out.endswith(" 0 warning(s)\n")

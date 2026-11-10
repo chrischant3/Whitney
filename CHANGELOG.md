@@ -17,6 +17,7 @@ The first tagged release. Whitney becomes a command you install and point at you
 - **A gate with minimums.** Each check has a minimum pass rate, and a file needs enough conclusive runs. `whitney report` applies the same gate to saved logs.
 - **The `claude-code` target**, for rules in `AGENTS.md`.
 - **A consumer example** in `examples/consumer`, with recorded real runs under `docs/results/`.
+- **A security policy.** `SECURITY.md` says how to report a vulnerability privately, and what is in scope.
 
 ### What you must update
 

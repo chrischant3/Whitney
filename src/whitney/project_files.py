@@ -112,6 +112,16 @@ def load_project_files(project_dir: Path, *, evals_path: Path | None = None) -> 
     return _load_kilo(_project_root(project_dir), evals_path)[0]
 
 
+
+def _json_kind(value) -> str:
+    """What a parsed JSON value is, in words, for a message about a config that isn't an object."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "a boolean"
+    return {list: "an array", str: "a string"}.get(type(value), "a number")
+
+
 def _load_kilo(root: Path, evals_path: Path | None) -> tuple[dict[str, str], list[tuple[str, str]]]:
     """What load_project_files stages, and (name, reason) for each thing it left out that the report names."""
     evals = _evals_root(root, evals_path)
@@ -141,6 +151,8 @@ def _load_kilo(root: Path, evals_path: Path | None) -> tuple[dict[str, str], lis
     instruction_patterns = set()
     for relative in config_paths:
         config = parse_jsonc(files[relative])
+        if not isinstance(config, dict):
+            raise ValueError(f"{relative} holds {_json_kind(config)}, not a JSON object, so Kilo can't read it as a config")
         instructions = config.get("instructions")
         if isinstance(instructions, str):
             instruction_patterns.add(instructions)

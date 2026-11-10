@@ -678,3 +678,36 @@ def test_a_config_whose_permission_isnt_an_object_gets_no_warning(tmp_path):
     root = project(tmp_path, "ask")
 
     assert permission_warnings(_files(root), root, evals_path=root / "evals") == []
+
+
+def test_a_permission_held_source_that_isnt_staged_gets_only_the_not_staged_problem(tmp_path):
+    root = project(tmp_path, PUSH_RULE, source=".kilo/kilo.jsonc")
+
+    assert [(p.location, p.message) for p in _project_found(root)] == [
+        ("source", "'.kilo/kilo.jsonc' isn't staged: the project has no such file"),
+    ]
+
+
+def test_a_kilo_config_inside_the_evals_folder_gets_no_catch_all_warning(tmp_path):
+    from whitney.validate import permission_warnings
+
+    root = project(tmp_path, {"bash": {"git push *": "deny"}}, source=".kilo/kilo.jsonc")
+    (root / ".kilo").mkdir()
+    (root / ".kilo" / "kilo.jsonc").write_text(json.dumps({"permission": {"bash": {"git push *": "deny"}}}))
+
+    assert len(permission_warnings(_files(root), root, evals_path=root / "evals")) == 1
+    assert permission_warnings(_files(root), root, evals_path=root / ".kilo") == []  # the evals root's files are never staged
+
+
+def test_the_left_out_note_ends_its_section():
+    from types import SimpleNamespace
+
+    from whitney.report import render_asset_provenance_markdown
+
+    metadata = {
+        "variant": "template", "target": "kilo", "execution": "local", "model": "m", "asset_source": "local project",
+        "evaluation_assets": {"kilo.jsonc": "{}"}, "harness_permissions": {"edit": "allow"}, "harness_permissions_left_out": ["bash"],
+    }
+    rendered = render_asset_provenance_markdown([SimpleNamespace(eval=SimpleNamespace(task="t", metadata=metadata), samples=[])])
+
+    assert rendered.endswith("because a check in the file tests the project's own rule for it.\n")
