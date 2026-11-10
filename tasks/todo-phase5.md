@@ -621,7 +621,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Description:** The spec's slice 11, the rest. The README covers installing from a tag, the two paths and a shell invocation any CI system can run, with its exit codes, report file and log folder. Christopher creates and pushes the `v0.2.0` tag, because a pushed tag is public.
 
 **Acceptance criteria:**
-- [ ] Criterion 19 in full, including installing from the tag.
+- [ ] Criterion 19 in full, including installing from the tag. **2026-11-10, prepared:** the README gains "Install from a release" and "Running it in CI" (the shell commands, the three exit codes, the report file and the log folder), and says there are two ways in. `CHANGELOG.md` is new, and `pyproject.toml` says `0.2.0`. Still open: the tag itself, and someone who hasn't seen Whitney adding a scenario from the docs alone.
 - [ ] A fresh install from the tag passes criteria 1 to 4.
 - [ ] `docs/release-checklist.md` worked through for `v0.2.0`, with its results row filled in (`/release 0.2.0` in Claude Code).
 

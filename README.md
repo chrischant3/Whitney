@@ -10,6 +10,13 @@ What an agent does depends on the harness as well as the model. A harness is the
 
 ## How you use it
 
+There are two ways in:
+
+- **Fork or clone the repository** if you want Whitney's templates and its own scenarios as a starting point. The steps below follow this path.
+- **Install the `whitney` command** if you already have a project and want to test it where it is. [Install from a release](#install-from-a-release) covers that, and [`examples/consumer`](examples/consumer/) is a small project laid out this way.
+
+Either way, a run needs two folders. The **project path** holds the configuration under test. The **evals path** holds your eval files and their fixtures.
+
 1. Fork or clone this repository.
 2. Follow [Setup](#setup) for the harness you're testing.
 3. Put your configuration in that harness's template, `template/kilo/` or `template/claude-code/`, at the paths the harness loads it from. [docs/template.md](docs/template.md) says what goes where.
@@ -130,6 +137,29 @@ pip install --no-deps -e .
 Installing gives you the `whitney` command; `whitney --version` prints the installed version. In a clone installed before the command existed, run `pip install --no-deps -e .` again to get it.
 
 After changing a dependency in `pyproject.toml`, regenerate the lock with the command at the top of `requirements.lock` (it needs [uv](https://docs.astral.sh/uv/)); a test fails if the two disagree.
+
+### Install from a release
+
+To test a project of your own, you don't need a clone. Install Whitney from a release tag into a virtual environment, a Python install kept apart from your others:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install "git+https://github.com/chrischant3/Whitney.git@v0.2.0"
+whitney --version      # prints: whitney 0.2.0
+```
+
+If `pip` reports that the tag doesn't exist, check the version against the repository's releases page.
+
+The install holds the `whitney` command, its checks and the Docker sandbox files. It holds no templates and no eval files: you bring your own project and evals. Copy [`examples/consumer/evals`](examples/consumer/evals/) from the repository as a starting point.
+
+```bash
+whitney validate --target kilo --project-path . --evals-path evals
+whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 \
+    --project-path . --evals-path evals --epochs 3
+```
+
+You still need the harness's own CLI and its login or API key, as in 2a and 2b below.
 
 ### 2a. The `kilo` target
 
@@ -283,6 +313,32 @@ inspect eval src/whitney/tasks.py@scenario_eval -T eval_file=agents-md.json -T e
 ```
 
 Give `evals_path` as a full path, as `$PWD/` does here: Inspect runs the task from `src/whitney/`, so a relative path is read from there.
+
+## Running it in CI
+
+Any CI system that can run a shell command can run Whitney. This is the whole job:
+
+```bash
+pip install "git+https://github.com/chrischant3/Whitney.git@v0.2.0"
+whitney validate --target kilo --project-path . --evals-path evals
+whitney run --target kilo --model anthropic/claude-haiku-4-5 --api-key-env ANTHROPIC_API_KEY \
+    --project-path . --evals-path evals --epochs 3
+```
+
+A CI runner has no Kilo login, so this names a provider and its key, as in [With a provider API key you name](#with-a-provider-api-key-you-name). `--api-key-env` names the environment variable that holds the key. Set that variable from your CI system's secret store, never in a file in the repository. The harness's CLI must be installed on the runner too.
+
+| Exit code | Meaning | What to do |
+|---|---|---|
+| 0 | Every gate passed. | Nothing. |
+| 1 | A gate failed, or `whitney validate` found a problem. | Read the report: the agent didn't follow the configuration often enough, or too many runs were inconclusive. |
+| 2 | Whitney couldn't run: a missing option, key, CLI or folder. | Read the last lines of the output, which name what is missing. No model was called. |
+
+Each run leaves two things in the folder it ran in. Keep both as build artefacts:
+
+- `results/`: the report, a Markdown file named for the target, model and time. `--results-dir` moves it.
+- `logs/`: one Inspect log per eval file and variant, with every transcript. `--log-dir` moves it. `whitney report` writes the report again from these without calling a model.
+
+Logs hold full transcripts, which can include whatever is in your fixtures and prompts. Store them where only the people who may read those can reach them.
 
 ## Running inspect_evals (IFEvalCode and BigCodeBench-Hard)
 
