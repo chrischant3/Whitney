@@ -53,15 +53,21 @@ def _bindings_other_than_import_from_thresholds(tree: ast.AST) -> list[int]:
     return lines
 
 
+# mutmut gives each test 30 seconds, so that a mutant that loops forever fails its test. This test runs
+# no Whitney code, so no mutant can make it loop; it is only slow there, parsing megabytes of mutated
+# copies (about 10 s, and over 30 s at background priority). It gets a longer limit of its own.
+@pytest.mark.timeout(180)
 def test_no_other_module_binds_a_threshold_name_except_by_importing_it():
     # The floor guard watches only thresholds.py's lines, so a second assignment elsewhere
     # (MIN_HELD = 0.5 in report.py, say) would shadow the guarded value without being flagged.
-    found = {
-        f"{path.relative_to(PACKAGE)}:{line}"
-        for path in sorted(PACKAGE.rglob("*.py"))
-        if path != PACKAGE / "thresholds.py"
-        for line in _bindings_other_than_import_from_thresholds(ast.parse(path.read_text(encoding="utf-8")))
-    }
+    found = set()
+    for path in sorted(PACKAGE.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        # A file that never spells a threshold name can't bind one, so it isn't parsed. Under mutmut the
+        # package is 21 MB of mutated copies, and parsing all of it ran past mutmut's 30-second limit.
+        if path == PACKAGE / "thresholds.py" or not any(name in text for name in THRESHOLD_NAMES):
+            continue
+        found.update(f"{path.relative_to(PACKAGE)}:{line}" for line in _bindings_other_than_import_from_thresholds(ast.parse(text)))
     assert found == set()
 
 
