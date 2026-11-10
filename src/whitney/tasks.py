@@ -22,15 +22,16 @@ import base64
 import sys
 import warnings
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
 
 from inspect_ai import Task, task
+from inspect_ai.agent import Agent, as_solver
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.scorer import Score, Target, mean, scorer
-from inspect_ai.solver import TaskState, solver
+from inspect_ai.solver import Solver, TaskState, solver
 from inspect_ai.util import sandbox, store
 from pydantic import ValidationError
 
@@ -50,7 +51,7 @@ from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state, run_completed
 from whitney.setup_steps import SetupError, SetupStep
 from whitney.target_names import TARGETS
-from whitney.validate import _spread_by_the_wrapper
+from whitney.validate import _spread_by_the_wrapper, staged_names
 from whitney.variants import TEMPLATE, apply_variant, declared_variants, runs_in, spread_over_kilo_configs, staged_matches
 
 ROOT = Path(__file__).parent.parent.parent
@@ -122,6 +123,8 @@ class _EvalPlan:
             (variant, staged files, source) -> variant.
         fixtures_dir: where its fixtures are; None for the folder beside the
             file that load_scenarios finds, as the wrappers have always used.
+        named: scenario id -> {"agent": name} or {"command": name}, for a scenario that runs with
+            `kilo run --agent` or `--command`.
         has_trigger: True if the file has trigger tests, which run in some variants only (variants.runs_in).
         under_test: ("skill" or "agent", its name) if the source is one (evalfile.under_test), else None.
     """
@@ -141,6 +144,7 @@ class _EvalPlan:
     fixtures_dir: Path | None = None
     has_trigger: bool = False
     under_test: tuple[str, str] | None = None
+    named: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 @task
@@ -214,6 +218,7 @@ def scenario_eval(
         fixtures_dir=root / FIXTURES_FOLDER,
         has_trigger=parsed.trigger is not None,
         under_test=evalfile.under_test(parsed.source),
+        named=_named(parsed),
     )
     return _scenario_task(
         plan, variant, target=target, model=model, execution=execution, project_path=project_path,
@@ -367,6 +372,71 @@ def _expectations(eval_file: EvalFile) -> dict[str, list[tuple[str, dict]]]:
     return {s.id: [(e.check, e.params) for e in s.expect] for s in eval_file.resolved()}
 
 
+def _named(eval_file: EvalFile) -> dict[str, dict[str, str]]:
+    """Each scenario's `agent` or `command`, by scenario id, for the scenarios that name one."""
+    named = {}
+    for scenario in eval_file.resolved():
+        for field_name in ("agent", "command"):
+            if getattr(scenario, field_name) is not None:
+                named[scenario.id] = {field_name: getattr(scenario, field_name)}
+    return named
+
+
+def _options(named: dict[str, str] | None, staged: dict[str, str]) -> dict[str, str] | None:
+    """What a scenario's run adds to `kilo run` in a variant whose staged files are `staged`, or None.
+
+    An agent the variant removed is dropped, so the same prompt runs with
+    Kilo's default agent: with `--agent` and no such agent Kilo falls back to
+    it anyway, and Whitney then judges nothing (_without_the_named_agent).
+    A command stays: validation refuses a variant that removes one.
+    """
+    if named and "agent" in named and named["agent"] not in staged_names(staged, "agent"):
+        return None
+    return named or None
+
+
+def _by_option(solvers: dict[tuple[str, str] | None, Solver]):
+    """A solver that runs each sample with the agent built for its `kilo_options`.
+
+    Args:
+        solvers: None -> the agent for a plain `kilo run`; ("agent", name) or
+            ("command", name) -> the one built with that option.
+    """
+
+    async def solve(state: TaskState, generate) -> TaskState:
+        chosen = state.metadata.get("kilo_options") or {}
+        key = next(iter(chosen.items()), None)
+        return await solvers[key](state, generate)
+
+    return solve
+
+
+FELL_BACK = "Falling back to default agent"  # in Kilo's stderr when --agent names no primary agent
+
+
+def _without_the_named_agent(
+    verdicts: list[tuple[CheckSpec, Verdict]], chosen: dict[str, str] | None, run: dict
+) -> list[tuple[CheckSpec, Verdict]]:
+    """`verdicts`, each made inconclusive if the run was to use a named agent and Kilo fell back to its default.
+
+    Kilo then exits 0 and no event names the agent that ran (docs/spike-findings.md,
+    "Case 4"), so whatever the checks saw, pass or fail, was the default
+    agent's doing and says nothing of the agent under test.
+    """
+    agent_name = (chosen or {}).get("agent")
+    if agent_name is None or FELL_BACK not in run.get("stderr", ""):
+        return verdicts
+    return [
+        (spec, Verdict(
+            "inconclusive",
+            f"{verdict.explanation}, but Kilo fell back to its default agent, so the agent {agent_name} didn't run",
+            verdict.metrics,
+            verdict.details,
+        ))
+        for spec, verdict in verdicts
+    ]
+
+
 def _as_written(variant: Variant, files: dict[str, str], source: str) -> Variant:
     """`variant` as the eval file wrote it."""
     return variant
@@ -432,7 +502,9 @@ def _scenario_task(
                 f"{plan.path}: scenario '{sample.id}': its setup holds the value of a secret this run is given; "
                 "Inspect logs the setup, which carries the fixture's pending/ text, so keep only fake values there"
             )
-        samples.append(_with_project_files(sample, staged, **(sample_metadata(sample) if sample_metadata else {})))
+        chosen = _options(plan.named.get(str(sample.id)), staged)
+        extra = {**(sample_metadata(sample) if sample_metadata else {}), **({"kilo_options": chosen} if chosen else {})}
+        samples.append(_with_project_files(sample, staged, **extra))
     python = sys.executable if execution == "local" else "python3"  # the sandbox's own: the host's, or the image's
     folders = {
         scenario: list(evidence.plan((checks[name], params) for name, params in expect).folders)
@@ -446,10 +518,10 @@ def _scenario_task(
         name=f"{plan.eval_name}_{variant}",
         dataset=MemoryDataset(samples, name=plan.path.stem),
         setup=solver(name="before_snapshots")(_before_snapshots)(folders, python, target, execution, api_key_env),
-        solver=targets.build_agent(
+        solver=_agent_for(samples, lambda **named: targets.build_agent(
             target, model, {target: plan.harness_permissions[target]}, execution=execution,
-            api_key_env=api_key_env, base_url=base_url,
-        ),
+            api_key_env=api_key_env, base_url=base_url, **named,
+        )),
         scorer=checks_scorer(plan.expect, labels, metrics, target, execution, api_key_env, python, plan.under_test),
         cleanup=_forget_before,
         sandbox=_sandbox_config(execution),
@@ -483,6 +555,20 @@ def _scenario_task(
             "min_pass_rate": plan.min_pass_rate,
         },
     )
+
+
+def _agent_for(samples: list[Sample], build: Callable[..., Agent]) -> Agent | Solver:
+    """The task's solver: the target's agent, or one per `kilo run` option the samples name, chosen sample by sample.
+
+    The plain agent is always built, and built first. A file that names no
+    agent or command gets it alone, as every task did before the fields existed.
+    """
+    plain = build()
+    keys = dict.fromkeys(next(iter(sample.metadata["kilo_options"].items())) for sample in samples if sample.metadata.get("kilo_options"))
+    if not keys:
+        return plain
+    solvers = {None: as_solver(plain), **{key: as_solver(build(**{f"kilo_{key[0]}": key[1]})) for key in keys}}
+    return solver(name="kilo_by_option")(_by_option)(solvers)
 
 
 def why_not_applies(target: str, file_targets: Iterable[str], checks: Iterable[CheckSpec]) -> str | None:
@@ -602,6 +688,7 @@ def _checks_scorer(
             before=_BEFORE_SNAPSHOTS.pop(state.uuid, {}), secrets=secrets,
         )
         verdicts = [(spec, spec.run(found, params)) for spec, params in checks]
+        verdicts = _without_the_named_agent(verdicts, state.metadata.get("kilo_options"), run)
         return _scenario_score(verdicts, labels, metrics, run, secrets, under_test=under_test)
 
     return score

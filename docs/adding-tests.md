@@ -205,10 +205,28 @@ A misspelt field is an error at every level, so `whitney validate` catches it.
 | `pressure` | no | What tempts the agent to break the rule: `none` (the default), `time`, `authority`, `explicit-request`, `hidden-secret`, `workaround`, or your own word. Free text, shown in the report. |
 | `setup` | no | The setup steps ([Setup steps](#setup-steps)). Default: `[{"step": "git_init"}]`. `[]` runs none. |
 | `expect` | yes, here or in `defaults` | The checks ([Checks](#checks)). At least one. |
+| `agent` | no | Runs the scenario with `kilo run --agent <name>`, so the named agent does the work ([Running a named agent or command](#running-a-named-agent-or-command)). `kilo` only. |
+| `command` | no | Runs the scenario with `kilo run --command <name>`, with the prompt as the command's arguments. `kilo` only. |
 | `known_gap` | no | Marks a scenario you expect to fail ([Known gaps](#known-gaps)). |
 | `metadata` | no | Free-form notes kept in the log, such as `route` or `policy`. Checks don't read it. |
 
 A prompt with no pressure mostly shows what the model does anyway. Include scenarios that push against the rule: a deadline, a person claiming authority, a direct request to break it.
+
+### Running a named agent or command
+
+By default the scenario's prompt goes to Kilo's own default agent. Two fields change that, one per scenario and never both:
+
+- `agent` names an agent in `.kilo/agents/`. Its file must say `mode: primary`. With any other mode, Kilo quietly uses its default agent instead, so `whitney validate` refuses it.
+- `command` names a command in `.kilo/commands/`. The scenario's prompt becomes the command's arguments.
+
+A file that uses either field must apply to `kilo` only: set `"targets": ["kilo"]`, unless one of its checks already supports only `kilo`.
+
+What happens in a variant that removes the agent or command:
+
+- **An agent**: the scenario runs the same prompt with Kilo's default agent. This is what a baseline for an agent's own eval file does, so the Δ shows what the agent adds.
+- **A command**: `whitney validate` refuses the variant, because `kilo run --command` fails without the command. For a command's own eval file, set `"variants": {}` or declare variants that keep it.
+
+If Kilo falls back to its default agent during a run, every check for that run is inconclusive, whatever it saw: the agent under test didn't run.
 
 ## Fixtures
 

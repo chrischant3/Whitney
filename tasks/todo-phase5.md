@@ -482,12 +482,12 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Changed 2026-11-06 (Task 16):** decision 6's premise was wrong. With a missing agent, or one with `mode: subagent`, `kilo run --agent` doesn't fail: Kilo falls back to its default agent `code` and exits 0, with stderr containing `Falling back to default agent`, and no event names the agent used. So: validation checks the named agent is staged with `mode: primary` (or `all`, once tested); a run whose stderr holds the fallback line is inconclusive; and the baseline drops `--agent` rather than relying on the fallback. A missing command does make `kilo run --command` exit 1 before any model call, so a scenario naming a command needs its own baseline rule: decide it here (recommended: the baseline keeps the command, since removing it can't run).
 
 **Acceptance criteria:**
-- [ ] Command-line tests show each field adds exactly the confirmed option, and never `--auto`.
-- [ ] An unknown agent or command is a validation error naming it, and so is either field in a file that applies to `claude-code`.
-- [ ] The baseline rule from decision 6 is tested.
+- [x] Command-line tests show each field adds exactly the confirmed option, and never `--auto`. **2026-11-10:** `tests/test_agent_command.py`, including a local run against a fake `kilo` that records its arguments.
+- [x] An unknown agent or command is a validation error naming it, and so is either field in a file that applies to `claude-code`. Also refused: an agent whose `mode` isn't `primary` (`all` waits for Task 21's capture), both fields in one scenario, and a name that starts with `-` or holds a `/` or a space, which could be read as an option or a path.
+- [x] The baseline rule from decision 6 is tested. A variant that removes the agent runs the same prompt without `--agent`. A run whose stderr holds `Falling back to default agent` has every check made inconclusive, a fail included, since the default agent did the work. **Decided without Christopher, for him to confirm:** a variant that removes a command a scenario runs is a validation error, so a command's own eval file must set `"variants": {}` or declare variants that keep it. That is the task's recommendation, "the baseline keeps the command", made a rule.
 
 **Verification:**
-- [ ] `pytest -q tests/test_agent.py tests/test_evalfile.py tests/test_validate.py`
+- [x] `pytest -q tests/test_agent.py tests/test_evalfile.py tests/test_validate.py` (and `tests/test_agent_command.py`, which holds the new tests)
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 9 and 16.

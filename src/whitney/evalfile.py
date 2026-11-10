@@ -74,6 +74,8 @@ VariantName = Annotated[str, StringConstraints(pattern=NAME)]
 # A JSON Pointer (RFC 6901) into a staged JSONC file, such as /permission/external_directory.
 Pointer = Annotated[str, StringConstraints(pattern=r"^/")]
 FixtureName = Annotated[str, StringConstraints(pattern=FIXTURE_NAME)]
+# An agent's or a command's name, which goes on Kilo's command line: never an option (a leading "-") or a path.
+HarnessName = Annotated[str, StringConstraints(pattern=FIXTURE_NAME, strict=True)]
 
 
 @dataclass(frozen=True)
@@ -256,10 +258,18 @@ class Scenario(BaseModel):
     pressure: str | None = None
     setup: list[SetupStep] | None = None
     expect: list[Expectation] | None = Field(None, min_length=1)
+    agent: HarnessName | None = None
+    command: HarnessName | None = None
     known_gap: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     _prompt_not_blank = field_validator("prompt")(_not_blank)
+
+    @model_validator(mode="after")
+    def _one_of_agent_and_command(self) -> "Scenario":
+        if self.agent is not None and self.command is not None:
+            raise ValueError("set agent or command, not both: Kilo was only captured running each alone")
+        return self
 
 
 class TriggerPrompt(BaseModel):
@@ -311,7 +321,9 @@ class ResolvedScenario:
             "negative" for a trigger test, whose index is its place in that
             list of the `trigger` block and whose expect_at is the prompt,
             such as `trigger.positive[0]`.
-        The others are the scenario's fields (see Scenario), never None.
+        agent, command: the agent or command the scenario runs with
+            (`kilo run --agent` or `--command`), or None. A trigger test has neither.
+        The others are the scenario's fields (see Scenario), never None except these two and known_gap.
     """
 
     index: int
@@ -326,6 +338,8 @@ class ResolvedScenario:
     fixture_at: str
     expect_at: str
     trigger: Literal["positive", "negative"] | None = None
+    agent: str | None = None
+    command: str | None = None
 
 
 class EvalFile(BaseModel):
@@ -419,6 +433,8 @@ class EvalFile(BaseModel):
                     metadata=dict(scenario.metadata),
                     fixture_at=fixture_at,
                     expect_at=expect_at,
+                    agent=scenario.agent,
+                    command=scenario.command,
                 )
             )
         return out + self._trigger_tests()

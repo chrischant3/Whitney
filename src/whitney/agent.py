@@ -96,6 +96,8 @@ def kilo(
     timeout: int = 300,
     api_key_env: str | None = None,
     base_url: str | None = None,
+    agent_name: str | None = None,
+    command_name: str | None = None,
 ) -> Agent:
     """Run `kilo run` once on the sample's prompt, in PROJECT_DIR.
 
@@ -119,6 +121,11 @@ def kilo(
             ANTHROPIC_API_KEY, from the shell or .env) holding the API key for
             model's provider. Unset, the global Kilo config supplies it.
         base_url: local mode only. Overrides the provider's base URL.
+        agent_name: run with `--agent NAME`, so that agent is the primary
+            agent. Kilo falls back to its default agent, exiting 0, if the
+            name isn't a primary agent's (docs/spike-findings.md, "Case 4").
+        command_name: run with `--command NAME`, the prompt being the
+            command's arguments. Kilo exits 1 if there is no such command.
 
     Side effects: stores the exit code, JSON event stream and stderr under
     RUN_STORE_KEY, with the values of any keys the run was given redacted.
@@ -139,6 +146,9 @@ def kilo(
             "through the bridge with its own credentials"
         )
     kilo_cli_model = bridge_kilo_model(model) if execution == "docker" else model
+    # Passed on only when a name is given, so a run without one calls the runners as it always did.
+    names = {key: value for key, value in (("agent_name", agent_name), ("command_name", command_name)) if value}
+    named = {"named": names} if names else {}
 
     async def execute(state: AgentState) -> AgentState:
         if execution == "docker":
@@ -153,7 +163,7 @@ def kilo(
                     global_config["permission"] = harness_permissions
                 await sbox.exec(["mkdir", "-p", f"{DOCKER_HOME}/.config/kilo"])
                 await sbox.write_file(f"{DOCKER_HOME}/.config/kilo/kilo.json", json.dumps(global_config))
-                run = await _run_kilo(sbox, state, kilo_cli_model, auto, {"HOME": DOCKER_HOME}, timeout)
+                run = await _run_kilo(sbox, state, kilo_cli_model, auto, {"HOME": DOCKER_HOME}, timeout, **named)
                 store().set(RUN_STORE_KEY, run)
             return bridge.state
 
@@ -171,11 +181,11 @@ def kilo(
                 config.flush()
                 env = {"KILO_CONFIG": config.name, **referenced_env(overlay)}
                 run = await _run_local(
-                    sbox, state, model, auto, env, timeout, local_project_files, local_output_targets
+                    sbox, state, model, auto, env, timeout, local_project_files, local_output_targets, **named
                 )
         else:
             run = await _run_local(
-                sbox, state, model, auto, env, timeout, local_project_files, local_output_targets
+                sbox, state, model, auto, env, timeout, local_project_files, local_output_targets, **named
             )
         store().set(RUN_STORE_KEY, run)
         _append_final_message(state, run, model)
@@ -364,12 +374,12 @@ def redact_run(run: dict, secrets: list[str]) -> dict:
 
 
 async def _run_kilo(
-    sbox, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int
+    sbox, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int, named: dict[str, str] | None = None
 ) -> dict:
     try:
         cwd = (await sbox.exec(["pwd"], cwd=PROJECT_DIR)).stdout.strip()
         env = {**(env or {}), "PWD": cwd}
-        result = await sbox.exec(_kilo_command(state, model, auto), cwd=PROJECT_DIR, env=env, timeout=timeout)
+        result = await sbox.exec(_kilo_command(state, model, auto, **(named or {})), cwd=PROJECT_DIR, env=env, timeout=timeout)
         return {"exit_code": result.returncode, "events": result.stdout, "stderr": result.stderr}
     except TimeoutError:
         return {"exit_code": 124, "events": "", "stderr": f"kilo run timed out after {timeout}s"}
@@ -378,20 +388,23 @@ async def _run_kilo(
 async def _run_local(
     sbox, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int,
     local_project_files: dict[str, str] | None, local_output_targets: dict[str, str] | None = None,
+    named: dict[str, str] | None = None,
 ) -> dict:
+    passed = {"named": named} if named else {}
     if local_project_files is None:
         project_dir = Path((await sbox.exec(["pwd"], cwd=PROJECT_DIR)).stdout.strip())
-        return await _run_local_process(project_dir, state, model, auto, env, timeout)
+        return await _run_local_process(project_dir, state, model, auto, env, timeout, **passed)
 
     with staged_project(local_project_files) as project_dir:
-        run = await _run_local_process(project_dir, state, model, auto, env, timeout)
+        run = await _run_local_process(project_dir, state, model, auto, env, timeout, **passed)
         if local_output_targets:
             run["copied_outputs"], run["missing_outputs"] = await copy_outputs(sbox, project_dir, local_output_targets)
         return run
 
 
 async def _run_local_process(
-    project_dir: Path, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int
+    project_dir: Path, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int,
+    named: dict[str, str] | None = None,
 ) -> dict:
     check_no_inherited_instructions(project_dir)
     run_env = env or {}
@@ -403,7 +416,8 @@ async def _run_local_process(
             **isolated_git_env(project_dir),
             "PWD": str(project_dir),
         }
-        run = await run_process(_kilo_command(state, model, auto), project_dir, process_env, timeout, "kilo run")
+        command = _kilo_command(state, model, auto, **(named or {}))
+        run = await run_process(command, project_dir, process_env, timeout, "kilo run")
     secrets = [value for name, value in run_env.items() if name != "KILO_CONFIG"] + home.secrets
     return redact_run(run, secrets)
 
@@ -548,10 +562,21 @@ def _kill_process_group(pid: int) -> None:
         os.killpg(pid, signal.SIGKILL)
 
 
-def _kilo_command(state: AgentState, model: str, auto: bool) -> list[str]:
+def _kilo_command(
+    state: AgentState, model: str, auto: bool, agent_name: str | None = None, command_name: str | None = None
+) -> list[str]:
+    """The `kilo run` command for the state's last message.
+
+    `--agent NAME` and `--command NAME` go before the `--`, in the form plan
+    Task 16 captured (docs/spike-findings.md, "Case 4").
+    """
     command = ["kilo", "run", "--pure", "--format", "json", "-m", model]
     if auto:
         command.append("--auto")
+    if agent_name:
+        command += ["--agent", agent_name]
+    if command_name:
+        command += ["--command", command_name]
     # "--" ends the options: without it, a prompt such as "--version" is read as one.
     return [*command, "--", state.messages[-1].text]
 

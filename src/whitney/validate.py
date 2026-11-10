@@ -56,6 +56,7 @@ from whitney.evalfile import (
     under_test,
 )
 from whitney.project_files import load_project_files_for, not_staged_reason
+from whitney.target_names import TARGETS
 from whitney.setup_steps import NOTHING_PENDING, PENDING_DIR, PROJECT_DIR, SETUP_STEPS, order_problems, pending_problem
 from whitney.variants import (
     TEMPLATE,
@@ -78,7 +79,11 @@ KNOWN_GAP = re.compile(r"E\d+: .+")
 STAGED = {
     "skill": re.compile(r"(?:\.kilo|\.kilocode|\.claude|\.agents)/skills?/([^/]+)/SKILL\.md"),
     "agent": re.compile(r"(?:\.kilo|\.kilocode)/agents?/([^/]+)\.md"),
+    # Kilo turns the .md files in its workflows folders into commands too (docs/load-order.md).
+    "command": re.compile(r"(?:\.kilo|\.kilocode)/(?:commands?|workflows)/([^/]+)\.md"),
 }
+# The only `mode` an agent was captured running under with `kilo run --agent` (docs/spike-findings.md, "Case 4").
+RUNNABLE_MODE = "primary"
 KILO_ACTIONS = ("allow", "ask", "deny")
 # Kilo's key for every permission, so setting it sets a guarded key too.
 EVERY_PERMISSION = "*"
@@ -163,6 +168,7 @@ def validate_evals(
             *_declared_variant_problems(eval_file),
             *_known_gap_problems(eval_file, exceptions, constraints),
             *_harness_permission_problems(eval_file, checks),
+            *_kilo_only_problems(eval_file, checks),
             *_min_pass_rate_problems(eval_file, checks),
         ]
         # A default shared by several scenarios would otherwise be reported once per scenario.
@@ -406,6 +412,7 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
                     "changes nothing in the staged files, so it would run the template again; "
                     "set a value that differs from the staged one, or remove a staged file"
                 )), *problems]
+            problems += _removed_commands(eval_file, staged, changed)
         found += [_variant_at(written, name, eval_file, at, message) for at, message in problems]
     return [Problem(eval_file.path, at, message) for at, message in dict.fromkeys(found)]
 
@@ -445,8 +452,74 @@ def validate_project(
         if reason is not None:
             problems.append(Problem(eval_file.path, "source", f"'{eval_file.source}' isn't staged: {reason}"))
         problems += _owner_problems(eval_file, staged)
+        problems += _named_problems(eval_file, staged)
         problems += validate_variants(eval_file, staged)
     return problems
+
+
+def staged_names(staged: Mapping[str, str], kind: str) -> dict[str, str]:
+    """The staged skills, agents or commands (`kind`), each name with its file's path, in name order.
+
+    The name is the skill's folder or the file's stem, from the folders Kilo
+    loads each kind from (STAGED).
+    """
+    found = {match.group(1): path for path in sorted(staged, reverse=True) if (match := STAGED[kind].fullmatch(path))}
+    return dict(sorted(found.items()))
+
+
+def _kilo_only_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec]) -> list[Found]:
+    """A scenario's `agent` or `command` in a file that applies to claude-code: only Kilo has `kilo run --agent`."""
+    if "claude-code" not in (eval_file.targets or TARGETS):
+        return []
+    scenarios = eval_file.resolved()
+    used = [checks[e.check] for scenario in scenarios for e in scenario.expect if e.check in checks]
+    if any("claude-code" not in spec.targets for spec in used):
+        return []  # one of its checks already keeps the file to Kilo
+    return [
+        (f"scenarios[{scenario.index}].{field}", (
+            f"`kilo run --{field}` is Kilo's alone, and this file applies to claude-code too; set \"targets\": [\"kilo\"]"
+        ))
+        for scenario in scenarios
+        for field in ("agent", "command")
+        if getattr(scenario, field) is not None
+    ]
+
+
+def _named_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
+    """A scenario's `agent` that isn't a staged primary agent, or `command` that isn't a staged command."""
+    problems = []
+    agents, commands = staged_names(staged, "agent"), staged_names(staged, "command")
+    for scenario in eval_file.resolved():
+        for field, name, names in (("agent", scenario.agent, agents), ("command", scenario.command, commands)):
+            if name is None:
+                continue
+            at = f"scenarios[{scenario.index}].{field}"
+            if name not in names:
+                problems.append(Problem(eval_file.path, at, (
+                    f"no staged {field} is named '{name}'; staged {field}s: {', '.join(names) or 'none'}"
+                )))
+            elif field == "agent":
+                mode = frontmatter_value(staged[names[name]], "mode")
+                if mode != RUNNABLE_MODE:
+                    said = f"its mode is '{mode}'" if mode else "it has no mode"
+                    problems.append(Problem(eval_file.path, at, (
+                        f"{said}, and `kilo run --agent` was only captured working with `mode: {RUNNABLE_MODE}`; "
+                        "with a subagent Kilo falls back to its default agent"
+                    )))
+    return problems
+
+
+def _removed_commands(eval_file: EvalFile, staged: Mapping[str, str], changed: Mapping[str, str]) -> list[tuple[tuple, str]]:
+    """A variant that removes a staged command some scenario runs: `kilo run --command` exits 1 without it."""
+    before, after = staged_names(staged, "command"), staged_names(changed, "command")
+    return [
+        ((), (
+            f"it removes the command '{scenario.command}', which scenario '{scenario.id}' runs; "
+            "`kilo run --command` fails without it, so keep it in every variant (\"variants\": {} runs the template only)"
+        ))
+        for scenario in eval_file.resolved()
+        if scenario.command in before and scenario.command not in after
+    ]
 
 
 def _owner_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
@@ -454,7 +527,7 @@ def _owner_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Prob
     if eval_file.trigger is None:
         return []
     kind, _ = under_test(eval_file.source)
-    names = sorted({match.group(1) for path in staged if (match := STAGED[kind].fullmatch(path))})
+    names = list(staged_names(staged, kind))
     return [
         Problem(eval_file.path, f"trigger.negative[{index}].owner", (
             f"no staged {kind} is named '{prompt.owner}'; staged {kind}s: {', '.join(names) or 'none'}"
@@ -526,7 +599,12 @@ def skill_description_warnings(staged: Mapping[str, str], project_path: Path) ->
 
 
 def skill_description(text: str) -> str | None:
-    """The `description` in a SKILL.md's frontmatter, on one line, or None if it has none.
+    """The `description` in a SKILL.md's frontmatter, on one line, or None if it has none (frontmatter_value)."""
+    return frontmatter_value(text, "description")
+
+
+def frontmatter_value(text: str, key: str) -> str | None:
+    """The value of the top-level `key` in a Markdown file's frontmatter, on one line, or None if it has none.
 
     The frontmatter is the lines between a first line `---` and the next
     `---`. This reads the forms a description is written in, not all of
@@ -541,9 +619,9 @@ def skill_description(text: str) -> str | None:
     except StopIteration:
         return None
     for index, line in enumerate(lines[1:end], 1):
-        if not line.startswith("description:"):
+        if not line.startswith(f"{key}:"):
             continue
-        first = line.removeprefix("description:").strip()
+        first = line.removeprefix(f"{key}:").strip()
         parts = [] if BLOCK_SCALAR.fullmatch(first) else [first]
         for more in lines[index + 1 : end]:
             if more.strip() and not more.startswith((" ", "\t")):
