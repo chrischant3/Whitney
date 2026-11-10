@@ -736,3 +736,29 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Estimated scope:** M. Start with the spike (S, a few cents in model calls).
 
+### Task 32: An eval-driven development skill
+
+**Description:** Added on 2026-11-10 from Christopher's request. Write a skill that uses Whitney's evals to help a user build a skill or an instruction file, the way test-driven development uses tests to build code. `write-evals` drafts evals for a file that exists. This skill drives the loop around it: evals first, then the rule, then a run, then a rewording, until the rule holds. The loop was run by hand on 2026-11-10 for an example `AGENTS.md`, and it showed what the skill must do:
+- **Start from what the rule should achieve,** and write scenarios that fail without it, so the baseline shows a gap to close. A rule that passes in the baseline isn't doing anything.
+- **Change one thing at a time** between runs, and keep the old scenarios, so each Δ is about that change. Rewording "Ask before modifying database schema" to say what to do instead ("describe the change, then stop and wait") took its scenarios from 0 of 6 to 6 of 6 on Claude Code.
+- **Read every failure's explanation** before rewording. One failure was the scenario's fault, not the rule's: `npm install` wrote a lockfile.
+- **Run both targets** for `AGENTS.md`: the same file held on one harness and failed on the other with the same model.
+- **Ask before each run that costs money,** with its number of agent runs, starting with 1 epoch and moving to 3 before a conclusion.
+- **Stop when the rule passes its gate on 3 epochs**, or when the remaining failures show a limit of the harness or a rule no check can test. Say which.
+
+**Acceptance criteria:**
+- [ ] `.claude/skills/eval-driven-development/SKILL.md`, with any detail in `references/`, describes the loop: define the behaviour, write failing evals (using `write-evals`), write or change the rule, run, read the results, and repeat. It has a stop condition and keeps a log of each round.
+- [ ] Each round's log entry records the change made, the command run, the pass rates for the template and the baseline, and what the failures showed. It is written to a file in the evals folder, so the history survives the session.
+- [ ] It never starts a run without asking. It says how many agent runs each one makes.
+- [ ] It works for an `AGENTS.md`, a Kilo rules file and a skill, and says which checks and targets each can use.
+- [ ] It is tested the way `write-evals` was: fresh sessions with no context follow it on new files, and their friction logs are fixed. At least one round of the loop is run for real, with Christopher's go-ahead for the cost.
+- [ ] The README and `docs/adding-tests.md` point to it beside `write-evals`.
+
+**Verification:**
+- [ ] `python scripts/check.py task`
+- [ ] Manual: one full loop on an example file, from failing evals to a rule that passes its gate, with the log kept.
+
+**Dependencies:** `write-evals` (merged in #36; its tests and restructure are on `write-evals-tests`). Task 31 would let each round show what the model was sent, but isn't needed.
+
+**Estimated scope:** M. A few dollars of model calls for the real rounds.
+

@@ -106,6 +106,7 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | 29 | Gate positive and negative trigger prompts separately (after `v0.2.0`) | after D | none | S | no |
 | 30 | The VS Code extension check (moved from `v0.2.0`) | after D | none | S | yes, cents |
 | 31 | Record what was sent to the model, and the agent's reasoning (after `v0.2.0`) | after D | none | M | yes, cents |
+| 32 | An eval-driven development skill (after `v0.2.0`) | after D | `write-evals` | M | yes, dollars |
 
 Lanes that can run beside the main one:
 
