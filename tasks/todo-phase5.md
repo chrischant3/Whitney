@@ -6,7 +6,7 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 - Write a failing test first, then the code.
 - Don't delete a test, skip it or loosen its assertions. If a test's expectation has to change because the behaviour is meant to change, name the test and get Christopher's confirmation before changing it.
-- `python scripts/check.py task` passes on the task's final commit. Until the mutation spike lands, run it with `--skip-mutation` and say so in the PR (decided 2026-11-09).
+- `python scripts/check.py task` passes on the task's final commit, with mutation testing on. `--skip-mutation` was a stopgap from 2026-11-09 to 2026-11-10; the boxes below that name it record what ran then.
 - Update every doc the task makes wrong, in the same task.
 - Work on the task's own branch, preferably in its own worktree, because other sessions share the main working tree.
 - Stop and show Christopher when the task is done.
@@ -295,7 +295,7 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 **Acceptance criteria:**
 - [ ] `docs/spike-findings.md` records each option's measured time and what it would stop catching, if anything.
-- [ ] A recommendation, reviewed with Christopher, on how mutation testing runs from now on and when `--skip-mutation` goes.
+- [x] A recommendation, reviewed with Christopher, on how mutation testing runs from now on and when `--skip-mutation` goes. **2026-11-10:** decided. `check.py task` locally and on every pull request, with a 95% bar on touched functions; `check.py full` on GitHub only, weekly and on demand. `--skip-mutation` is no longer used. The write-up is [docs/mutation-testing-options.md](../docs/mutation-testing-options.md).
 - [ ] Nothing in CONSTRAINTS.md is weakened. Any change to how the ratchet is measured is agreed with Christopher first.
 
 **Estimated scope:** M. Needs Christopher for the decision.
@@ -627,7 +627,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [ ] A fresh-venv install from the tag, then `whitney --version` and `whitney validate` against both examples.
-- [ ] `python scripts/check.py full`
+- [ ] `python scripts/check.py full`, as the "Mutation (full)" workflow on GitHub, on the release commit.
 
 **Dependencies:** All tasks above that are in the release (decision 2).
 
