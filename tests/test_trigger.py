@@ -925,3 +925,24 @@ def test_a_skill_kept_in_two_folders_is_named_once_by_its_first_path():
     staged = {".kilo/skills/a/SKILL.md": "", ".claude/skills/a/SKILL.md": "", ".kilocode/skills/a/SKILL.md": "", ".kilo/skills/b/SKILL.md": ""}
 
     assert staged_names(staged, "skill") == {"a": ".claude/skills/a/SKILL.md", "b": ".kilo/skills/b/SKILL.md"}
+
+
+def test_inconclusive_trigger_runs_are_counted_in_the_prompt_tables_and_the_gate_line():
+    report = rendered(skill_logs(**{
+        "negative-template": log("template", "template", "asks-for-a-bug-fix", ["pass", "inconclusive", "fail"], trigger="negative"),
+    }))
+
+    assert "| asks-for-a-bug-fix | 1/2 (1 inconclusive) |\n| **overall** | 1/2 (1 inconclusive) |" in report
+    assert report.endswith("separately: scenarios 3/3, trigger tests 4/5 (1 inconclusive).\n")
+
+
+def test_a_score_without_metadata_leaves_the_use_of_the_skill_unknown():
+    from types import SimpleNamespace
+
+    bare = log("template", "template", "writes-notes", ["pass"])
+    bare.samples[0].scores = {"s": SimpleNamespace(answer="pass")}
+    none = log("template", "template", "writes-notes", ["pass"])
+    none.samples[0].scores["s"].metadata = None
+
+    for entry in (bare, none):
+        assert "the skill `release-notes` was loaded in 0, wasn't in 0 and couldn't be told in 1." in rendered([entry])
