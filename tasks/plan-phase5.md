@@ -16,12 +16,12 @@ Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
 
 - **In `main` (2026-11-10):** Tasks 1 to 22 and 25, Checkpoints A and B, validation rule 8 (PR #25), the release checklist, and the push-controls guide. Tasks 17 to 21 and 25 came in as PR #26.
 - **Decided by Christopher on 2026-11-10 (Checkpoint B):**
-  1. The four tests PR #26 changed, and the choices recorded beside Tasks 17 to 21 and 25, stand. One choice is reversed: the gate reads a file's scenarios and its trigger tests separately (branch `p5-gate-split`).
+  1. The four tests PR #26 changed, and the choices recorded beside Tasks 17 to 21 and 25, stand. One choice is reversed: the gate reads a file's scenarios and its trigger tests separately.
   2. Claude Code skills and agents come after `v0.2.0`.
   3. `MIN_HELD` stays at 0.9; Task 27 looks at raising it.
   4. `permission_held` covers pattern rules and `ask` only; Task 28 is a spike on evidence for a scalar deny.
   5. The packaging test is split: the wheel's contents in the default suite, the install in `check.py full` only.
-- **Next:** Task 24 (package data), Task 23 (`permission_held`), then Task 26 (release `v0.2.0`).
+- **Next:** Task 23 (`permission_held`), then Task 26 (release `v0.2.0`). Task 24 (package data) is built.
 - **Still true:** mutation testing is skipped, so none of the code since Task 17 has had its mutants judged.
 - **A flaky test, not from this work:** `tests/test_parity.py::test_cli_resolves_the_shipped_template` runs the real `kilo debug config --pure`. That takes 1 to 4 seconds alone, but twice it hung past its 120-second limit inside `check.py`'s parallel run.
 - **Decided 2026-11-09 (Christopher): build on `main`.** The `phase5` branch is retired. Each task gets its own branch and worktree off `main` and its own PR into `main`.
@@ -102,6 +102,8 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | 25 | `whitney report` and `whitney checks` | D | 10, 11 | S | no |
 | 26 | Docs and release `v0.2.0` | D | all above | S | no |
 | | **Checkpoint D: release** | | 24–26 | | |
+| 27 | Raise `MIN_HELD` to 1.0, or decide not to (after `v0.2.0`) | after D | 23 | S | no |
+| 28 | Spike: evidence for a scalar deny (after `v0.2.0`) | after D | 23 | S | yes, cents |
 
 Lanes that can run beside the main one:
 
@@ -170,11 +172,11 @@ Spec open questions that block a task here, so they need an answer before that t
 | Spec question | Blocks |
 |---|---|
 | 1. Skill and `task` event shapes | Task 16 answers it |
-| 5. Harness-judged minimum (`MIN_HELD`) | Task 23 |
+| 5. Harness-judged minimum (`MIN_HELD`) | Answered 2026-11-10: 0.9 for `v0.2.0`; Task 27 looks at raising it |
 | 6. Controls in the gate | Task 10 |
 | 8. Claude Code project config | Task 1 (partly; decision 5 above) and the Later list |
 | 12. `.kilocode/rules/` and glob matching | Task 8 |
-| 14. Packaging test cost | Task 24 |
+| 14. Packaging test cost | Answered 2026-11-10: the wheel's contents in the default suite, the install in `check.py full` only |
 | 15. Skill trigger rank (`top_k`) | Task 18. Recommended: loaded or not loaded only; record the order of loads in the score metadata |
 
 ## Later
