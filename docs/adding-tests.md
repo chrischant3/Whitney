@@ -470,7 +470,7 @@ Rules that `whitney validate` checks:
 
 The skill's name is its folder's name. If the `name` inside `SKILL.md` differs, Kilo uses that one, the names won't match, and every positive prompt will fail.
 
-In the report, a file with trigger tests gets a table for its scenarios, then "Triggered on positive prompts" and "Stayed quiet on negative prompts". The gate reads the template's rate over the scenarios and the trigger tests together, and the report prints that rate under the tables.
+In the report, a file with trigger tests gets a table for its scenarios, then "Triggered on positive prompts" and "Stayed quiet on negative prompts". The gate reads the template's scenarios and its trigger tests separately, and each must reach the file's minimum. Read together, trigger tests that all pass could carry a skill the agent loads and then doesn't follow. The report prints both rates under the tables.
 
 For any file that tests a skill or an agent, the report also says in how many of the template's scenario runs the skill loaded, or the agent was used. An agent is used when work is handed to it, or when the scenario runs it with `agent`. A scenario that passed in a run where the skill never loaded shows what the model does anyway, not what the skill adds.
 

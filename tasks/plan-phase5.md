@@ -14,14 +14,15 @@ The spec in `docs/specs/` is an unchanged copy of `~/workspace/package-and-expec
 
 Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
 
-- **In `main` (2026-11-10):** Tasks 1 to 15, the Kilo captures (16, 22), Checkpoint A, validation rule 8 (PR #25), the release checklist, and the push-controls guide.
-- **Built overnight on 2026-11-10, not pushed, every commit unsigned and waiting for Christopher:** Tasks 17 to 21 and 25, as six branches stacked in this order, each in its own worktree: `p5-t17-skill-checks`, `p5-t18-trigger`, `p5-t19-skill-warnings`, `p5-t20-agent-command`, `p5-t21-example`, `p5-t25-report-checks`. `check.py task --skip-mutation` passes at the top of the stack. Each task was reviewed by a fresh session and its findings fixed; the choices made without Christopher are written beside each task's boxes in `todo-phase5.md`.
-- **Waiting on Christopher:**
-  1. Four existing tests changed what they expect, each in a commit of its own that names it: `test_an_unknown_check_is_named_with_the_registered_ones`, `test_an_unknown_field_is_an_error_at_every_level`, `test_the_consumer_example_validates_for_kilo_with_no_problems_or_warnings` and `test_the_consumer_example_tests_each_of_its_rule_files_with_both_new_checks`.
-  2. Checkpoint B's review, and whether Claude Code skills and agents come next.
-  3. Task 23 (`permission_held`) needs its two decisions first: spec open question 5 (`MIN_HELD`), and what counts as evidence for a scalar deny.
-  4. Task 24 (package data) needs spec open question 14 answered first (where the packaging test runs).
-  5. Mutation testing is still skipped, so none of the code above has had its mutants judged.
+- **In `main` (2026-11-10):** Tasks 1 to 22 and 25, Checkpoints A and B, validation rule 8 (PR #25), the release checklist, and the push-controls guide. Tasks 17 to 21 and 25 came in as PR #26.
+- **Decided by Christopher on 2026-11-10 (Checkpoint B):**
+  1. The four tests PR #26 changed, and the choices recorded beside Tasks 17 to 21 and 25, stand. One choice is reversed: the gate reads a file's scenarios and its trigger tests separately (branch `p5-gate-split`).
+  2. Claude Code skills and agents come after `v0.2.0`.
+  3. `MIN_HELD` stays at 0.9; Task 27 looks at raising it.
+  4. `permission_held` covers pattern rules and `ask` only; Task 28 is a spike on evidence for a scalar deny.
+  5. The packaging test is split: the wheel's contents in the default suite, the install in `check.py full` only.
+- **Next:** Task 24 (package data), Task 23 (`permission_held`), then Task 26 (release `v0.2.0`).
+- **Still true:** mutation testing is skipped, so none of the code since Task 17 has had its mutants judged.
 - **A flaky test, not from this work:** `tests/test_parity.py::test_cli_resolves_the_shipped_template` runs the real `kilo debug config --pure`. That takes 1 to 4 seconds alone, but twice it hung past its 120-second limit inside `check.py`'s parallel run.
 - **Decided 2026-11-09 (Christopher): build on `main`.** The `phase5` branch is retired. Each task gets its own branch and worktree off `main` and its own PR into `main`.
 - **Decided 2026-11-09 (Christopher): skip mutation testing for now.** It takes long enough to hold up every task. Until a spike finds a faster way, run `check.py task --skip-mutation` and `check.py full --skip-mutation`, which print a warning in place of the mutation scores, and say in each PR that mutation testing was skipped. CONSTRAINTS.md is unchanged: the mutation floor and ratchet stand, and the next run with mutation testing judges everything merged meanwhile. The spike is in `todo-phase5.md`, "Spike: faster mutation testing", and absorbs decision 2 below.

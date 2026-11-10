@@ -413,6 +413,10 @@ def check_thresholds(
     pass at 100%. Errored and not-attempted runs count as not conclusive.
     Only the template counts: baselines and controls never affect the gate.
 
+    A file with trigger tests must clear both bars twice, once for its
+    scenarios and once for its trigger tests: read together, trigger tests
+    that all pass would carry a skill the agent loads and then doesn't follow.
+
     A file's minimum is file_minimum's, from the checks its logs record, with
     the rates replaced_minimums gives. Logs written before they recorded them
     are gated by the check their eval was scored with: agents_md by
@@ -431,18 +435,38 @@ def check_thresholds(
             minimum = file_minimum(eval_summary.file, rates)
         else:
             minimum = rates.get(LEGACY_CHECKS[key], LEGACY_MINIMUMS[key])
-        cell = eval_summary.overall.get(TEMPLATE_VARIANT, Cell())
-        rate = cell.rate
-        if rate is None or rate < minimum:
-            shown = "no conclusive runs" if rate is None else f"{rate:.0%}"
-            problems.append(f"{name}: template {shown} is below the minimum {minimum:.0%}")
-        conclusive = cell.passed + cell.failed
-        runs = conclusive + cell.inconclusive
-        if conclusive and conclusive / runs < min_conclusive:  # no conclusive runs at all is reported above
-            problems.append(
-                f"{name}: only {conclusive}/{runs} template runs were conclusive, below the minimum {min_conclusive:.0%}"
-            )
+        for part, cell in _gated_parts(eval_summary):
+            of_part, part_runs = (f"{part}s ", f"{part} runs") if part else ("", "runs")
+            rate = cell.rate
+            if rate is None or rate < minimum:
+                shown = "no conclusive runs" if rate is None else f"{rate:.0%}"
+                problems.append(f"{name}: template {of_part}{shown} is below the minimum {minimum:.0%}")
+            conclusive = cell.passed + cell.failed
+            runs = conclusive + cell.inconclusive
+            if conclusive and conclusive / runs < min_conclusive:  # no conclusive runs at all is reported above
+                problems.append(
+                    f"{name}: only {conclusive}/{runs} template {part_runs} were conclusive, "
+                    f"below the minimum {min_conclusive:.0%}"
+                )
     return problems
+
+
+def _gated_parts(s: EvalSummary) -> list[tuple[str, Cell]]:
+    """The template's counts the gate judges for one eval file, each with its name in a problem line.
+
+    One part, unnamed, for a file without trigger tests. A file with them has
+    "scenario" and "trigger test", each judged alone; a file with trigger
+    tests and no scenarios has only the second.
+    """
+    if not s.triggers:
+        return [("", s.overall.get(TEMPLATE_VARIANT, Cell()))]
+    groups = {
+        "scenario": {name: cells for name, cells in s.rows.items() if name not in s.triggers},
+        "trigger test": {name: cells for name, cells in s.rows.items() if name in s.triggers},
+    }
+    return [
+        (part, _overall(rows, s.known_gaps).get(TEMPLATE_VARIANT, Cell())) for part, rows in groups.items() if rows
+    ]
 
 
 def render_markdown(summary: dict[str, EvalSummary]) -> str:
@@ -459,8 +483,8 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
     A file that tests a skill or an agent says in how many of the template's
     scenario runs it was used. Its trigger tests get a table each for the
     positive and the negative prompts, with the variants those ran in, and a
-    line giving the template's rate over scenarios and trigger tests
-    together, which is what the gate reads.
+    line giving the template's two rates the gate reads: over its scenarios,
+    and over its trigger tests.
     """
     parts = []
     for key, s in summary.items():
@@ -485,8 +509,8 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
                 parts.append(f"\n### {TRIGGER_HEADINGS[kind]}\n")
                 parts.extend(_table("Prompt", prompts, _overall(prompts, {}), _variants(s, prompts), neither, {}))
         if s.triggers:
-            together = _cell(s.overall.get(TEMPLATE_VARIANT), neither)
-            parts.append(f"\nThe gate reads the template's scenarios and trigger tests together: {together}.")
+            read = ", ".join(f"{part}s {_cell(cell, neither)}" for part, cell in _gated_parts(s))
+            parts.append(f"\nThe gate reads the template's scenarios and its trigger tests separately: {read}.")
         parts.extend(f"\n{warning}" for warning in _control_warnings(s, _variants(s, s.rows) if s.file else variants))
         parts.extend(f"\nThe gate fails this file: {problem}." for problem in s.problems)
         parts.append("")

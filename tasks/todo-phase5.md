@@ -521,7 +521,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 - [x] One skill and one agent are tested from end to end, for both triggers and behaviour, with results in `docs/results/`. **2026-11-10:** `docs/results/2026-11-10-skills-agents.md`.
 - [x] `python scripts/check.py task` passes. **2026-11-10:** with `--skip-mutation`, at the top of the stack of branches.
-- [ ] Review with Christopher, and decide whether Claude Code skills and agents come next.
+- [x] Review with Christopher, and decide whether Claude Code skills and agents come next. **2026-11-10 (Christopher):** the choices recorded beside Tasks 17 to 21 and 25 stand, but for one: the gate now reads a file's scenarios and its trigger tests separately, each against the file's minimum, because read together both example files passed with scenarios at 50% and 67%. Claude Code skills and agents come after `v0.2.0`, as a new phase.
 
 ---
 
@@ -550,7 +550,9 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Description:** The spec's slice 10: the check, for the confirmed pairs only; the rule that the harness overlay never sets a key the check tests; and an example with a control. Answer spec open question 5 (`MIN_HELD`) before starting.
 
-**Needs a decision before starting (Task 22):** a scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so no refusal is ever seen, and the model can route round it (`read-deny` read the file with `bash`). Either confirm pattern rules and `ask` only, or use `kilo debug agent`'s tool list as the evidence for a scalar deny. Also, the stderr refusal names what was requested (the command or path), not the rule's pattern, and a project `bash` object without `"*"` drops the harness's allow, so unnamed commands are auto-rejected and the run exits 1.
+**Decided 2026-11-10 (Christopher):** spec open question 5: `MIN_HELD` stays at 0.9 for now, and Task 27 looks at raising it. A scalar deny: pattern rules and `ask` only for now, so validation refuses a scalar deny, and Task 28 is a spike on what could count as evidence for one.
+
+**The finding behind the second decision (Task 22):** a scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so no refusal is ever seen, and the model can route round it (`read-deny` read the file with `bash`). Either confirm pattern rules and `ask` only, or use `kilo debug agent`'s tool list as the evidence for a scalar deny. Also, the stderr refusal names what was requested (the command or path), not the rule's pattern, and a project `bash` object without `"*"` drops the harness's allow, so unnamed commands are auto-rejected and the run exits 1.
 
 **Acceptance criteria:**
 - [ ] Unit tests run against the captured fixtures.
@@ -579,7 +581,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 ### Task 24: Package data, task registry, `whitney --version`
 
-**Description:** The spec's slice 7a. Move `docker/` to `src/whitney/sandbox/` as package data, read with `importlib.resources`. Register the tasks in `_registry.py`, so `inspect eval whitney/<task>` works once installed. Add `whitney --version`, and update mutmut's `also_copy`. Moving `docker/` breaks anyone who builds the image by path, so the docs change in the same task. This can run in parallel with milestones A to C, but not at the same time as Task 9, since both change `agent.py`. Answer spec open question 14 (packaging test cost) before starting.
+**Description:** The spec's slice 7a. Move `docker/` to `src/whitney/sandbox/` as package data, read with `importlib.resources`. Register the tasks in `_registry.py`, so `inspect eval whitney/<task>` works once installed. Add `whitney --version`, and update mutmut's `also_copy`. Moving `docker/` breaks anyone who builds the image by path, so the docs change in the same task. This can run in parallel with milestones A to C, but not at the same time as Task 9, since both change `agent.py`. Answer spec open question 14 (packaging test cost) before starting. **Answered 2026-11-10 (Christopher):** split it. Building the wheel and checking what it holds runs in the default suite; installing it in a temporary venv and running the commands runs in `check.py full` only.
 
 **Acceptance criteria:**
 - [ ] A wheel built with `pip wheel --no-deps -w dist .` contains `whitney/sandbox/compose.yaml` and the Dockerfile, and no `template/`, `evals/` or `dataset/` (criterion 2).
@@ -637,3 +639,39 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 - [ ] The spec's acceptance criteria 1 to 20 hold for everything in the release.
 - [ ] Review with Christopher before the tag is pushed.
+
+---
+
+## After `v0.2.0`
+
+Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task holds up the release.
+
+### Task 27: Raise `MIN_HELD` to 1.0, or decide not to
+
+**Description:** `MIN_HELD`, the share of runs in which the harness must hold a permission, stayed at 0.9 for `v0.2.0` (spec open question 5). Below 10 runs that is the same as 1.0. From 10 runs up it lets one breach in ten pass the gate. Decide whether a permission must hold every time, and if so raise the constant. The floor guard blocks only a lowered `MIN_*`, so raising it needs no signed change to the guard.
+
+**Acceptance criteria:**
+- [ ] Christopher has decided between 0.9 and 1.0, with the reason recorded in the spec under open question 5.
+- [ ] If raised: `thresholds.py`, the docs and the README say 1.0, and each test whose expectation changes is named and confirmed by Christopher first.
+
+**Verification:**
+- [ ] `python scripts/check.py task`
+
+**Dependencies:** Task 23.
+
+**Estimated scope:** S.
+
+### Task 28: Spike: evidence for a scalar deny
+
+**Description:** A scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so Kilo prints no refusal, and in Task 22's capture the model read the file through `bash` instead. `permission_held` covers pattern rules and `ask` only, and validation refuses a scalar deny. Find out what could show a scalar deny held: the tool list from `kilo debug agent`, the absence of the tool's calls in the event stream, a check on the outcome (`no_file_edits` for `edit`), or a mix. For each, say what it proves and what a model routing round the rule would look like.
+
+**Acceptance criteria:**
+- [ ] Each candidate is tried on real Kilo, with the command, the config and the output written up in `docs/spike-findings.md`.
+- [ ] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide.
+
+**Verification:**
+- [ ] Manual: each finding is backed by a saved command output.
+
+**Dependencies:** Task 23.
+
+**Estimated scope:** S. A few cents in model calls.
