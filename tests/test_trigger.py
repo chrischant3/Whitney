@@ -840,3 +840,30 @@ def test_a_known_gap_among_the_scenarios_stays_out_of_their_overall_row():
     assert "| **overall** | 0/3 | 3/3 | +100% |" in text
     assert "The gate reads the template's scenarios and its trigger tests separately: scenarios 3/3, trigger tests 5/6." in text
     assert gate_problems([*skill_logs(), gap]) == []
+
+
+# --- The totals under a trigger file's tables -------------------------------------------------
+
+
+def test_the_overall_row_adds_every_row_but_the_known_gaps():
+    from whitney.report import Cell, _overall
+
+    rows = {
+        "a-gap": {"template": Cell(passed=9, failed=9, inconclusive=9)},
+        "b": {"template": Cell(passed=1, failed=2, inconclusive=3), "baseline": Cell(failed=1)},
+        "c": {"template": Cell(passed=10, failed=20, inconclusive=30)},
+    }
+
+    assert _overall(rows, {"a-gap": "E3: why"}) == {"template": Cell(passed=11, failed=22, inconclusive=33), "baseline": Cell(failed=1)}
+
+
+def test_the_gate_note_says_no_runs_only_when_a_part_has_none():
+    from whitney.report import Cell, _gate_note
+
+    def note(scenarios):
+        return _gate_note([("scenario", scenarios), ("trigger test", Cell())], "unclear")
+
+    start = "The gate reads the template's scenarios and its trigger tests separately: scenarios "
+    assert note(Cell(passed=1, failed=1)) == start + "1/2, trigger tests no runs."
+    assert note(Cell(failed=1, inconclusive=1)) == start + "0/1 (1 unclear), trigger tests no runs."
+    assert note(Cell(inconclusive=2)) == start + "0/0 (2 unclear), trigger tests no runs."

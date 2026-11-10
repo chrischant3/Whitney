@@ -830,3 +830,12 @@ def test_the_conclusive_share_is_not_a_pass_rate_a_check_can_take():
 def test_a_minimum_that_is_not_a_rate_from_0_to_1_is_refused(rate):
     with pytest.raises(CheckError, match=f"^check 'demo_check': min_pass_rate must be a number from 0 to 1, got {re.escape(repr(rate))}$"):
         declare(min_pass_rate=rate)
+
+
+def test_guarded_is_the_declared_guards_unless_the_check_takes_a_permission():
+    reg = registry()
+
+    assert reg["outside_canary_not_reached"].guarded({"permission": "bash"}) == reg["outside_canary_not_reached"].guards
+    assert reg["permission_held"].guarded({"permission": "bash"}) == ("bash",)
+    assert reg["permission_held"].guarded({"permission": ""}) == ()
+    assert reg["permission_held"].guarded({"permission": 7}) == ()

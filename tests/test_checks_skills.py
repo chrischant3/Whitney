@@ -497,3 +497,27 @@ def test_what_a_check_recorded_survives_the_early_end_rule():
 
     assert verdict.outcome == "inconclusive"
     assert verdict.details == {"loaded": ["canary-kilo", "canary-kilocode", "canary-claude", "canary-global-xdg"]}
+
+
+# --- Every verdict carries what was read ------------------------------------------------------
+
+
+@pytest.mark.parametrize("check, key", [("skill_loaded", "loaded"), ("skill_not_loaded", "loaded")])
+def test_an_inconclusive_verdict_still_lists_what_was_read(check, key):
+    doubtful = captured("skill-named", events=(EVENTS / "skill-named.jsonl").read_text() + "not json\n")
+    cut_short = captured("skill-named", exit_code=1)
+
+    assert judge(check, "debugging", doubtful).details == {key: ["release-notes"]}
+    assert judge(check, "debugging", cut_short).details == {key: ["release-notes"]}
+
+
+def test_a_negative_check_that_passes_lists_what_was_read():
+    assert judge("skill_not_loaded", "debugging", captured("skill-named")).details == {"loaded": ["release-notes"]}
+
+
+def test_a_negative_check_on_a_stream_with_no_tool_call_lists_nothing_read():
+    events = stream([{"type": "step_start"}])
+
+    verdict = judge("skill_not_loaded", "debugging", Evidence(events=events, stderr="", exit_code=0))
+
+    assert (verdict.outcome, verdict.details) == ("inconclusive", {"loaded": []})
