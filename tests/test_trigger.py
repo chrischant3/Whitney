@@ -946,3 +946,31 @@ def test_a_score_without_metadata_leaves_the_use_of_the_skill_unknown():
 
     for entry in (bare, none):
         assert "the skill `release-notes` was loaded in 0, wasn't in 0 and couldn't be told in 1." in rendered([entry])
+
+
+def test_an_owner_problem_says_none_when_no_skill_is_staged(project):
+    import shutil
+
+    shutil.rmtree(project / ".kilo" / "skills")
+    trigger = {"negative": [{"id": "a", "prompt": "p", "owner": "debugging"}]}
+    path = write(project, eval_file(trigger=trigger))
+
+    found = validate_project(validate_evals(project / "evals").files, project, "kilo", evals_path=project / "evals")
+
+    assert (path, "trigger.negative[0].owner", "no staged skill is named 'debugging'; staged skills: none") in [
+        (p.file, p.location, p.message) for p in found
+    ]
+
+
+def test_a_written_variants_problem_in_a_file_with_trigger_tests_is_named_at_that_variant(project):
+    path = write(project, eval_file(variants={"baseline": {"remove": ["missing.md"]}}))
+
+    found = validate_project(validate_evals(project / "evals").files, project, "kilo", evals_path=project / "evals")
+
+    assert [(p.file, p.location) for p in found] == [(path, "variants.baseline.remove[0]")]
+
+
+def test_a_file_whose_template_never_ran_gets_no_note():
+    rendered_logs = rendered([log("baseline", "baseline", "writes-notes", ["fail"] * 2, used=[False, False])])
+
+    assert "| writes-notes | 0/2 |" in rendered_logs and "In the template's" not in rendered_logs

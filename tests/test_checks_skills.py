@@ -521,3 +521,10 @@ def test_a_negative_check_on_a_stream_with_no_tool_call_lists_nothing_read():
     verdict = judge("skill_not_loaded", "debugging", Evidence(events=events, stderr="", exit_code=0))
 
     assert (verdict.outcome, verdict.details) == ("inconclusive", {"loaded": []})
+
+
+@pytest.mark.parametrize("check", CHECKS)
+def test_the_explanation_ends_by_saying_the_stream_held_no_known_event(check):
+    verdict = judge(check, "release-notes", Evidence(events="", exit_code=0))
+
+    assert verdict.explanation.endswith(", but the stream holds no event the parser knows")

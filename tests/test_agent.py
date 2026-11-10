@@ -304,3 +304,25 @@ def test_the_docker_image_runs_npm_install_scripts_as_the_unprivileged_user():
     [install] = [m.start() for m in re.finditer(r"\bnpm install\b", dockerfile)]
     users_before = re.findall(r"^USER (\S+)$", dockerfile[:install], re.M)
     assert users_before and users_before[-1] == "node"
+
+
+def test_a_named_agent_reaches_kilo_when_the_project_is_staged_locally(monkeypatch):
+    commands = []
+
+    class Process:
+        returncode = 0
+
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_create_subprocess_exec(*command, **kwargs):
+        commands.append(command)
+        return Process()
+
+    monkeypatch.setattr("whitney.agent.asyncio.create_subprocess_exec", fake_create_subprocess_exec)
+    state = SimpleNamespace(messages=[SimpleNamespace(text="test prompt")])
+
+    asyncio.run(_run_local(None, state, "my-proxy/model-a", False, {}, 10, {"AGENTS.md": "x"}, named={"agent_name": "reviewer"}))
+
+    [command] = commands
+    assert command[command.index("--agent") + 1] == "reviewer"

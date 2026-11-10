@@ -1171,3 +1171,27 @@ def test_a_token_is_looked_for_as_written_unless_the_check_says_it_is_a_pattern(
     ))
 
     assert found(validate_evals(evals)) == []
+
+
+def test_a_skill_kept_in_two_folders_is_still_compared_with_the_skills_after_it():
+    staged = {
+        ".claude/skills/b/SKILL.md": described(RELEASE_NOTES),
+        ".claude/skills/c/SKILL.md": described(RELEASE_NOTES),
+        ".kilo/skills/b/SKILL.md": described(RELEASE_NOTES),
+    }
+
+    # .kilo/skills/b is the same skill as .claude/skills/b, so only .claude/skills/c is named as alike to it
+    assert [(path, message.split(" (")[0]) for path, _, message in skill_warnings(staged)] == [
+        ("/proj/.claude/skills/c/SKILL.md", "its description is nearly the same as .claude/skills/b/SKILL.md's"),
+        ("/proj/.kilo/skills/b/SKILL.md", "its description is nearly the same as .claude/skills/c/SKILL.md's"),
+    ]
+
+
+def test_a_skill_inside_the_evals_folder_gets_no_warning(tmp_path):
+    (tmp_path / ".kilo/skills/notes").mkdir(parents=True)
+    (tmp_path / ".kilo/skills/notes/SKILL.md").write_text("# no frontmatter\n")
+    (tmp_path / "AGENTS.md").write_text("- A rule.\n")
+    (tmp_path / "kilo.jsonc").write_text("{}")
+
+    assert len(validate_module.skill_warnings(tmp_path, evals_path=tmp_path / "evals")) == 1
+    assert validate_module.skill_warnings(tmp_path, evals_path=tmp_path / ".kilo/skills") == []  # the evals root's files are never staged
