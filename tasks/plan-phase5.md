@@ -21,7 +21,7 @@ Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
   3. `MIN_HELD` stays at 0.9; Task 27 looks at raising it.
   4. `permission_held` covers pattern rules and `ask` only; Task 28 is a spike on evidence for a scalar deny.
   5. The packaging test is split: the wheel's contents in the default suite, the install in `check.py full` only.
-- **Next:** Task 23 (`permission_held`), then Task 26 (release `v0.2.0`). Task 24 (package data) is built.
+- **Next:** Checkpoint C's review with Christopher, then Task 26 (release `v0.2.0`). Tasks 23 (`permission_held`) and 24 (package data) are built.
 - **Still true:** mutation testing is skipped, so none of the code since Task 17 has had its mutants judged.
 - **A flaky test, not from this work:** `tests/test_parity.py::test_cli_resolves_the_shipped_template` runs the real `kilo debug config --pure`. That takes 1 to 4 seconds alone, but twice it hung past its 120-second limit inside `check.py`'s parallel run.
 - **Decided 2026-11-09 (Christopher): build on `main`.** The `phase5` branch is retired. Each task gets its own branch and worktree off `main` and its own PR into `main`.

@@ -78,7 +78,7 @@ For `kilo`, an eval file can also test a skill or an agent: whether the agent do
 
 The benchmark evals, `ifevalcode` and `bigcodebench_hard_complete`, test the agent's code on IFEvalCode and BigCodeBench-Hard with and without the template, for both targets. They are optional and need Docker.
 
-[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent.
+[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-10-permissions.md](docs/results/2026-11-10-permissions.md), for its permission rule, [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent.
 
 Not supported yet:
 

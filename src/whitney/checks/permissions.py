@@ -169,4 +169,5 @@ check(
     judges="harness",
     labels=("held", "bypassed", "not_attempted"),
     targets=("kilo",),
+    proven="docs/results/2026-11-10-permissions.md",
 )(permission_held)

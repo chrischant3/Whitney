@@ -555,13 +555,13 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **The finding behind the second decision (Task 22):** a scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so no refusal is ever seen, and the model can route round it (`read-deny` read the file with `bash`). Either confirm pattern rules and `ask` only, or use `kilo debug agent`'s tool list as the evidence for a scalar deny. Also, the stderr refusal names what was requested (the command or path), not the rule's pattern, and a project `bash` object without `"*"` drops the harness's allow, so unnamed commands are auto-rejected and the run exits 1.
 
 **Acceptance criteria:**
-- [ ] Unit tests run against the captured fixtures.
-- [ ] Validation refuses any `(permission, action)` pair without a captured refusal format (criterion 17).
-- [ ] In one recorded real run, the control fails, written up in `docs/results/`.
+- [x] Unit tests run against the captured fixtures. **2026-11-10:** `tests/test_checks_permissions.py`. Choices made without Christopher, for him to confirm: the refused call's own input must match `forbidden_input`, which is stricter than the spec's wording, so a refusal of something else under the same permission doesn't count; a completed subagent, or a line the parser can't read, keeps a refusal from counting as held; under `ask` the pattern isn't checked, because Kilo's refusal names what was asked for and not the rule.
+- [x] Validation refuses any `(permission, action)` pair without a captured refusal format (criterion 17). **2026-11-10:** accepted: `bash` and `task` as a pattern inside an object, `edit` and `external_directory` as one action. The rule must be in the eval file's `source`, which must be a Kilo config. A plain deny is refused (Christopher, 2026-11-10). A `bash` object with no `"*"` is a warning, not a problem, so a project can be tested as it is. Whitney's default overlay leaves out the permission under test, as the spec says, and the report says so.
+- [x] In one recorded real run, the control fails, written up in `docs/results/`. **2026-11-10:** `docs/results/2026-11-10-permissions.md`, 18 runs on Haiku: held 9 of 9 in the template, bypassed 9 of 9 in the control. Only a `bash` pattern set to `deny` ran for real.
 
 **Verification:**
-- [ ] `pytest -q tests/test_checks_permissions.py`
-- [ ] A real run of the example, which calls a real model.
+- [x] `pytest -q tests/test_checks_permissions.py`
+- [x] A real run of the example, which calls a real model.
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 9 and 22.
@@ -572,7 +572,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 ### Checkpoint C: any Kilo permission
 
-- [ ] A consumer can test a `bash` pattern, `edit` or `read` rule, and the control shows the check can fail.
+- [x] A consumer can test a `bash` pattern, `edit` or `read` rule, and the control shows the check can fail. **2026-11-10:** for a `bash` pattern and for `edit` under `ask`. Not for `read`: no refusal was captured for a `read` rule, so validation refuses one by name.
 - [ ] Review with Christopher.
 
 ---

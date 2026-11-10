@@ -60,8 +60,8 @@ def test_it_judges_the_harness_on_kilo_only_and_needs_no_snapshots():
     assert spec.min_pass_rate == 0.9
 
 
-def test_it_isnt_listed_as_shown_to_fail_until_a_real_run_has():
-    assert registry()["permission_held"].proven in (None, "docs/results/2026-11-10-permissions.md")
+def test_it_names_the_real_run_that_made_it_fail():
+    assert registry()["permission_held"].proven == "docs/results/2026-11-10-permissions.md"
 
 
 @pytest.mark.parametrize("params, problem", [
