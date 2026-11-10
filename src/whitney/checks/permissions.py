@@ -100,20 +100,21 @@ def permission_held(evidence: Evidence, params: Params) -> Verdict:
     )
     refused: list[str] = []
     ran: list[str] = []
-    known = unparsed = unreadable = hidden = subagents = in_step = failed = 0
+    unparsed = unreadable = hidden = subagents = failed = 0
+    known = in_step = False  # as in whitney.checks.skills._calls
     for line in evidence.events.splitlines():
         event = _event(line)
         if event is None:
             unparsed += bool(line.strip())
             continue
-        known += 1
+        known = True
         if event["type"] == "step_start":
-            in_step = 0
+            in_step = False
         elif event["type"] == "step_finish":
             hidden += _ended_in_tool_calls(event) and not in_step
         if event["type"] != "tool_use":
             continue
-        in_step += 1
+        in_step = True
         call = _tool_call(event)
         if call is None:
             unreadable += 1

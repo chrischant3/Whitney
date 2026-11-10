@@ -840,3 +840,109 @@ def test_a_known_gap_among_the_scenarios_stays_out_of_their_overall_row():
     assert "| **overall** | 0/3 | 3/3 | +100% |" in text
     assert "The gate reads the template's scenarios and its trigger tests separately: scenarios 3/3, trigger tests 5/6." in text
     assert gate_problems([*skill_logs(), gap]) == []
+
+
+# --- The totals under a trigger file's tables -------------------------------------------------
+
+
+def test_the_overall_row_adds_every_row_but_the_known_gaps():
+    from whitney.report import Cell, _overall
+
+    rows = {
+        "a-gap": {"template": Cell(passed=9, failed=9, inconclusive=9)},
+        "b": {"template": Cell(passed=1, failed=2, inconclusive=3), "baseline": Cell(failed=1)},
+        "c": {"template": Cell(passed=10, failed=20, inconclusive=30)},
+    }
+
+    assert _overall(rows, {"a-gap": "E3: why"}) == {"template": Cell(passed=11, failed=22, inconclusive=33), "baseline": Cell(failed=1)}
+
+
+def test_the_gate_note_says_no_runs_only_when_a_part_has_none():
+    from whitney.report import Cell, _gate_note
+
+    def note(scenarios):
+        return _gate_note([("scenario", scenarios), ("trigger test", Cell())], "unclear")
+
+    start = "The gate reads the template's scenarios and its trigger tests separately: scenarios "
+    assert note(Cell(passed=1, failed=1)) == start + "1/2, trigger tests no runs."
+    assert note(Cell(failed=1, inconclusive=1)) == start + "0/1 (1 unclear), trigger tests no runs."
+    assert note(Cell(inconclusive=2)) == start + "0/0 (2 unclear), trigger tests no runs."
+
+
+# --- The task's scorer knows what is under test ------------------------------------------------
+
+
+def _used_by(task, run, sample_id, monkeypatch):
+    """`used` in the metadata of the task's score for one sample, given the run the agent stored."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from whitney.checks import Evidence
+
+    async def collect(*args, **kwargs):
+        return Evidence(exit_code=0)
+
+    monkeypatch.setattr(tasks, "store", lambda: SimpleNamespace(get=lambda key, default=None: run))
+    monkeypatch.setattr(tasks.evidence, "collect", collect)
+    monkeypatch.setattr(tasks, "sandbox", lambda: None)
+    [score] = task.scorer
+    state = SimpleNamespace(sample_id=sample_id, uuid=f"none-{sample_id}", metadata={})
+    return asyncio.run(score(state, None)).metadata["used"]
+
+
+def test_the_tasks_scorer_says_whether_the_skill_under_test_was_used(project, monkeypatch):
+    write(project, eval_file())
+    run = {"events": (KILO_EVENTS / "skill-named.jsonl").read_text(), "exit_code": 0, "stderr": ""}
+
+    assert _used_by(task_for(project, "template"), run, "writes-notes", monkeypatch) is True
+
+
+def test_the_tasks_scorer_counts_a_run_as_the_agent_under_test_only_for_the_scenario_that_names_it(project, monkeypatch):
+    scenarios = [{"id": "as-reviewer", "prompt": "Review it.", "agent": "reviewer"}, {"id": "plain", "prompt": "Review it."}]
+    write(project, eval_file(AGENT, scenarios=scenarios), name="agents/reviewer.json")
+    task = task_for(project, "template", name="agents/reviewer.json")
+    run = {"events": (KILO_EVENTS / "agent-option-all.jsonl").read_text(), "exit_code": 0}  # no stderr recorded
+
+    assert _used_by(task, run, "as-reviewer", monkeypatch) is True
+    assert _used_by(task, run, "plain", monkeypatch) is False
+
+
+@pytest.mark.parametrize("written, value", [
+    ("'a # b'", "a # b"),  # a quoted value keeps its hash
+    ('""', None),  # the shortest quoted value is two quotes, and it is empty
+    ("XaX", "XaX"),  # only quotes are taken off the ends
+    (">\n\tfolded text\n  more", "folded text more"),  # a continuation line may start with a tab
+])
+def test_a_frontmatter_value_is_read_as_kilo_would_read_it(written, value):
+    from whitney.validate import frontmatter_value
+
+    assert frontmatter_value(f"---\nname: n\ndescription: {written}\n---\nbody\n", "description") == value
+
+
+def test_a_skill_kept_in_two_folders_is_named_once_by_its_first_path():
+    from whitney.validate import staged_names
+
+    staged = {".kilo/skills/a/SKILL.md": "", ".claude/skills/a/SKILL.md": "", ".kilocode/skills/a/SKILL.md": "", ".kilo/skills/b/SKILL.md": ""}
+
+    assert staged_names(staged, "skill") == {"a": ".claude/skills/a/SKILL.md", "b": ".kilo/skills/b/SKILL.md"}
+
+
+def test_inconclusive_trigger_runs_are_counted_in_the_prompt_tables_and_the_gate_line():
+    report = rendered(skill_logs(**{
+        "negative-template": log("template", "template", "asks-for-a-bug-fix", ["pass", "inconclusive", "fail"], trigger="negative"),
+    }))
+
+    assert "| asks-for-a-bug-fix | 1/2 (1 inconclusive) |\n| **overall** | 1/2 (1 inconclusive) |" in report
+    assert report.endswith("separately: scenarios 3/3, trigger tests 4/5 (1 inconclusive).\n")
+
+
+def test_a_score_without_metadata_leaves_the_use_of_the_skill_unknown():
+    from types import SimpleNamespace
+
+    bare = log("template", "template", "writes-notes", ["pass"])
+    bare.samples[0].scores = {"s": SimpleNamespace(answer="pass")}
+    none = log("template", "template", "writes-notes", ["pass"])
+    none.samples[0].scores["s"].metadata = None
+
+    for entry in (bare, none):
+        assert "the skill `release-notes` was loaded in 0, wasn't in 0 and couldn't be told in 1." in rendered([entry])

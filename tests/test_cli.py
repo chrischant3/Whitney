@@ -783,6 +783,30 @@ def test_the_help_shows_every_options_help(capsys):
         assert text(key) in validate, key
 
 
+def test_the_help_for_report_and_checks_shows_every_option_and_its_help(capsys):
+    def shown(argv):
+        assert cli.main(argv) == 0
+        return " ".join(capsys.readouterr().out.split())
+
+    def text(key):
+        return " ".join(cli.HELP[key].split())
+
+    top = shown(["--help"])
+    assert text("report") in top and text("checks") in top
+    report = shown(["report", "--help"])
+    assert report.startswith(
+        "usage: whitney report [-h] [--evals-path EVALS_PATH] [--results-dir RESULTS_DIR] "
+        "[--min-rate CHECK=VALUE] [--min-conclusive MIN_CONCLUSIVE] LOGS " + text("report") + " positional arguments: LOGS "
+    )
+    for key in ("LOGS", "report --evals-path", "--results-dir", "--min-rate", "--min-conclusive"):
+        assert text(key) in report, key
+    assert shown(["checks", "--help"]).startswith("usage: whitney checks [-h] " + text("checks") + " options:")
+
+
+def test_report_writes_to_results_unless_told_otherwise():
+    assert cli.parser().parse_args(["report", "logs"]).results_dir == "results"
+
+
 @pytest.mark.parametrize("command", ["run", "validate"])
 def test_an_unknown_target_is_a_usage_error(consumer, monkeypatch, capsys, command):
     _no_model_calls(monkeypatch)

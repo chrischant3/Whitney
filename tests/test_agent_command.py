@@ -195,6 +195,7 @@ def test_each_sample_records_the_option_its_scenario_runs_with(project):
     ))
 
     assert options(task_for(project)) == {"a": {"agent": "reviewer"}, "b": {"command": "shout"}, "c": None}
+    assert ["kilo_options" in sample.metadata for sample in task_for(project).dataset] == [True, True, False]
 
 
 def test_a_variant_that_removes_the_agent_runs_the_same_prompt_with_kilos_default_agent(project):
@@ -518,3 +519,51 @@ def test_whitney_run_gives_each_scenario_its_own_kilo_command(project, tmp_path)
     assert sorted(record.read_text().splitlines()) == sorted([
         f"{start} --agent reviewer -- Fix the bug.", f"{start} --command shout -- hello", f"{start} -- Say hello.",
     ])
+
+
+def test_the_chosen_agent_is_given_inspects_generate():
+    given = []
+
+    async def plain(state, generate):
+        given.append(generate)
+        return state
+
+    generate = object()
+    asyncio.run(tasks._by_option({None: plain}, {})(SimpleNamespace(sample_id="a", metadata={}), generate))
+
+    assert given == [generate]
+
+
+def test_the_solver_built_for_options_runs_each_sample_with_its_own_agent(monkeypatch):
+    from inspect_ai._util.registry import registry_info
+
+    ran = []
+
+    def as_fake_solver(label):
+        async def solve(state, generate):
+            ran.append((state.sample_id, label))
+            return state
+
+        return solve
+
+    monkeypatch.setattr(tasks, "as_solver", as_fake_solver)
+
+    def build(**option):
+        return option or "plain"
+
+    by_option = tasks._agent_for({"a": {"agent": "reviewer"}, "b": {"command": "shout"}}, build)
+    for sample_id in ("a", "b", "c"):
+        asyncio.run(by_option(SimpleNamespace(sample_id=sample_id, metadata={}), None))
+
+    assert ran == [("a", {"kilo_agent": "reviewer"}), ("b", {"kilo_command": "shout"}), ("c", "plain")]
+    assert registry_info(by_option).name.split("/")[-1] == "kilo_by_option"
+
+
+def test_a_project_with_no_command_at_all_says_none_is_staged_and_names_the_eval_file(project):
+    (project / ".kilo" / "commands" / "shout.md").unlink()
+    path = write(project, eval_file({"id": "a", "prompt": "p", "command": "shout"}, {"id": "b", "prompt": "p", "agent": "counter"}))
+
+    found = validate_project(validate_evals(project / "evals").files, project, "kilo", evals_path=project / "evals")
+
+    assert [(p.file, p.location) for p in found] == [(path, "scenarios[0].command"), (path, "scenarios[1].agent")]
+    assert found[0].message == "no staged command is named 'shout'; staged commands: none"

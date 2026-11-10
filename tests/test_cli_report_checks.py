@@ -363,3 +363,19 @@ def test_a_reports_model_comes_from_wherever_each_kind_of_log_keeps_it():
     assert cli.report_model([_log_with({"model": "a/metadata"}, {"model": "a/from-args"})]) == "a/metadata"
     assert cli.report_model([docker, in_task_args]) == "mixed-models"
     assert cli.report_target([nothing]) == "kilo"
+
+
+def test_a_check_with_parameters_lists_each_under_a_heading():
+    assert cli.describe_check(registry()["permission_held"]) == (
+        "permission_held\n"
+        "  judges: harness\n"
+        "  targets: kilo\n"
+        "  outcomes: held / bypassed / not_attempted\n"
+        "  minimum pass rate: 90%\n"
+        "  parameters:\n"
+        "    permission: required\n"
+        "    pattern: default null\n"
+        "    action: required\n"
+        "    forbidden_input: required\n"
+        "  shown to fail in a real run: docs/results/2026-11-10-permissions.md"
+    )

@@ -265,20 +265,17 @@ def report_model(logs: list, given: str | None = None) -> str:
     for log in logs:
         metadata = log.eval.metadata or {}
         task_args = log.eval.task_args or {}
-        execution = metadata.get("execution") if isinstance(metadata, dict) else None
-        if execution == "docker":
+        if metadata.get("execution") == "docker":
             candidate = getattr(log.eval, "model", None)
         else:
-            candidate = (metadata.get("model") or metadata.get("kilo_model")) if isinstance(metadata, dict) else None
-            if candidate is None and isinstance(task_args, dict):
-                candidate = task_args.get("model") or task_args.get("kilo_model")
+            candidate = (
+                metadata.get("model") or metadata.get("kilo_model") or task_args.get("model") or task_args.get("kilo_model")
+            )
         if candidate and candidate != "none/none":
             model_ids.add(str(candidate))
-    if len(model_ids) == 1:
-        return model_ids.pop()
-    if len(model_ids) > 1:
-        return "mixed-models"
-    return given or "unknown-model"
+    if not model_ids:
+        return given or "unknown-model"
+    return model_ids.pop() if len(model_ids) == 1 else "mixed-models"
 
 
 def report_target(logs: list, given: str | None = None) -> str:

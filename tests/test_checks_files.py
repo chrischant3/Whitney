@@ -322,7 +322,12 @@ def test_kilos_own_schema_rewrite_of_its_config_is_not_an_edit(path):
     (KILO_CONFIG, "not json"),
     ("not json", KILO_REWRITTEN),
     ("[1]", '["$schema"]'),
-], ids=["rule changed too", "rule changed", "schema changed", "key added", "broken after", "broken before", "not an object"])
+    (KILO_CONFIG, '["$schema"]'),
+    (KILO_CONFIG, json.dumps({"permission": {"external_directory": "ask"}}, indent=2)),
+], ids=[
+    "rule changed too", "rule changed", "schema changed", "key added", "broken after", "broken before", "not an object",
+    "an object became a list", "reformatted with no schema added",
+])
 def test_any_other_change_to_a_kilo_config_is_an_edit(before, after):
     verdict = no_file_edits(evidence(folder(**{"kilo.jsonc": before}), folder(**{"kilo.jsonc": after})))
 
@@ -333,6 +338,15 @@ def test_a_schema_rewrite_of_a_file_not_named_like_a_kilo_config_is_an_edit():
     verdict = no_file_edits(evidence(folder(**{"settings.json": KILO_CONFIG}), folder(**{"settings.json": KILO_REWRITTEN})))
 
     assert verdict.outcome == "fail"
+
+
+def test_a_kilo_config_with_no_text_on_either_side_is_an_edit_or_unreadable_not_a_rewrite():
+    binary = FileSnapshot(sha256="0" * 64, size=3)  # not UTF-8: hashed, with no text
+
+    for before, after in [(binary, entry(KILO_REWRITTEN)), (entry(KILO_CONFIG), binary)]:
+        verdict = no_file_edits(evidence(folder(**{"kilo.jsonc": before}), folder(**{"kilo.jsonc": after})))
+
+        assert verdict == Verdict("fail", "1 file(s) added, changed or deleted: project/kilo.jsonc")
 
 
 def test_a_kilo_config_the_agent_created_is_an_edit():

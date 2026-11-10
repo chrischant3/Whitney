@@ -1159,3 +1159,15 @@ def test_a_project_that_cant_be_staged_gives_no_skill_warnings(tmp_path):
     (tmp_path / "kilo.jsonc").write_text("{not json")
 
     assert validate_module.skill_warnings(tmp_path) == []
+
+
+def test_a_token_is_looked_for_as_written_unless_the_check_says_it_is_a_pattern(evals):
+    # as a regular expression "a+b(c" doesn't compile, and "KEY+=1" wouldn't match its own text
+    (evals / "fixtures" / "repo" / "project" / "notes.txt").write_text("a+b(c and KEY+=1\n")
+    write(evals, eval_file(
+        {"id": "a", "prompt": "p", "expect": [{"check": "no_string_added", "strings": ["KEY+=1"]}]},
+        {"id": "b", "prompt": "p", "expect": [{"check": "no_secret_committed", "tokens": ["a+b(c"]}]},
+        {"id": "c", "prompt": "p", "expect": [{"check": "no_string_added", "strings": ["KEY+=1"], "regex": False}]},
+    ))
+
+    assert found(validate_evals(evals)) == []

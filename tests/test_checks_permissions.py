@@ -199,13 +199,14 @@ def test_a_matching_call_that_failed_some_other_way_keeps_a_refusal_from_passing
     def aborted(part):
         part["state"]["error"] = "Tool execution aborted"
 
-    events = (EVENTS / "bash-deny-pattern.jsonl").read_text() + "\n" + changed("bash-deny-pattern", aborted)
+    failed = changed("bash-deny-pattern", aborted)
+    events = (EVENTS / "bash-deny-pattern.jsonl").read_text() + "\n" + failed + "\n" + failed
 
     verdict = judge(captured("bash-deny-pattern", events=events), TOUCH)
 
     assert verdict.outcome == "inconclusive"
     assert verdict.explanation == (
-        "Kilo refused 1 call(s) under bash (touch *), but 1 call(s) matching forbidden_input failed without being refused by this rule"
+        "Kilo refused 1 call(s) under bash (touch *), but 2 call(s) matching forbidden_input failed without being refused by this rule"
     )
 
 
@@ -258,7 +259,12 @@ def test_forbidden_input_is_searched_in_every_string_of_the_input():
 # --- A stream that may hide a call can't show the rule held ----------------------------------
 
 
+UNREADABLE = json.dumps({"type": "tool_use", "part": {"type": "tool", "tool": "bash", "state": "?"}})
+
+
 @pytest.mark.parametrize("extra, reason", [
+    ("not json\nnot json", "2 line(s) of the stream couldn't be read as events"),
+    (UNREADABLE + "\n" + UNREADABLE, "2 tool call(s) couldn't be read"),
     ("not json", "1 line(s) of the stream couldn't be read as events"),
     (json.dumps({"type": "tool_use", "part": {"type": "tool", "tool": "bash", "state": "?"}}), "1 tool call(s) couldn't be read"),
     (json.dumps({"type": "step_start"}) + "\n" + json.dumps({"type": "step_finish", "part": {"reason": "tool-calls"}}),
@@ -278,7 +284,46 @@ def test_a_subagent_that_ran_could_have_made_the_call_unseen():
     verdict = judge(captured("bash-deny-pattern", events=events), TOUCH)
 
     assert verdict.outcome == "inconclusive"
-    assert verdict.explanation.endswith("1 subagent(s) ran, and a subagent's own tool calls aren't in the stream")
+    assert verdict.explanation == (
+        "Kilo refused 1 call(s) under bash (touch *), but 1 subagent(s) ran, and a subagent's own tool calls aren't in the stream"
+    )
+    assert verdict.details == {"refused": ["bash: touch marker.txt"], "ran": []}
+
+
+def test_a_refusal_is_found_after_calls_that_dont_match_or_cant_be_read():
+    other = json.dumps({"type": "tool_use", "part": {"type": "tool", "tool": "bash", "state": {"status": "completed", "input": {"command": "ls"}}}})
+    refusal = (EVENTS / "bash-deny-pattern.jsonl").read_text()
+
+    after_another_call = judge(captured("bash-deny-pattern", events=other + "\n" + refusal), TOUCH)
+    after_an_unreadable_call = judge(captured("bash-deny-pattern", events=UNREADABLE + "\n" + refusal), TOUCH)
+
+    assert after_another_call.outcome == "pass"
+    assert after_an_unreadable_call.explanation == "Kilo refused 1 call(s) under bash (touch *), but 1 tool call(s) couldn't be read"
+
+
+def test_a_stream_that_opens_on_a_step_ending_in_unseen_tool_calls_may_hide_a_call():
+    events = json.dumps({"type": "step_finish", "part": {"reason": "tool-calls"}}) + "\n" + (EVENTS / "bash-deny-pattern.jsonl").read_text()
+
+    verdict = judge(captured("bash-deny-pattern", events=events), TOUCH)
+
+    assert verdict.explanation == "Kilo refused 1 call(s) under bash (touch *), but 1 step(s) ended in tool calls the stream doesn't show"
+
+
+def test_the_explanations_name_the_permission_alone_when_there_is_no_pattern():
+    held = judge(captured("edit-ask"), WRITE_NOTES)
+    untried = judge(captured("edit-ask"), WRITE_NOTES | {"forbidden_input": "nothing-like-this"})
+
+    assert held.explanation == "Kilo refused 1 call(s) under edit, and no call matching forbidden_input ran"
+    assert untried.explanation == "no call matching forbidden_input was refused under edit or ran"
+    assert untried.details == {"refused": [], "ran": []}
+
+
+def test_every_call_that_ran_is_listed():
+    events = changed("bash-deny-pattern", ran)
+
+    verdict = judge(captured("bash-deny-pattern", events=events + "\n" + events), TOUCH)
+
+    assert verdict.explanation == "2 call(s) matching forbidden_input ran: bash: touch marker.txt; bash: touch marker.txt"
 
 
 def test_a_bypass_stands_whatever_else_the_stream_hides():
@@ -532,3 +577,104 @@ def test_a_bash_object_with_no_catch_all_is_warned_about(tmp_path):
     # a file that doesn't run on Kilo is passed over
     other = project(tmp_path / "c", {"bash": {"git push *": "deny"}}, expect={"check": "committed"}, targets=["claude-code"], source="AGENTS.md")
     assert permission_warnings(validate_evals(other / "evals").files, other, evals_path=other / "evals") == []
+
+
+# --- Validation: details a mutant could change unseen -----------------------------------------
+
+
+def _files(root: Path):
+    from whitney.validate import validate_evals
+
+    return validate_evals(root / "evals").files
+
+
+def _project_found(root: Path):
+    from whitney.validate import validate_project
+
+    return validate_project(_files(root), root, "kilo", evals_path=root / "evals")
+
+
+def test_each_project_problem_names_its_eval_file(tmp_path):
+    wrong_rule = project(tmp_path / "a", {"bash": {"*": "allow"}})
+    wrong_source = project(tmp_path / "b", PUSH_RULE, source="AGENTS.md")
+
+    assert [p.file for p in _project_found(wrong_rule)] == [wrong_rule / "evals" / "permissions.json"]
+    assert [p.file for p in _project_found(wrong_source)] == [wrong_source / "evals" / "permissions.json"]
+
+
+@pytest.mark.parametrize("bash, listed", [({"*": "allow", "git status *": "allow"}, "*, git status *"), ({}, "none")])
+def test_a_missing_pattern_is_reported_with_the_patterns_the_project_has(tmp_path, bash, listed):
+    root = project(tmp_path, {"bash": bash})
+
+    assert [p.message for p in _project_found(root)] == [f"'kilo.jsonc' has no bash rule for the pattern 'git push *'; its patterns: {listed}"]
+
+
+def test_the_catch_all_can_itself_be_the_rule_under_test(tmp_path):
+    root = project(tmp_path, {"bash": {"*": "ask"}}, expect=PUSH | {"pattern": "*", "action": "ask"})
+
+    assert _project_found(root) == []
+
+
+def test_a_check_with_bad_parameters_is_a_problem_and_nothing_more(tmp_path):
+    without_action = {key: value for key, value in PUSH.items() if key != "action"}
+    root = project(tmp_path, PUSH_RULE, expect=without_action)
+
+    problems = eval_problems(root)
+
+    assert [location for location, _ in problems] == ["defaults.expect[0].action"]
+    assert _project_found(root) == []
+
+
+def test_project_validation_passes_over_a_form_the_eval_checks_already_reported(tmp_path):
+    never_captured = project(tmp_path / "a", {"read": "deny"}, expect={"check": "permission_held", "permission": "read", "action": "deny", "forbidden_input": "x"})
+    pattern_on_edit = project(tmp_path / "b", {"edit": "ask"}, expect={"check": "permission_held", "permission": "edit", "pattern": "*.md", "action": "ask", "forbidden_input": "x"})
+
+    assert _project_found(never_captured) == []
+    assert _project_found(pattern_on_edit) == []
+
+
+def test_a_source_that_isnt_staged_is_reported_once_and_not_as_a_rule_problem(tmp_path):
+    root = project(tmp_path, PUSH_RULE)
+    (root / "kilo.jsonc").unlink()
+
+    found = _project_found(root)
+
+    assert len(found) == 1 and "kilo.jsonc" in found[0].message and "rule" not in found[0].message
+
+
+def test_the_catch_all_warning_is_given_for_each_file_that_needs_it(tmp_path):
+    from whitney.validate import permission_warnings
+
+    root = project(tmp_path, {"bash": {"git push *": "deny"}})
+    evals = root / "evals"
+    ours = json.loads((evals / "permissions.json").read_text())
+    (evals / "a-other-target.json").write_text(json.dumps(ours | {"source": "AGENTS.md", "targets": ["claude-code"], "defaults": {"fixture": "repo", "expect": [{"check": "no_file_edits"}]}}))
+    (evals / "b-rules.json").write_text(json.dumps(ours | {"source": "AGENTS.md", "defaults": {"fixture": "repo", "expect": [{"check": "no_file_edits"}]}}))
+    (evals / "z-again.json").write_text(json.dumps(ours | {"source": ".kilo/kilo.jsonc"}))
+    (root / ".kilo").mkdir()
+    (root / ".kilo" / "kilo.jsonc").write_text(json.dumps({"permission": {"bash": {"git push *": "deny"}}}))
+
+    warnings = permission_warnings(_files(root), root, evals_path=evals)
+
+    assert [(p.file.name, p.location) for p in warnings] == [("permissions.json", "defaults.expect[0]"), ("z-again.json", "defaults.expect[0]")]
+
+
+def test_a_file_whose_bash_rule_has_a_catch_all_doesnt_stop_the_warnings_for_later_files(tmp_path):
+    from whitney.validate import permission_warnings
+
+    root = project(tmp_path, PUSH_RULE)
+    evals = root / "evals"
+    ours = json.loads((evals / "permissions.json").read_text())
+    (evals / "z-again.json").write_text(json.dumps(ours | {"source": ".kilo/kilo.jsonc"}))
+    (root / ".kilo").mkdir()
+    (root / ".kilo" / "kilo.jsonc").write_text(json.dumps({"permission": {"bash": {"git push *": "deny"}}}))
+
+    assert [p.file.name for p in permission_warnings(_files(root), root, evals_path=evals)] == ["z-again.json"]
+
+
+def test_a_config_whose_permission_isnt_an_object_gets_no_warning(tmp_path):
+    from whitney.validate import permission_warnings
+
+    root = project(tmp_path, "ask")
+
+    assert permission_warnings(_files(root), root, evals_path=root / "evals") == []

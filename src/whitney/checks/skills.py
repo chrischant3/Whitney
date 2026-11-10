@@ -191,27 +191,28 @@ def _seen(calls: _Calls, verb: str) -> str:
 def _calls(events: str, tool: str, name_key: str) -> _Calls:
     """Read the stream for `tool`'s completed calls, each named by `part.state.input[name_key]`."""
     names: list[str] = []
-    known = unparsed = tool_calls = unreadable = hidden = subagents = 0
-    in_step = 0  # the tool_use events since the last step_start, readable or not
+    unparsed = unreadable = hidden = subagents = 0
+    known = tool_calls = False  # an event of a known type was read; a readable tool call was read
+    in_step = False  # a tool_use event has come since the last step_start, readable or not
     for line in events.splitlines():
         event = _event(line)
         if event is None:
             unparsed += bool(line.strip())
             continue
-        known += 1
+        known = True
         if event["type"] == "step_start":
-            in_step = 0
+            in_step = False
         elif event["type"] == "step_finish":
             hidden += _ended_in_tool_calls(event) and not in_step
         if event["type"] != "tool_use":
             continue
-        in_step += 1
+        in_step = True
         call = _tool_call(event)
         if call is None:
             unreadable += 1
             continue
         called, status, given = call
-        tool_calls += 1
+        tool_calls = True
         subagents += called == "task" and status == "completed"
         if called != tool:
             continue
@@ -222,14 +223,14 @@ def _calls(events: str, tool: str, name_key: str) -> _Calls:
         elif status == "completed":
             names.append(name)
     doubt = _doubt(known, unparsed, unreadable, hidden, subagents if tool == "skill" else 0)
-    return _Calls(names, bool(tool_calls), doubt)
+    return _Calls(names, tool_calls, doubt)
 
 
-def _doubt(known: int, unparsed: int, unreadable: int, hidden: int, subagents: int) -> str | None:
+def _doubt(known: bool, unparsed: int, unreadable: int, hidden: int, subagents: int) -> str | None:
     """Why a call might be in the run and not among those read, or None.
 
     Args:
-        known: events of a known type.
+        known: True if the stream held an event of a known type.
         unparsed: other lines that aren't blank: not JSON, or an event of a type the captures don't have.
         unreadable: tool calls not in the captured shape.
         hidden: steps that ended in tool calls and show none. One fixture has
