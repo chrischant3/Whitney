@@ -5,6 +5,7 @@ command"): 0 pass, 1 a gate failed or validation found a problem, 2
 couldn't run. The runs here use a fake `kilo` on PATH, so no model is called.
 """
 
+import importlib.metadata
 import json
 import os
 import re
@@ -21,6 +22,8 @@ from conftest import blocking_git_hooks_home
 from whitney import cli
 from whitney import tasks as tasks_module
 from whitney.thresholds import MIN_CONCLUSIVE
+
+VERSION = importlib.metadata.version("whitney")  # the report prints the installed version
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "CANARY-TEAM-TOKEN-5d21"
@@ -142,7 +145,7 @@ def test_a_run_that_follows_the_rule_passes_and_records_the_harness_version(cons
 
     report = _report(consumer)
     assert report.startswith(
-        f"Target: `kilo` · Model: `test-provider/test-model`\n\nWhitney: `0.1.0` · Harness: `7.8.18-fake` · Evals: `{consumer.evals}`\n"
+        f"Target: `kilo` · Model: `test-provider/test-model`\n\nWhitney: `{VERSION}` · Harness: `7.8.18-fake` · Evals: `{consumer.evals}`\n"
     )
     assert "## Team rule: followed / (followed + violated)\n" in report
     assert "## Problems" not in report
@@ -904,7 +907,7 @@ def test_a_changed_min_conclusive_is_printed_and_the_default_is_not(consumer, mo
     answers = ["followed", "inconclusive", "inconclusive"]
     _, report = _gated(monkeypatch, consumer, answers, "--min-conclusive", "0.3")
     assert "\nMinimum conclusive share for this run: 0.3 (default 0.5).\n" in report
-    assert "Whitney: `0.1.0` · Harness: `1`" in report
+    assert f"Whitney: `{VERSION}` · Harness: `1`" in report
     _, report = _gated(monkeypatch, consumer, answers)
     assert "Minimum conclusive share" not in report
 
