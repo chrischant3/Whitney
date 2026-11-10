@@ -216,8 +216,10 @@ A prompt with no pressure mostly shows what the model does anyway. Include scena
 
 By default the scenario's prompt goes to Kilo's own default agent. Two fields change that, one per scenario and never both:
 
-- `agent` names an agent in `.kilo/agents/`. Its file must say `mode: primary`. With any other mode, Kilo quietly uses its default agent instead, so `whitney validate` refuses it.
-- `command` names a command in `.kilo/commands/`. The scenario's prompt becomes the command's arguments.
+- `agent` names an agent by its file's name, such as `.kilo/agents/<name>.md`. Its file must say `mode: primary`, and `whitney validate` refuses any other mode. With `mode: subagent`, Kilo quietly uses its default agent instead.
+- `command` names a command by its file's name, such as `.kilo/commands/<name>.md` or `.kilo/workflows/<name>.md`. The scenario's prompt becomes the command's arguments.
+
+A name may hold letters, digits, `.`, `_` and `-`, and may not start with `-`, so it can never be read as an option. Nothing in a scenario's `metadata` changes how Kilo is run.
 
 A file that uses either field must apply to `kilo` only: set `"targets": ["kilo"]`, unless one of its checks already supports only `kilo`.
 
@@ -447,7 +449,7 @@ For any file that tests a skill or an agent, the report also says in how many of
 Kilo picks a skill by the `description` in its `SKILL.md`. For the `kilo` target, `whitney validate` reads every skill a run would copy, and warns when:
 
 - a `SKILL.md` has no `description`, so the agent can't tell when to load it;
-- two skills' descriptions are nearly the same, so the agent can't tell which to load. "Nearly the same" means the two share at least four in five of their distinct words, which is what a copied description with a word or two changed looks like.
+- two differently named skills' descriptions are nearly the same, so the agent can't tell which to load. "Nearly the same" means the two share at least four in five of their distinct words, which is what a copied description with a word or two changed looks like.
 
 It compares wording, not meaning, so it won't catch two descriptions that say the same thing in different words. A warning never changes the exit code. No model is called.
 

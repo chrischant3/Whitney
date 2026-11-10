@@ -252,11 +252,77 @@ def test_each_sample_is_run_by_the_agent_built_for_its_option():
 
         return solve
 
-    solve = tasks._by_option({None: fake("plain"), ("agent", "reviewer"): fake("reviewer"), ("command", "shout"): fake("shout")})
-    for sample_id, chosen in [("a", {"agent": "reviewer"}), ("b", {"command": "shout"}), ("c", None), ("d", {})]:
-        asyncio.run(solve(SimpleNamespace(sample_id=sample_id, metadata={"kilo_options": chosen} if chosen is not None else {}), None))
+    solvers = {None: fake("plain"), ("agent", "reviewer"): fake("reviewer"), ("command", "shout"): fake("shout")}
+    solve = tasks._by_option(solvers, {"a": {"agent": "reviewer"}, "b": {"command": "shout"}})
+    for sample_id, metadata in [("a", {}), ("b", {}), ("c", {}), ("d", {"kilo_options": {"agent": "reviewer"}}), (7, {})]:
+        asyncio.run(solve(SimpleNamespace(sample_id=sample_id, metadata=metadata), None))
 
-    assert ran == [("a", "reviewer"), ("b", "shout"), ("c", "plain"), ("d", "plain")]
+    # d's metadata names an option, but only the eval file's own fields choose one.
+    assert ran == [("a", "reviewer"), ("b", "shout"), ("c", "plain"), ("d", "plain"), (7, "plain")]
+
+
+@pytest.mark.parametrize("written", [{"agent": "--auto"}, {"command": "--auto"}, {"mode": "x"}, "--auto", ["--auto"]])
+def test_a_scenarios_own_metadata_never_reaches_kilos_command_line(project, monkeypatch, written):
+    """Scenario metadata is free-form, so nothing read from it may choose an option: only `agent` and `command` do."""
+    write(project, eval_file(
+        {"id": "a", "prompt": "p", "metadata": {"kilo_options": written, "route": "x"}},
+        {"id": "b", "prompt": "p", "agent": "reviewer", "metadata": {"kilo_options": written}},
+    ))
+    seen = []
+    build_agent = targets.build_agent
+    monkeypatch.setattr(targets, "build_agent", lambda *args, **kwargs: (seen.append(kwargs), build_agent(*args, **kwargs))[1])
+
+    task = task_for(project)
+
+    assert [{k: v for k, v in kwargs.items() if k.startswith("kilo_")} for kwargs in seen] == [{}, {"kilo_agent": "reviewer"}]
+    assert options(task) == {"a": None, "b": {"agent": "reviewer"}}
+    assert [sample.metadata.get("route") for sample in task.dataset] == ["x", None]
+
+
+def test_an_agent_that_was_never_staged_keeps_its_option_so_the_fallback_rule_can_see_it(project):
+    """Reachable only by building the task directly: `whitney run` validates first and refuses the name."""
+    write(project, eval_file({"id": "a", "prompt": "p", "agent": "reviewr"}))
+
+    assert options(task_for(project)) == {"a": {"agent": "reviewr"}}
+    assert options(task_for(project, "baseline")) == {"a": {"agent": "reviewr"}}
+
+
+def test_the_scorer_applies_the_fallback_rule_to_a_scenario_that_names_an_agent(project, tmp_path, monkeypatch):
+    write(project, eval_file({"id": "a", "prompt": "p", "agent": "reviewer"}, {"id": "b", "prompt": "p"}))
+    run = {"exit_code": 0, "events": "", "stderr": FALLBACK}
+    monkeypatch.setattr(tasks, "store", lambda: SimpleNamespace(get=lambda key, default=None: run))
+
+    async def collect(*args, **kwargs):
+        from whitney.checks import Evidence
+
+        return Evidence(exit_code=0)
+
+    monkeypatch.setattr(tasks.evidence, "collect", collect)
+    monkeypatch.setattr(tasks, "sandbox", lambda: None)
+    [score] = task_for(project).scorer
+
+    def explanation(sample_id):
+        state = SimpleNamespace(sample_id=sample_id, uuid=f"none-{sample_id}", metadata={"kilo_options": {"agent": "x"}})
+        return asyncio.run(score(state, None)).explanation
+
+    assert "Kilo fell back to its default agent, so the agent reviewer didn't run" in explanation("a")
+    assert "fell back" not in explanation("b")
+
+
+def test_docker_mode_passes_the_option_to_kilo_too():
+    seen = []
+
+    class Sandbox:
+        async def exec(self, command, **kwargs):
+            seen.append(command)
+            return SimpleNamespace(stdout="/workspace/project\n", returncode=0, stderr="")
+
+    asyncio.run(agent_module._run_kilo(Sandbox(), state(), MODEL, False, {"HOME": "/root"}, 30, named={"agent_name": "reviewer"}))
+    asyncio.run(agent_module._run_kilo(Sandbox(), state(), MODEL, False, {"HOME": "/root"}, 30))
+
+    kilo_runs = [command for command in seen if command[0] == "kilo"]
+    assert [("--agent" in command, command[-2:]) for command in kilo_runs] == [(True, ["--", "Fix the bug."]), (False, ["--", "Fix the bug."])]
+    assert kilo_runs[0][kilo_runs[0].index("--agent") + 1] == "reviewer"
 
 
 # --- A run where Kilo fell back to its default agent ------------------------------------------
@@ -393,3 +459,43 @@ def test_a_variant_that_keeps_the_command_is_valid(project):
     write(project, eval_file({"id": "a", "prompt": "p", "command": "shout"}, variants={"no_rules": {"remove": ["AGENTS.md"]}}))
 
     assert project_problems(project) == []
+
+
+# --- End to end: `whitney run` with a fake kilo that records how it was run --------------------
+
+
+def test_whitney_run_gives_each_scenario_its_own_kilo_command(project, tmp_path):
+    """The whole path through Inspect: the eval file's fields reach `kilo run`, sample by sample, and never `--auto`."""
+    import subprocess
+    import sys
+
+    from conftest import blocking_git_hooks_home
+
+    write(project, eval_file(
+        {"id": "with-agent", "prompt": "Fix the bug.", "agent": "reviewer", "metadata": {"kilo_options": {"agent": "--auto"}}},
+        {"id": "with-command", "prompt": "hello", "command": "shout"},
+        {"id": "plain", "prompt": "Say hello."},
+        variants={},
+    ))
+    record, bin_dir = tmp_path / "runs.txt", tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "kilo").write_text(
+        '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "7.8.18-fake"; exit 0; fi\n'
+        f'echo "$*" >> {record}\n'
+        'echo \'{"type":"text","part":{"text":"done"}}\'\n'
+    )
+    (bin_dir / "kilo").chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "no_proxy": "*"}
+    env.update({name: value for name, value in blocking_git_hooks_home(tmp_path / "user-home").items() if value is not None})
+
+    done = subprocess.run(
+        [sys.executable, "-m", "whitney.cli", "run", "--target", "kilo", "--model", MODEL, "--project-path", str(project),
+         "--evals-path", str(project / "evals"), "--epochs", "1", "--max-samples", "1"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    start = f"run --pure --format json -m {MODEL}"
+    assert sorted(record.read_text().splitlines()) == sorted([
+        f"{start} --agent reviewer -- Fix the bug.", f"{start} --command shout -- hello", f"{start} -- Say hello.",
+    ])

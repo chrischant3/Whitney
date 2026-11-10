@@ -93,9 +93,11 @@ EXCEPTIONS_SECTION = re.compile(r"^## Exceptions[ \t]*$(.*?)(?=^## |\Z)", re.MUL
 
 # Two skill descriptions sharing at least this share of their distinct words are warned about (skill_description_warnings).
 SIMILAR_DESCRIPTIONS = 0.8
-WORD = re.compile(r"[a-z0-9]+")
+WORD = re.compile(r"\w+")  # in any script: a description written in Japanese has words too
+BOM = "\ufeff"  # some editors start a file with it, and the loader keeps it
 # A YAML block scalar's header: `>` or `|`, with an optional chomping or indentation mark.
 BLOCK_SCALAR = re.compile(r"[>|][+-]?\d?")
+COMMENT = re.compile(r"(?:^|\s)#")
 
 Found = tuple[str, str]  # (location, message) within one file
 
@@ -557,8 +559,8 @@ def skill_description_warnings(staged: Mapping[str, str], project_path: Path) ->
     """Warnings about the staged skills' descriptions, which are what Kilo picks a skill by.
 
     One for each SKILL.md with no `description` in its frontmatter, and one
-    for each pair whose descriptions are nearly the same, named at the
-    later of the two paths. Both are routing hazards: the agent can't tell
+    for each pair of differently named skills whose descriptions are nearly
+    the same, named at the later of the two paths. Both are routing hazards: the agent can't tell
     when to load a skill with no description, or which of two alike to load.
 
     The measure is the share of distinct words two descriptions have in
@@ -587,7 +589,10 @@ def skill_description_warnings(staged: Mapping[str, str], project_path: Path) ->
                 "so the agent can't tell when to load this one"
             )))
             continue
+        name = STAGED["skill"].fullmatch(path).group(1)
         for other, others_words in described.items():
+            if STAGED["skill"].fullmatch(other).group(1) == name:
+                continue  # one skill kept in two folders, such as .kilo/skills/ and .claude/skills/, is one choice
             shared = len(words & others_words) / len(words | others_words)
             if shared >= SIMILAR_DESCRIPTIONS:
                 warnings.append(Problem(project_path / path, "description", (
@@ -611,17 +616,20 @@ def frontmatter_value(text: str, key: str) -> str | None:
     YAML: a plain or quoted value on the key's line, a `>` or `|` block, and
     indented lines that continue any of them.
     """
-    lines = text.splitlines()
+    lines = text.removeprefix(BOM).splitlines()
     if not lines or lines[0].strip() != "---":
         return None
     try:
-        end = next(index for index, line in enumerate(lines[1:], 1) if line.strip() == "---")
+        # Only a `---` at the start of a line ends the frontmatter: an indented one is text inside a block.
+        end = next(index for index, line in enumerate(lines[1:], 1) if line.rstrip() == "---")
     except StopIteration:
         return None
     for index, line in enumerate(lines[1:end], 1):
         if not line.startswith(f"{key}:"):
             continue
         first = line.removeprefix(f"{key}:").strip()
+        if not first.startswith(('"', "'")):
+            first = COMMENT.split(first, maxsplit=1)[0].strip()  # an unquoted value, or a block's header, ends at a comment
         parts = [] if BLOCK_SCALAR.fullmatch(first) else [first]
         for more in lines[index + 1 : end]:
             if more.strip() and not more.startswith((" ", "\t")):

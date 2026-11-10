@@ -1047,6 +1047,37 @@ def test_a_description_is_read_however_the_frontmatter_writes_it(lines, expected
     assert validate_module.skill_description(skill(lines)) == expected
 
 
+@pytest.mark.parametrize(
+    "lines, expected",
+    [
+        ("description: Review code. # for bugs", "Review code."),
+        ("description: > # folded\n  Review code\n  for bugs.", "Review code for bugs."),
+        ('description: "Review code. # for bugs"', "Review code. # for bugs"),
+        ("description: Review C# code.", "Review C# code."),
+        ("description: |\n  Review code.\n  ---\n  For bugs.", "Review code. --- For bugs."),
+        ("description: # nothing but a comment", None),
+    ],
+)
+def test_comments_and_an_indented_rule_inside_a_block_are_read_as_yaml_reads_them(lines, expected):
+    assert validate_module.skill_description(skill(lines)) == expected
+
+
+def test_a_file_that_starts_with_a_byte_order_mark_is_read_the_same():
+    assert validate_module.skill_description("\ufeff" + described("Review code for bugs.")) == "Review code for bugs."
+
+
+def test_a_description_in_another_script_has_words():
+    staged = {".kilo/skills/a/SKILL.md": described("レビューを行うスキル"), ".kilo/skills/b/SKILL.md": described("Révise le code.")}
+
+    assert skill_warnings(staged) == []
+
+
+def test_one_skill_kept_in_two_folders_isnt_a_near_collision_with_itself():
+    staged = {".kilo/skills/notes/SKILL.md": described(RELEASE_NOTES), ".claude/skills/notes/SKILL.md": described(RELEASE_NOTES)}
+
+    assert skill_warnings(staged) == []
+
+
 def test_a_file_with_windows_line_endings_is_read_the_same():
     assert validate_module.skill_description(described("Review code for bugs.").replace("\n", "\r\n")) == "Review code for bugs."
 
