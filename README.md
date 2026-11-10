@@ -416,6 +416,10 @@ Both datasets are read from local files after the one-time setup, so runs make n
 
 This tests the Kilo CLI and the Claude Code CLI with the model you name. Kilo's VS Code extension is covered by a parity check and a manual checklist, not by the automated evals; Claude Code's IDE integrations aren't covered. Results come from small samples (6 scenarios × 3 repeats), which is enough to show large effects but not small ones.
 
+## Reporting a vulnerability
+
+Report it privately, not in a public issue. [SECURITY.md](SECURITY.md) says how, and what counts.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
