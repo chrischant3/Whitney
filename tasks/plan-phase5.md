@@ -10,11 +10,19 @@
 
 The spec in `docs/specs/` is an unchanged copy of `~/workspace/package-and-expected-results.md` as it stood at 23:38 on 2026-11-05. Edit the repo copy from now on.
 
-## Where we are (2026-11-09)
+## Where we are (2026-11-10)
 
 Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
 
-- **In `main` (2026-11-09):** Tasks 1 to 15, the Kilo captures (16, 22), the push-controls guide, the `check.py` task/full split, the test git isolation (`1dcc2c7`), Task 12's signed floor guard commit (`05d9063`), and Checkpoint A's first two boxes (PR #22). Checkpoint A's review with Christopher is next.
+- **In `main` (2026-11-10):** Tasks 1 to 15, the Kilo captures (16, 22), Checkpoint A, validation rule 8 (PR #25), the release checklist, and the push-controls guide.
+- **Built overnight on 2026-11-10, not pushed, every commit unsigned and waiting for Christopher:** Tasks 17 to 21 and 25, as six branches stacked in this order, each in its own worktree: `p5-t17-skill-checks`, `p5-t18-trigger`, `p5-t19-skill-warnings`, `p5-t20-agent-command`, `p5-t21-example`, `p5-t25-report-checks`. `check.py task --skip-mutation` passes at the top of the stack. Each task was reviewed by a fresh session and its findings fixed; the choices made without Christopher are written beside each task's boxes in `todo-phase5.md`.
+- **Waiting on Christopher:**
+  1. Four existing tests changed what they expect, each in a commit of its own that names it: `test_an_unknown_check_is_named_with_the_registered_ones`, `test_an_unknown_field_is_an_error_at_every_level`, `test_the_consumer_example_validates_for_kilo_with_no_problems_or_warnings` and `test_the_consumer_example_tests_each_of_its_rule_files_with_both_new_checks`.
+  2. Checkpoint B's review, and whether Claude Code skills and agents come next.
+  3. Task 23 (`permission_held`) needs its two decisions first: spec open question 5 (`MIN_HELD`), and what counts as evidence for a scalar deny.
+  4. Task 24 (package data) needs spec open question 14 answered first (where the packaging test runs).
+  5. Mutation testing is still skipped, so none of the code above has had its mutants judged.
+- **A flaky test, not from this work:** `tests/test_parity.py::test_cli_resolves_the_shipped_template` runs the real `kilo debug config --pure`. That takes 1 to 4 seconds alone, but twice it hung past its 120-second limit inside `check.py`'s parallel run.
 - **Decided 2026-11-09 (Christopher): build on `main`.** The `phase5` branch is retired. Each task gets its own branch and worktree off `main` and its own PR into `main`.
 - **Decided 2026-11-09 (Christopher): skip mutation testing for now.** It takes long enough to hold up every task. Until a spike finds a faster way, run `check.py task --skip-mutation` and `check.py full --skip-mutation`, which print a warning in place of the mutation scores, and say in each PR that mutation testing was skipped. CONSTRAINTS.md is unchanged: the mutation floor and ratchet stand, and the next run with mutation testing judges everything merged meanwhile. The spike is in `todo-phase5.md`, "Spike: faster mutation testing", and absorbs decision 2 below.
 - **Decided 2026-11-08 (Christopher):**

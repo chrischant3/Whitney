@@ -204,6 +204,20 @@ Config: `q7-helper` from case 3 plus project `kilo.jsonc` `{"permission": {"task
   "metadata": {"approval": {"source": "project", "rule": {"permission": "task", "pattern": "q7-helper", "action": "deny"}}}}}}
 ```
 
+## Phase 5 Task 21: an agent with `mode: all` (2026-11-10)
+
+Task 16 left one case untested: an agent that is both run with `--agent` and delegated to. Only `mode: all` could be both. Same setup as Task 16 (Kilo 7.8.18, `kilo/anthropic/claude-haiku-4.5`, one saved run per case).
+
+Config: `.kilo/agents/a-reviewer.md`, `mode: all`, description "Reviews code and explains problems without changing files. Use this agent whenever someone wants code reviewed.", prompt 'You are a code reviewer. Start every reply with the line "A-REVIEWER-3307". Never edit files.'
+
+| Fixture | What ran | Exit | stderr | What the stream shows |
+|---|---|---|---|---|
+| `agent-all-debug` | `kilo debug agent a-reviewer --pure` (no model) | 0 | empty | Loaded, with `mode` `all` |
+| `agent-option-all` | `--agent a-reviewer`, prompt "Read app.py, then say in one sentence what it does." | 0 | empty | Used: the reply starts `A-REVIEWER-3307`, and the one tool call has `approval.agent` `a-reviewer`. No fallback line |
+| `subagent-all-delegated` | no option, prompt "I'd like app.py reviewed. Hand the review to a subagent, then tell me what it said." | 0 | empty | Delegated: one completed `task` call with `subagent_type` `a-reviewer`, approved by the `code` agent's rules |
+
+So a `mode: all` agent works both ways, and `whitney validate` now accepts `mode: all` as well as `mode: primary` for a scenario's `agent` field. As in Task 16's case 3, the delegation prompt asked for a hand-off and matched only the agent's description, not its name.
+
 ## Phase 5 Task 22: refusal output per permission (2026-11-06)
 
 Every case runs with Whitney's overlay (`bash` and `edit` allowed) and sets one rule in the project's `kilo.jsonc`, which Kilo merges above the overlay. A **scalar** rule is one action for every pattern (`"bash": "deny"`); a **pattern** rule maps patterns to actions (`"bash": {"*": "allow", "touch *": "deny"}`).
@@ -301,5 +315,4 @@ The fields Tasks 17, 20 and 23 may rely on, with a fixture that shows each.
 
 - `kilo serve` approve-once behaviour.
 - A subagent's own tool calls. They aren't in the parent's stream; `kilo export <sessionID>` might show them, but Whitney deletes the temporary HOME, and Kilo's session store with it, when the run ends.
-- `--agent` with `mode: all`, and whether such an agent can also be delegated to with `task`.
 - Agent discovery in a staged project that isn't a git repository. Skills were checked in Phase 5 Task 8: Kilo reads `.claude/skills/` and `.agents/skills/` above the project up to the git root, and `check_no_inherited_instructions` now looks for both ([load-order.md](load-order.md#skill-folders)).

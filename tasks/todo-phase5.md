@@ -388,6 +388,8 @@ An invalid scenario file now exits 2 instead of ending in a traceback with exit 
 
 This can run at any time, in the same sitting as Task 22.
 
+**2026-11-09:** found already done and in `main` (2026-11-06): the write-up is `docs/spike-findings.md`, "Phase 5 Task 16", and the fixtures are under `tests/data/kilo-events/`. Skills, agents and commands all load under Whitney's isolation. The boxes below were never ticked and are left for Christopher to confirm.
+
 **Acceptance criteria:**
 - [ ] Each case is written up in `docs/spike-findings.md` with the command, the config, and excerpts of the events and stderr, and a table lists the confirmed fields.
 - [ ] Sanitised event fixtures are under `tests/data/kilo-events/`, holding no keys, usable by Task 17's tests.
@@ -410,12 +412,12 @@ This can run at any time, in the same sitting as Task 22.
 **Added 2026-11-06 (Task 16):** the fields are in `docs/spike-findings.md` ("Confirmed fields"). Don't assume every step that ends in `tool-calls` has a visible tool part, and handle an `error` event whose `error` is a string or an object.
 
 **Acceptance criteria:**
-- [ ] Unit tests against Task 16's fixtures cover pass, fail, inconclusive, an early end, and a stream the parser doesn't recognise, where the negative checks are inconclusive and don't pass.
-- [ ] Each check's docstring names the capture it relies on (spec, "Adding a Python check", rule 4).
-- [ ] The checks are registered for the `kilo` target only.
+- [x] Unit tests against Task 16's fixtures cover pass, fail, inconclusive, an early end, and a stream the parser doesn't recognise, where the negative checks are inconclusive and don't pass. **2026-11-09:** `tests/test_checks_skills.py`, 145 tests. Choices made without Christopher, for him to confirm: only a completed `skill` or `task` call counts, so a refused call loaded or delegated nothing; a reply with no tool calls fails the positive checks but leaves the negative ones inconclusive, as the spec requires; and anything in the stream that could hide a call makes any check inconclusive unless a call it read already settles it: a line that isn't a known event, a tool call in another shape, a step that ended in tool calls and shows none, and, for the skill checks, a subagent having run (its own tool calls aren't printed). The last four came from an independent review, which built streams that fooled the first version. One limit stays: a hand-off made by a subagent isn't seen by `subagent_not_delegated`. The order of loads is carried in a new `Verdict.details`, which the scorer stores, redacted, in the score's metadata.
+- [x] Each check's docstring names the capture it relies on (spec, "Adding a Python check", rule 4).
+- [x] The checks are registered for the `kilo` target only.
 
 **Verification:**
-- [ ] `pytest -q tests/test_checks_skills.py`
+- [x] `pytest -q tests/test_checks_skills.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 9 and 16.
@@ -438,12 +440,12 @@ This can run at any time, in the same sitting as Task 22.
 Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_delegated` for an agent. Negative prompts expand into scenarios expecting `skill_not_loaded`, plus `skill_loaded` for the `owner` when one is named. The skill or agent name comes from `source`: `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. Trigger prompts never run in a baseline. Positive prompts also run in an automatic control that removes the skill or agent, and must fail there (D4). The report gives triggers their own table, "Triggered on positive prompts" and "Stayed quiet on negative prompts". For behaviour scenarios in the same file, it says in how many template runs the skill loaded or the agent was delegated to.
 
 **Acceptance criteria:**
-- [ ] Expansion tests show the expected ids, checks, fixtures and variants. No trigger prompt runs in a baseline, and no negative prompt runs in the control.
-- [ ] Validation: `owner` names a staged skill or agent, and a `trigger` block is allowed only in a file whose `source` is a skill or agent.
-- [ ] Report tests cover the trigger table, the control column and the "loaded in N of M runs" note.
+- [x] Expansion tests show the expected ids, checks, fixtures and variants. No trigger prompt runs in a baseline, and no negative prompt runs in the control. **2026-11-09:** `tests/test_trigger.py`. Choices made without Christopher, for him to confirm: the automatic control is a variant named `trigger_control`, reserved in a file with a `trigger` block; trigger tests take their fixture, setup and pressure from `defaults` (so `defaults.fixture` is required); an agent's negative prompt expects `subagent_not_delegated`, and its owner `subagent_delegated`; trigger tests run only in `template` and `trigger_control`, never in a variant the file declares; the template's trigger tests count in the gate; the skill's name is its folder's name.
+- [x] Validation: `owner` names a staged skill or agent, and a `trigger` block is allowed only in a file whose `source` is a skill or agent.
+- [x] Report tests cover the trigger table, the control column and the "loaded in N of M runs" note. **2026-11-09:** in `tests/test_trigger.py`, not `tests/test_report.py`. Each score of a skill's or agent's file now records `used` (true, false, or null when the stream can't say), and the note counts it over the template's scenario runs.
 
 **Verification:**
-- [ ] `pytest -q tests/test_trigger.py tests/test_report.py`
+- [x] `pytest -q tests/test_trigger.py tests/test_report.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 10 and 17.
@@ -459,12 +461,12 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Added 2026-11-06 (Task 16):** one saved run suggests Kilo routes subagents by description, but its prompt asked for a hand-off, so it isn't enough on its own. Warn for skills; add agents only after a run that shows routing by description alone.
 
 **Acceptance criteria:**
-- [ ] Tests cover a missing description, a near-collision, and two distinct descriptions that give no warning.
-- [ ] The docstring states the similarity measure, its threshold and why that threshold was chosen.
-- [ ] Warnings never change the exit code.
+- [x] Tests cover a missing description, a near-collision, and two distinct descriptions that give no warning. **2026-11-10:** in `tests/test_validate.py`, with one in `tests/test_cli.py`. Skills only, as the 2026-11-06 note says. The frontmatter is read by a small reader of its own, not a YAML library, so no dependency was added; it reads a plain, quoted, `>` or `|` description.
+- [x] The docstring states the similarity measure, its threshold and why that threshold was chosen. Shared distinct words over all distinct words (Jaccard), at 0.8 or more: a 22-word description with one word changed scores 0.91, with two 0.83; descriptions written apart scored 0.33 at most.
+- [x] Warnings never change the exit code.
 
 **Verification:**
-- [ ] `pytest -q tests/test_validate.py`
+- [x] `pytest -q tests/test_validate.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Task 11.
@@ -480,12 +482,12 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Changed 2026-11-06 (Task 16):** decision 6's premise was wrong. With a missing agent, or one with `mode: subagent`, `kilo run --agent` doesn't fail: Kilo falls back to its default agent `code` and exits 0, with stderr containing `Falling back to default agent`, and no event names the agent used. So: validation checks the named agent is staged with `mode: primary` (or `all`, once tested); a run whose stderr holds the fallback line is inconclusive; and the baseline drops `--agent` rather than relying on the fallback. A missing command does make `kilo run --command` exit 1 before any model call, so a scenario naming a command needs its own baseline rule: decide it here (recommended: the baseline keeps the command, since removing it can't run).
 
 **Acceptance criteria:**
-- [ ] Command-line tests show each field adds exactly the confirmed option, and never `--auto`.
-- [ ] An unknown agent or command is a validation error naming it, and so is either field in a file that applies to `claude-code`.
-- [ ] The baseline rule from decision 6 is tested.
+- [x] Command-line tests show each field adds exactly the confirmed option, and never `--auto`. **2026-11-10:** `tests/test_agent_command.py`, including a local run against a fake `kilo` that records its arguments.
+- [x] An unknown agent or command is a validation error naming it, and so is either field in a file that applies to `claude-code`. Also refused: an agent whose `mode` isn't `primary` (`all` waits for Task 21's capture), both fields in one scenario, and a name that starts with `-` or holds a `/` or a space, which could be read as an option or a path.
+- [x] The baseline rule from decision 6 is tested. A variant that removes the agent runs the same prompt without `--agent`. A run whose stderr holds `Falling back to default agent` has every check made inconclusive, a fail included, since the default agent did the work. **Decided without Christopher, for him to confirm:** a variant that removes a command a scenario runs is a validation error, so a command's own eval file must set `"variants": {}` or declare variants that keep it. That is the task's recommendation, "the baseline keeps the command", made a rule. **Review, 2026-11-10:** an independent review found that the option was read back from sample metadata, which a scenario's own `metadata` could write, so `"metadata": {"kilo_options": {"agent": "--auto"}}` put `--auto` after `--agent` on Kilo's command line. The option now comes only from the eval file's `agent` and `command` fields, by scenario id, and a test runs `whitney run` against a fake `kilo` to show it. Also from the review: an agent that was never staged keeps `--agent`, so Kilo's fallback makes the run inconclusive rather than a plain run passing; the frontmatter reader takes a byte order mark, YAML comments and words in any script; one skill kept in two folders isn't a near-collision with itself. Left for later: the deprecated `agents_md` and `kilo_jsonc` wrappers ignore the two fields, which Whitney's own two files don't use.
 
 **Verification:**
-- [ ] `pytest -q tests/test_agent.py tests/test_evalfile.py tests/test_validate.py`
+- [x] `pytest -q tests/test_agent.py tests/test_evalfile.py tests/test_validate.py` (and `tests/test_agent_command.py`, which holds the new tests)
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 9 and 16.
@@ -501,12 +503,12 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Changed 2026-11-06 (Task 16):** the reviewer must be delegated to (trigger tests) and run with `--agent` (behaviour), and only `mode: all` could serve both. That mode is untested: start this task with a one-run capture of a `mode: all` agent, both ways.
 
 **Acceptance criteria:**
-- [ ] Both eval files validate, and the skill file has at least one negative prompt owned by another skill.
-- [ ] In the recorded run, `skill_loaded` and `subagent_delegated` fail in the automatic control. For the negative checks, the write-up says whether any negative prompt made them fail; if none did, they're marked unproven. Written up in `docs/results/<date>-skills-agents.md`.
-- [ ] `docs/adding-tests.md` and the README describe skill and agent evals, including triggers.
+- [x] Both eval files validate, and the skill file has at least one negative prompt owned by another skill. **2026-11-10:** `skills/release-notes.json` and `agents/reviewer.json`, with a new fixture, `till`. The `mode: all` capture came first: such an agent runs with `--agent` and is delegated to (`docs/spike-findings.md`, "Phase 5 Task 21"), so validation now accepts `mode: all`.
+- [x] In the recorded run, `skill_loaded` and `subagent_delegated` fail in the automatic control. For the negative checks, the write-up says whether any negative prompt made them fail; if none did, they're marked unproven. Written up in `docs/results/<date>-skills-agents.md`. **2026-11-10:** `docs/results/2026-11-10-skills-agents.md`, 57 runs on Haiku. Both positive checks failed in the control, 6 of 6 each. No negative prompt made a negative check fail, so both are marked unproven. Both files passed the gate (83% and 87%). A first one-epoch run found the skill never loaded for the scenario prompts; its description was rewritten before the recorded run, and the write-up says so. For an agent's own scenarios, which run it with `--agent`, the score's `used` is true unless Kilo fell back, and the report's note now says "was used".
+- [x] `docs/adding-tests.md` and the README describe skill and agent evals, including triggers.
 
 **Verification:**
-- [ ] `whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer --evals-path examples/consumer/evals --only skills/<name>.json agents/<name>.json --epochs 3`. This calls a real model.
+- [x] `whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer --evals-path examples/consumer/evals --only skills/<name>.json agents/<name>.json --epochs 3`. This calls a real model.
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 14 and 17 to 20.
@@ -517,8 +519,8 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 ### Checkpoint B: skills and agents
 
-- [ ] One skill and one agent are tested from end to end, for both triggers and behaviour, with results in `docs/results/`.
-- [ ] `python scripts/check.py task` passes.
+- [x] One skill and one agent are tested from end to end, for both triggers and behaviour, with results in `docs/results/`. **2026-11-10:** `docs/results/2026-11-10-skills-agents.md`.
+- [x] `python scripts/check.py task` passes. **2026-11-10:** with `--skip-mutation`, at the top of the stack of branches.
 - [ ] Review with Christopher, and decide whether Claude Code skills and agents come next.
 
 ---
@@ -599,11 +601,11 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Description:** `whitney report LOGS` re-renders a report from existing logs, with no model calls, and `run_evals.py --report-only` maps to it. `whitney checks` lists every registered check with its parameters, outcome labels, targets and release.
 
 **Acceptance criteria:**
-- [ ] `whitney report logs` renders the logs from before Phase 5 exactly as `--report-only` does today.
-- [ ] `whitney checks` lists every registered check, and a test fails if a registered check is missing from it.
+- [x] `whitney report logs` renders the logs from before Phase 5 exactly as `--report-only` does today. **2026-11-10:** `tests/test_cli_report_checks.py` runs both on the same logs, old and new, and compares the reports. `run_evals.py --report-only` keeps its own flags and reads the logs itself, as its tests expect, and takes the report's target and model from the same two functions as `whitney report` (`cli.report_target`, `cli.report_model`). Tried on the 57 real logs of Task 21's run: the same tables and numbers, with the two files in the wrapper's order (newest log first). A folder with no logs exits 2.
+- [x] `whitney checks` lists every registered check, and a test fails if a registered check is missing from it. **Decided without Christopher, for him to confirm:** the task asks for each check's "release". Every registered check ships in release 1, so that column would say nothing. In its place each check names the `docs/results/` write-up of a real run that made it fail, in a new `proven` declaration, or "not yet" (`skill_not_loaded` and `subagent_not_delegated`). That is the spec's rule 6 for a new check, made visible. **Review, 2026-11-10:** a log that can't be read, and an `--evals-path` that isn't a folder, now exit 2 and not 1; the docs say that `whitney report` knows only what the logs hold.
 
 **Verification:**
-- [ ] `pytest -q tests/test_cli.py tests/test_run_evals.py`
+- [x] `pytest -q tests/test_cli.py tests/test_run_evals.py`
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** Tasks 10 and 11.

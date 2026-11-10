@@ -125,7 +125,7 @@ def test_an_empty_setup_opts_out_of_the_default_git_init(tmp_path):
         ({"defaults": {"fixture": "repo", "colour": "red"}}, "defaults.colour"),
         ({"scenarios": [{"id": "a", "prompt": "p", "fixture": "repo", "colour": "red"}]}, "scenarios[0].colour"),
         ({"variants": {"baseline": {"remove": ["AGENTS.md"], "colour": "red"}}}, "variants.baseline.colour"),
-        ({"trigger": {"positive": []}}, "trigger"),
+        ({"source": ".kilo/skills/notes/SKILL.md", "trigger": {"positive": [{"id": "a", "prompt": "p"}], "colour": "red"}}, "trigger.colour"),
     ],
 )
 def test_an_unknown_field_is_an_error_at_every_level(tmp_path, overrides, location):

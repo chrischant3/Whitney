@@ -62,7 +62,7 @@ Some runs prove nothing either way: the agent stopped before it decided, or neve
 
 ## What you can test today
 
-Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are four checks so far, plus two benchmark evals:
+Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are eight checks so far, plus two benchmark evals:
 
 | Check | What it tests | Example | Targets |
 |---|---|---|---|
@@ -70,19 +70,22 @@ Whitney is at its first milestone. A **check** is the code that decides whether 
 | `no_string_added` | No file gained a copy of a given string, such as a fake customer's email or a production URL | `.kilo/rules/data-handling.md` in [`examples/consumer`](examples/consumer/) | `kilo`, `claude-code` |
 | `no_file_edits` | Files a rule protects weren't added, changed or deleted | `AGENTS.md` in `examples/consumer`: never edit `vendor/` | `kilo`, `claude-code` |
 | `outside_canary_not_reached` | Reads, writes and shell commands that reach outside the project were blocked | `kilo.jsonc`: `"external_directory": "ask"`, in `evals/configuration/kilo-jsonc.json` | `kilo` |
+| `skill_loaded`, `skill_not_loaded` | The agent loaded a named skill, or left it alone | The trigger tests for `.kilo/skills/release-notes/` in `examples/consumer` | `kilo` |
+| `subagent_delegated`, `subagent_not_delegated` | The agent handed work to a named subagent, or didn't | The trigger tests for `.kilo/agents/reviewer.md` in `examples/consumer` | `kilo` |
+
+For `kilo`, an eval file can also test a skill or an agent: whether the agent does what it says, and whether the right prompts use it ([Testing a skill or an agent](docs/adding-tests.md#testing-a-skill-or-an-agent)). The two checks for a skill or subagent that should stay unused haven't yet failed in a recorded real run, so a pass from them is likely, not proven.
 
 The benchmark evals, `ifevalcode` and `bigcodebench_hard_complete`, test the agent's code on IFEvalCode and BigCodeBench-Hard with and without the template, for both targets. They are optional and need Docker.
 
-[Writing your own evals](docs/adding-tests.md) says what each check's parameters are. The example project's first real run is in [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md).
+[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent.
 
 Not supported yet:
 
 - **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, registered with `check(...)`. `whitney run` and `inspect eval` run any eval file through `scenario_eval` (below); the deprecated `scripts/run_evals.py` reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`.
-- **Skills and agents.** Files under `.kilo/skills/` and `.kilo/agents/` are copied into each Kilo run, so the agent has them, but no eval checks whether a skill is triggered or followed.
 - **Claude Code settings, skills and agents.** With `--project-path`, the `claude-code` target copies one instruction file, always as `AGENTS.md`, because its evals and their baseline are about `AGENTS.md`: the root `AGENTS.md`, or if there is none, the root `CLAUDE.md`, or else `.claude/CLAUDE.md`. A `CLAUDE.md` beside an `AGENTS.md` isn't copied, because in one run Claude Code ignored `AGENTS.md` once `.claude/CLAUDE.md` existed. A root `CLAUDE.md` beside `AGENTS.md` wasn't tried and is left out by the same rule. Only the temporary copy is renamed, never your project, and the report says when it was. The rest of `.claude/`, such as `settings.json`, skills and agents, isn't copied either, and the report lists what was left out and why.
 - **Which instruction wins** when two files disagree.
 
-Skills, agents and instruction order are planned: see Future work in [docs/proposal.md](docs/proposal.md). Gaps found in what is tested: [docs/findings/](docs/findings/).
+Instruction order, and skills and agents on Claude Code, are planned: see Future work in [docs/proposal.md](docs/proposal.md). Gaps found in what is tested: [docs/findings/](docs/findings/).
 
 ## Targets
 
@@ -235,9 +238,15 @@ whitney run --target kilo --execution docker --model kilo/anthropic/claude-haiku
 # Test a different local project's config and instructions (source is not modified)
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path /path/to/project --evals-path evals --epochs 3
 
-# The deprecated runner: its old flags and defaults, the IFEvalCode and Harbor evals, and re-rendering a report from logs
+# Write the report again from the logs of an earlier run, without calling a model; it applies the same gate to those logs
+whitney report logs --evals-path evals
+
+# List the checks an eval file can name, with their parameters
+whitney checks
+
+# The deprecated runner: its old flags and defaults, and the IFEvalCode and Harbor evals
 python scripts/run_evals.py --target kilo --model kilo/anthropic/claude-haiku-4.5 --epochs 3
-python scripts/run_evals.py --report-only logs
+python scripts/run_evals.py --report-only logs    # the same report as `whitney report logs`
 
 # Read transcripts and scorer explanations
 inspect view

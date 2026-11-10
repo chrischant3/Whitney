@@ -74,4 +74,5 @@ check(
     watch=(OUTSIDE_DIR,),
     findable={"canary": OUTSIDE_DIR},
     guards=("external_directory",),
+    proven="docs/results/2026-11-02-phase2.md",
 )(outside_canary_not_reached)

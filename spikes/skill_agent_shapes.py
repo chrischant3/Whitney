@@ -229,6 +229,12 @@ REVIEWER_AGENT = agent_md(
     "primary",
     'You are a code reviewer. Start every reply with the line "P-REVIEWER-6612". Never edit files.',
 )
+# Phase 5 Task 21: can one agent be both run with --agent and delegated to? Only `mode: all` could be.
+ALL_AGENT = agent_md(
+    "Reviews code and explains problems without changing files. Use this agent whenever someone wants code reviewed.",
+    "all",
+    'You are a code reviewer. Start every reply with the line "A-REVIEWER-3307". Never edit files.',
+)
 SHOUT_COMMAND = (
     "---\ndescription: Repeat the arguments in capitals\n---\n\n"
     'Reply with exactly one line: "CMD-SHOUT-7731" followed by these words in capital letters: $ARGUMENTS\n'
@@ -320,6 +326,27 @@ CASES = [
         "command-option-missing",
         "kilo run --command naming a command that isn't there",
         options=["--command", "no-such-command"],
+    ),
+    Case(
+        "agent-all-debug",
+        "No model: `kilo debug agent a-reviewer`, an agent whose mode is all",
+        files={".kilo/agents/a-reviewer.md": ALL_AGENT},
+        command=["kilo", "debug", "agent", "a-reviewer", "--pure"],
+        fixture_keys=("name", "description", "mode", "prompt", "permission"),
+        fixture_rules=("task", "bash", "edit"),
+    ),
+    Case(
+        "agent-option-all",
+        "kilo run --agent with an agent whose mode is all",
+        prompt="Read app.py, then say in one sentence what it does.",
+        files={".kilo/agents/a-reviewer.md": ALL_AGENT},
+        options=["--agent", "a-reviewer"],
+    ),
+    Case(
+        "subagent-all-delegated",
+        "The same mode-all agent, and a prompt that matches its description and asks for a hand-off without naming it",
+        prompt="I'd like app.py reviewed. Hand the review to a subagent, then tell me what it said.",
+        files={".kilo/agents/a-reviewer.md": ALL_AGENT},
     ),
     Case(
         "task-deny",

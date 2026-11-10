@@ -27,7 +27,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from whitney.evalfile import EvalFile, V1File, Variant, location, version_1_variants
+from whitney.evalfile import TRIGGER_CONTROL, EvalFile, V1File, Variant, location, version_1_variants
 from whitney.project_files import CONFIG_PATHS
 from whitney.static_checks import parse_jsonc
 
@@ -71,7 +71,8 @@ def default_baseline(source: str) -> Variant:
 def declared_variants(eval_file: EvalFile | V1File) -> dict[str, Variant]:
     """The variants an eval file runs besides `template`: its own, or the default baseline if it leaves them out.
 
-    `"variants": {}` gives none, so only `template` runs. A version 1 file as
+    `"variants": {}` gives none, so only `template` runs. A file with positive
+    trigger prompts also gets the automatic control (trigger_control), last. A version 1 file as
     read (not upgraded) gets the variants the upgrade would give it, so a
     file the upgrade refuses, such as one with no token keys, still has them.
     """
@@ -80,9 +81,39 @@ def declared_variants(eval_file: EvalFile | V1File) -> dict[str, Variant]:
         declared = None if upgraded is None else {name: Variant.model_validate(v) for name, v in upgraded.items()}
     else:
         declared = eval_file.variants
-    if declared is None:
-        return {"baseline": default_baseline(eval_file.source)}
-    return dict(declared)
+    variants = {"baseline": default_baseline(eval_file.source)} if declared is None else dict(declared)
+    if getattr(eval_file, "trigger", None) is not None and eval_file.trigger.positive:
+        variants[TRIGGER_CONTROL] = trigger_control(eval_file.source)
+    return variants
+
+
+def trigger_control(source: str) -> Variant:
+    """The control Whitney adds for a file's positive trigger prompts: the skill or agent under test removed.
+
+    A positive prompt must fail there, which is what shows skill_loaded or
+    subagent_delegated can fail. It removes what the default baseline does.
+    """
+    return Variant(role="control", remove=default_baseline(source).remove)
+
+
+def runs_in(variant: str, trigger: str | None, *, has_trigger: bool) -> bool:
+    """True if a scenario runs in `variant`.
+
+    Args:
+        variant: the variant's name.
+        trigger: None for one of the file's `scenarios`, else "positive" or "negative" for a trigger test.
+        has_trigger: True if the file has a `trigger` block.
+
+    In a file with trigger tests, `template` runs everything, the automatic
+    control runs the positive prompts only, and every other variant runs the
+    file's `scenarios` only: a trigger test never runs in a baseline, and
+    without the skill every negative prompt would pass without testing anything.
+    """
+    if not has_trigger or variant == TEMPLATE:
+        return True
+    if variant == TRIGGER_CONTROL:
+        return trigger == "positive"
+    return trigger is None
 
 
 def pointer_tokens(pointer: str) -> list[str]:

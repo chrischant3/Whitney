@@ -778,6 +778,24 @@ def test_a_metric_no_check_reported_scores_zero():
     assert score.value == {"ok": 1.0, "bad": 0.0, "unsure": 0.0, "m": 0.0, "n": 0.0}
 
 
+def test_the_score_keeps_what_each_check_recorded_with_secrets_redacted():
+    from whitney.checks import Verdict, registry
+
+    checks = registry()
+    loaded = Verdict("pass", "the skill notes was loaded", details={"loaded": ["notes", "sk-live-SECRET-9"]})
+    plain = Verdict("pass", "nothing was delegated")
+
+    score = tasks_module._scenario_score(
+        [(checks["skill_loaded"], loaded), (checks["subagent_not_delegated"], plain)],
+        ["pass", "fail", "inconclusive"], [], {}, ["sk-live-SECRET-9"],
+    )
+
+    [first, second] = score.metadata["checks"]
+    assert first["details"] == {"loaded": ["notes", "[redacted]"]}
+    assert "details" not in second
+    assert "sk-live-SECRET-9" not in json.dumps(score.metadata)
+
+
 def test_the_wrappers_record_the_files_own_minimum_pass_rate(tmp_path, monkeypatch):
     import shutil
 

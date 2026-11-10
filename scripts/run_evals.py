@@ -4,7 +4,7 @@
     python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --epochs 3   # Claude Code, Anthropic API
     python scripts/run_evals.py --target kilo --model anthropic/claude-haiku-4-5 --api-key-env ANTHROPIC_API_KEY  # Kilo, own key
     python scripts/run_evals.py --target kilo --execution docker --model kilo/anthropic/claude-haiku-4.5  # Kilo in Docker
-    python scripts/run_evals.py --report-only logs/phase2b      # re-render existing logs, no model calls
+    python scripts/run_evals.py --report-only logs/phase2b      # re-render existing logs, no model calls; as `whitney report logs/phase2b`
 
 There is no default target or model: --target, the harness under test, and
 --model, the model under evaluation, are both required.
@@ -142,39 +142,17 @@ def _tasks(args: argparse.Namespace) -> list[tuple[str, object]]:
 
 
 def _report_model_name(logs, args: argparse.Namespace) -> str:
+    """The model the report names: --model, or for --report-only the one the logs record (cli.report_model)."""
     if not args.report_only:
         return args.model
-
-    model_ids = set()
-    for log in logs:
-        metadata = log.eval.metadata or {}
-        task_args = log.eval.task_args or {}
-        execution = metadata.get("execution") if isinstance(metadata, dict) else None
-        if execution == "docker":
-            candidate = getattr(log.eval, "model", None)
-        else:
-            # kilo_model: logs written before it was renamed to model
-            candidate = (metadata.get("model") or metadata.get("kilo_model")) if isinstance(metadata, dict) else None
-            if candidate is None and isinstance(task_args, dict):
-                candidate = task_args.get("model") or task_args.get("kilo_model")
-        if candidate and candidate != "none/none":
-            model_ids.add(str(candidate))
-    if len(model_ids) == 1:
-        return model_ids.pop()
-    if len(model_ids) > 1:
-        return "mixed-models"
-    return args.model or "unknown-model"
+    return cli.report_model(logs, args.model)
 
 
 def _report_target_name(logs, args: argparse.Namespace) -> str:
-    """The target the report covers: --target, or for --report-only the one the logs record."""
+    """The target the report covers: --target, or for --report-only the one the logs record (cli.report_target)."""
     if not args.report_only:
         return args.target
-    # Logs written before targets existed were all Kilo runs.
-    names = {(log.eval.metadata or {}).get("target", "kilo") for log in logs}
-    if len(names) > 1:
-        return "mixed-targets"
-    return names.pop() if names else args.target or "unknown-target"
+    return cli.report_target(logs, args.target)
 
 
 def _parse(argv: list[str] | None) -> argparse.Namespace:

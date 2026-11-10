@@ -119,7 +119,8 @@ def test_an_unknown_check_is_named_with_the_registered_ones(evals):
     path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": [{"check": "no_secrets", "tokens": [TOKEN]}]}))
 
     assert found(validate_evals(evals)) == [
-        f"{path}: scenarios[0].expect[0].check: unknown check 'no_secrets'; registered checks: no_file_edits, no_secret_committed, no_string_added, outside_canary_not_reached"
+        f"{path}: scenarios[0].expect[0].check: unknown check 'no_secrets'; registered checks: no_file_edits, no_secret_committed, no_string_added, outside_canary_not_reached, "
+        "skill_loaded, skill_not_loaded, subagent_delegated, subagent_not_delegated"
     ]
 
 
@@ -974,3 +975,187 @@ def test_every_eval_file_is_checked_after_one_for_another_target(evals, tmp_path
     problems = validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals)
 
     assert [(problem.file, problem.location) for problem in problems] == [(path, "source")]
+
+
+# --- Warnings: skill descriptions, which Kilo picks a skill by -----------------------------------
+
+RELEASE_NOTES = (
+    "Write release notes for this project. Use when the user asks for release notes, "
+    "a changelog entry or a summary of what changed in a version."
+)
+DEBUGGING = "Find the cause of a failing test. Use when a test fails or the user reports a bug."
+
+
+def skill(description_lines: str | None, name: str = "x") -> str:
+    """A SKILL.md whose frontmatter holds `description_lines` as written (None: no description)."""
+    described = "" if description_lines is None else f"{description_lines}\n"
+    return f"---\nname: {name}\n{described}---\n\n# Skill\n\nDo the thing.\n"
+
+
+def described(text: str) -> str:
+    return skill(f"description: {text}")
+
+
+def skill_warnings(staged):
+    return [(str(p.file), p.location, p.message) for p in validate_module.skill_description_warnings(staged, Path("/proj"))]
+
+
+NO_DESCRIPTION = (
+    "no description in its frontmatter; Kilo picks a skill by its description, so the agent can't tell when to load this one"
+)
+
+
+def test_two_distinct_descriptions_give_no_warning():
+    staged = {".kilo/skills/release-notes/SKILL.md": described(RELEASE_NOTES), ".kilo/skills/debugging/SKILL.md": described(DEBUGGING)}
+
+    assert skill_warnings(staged) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        skill(None),
+        skill("description:"),
+        skill("description:   "),
+        skill('description: ""'),
+        skill("description: ''"),
+        "# Skill\n\ndescription: not in frontmatter\n",
+        "---\nname: x\ndescription: never closed\n",
+        "",
+        skill("  description: nested under another key"),
+        skill("Description: wrong case"),
+    ],
+)
+def test_a_skill_without_a_description_is_warned_about(text):
+    assert skill_warnings({".kilo/skills/notes/SKILL.md": text}) == [("/proj/.kilo/skills/notes/SKILL.md", "description", NO_DESCRIPTION)]
+
+
+@pytest.mark.parametrize(
+    "lines, expected",
+    [
+        ("description: Review code for bugs.", "Review code for bugs."),
+        ('description: "Review code: for bugs."', "Review code: for bugs."),
+        ("description: 'Review code for bugs.'", "Review code for bugs."),
+        ("description: >\n  Review code\n  for bugs.", "Review code for bugs."),
+        ("description: |-\n  Review code\n  for bugs.", "Review code for bugs."),
+        ("description: Review code\n  for bugs.", "Review code for bugs."),
+        ("description: Review code for bugs.\nlicense: MIT", "Review code for bugs."),
+        ("license: MIT\ndescription:   Review code for bugs.  ", "Review code for bugs."),
+    ],
+)
+def test_a_description_is_read_however_the_frontmatter_writes_it(lines, expected):
+    assert validate_module.skill_description(skill(lines)) == expected
+
+
+@pytest.mark.parametrize(
+    "lines, expected",
+    [
+        ("description: Review code. # for bugs", "Review code."),
+        ("description: > # folded\n  Review code\n  for bugs.", "Review code for bugs."),
+        ('description: "Review code. # for bugs"', "Review code. # for bugs"),
+        ("description: Review C# code.", "Review C# code."),
+        ("description: |\n  Review code.\n  ---\n  For bugs.", "Review code. --- For bugs."),
+        ("description: # nothing but a comment", None),
+    ],
+)
+def test_comments_and_an_indented_rule_inside_a_block_are_read_as_yaml_reads_them(lines, expected):
+    assert validate_module.skill_description(skill(lines)) == expected
+
+
+def test_a_file_that_starts_with_a_byte_order_mark_is_read_the_same():
+    assert validate_module.skill_description("\ufeff" + described("Review code for bugs.")) == "Review code for bugs."
+
+
+def test_a_description_in_another_script_has_words():
+    staged = {".kilo/skills/a/SKILL.md": described("レビューを行うスキル"), ".kilo/skills/b/SKILL.md": described("Révise le code.")}
+
+    assert skill_warnings(staged) == []
+
+
+def test_one_skill_kept_in_two_folders_isnt_a_near_collision_with_itself():
+    staged = {".kilo/skills/notes/SKILL.md": described(RELEASE_NOTES), ".claude/skills/notes/SKILL.md": described(RELEASE_NOTES)}
+
+    assert skill_warnings(staged) == []
+
+
+def test_a_file_with_windows_line_endings_is_read_the_same():
+    assert validate_module.skill_description(described("Review code for bugs.").replace("\n", "\r\n")) == "Review code for bugs."
+
+
+@pytest.mark.parametrize(
+    "other, shared",
+    [
+        (RELEASE_NOTES, "100%"),
+        (RELEASE_NOTES.upper().replace(".", " "), "100%"),
+        (RELEASE_NOTES.replace("project", "repository"), "91%"),
+        (RELEASE_NOTES.replace("project", "repository").replace("changelog", "history"), "83%"),
+    ],
+)
+def test_two_descriptions_that_are_nearly_the_same_are_warned_about_once(other, shared):
+    staged = {".kilo/skills/release-notes/SKILL.md": described(RELEASE_NOTES), ".kilo/skills/changelog/SKILL.md": described(other)}
+
+    assert skill_warnings(staged) == [(
+        "/proj/.kilo/skills/release-notes/SKILL.md", "description",
+        f"its description is nearly the same as .kilo/skills/changelog/SKILL.md's ({shared} of their words are shared), "
+        "so Kilo can't tell which to load; make each say when it alone applies",
+    )]
+
+
+def test_the_threshold_is_four_words_in_five():
+    def pair(a, b):
+        return skill_warnings({".kilo/skills/a/SKILL.md": described(a), ".kilo/skills/b/SKILL.md": described(b)})
+
+    assert len(pair("Review code for bugs.", "Review code for security bugs.")) == 1  # 4 of 5 words shared
+    assert pair("Review code for bugs now.", "Review code for security bugs today.") == []  # 4 of 7
+    assert validate_module.SIMILAR_DESCRIPTIONS == 0.8
+
+
+def test_every_near_pair_among_three_skills_is_named():
+    staged = {f".kilo/skills/{name}/SKILL.md": described(RELEASE_NOTES) for name in ("a", "b", "c")}
+
+    assert [(file, message.split("'s")[0]) for file, _, message in skill_warnings(staged)] == [
+        ("/proj/.kilo/skills/b/SKILL.md", "its description is nearly the same as .kilo/skills/a/SKILL.md"),
+        ("/proj/.kilo/skills/c/SKILL.md", "its description is nearly the same as .kilo/skills/a/SKILL.md"),
+        ("/proj/.kilo/skills/c/SKILL.md", "its description is nearly the same as .kilo/skills/b/SKILL.md"),
+    ]
+
+
+def test_skills_in_every_folder_kilo_loads_are_compared_and_other_files_are_not():
+    staged = {
+        ".kilo/skills/a/SKILL.md": described(RELEASE_NOTES),
+        ".claude/skills/b/SKILL.md": described(RELEASE_NOTES),
+        ".kilo/skills/a/notes.md": "no frontmatter",
+        ".kilo/rules/SKILL.md": "no frontmatter",
+        "AGENTS.md": "- a rule\n",
+        ".kilo/agents/reviewer.md": "---\nmode: subagent\n---\n",
+    }
+
+    assert [file for file, _, _ in skill_warnings(staged)] == ["/proj/.kilo/skills/a/SKILL.md"]
+
+
+def test_a_skill_without_a_description_isnt_also_compared():
+    staged = {".kilo/skills/a/SKILL.md": skill(None), ".kilo/skills/b/SKILL.md": skill(None)}
+
+    assert [message for _, _, message in skill_warnings(staged)] == [NO_DESCRIPTION, NO_DESCRIPTION]
+
+
+def test_a_description_with_no_words_is_missing():
+    assert skill_warnings({".kilo/skills/a/SKILL.md": described("...")}) == [("/proj/.kilo/skills/a/SKILL.md", "description", NO_DESCRIPTION)]
+
+
+def test_skill_warnings_stage_the_project_as_a_kilo_run_would(tmp_path):
+    project = tmp_path / "project"
+    for name in ("a", "b"):
+        (project / ".kilo" / "skills" / name).mkdir(parents=True)
+        (project / ".kilo" / "skills" / name / "SKILL.md").write_text(described(RELEASE_NOTES))
+    (project / "kilo.jsonc").write_text("{}")
+
+    warnings = validate_module.skill_warnings(project)
+
+    assert [(p.file, p.location) for p in warnings] == [(project / ".kilo/skills/b/SKILL.md", "description")]
+
+
+def test_a_project_that_cant_be_staged_gives_no_skill_warnings(tmp_path):
+    (tmp_path / "kilo.jsonc").write_text("{not json")
+
+    assert validate_module.skill_warnings(tmp_path) == []

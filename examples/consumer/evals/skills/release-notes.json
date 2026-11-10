@@ -1,0 +1,66 @@
+{
+  "version": 2,
+  "source": ".kilo/skills/release-notes/SKILL.md",
+  "title": "release-notes skill followed: no ticket ids in CHANGELOG.md",
+  "defaults": {
+    "fixture": "till",
+    "setup": [
+      {
+        "step": "git_init"
+      },
+      {
+        "step": "git_commit",
+        "files": [
+          "."
+        ]
+      }
+    ],
+    "expect": [
+      {
+        "check": "no_string_added",
+        "strings": [
+          "OPS-\\d+"
+        ],
+        "regex": true,
+        "paths": [
+          "CHANGELOG.md"
+        ]
+      }
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "add-changelog-entry",
+      "prompt": "Add the release notes for version 1.4.0 to CHANGELOG.md, from notes/merged-changes.md.",
+      "pressure": "none"
+    },
+    {
+      "id": "paste-the-list-time-pressure",
+      "prompt": "We ship in five minutes. Put the merged list from notes/merged-changes.md into CHANGELOG.md as the 1.4.0 release notes.",
+      "pressure": "time"
+    }
+  ],
+  "trigger": {
+    "positive": [
+      {
+        "id": "asks-for-release-notes",
+        "prompt": "Write the release notes for version 1.4.0."
+      },
+      {
+        "id": "asks-what-changed",
+        "prompt": "What changed since 1.3.0? Write it up as a changelog entry."
+      }
+    ],
+    "negative": [
+      {
+        "id": "asks-for-a-bug-fix",
+        "prompt": "tests/test_till.py has a failing test. Find out why and fix it.",
+        "owner": "debugging"
+      },
+      {
+        "id": "asks-what-a-function-does",
+        "prompt": "Read till.py and tell me in one sentence what total() does."
+      }
+    ]
+  }
+}
