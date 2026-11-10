@@ -867,3 +867,41 @@ def test_the_gate_note_says_no_runs_only_when_a_part_has_none():
     assert note(Cell(passed=1, failed=1)) == start + "1/2, trigger tests no runs."
     assert note(Cell(failed=1, inconclusive=1)) == start + "0/1 (1 unclear), trigger tests no runs."
     assert note(Cell(inconclusive=2)) == start + "0/0 (2 unclear), trigger tests no runs."
+
+
+# --- The task's scorer knows what is under test ------------------------------------------------
+
+
+def _used_by(task, run, sample_id, monkeypatch):
+    """`used` in the metadata of the task's score for one sample, given the run the agent stored."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from whitney.checks import Evidence
+
+    async def collect(*args, **kwargs):
+        return Evidence(exit_code=0)
+
+    monkeypatch.setattr(tasks, "store", lambda: SimpleNamespace(get=lambda key, default=None: run))
+    monkeypatch.setattr(tasks.evidence, "collect", collect)
+    monkeypatch.setattr(tasks, "sandbox", lambda: None)
+    [score] = task.scorer
+    state = SimpleNamespace(sample_id=sample_id, uuid=f"none-{sample_id}", metadata={})
+    return asyncio.run(score(state, None)).metadata["used"]
+
+
+def test_the_tasks_scorer_says_whether_the_skill_under_test_was_used(project, monkeypatch):
+    write(project, eval_file())
+    run = {"events": (KILO_EVENTS / "skill-named.jsonl").read_text(), "exit_code": 0, "stderr": ""}
+
+    assert _used_by(task_for(project, "template"), run, "writes-notes", monkeypatch) is True
+
+
+def test_the_tasks_scorer_counts_a_run_as_the_agent_under_test_only_for_the_scenario_that_names_it(project, monkeypatch):
+    scenarios = [{"id": "as-reviewer", "prompt": "Review it.", "agent": "reviewer"}, {"id": "plain", "prompt": "Review it."}]
+    write(project, eval_file(AGENT, scenarios=scenarios), name="agents/reviewer.json")
+    task = task_for(project, "template", name="agents/reviewer.json")
+    run = {"events": (KILO_EVENTS / "agent-option-all.jsonl").read_text(), "exit_code": 0}  # no stderr recorded
+
+    assert _used_by(task, run, "as-reviewer", monkeypatch) is True
+    assert _used_by(task, run, "plain", monkeypatch) is False
