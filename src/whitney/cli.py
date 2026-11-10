@@ -78,6 +78,7 @@ MAX_VERSION_LENGTH = 200  # a version is short; a long first line is something e
 DOCKER_KEY_VARIABLES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 VERSION_TIMEOUT = 30  # seconds; `--version` answers at once, so a longer wait means a hung CLI
 SAMPLE_SHUFFLE_SEED = 42  # as run_evals.py: the same order across variants and runs
+BROKEN_INSTALL = "Whitney's dependencies don't fit together, so reinstall them from requirements.lock (README, \"Setup\")"  # added to the stop line of a run that hit an ImportError
 
 # Help texts, kept out of the parser's code so each option reads as one line there.
 HELP = {
@@ -372,7 +373,9 @@ def _run(args: argparse.Namespace) -> int:
             )
         except Exception as e:  # anything at all: the report still says what ran before it, and why it stopped
             stopped = f"stopped after {done} of {len(tasks)} tasks: {type(e).__name__}: {e}"
-            cannot_run = isinstance(e, (CannotRun, CredentialsError))
+            if isinstance(e, ImportError):  # a dependency Inspect imports is missing or the wrong version
+                stopped += f"; {BROKEN_INSTALL}"
+            cannot_run = isinstance(e, (CannotRun, CredentialsError, ImportError))
             break
     code = write_report(
         logs, target=args.target, model=args.model, evals_path=args.evals_path,
