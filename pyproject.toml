@@ -40,13 +40,20 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The Docker sandbox: tasks.py hands compose.yaml to Inspect, and it builds the Dockerfile beside it.
+[tool.setuptools.package-data]
+whitney = ["sandbox/compose.yaml", "sandbox/Dockerfile"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # End-to-end smoke tests call real models and cost money, so the default run
 # (and check.py and mutmut, which run it) leaves them out. Run them on purpose
 # with `pytest -m e2e tests/e2e`; see tests/e2e/test_core_scenarios.py.
-addopts = ["-m", "not e2e"]
-markers = ["e2e: end-to-end smoke test against a real harness and model (opt-in, costs money)"]
+addopts = ["-m", "not e2e and not packaging"]
+markers = [
+    "e2e: end-to-end smoke test against a real harness and model (opt-in, costs money)",
+    "packaging: installs the built wheel in a temporary venv (check.py full only)",
+]
 
 # Mutation testing (CONSTRAINTS.md). mutmut copies the project into mutants/,
 # so anything the tests read from the repo root must be listed in also_copy.
@@ -58,4 +65,4 @@ pytest_add_cli_args_test_selection = ["tests/"]
 # to 5-7 GB and the OOM killer took it (docs/mutation-testing-options.md). 30 s is well above the
 # slowest test, about 6.5 s, so a slow machine doesn't fail a sound test.
 pytest_add_cli_args = ["--timeout=30"]
-also_copy = ["evals/", "examples/", "template/", "docker/", "scripts/", "docs/", "requirements.lock", "CONSTRAINTS.md"]
+also_copy = ["evals/", "examples/", "template/", "scripts/", "docs/", "requirements.lock", "CONSTRAINTS.md"]

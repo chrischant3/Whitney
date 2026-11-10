@@ -125,7 +125,7 @@ pip install --require-hashes -r requirements.lock
 pip install --no-deps -e .
 ```
 
-Installing gives you the `whitney` command. In a clone installed before the command existed, run `pip install --no-deps -e .` again to get it.
+Installing gives you the `whitney` command; `whitney --version` prints the installed version. In a clone installed before the command existed, run `pip install --no-deps -e .` again to get it.
 
 After changing a dependency in `pyproject.toml`, regenerate the lock with the command at the top of `requirements.lock` (it needs [uv](https://docs.astral.sh/uv/)); a test fails if the two disagree.
 
@@ -262,6 +262,8 @@ inspect eval src/whitney/tasks.py@kilo_jsonc -T target=kilo -T variant=allow_con
   -T model=anthropic/claude-haiku-4-5 -T api_key_env=ANTHROPIC_API_KEY
 ```
 
+With Whitney installed, Inspect also finds the three tasks by the package's name, from any folder: `inspect eval whitney/scenario_eval`, `whitney/agents_md` or `whitney/kilo_jsonc`. The last two read `template/` and `evals/`, which only a clone has.
+
 `agents_md` and `kilo_jsonc` are Whitney's two eval files run through `scenario_eval`, which runs any eval file in one variant, scored by the checks its scenarios name:
 
 ```bash
@@ -317,7 +319,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 ## How it works
 
 - Local mode runs the target's CLI on the host. The project files are staged in a temporary local sandbox, but the agent's shell and file tools are not OS-isolated; use Docker mode (kilo) when host isolation is required. Model API calls go directly to the provider and are not captured in Inspect's model transcript.
-- Kilo, locally, uses the user's Kilo login and global provider settings, or the key named with `--api-key-env`, in a temporary HOME with only a short list of environment variables (`LOCAL_ENV_PASSTHROUGH` in `src/whitney/agent.py`). Keys a run is given are redacted from the stored run. In Docker mode it runs the CLI version pinned in `docker/Dockerfile` in an isolated sandbox, as an unprivileged user with no network and no added capabilities, and Inspect's bridge answers its calls with `--model`, so requests are captured in Inspect logs.
+- Kilo, locally, uses the user's Kilo login and global provider settings, or the key named with `--api-key-env`, in a temporary HOME with only a short list of environment variables (`LOCAL_ENV_PASSTHROUGH` in `src/whitney/agent.py`). Keys a run is given are redacted from the stored run. In Docker mode it runs the CLI version pinned in `src/whitney/sandbox/Dockerfile` in an isolated sandbox, as an unprivileged user with no network and no added capabilities, and Inspect's bridge answers its calls with `--model`, so requests are captured in Inspect logs.
 - Claude Code runs with an empty temporary home, `--setting-sources project` and no MCP servers, and only PATH, the API key and a fixed git identity in its environment, so nothing of the user's own Claude setup reaches the run.
 - The target's template is what's under test. Harness permissions let the eval tasks run headlessly (Kilo: a temporary config overlay that project-level permissions override; Claude Code: `--settings`). Neither harness runs with a blanket approve-all: Kilo runs without `--auto`, because `--auto` approves every `ask`, and Claude Code without `--dangerously-skip-permissions`.
 - A run that ends before the agent decides (Kilo exiting non-zero, or Claude Code reporting an error or a permission denial) counts as inconclusive in `agents_md`, not as followed.

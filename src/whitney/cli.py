@@ -30,6 +30,7 @@ and gate (write_report) and its option parsing (rate, min_rates).
 """
 
 import argparse
+import importlib.metadata
 import json
 import os
 import re
@@ -132,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
 def parser() -> argparse.ArgumentParser:
     """The `whitney` command's argument parser, with the `run`, `validate`, `report` and `checks` subcommands."""
     p = argparse.ArgumentParser(prog="whitney", description=__doc__.split("\n")[0])
+    p.add_argument("--version", action="version", version=f"%(prog)s {importlib.metadata.version('whitney')}")
     commands = p.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help=HELP["run"], description=HELP["run"])
     run.add_argument("--target", choices=TARGETS, required=True, help=HELP["--target"])

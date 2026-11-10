@@ -7,7 +7,7 @@ import pytest
 from inspect_ai.agent import AgentState
 from inspect_ai.model import ChatMessageUser
 
-from whitney.agent import _append_final_message, _run_kilo, _run_local
+from whitney.agent import COMPOSE_FILE, _append_final_message, _run_kilo, _run_local
 
 
 def test_local_run_sets_pwd_to_sandbox_project():
@@ -285,7 +285,7 @@ def test_the_docker_sandbox_runs_kilo_unprivileged_and_offline():
 
     import yaml
 
-    docker = Path(__file__).parents[1] / "docker"
+    docker = COMPOSE_FILE.parent
     service = yaml.safe_load((docker / "compose.yaml").read_text())["services"]["default"]
     assert service["network_mode"] == "none"
     assert service["cap_drop"] == ["ALL"]
@@ -300,7 +300,7 @@ def test_the_docker_image_runs_npm_install_scripts_as_the_unprivileged_user():
     # could change anything in the image, including the git the scorer trusts.
     import re
 
-    dockerfile = (Path(__file__).parents[1] / "docker" / "Dockerfile").read_text()
+    dockerfile = (COMPOSE_FILE.parent / "Dockerfile").read_text()
     [install] = [m.start() for m in re.finditer(r"\bnpm install\b", dockerfile)]
     users_before = re.findall(r"^USER (\S+)$", dockerfile[:install], re.M)
     assert users_before and users_before[-1] == "node"

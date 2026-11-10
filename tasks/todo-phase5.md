@@ -584,12 +584,12 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Description:** The spec's slice 7a. Move `docker/` to `src/whitney/sandbox/` as package data, read with `importlib.resources`. Register the tasks in `_registry.py`, so `inspect eval whitney/<task>` works once installed. Add `whitney --version`, and update mutmut's `also_copy`. Moving `docker/` breaks anyone who builds the image by path, so the docs change in the same task. This can run in parallel with milestones A to C, but not at the same time as Task 9, since both change `agent.py`. Answer spec open question 14 (packaging test cost) before starting. **Answered 2026-11-10 (Christopher):** split it. Building the wheel and checking what it holds runs in the default suite; installing it in a temporary venv and running the commands runs in `check.py full` only.
 
 **Acceptance criteria:**
-- [ ] A wheel built with `pip wheel --no-deps -w dist .` contains `whitney/sandbox/compose.yaml` and the Dockerfile, and no `template/`, `evals/` or `dataset/` (criterion 2).
-- [ ] Installed in a temporary venv, Docker mode finds the compose file, and `whitney --version` prints the package's version.
-- [ ] `inspect eval whitney/agents_md` resolves when installed.
+- [x] A wheel built with `pip wheel --no-deps -w dist .` contains `whitney/sandbox/compose.yaml` and the Dockerfile, and no `template/`, `evals/` or `dataset/` (criterion 2). **2026-11-10:** `tests/test_packaging.py`, in the default suite. It builds from a copy of the sources, with pip where the environment has it and with uv otherwise, since a uv-made venv has no pip. Building fetches setuptools the first time, so a machine with an empty cache needs the network for it.
+- [x] Installed in a temporary venv, Docker mode finds the compose file, and `whitney --version` prints the package's version. **2026-11-10:** the tests marked `packaging`, which `check.py full` runs as its "installed package" step. The venv borrows this environment's dependencies through a path file, so nothing is downloaded. `whitney validate` on the consumer example runs there too. No container was started: the test shows the path resolves inside the install, with its Dockerfile beside it.
+- [x] `inspect eval whitney/agents_md` resolves when installed. **2026-11-10:** `_registry.py` imports `scenario_eval`, `agents_md` and `kilo_jsonc`; the tests look each up as Inspect does, after loading the entry point, and no eval was run. Left out, for Christopher to confirm: `ifevalcode` and `bigcodebench_hard_complete`, which need the clone's datasets and optional extras. `agents_md` and `kilo_jsonc` resolve when installed but read `template/` and `evals/`, which only a clone has.
 
 **Verification:**
-- [ ] `pytest -q tests/test_packaging.py`
+- [x] `pytest -q tests/test_packaging.py` (and `pytest -q -m packaging tests/test_packaging.py` for the install tests)
 - [ ] `python scripts/check.py task`
 
 **Dependencies:** None.
