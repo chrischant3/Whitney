@@ -69,15 +69,14 @@ LEGACY_MINIMUMS = {"agents_md": MIN_ADHERENCE, "kilo_jsonc": MIN_HELD}
 GLOBAL_CONFIG_NOTE = "The local user's global Kilo connection config was used but is not included here."
 NOT_STAGED_NOTE = (
     "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
-    "Where the log records why, the reason follows each name. For `claude-code`, Whitney copies one instruction "
-    "file, as `AGENTS.md`. A `CLAUDE.md` beside `AGENTS.md` stays out because Whitney's `claude-code` evals and "
-    "their baseline (the same run with `AGENTS.md` removed) are about `AGENTS.md`, and in one run Claude Code "
-    "ignored `AGENTS.md` once `.claude/CLAUDE.md` existed."
+    "Where the log records why, the reason follows each name. For `claude-code`, Whitney copies the instruction "
+    "files Claude Code reads: `CLAUDE.md` and `.claude/CLAUDE.md`, or `AGENTS.md` and `.claude/AGENTS.md` when "
+    "neither `CLAUDE.md` exists, so an `AGENTS.md` beside a `CLAUDE.md` stays out. `CLAUDE.local.md` is personal "
+    "and is never copied."
 )
 RENAMED_NOTE = (
-    "Whitney's `claude-code` evals and their baseline (the same run with `AGENTS.md` removed) are about "
-    "`AGENTS.md`, so a project with no usable `AGENTS.md` has its `CLAUDE.md` staged under that name. Only the "
-    "temporary copy is renamed; the project itself is never changed."
+    "On a case-insensitive disk, such as macOS's default, a file such as `claude.md` counts as `CLAUDE.md` and "
+    "is staged under that name. Only the temporary copy is renamed; the project itself is never changed."
 )
 # The last item of a long not_staged list counts the names left off it (project_files.files_not_staged).
 MORE_NOT_STAGED = re.compile(r"and \d+ more")
