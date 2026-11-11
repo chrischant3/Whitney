@@ -1,0 +1,59 @@
+{
+  "case": "hook-events-flag",
+  "about": "UserPromptSubmit, PreToolUse, PostToolUse and Stop hooks, run with --include-hook-events added to Whitney's flags, so each hook has hook_started and hook_response events",
+  "date": "2026-11-11",
+  "claude_code_version": "2.1.322 (Claude Code)",
+  "model": "claude-haiku-4-5",
+  "argv": [
+    "claude",
+    "-p",
+    "--setting-sources",
+    "project",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"permissions\": {\"allow\": [\"Bash\", \"Edit\", \"Write\"]}}",
+    "--model",
+    "claude-haiku-4-5",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-hook-events",
+    "--",
+    "Write short release notes for the latest version of this project. Reply in chat only; don't create or change files."
+  ],
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    ".claude/skills/release-notes/SKILL.md": "---\nname: release-notes\ndescription: Write release notes for this project. Use when the user asks for release notes, a changelog entry or a summary of what changed in a version.\n---\n\n# Release notes\n\nMarker: CANARY-SKILL-RN-4821\n\nWrite the notes as a bulleted list under the heading \"## What changed\". Start the reply with the line \"RN-FORMAT-4821\".\n",
+    ".claude/settings.json": "{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Skill\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh \\\"$CLAUDE_PROJECT_DIR\\\"/.claude/hooks/skill-pre.sh\"\n          }\n        ]\n      }\n    ],\n    \"PostToolUse\": [\n      {\n        \"matcher\": \"Skill\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh \\\"$CLAUDE_PROJECT_DIR\\\"/.claude/hooks/skill-post.sh\"\n          }\n        ]\n      }\n    ],\n    \"UserPromptSubmit\": [\n      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh \\\"$CLAUDE_PROJECT_DIR\\\"/.claude/hooks/prompt-needs.sh\"\n          }\n        ]\n      }\n    ],\n    \"Stop\": [\n      {\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh \\\"$CLAUDE_PROJECT_DIR\\\"/.claude/hooks/stop-check.sh\"\n          }\n        ]\n      }\n    ]\n  }\n}\n",
+    ".claude/hooks/prompt-needs.sh": "#!/bin/sh\n[ -n \"$CLAUDE_PROJECT_DIR\" ] || exit 0\nstate=\"$CLAUDE_PROJECT_DIR/.claude/hook-state\"\nmkdir -p \"$state\"\ninput=$(cat)\nprintf '%s\\n' \"$input\" >> \"$state/$(basename \"$0\" .sh).input.jsonl\"\nif [ -n \"$ANTHROPIC_API_KEY\" ]; then echo \"ANTHROPIC_API_KEY is set for the hook\" > \"$state/env.txt\"; else echo \"ANTHROPIC_API_KEY is not set for the hook\" > \"$state/env.txt\"; fi\nif printf '%s' \"$input\" | grep -qiE 'release notes|changelog'; then\n  touch \"$state/needs-skill\"\nfi\n",
+    ".claude/hooks/skill-post.sh": "#!/bin/sh\n[ -n \"$CLAUDE_PROJECT_DIR\" ] || exit 0\nstate=\"$CLAUDE_PROJECT_DIR/.claude/hook-state\"\nmkdir -p \"$state\"\ninput=$(cat)\nprintf '%s\\n' \"$input\" >> \"$state/$(basename \"$0\" .sh).input.jsonl\"\nif [ -n \"$ANTHROPIC_API_KEY\" ]; then echo \"ANTHROPIC_API_KEY is set for the hook\" > \"$state/env.txt\"; else echo \"ANTHROPIC_API_KEY is not set for the hook\" > \"$state/env.txt\"; fi\nif printf '%s' \"$input\" | grep -qE '\"skill\" *: *\"release-notes\"'; then\n  touch \"$state/skill-loaded\"\nfi\n",
+    ".claude/hooks/skill-pre.sh": "#!/bin/sh\n[ -n \"$CLAUDE_PROJECT_DIR\" ] || exit 0\nstate=\"$CLAUDE_PROJECT_DIR/.claude/hook-state\"\nmkdir -p \"$state\"\ninput=$(cat)\nprintf '%s\\n' \"$input\" >> \"$state/$(basename \"$0\" .sh).input.jsonl\"\nif [ -n \"$ANTHROPIC_API_KEY\" ]; then echo \"ANTHROPIC_API_KEY is set for the hook\" > \"$state/env.txt\"; else echo \"ANTHROPIC_API_KEY is not set for the hook\" > \"$state/env.txt\"; fi\nif printf '%s' \"$input\" | grep -qE '\"skill\" *: *\"release-notes\"'; then\n  touch \"$state/skill-called\"\nfi\n",
+    ".claude/hooks/stop-check.sh": "#!/bin/sh\n[ -n \"$CLAUDE_PROJECT_DIR\" ] || exit 0\nstate=\"$CLAUDE_PROJECT_DIR/.claude/hook-state\"\nmkdir -p \"$state\"\ninput=$(cat)\nprintf '%s\\n' \"$input\" >> \"$state/$(basename \"$0\" .sh).input.jsonl\"\nif [ -n \"$ANTHROPIC_API_KEY\" ]; then echo \"ANTHROPIC_API_KEY is set for the hook\" > \"$state/env.txt\"; else echo \"ANTHROPIC_API_KEY is not set for the hook\" > \"$state/env.txt\"; fi\nif printf '%s' \"$input\" | grep -qE '\"stop_hook_active\" *: *true'; then exit 0; fi\nif [ -e \"$state/needs-skill\" ] && [ ! -e \"$state/skill-called\" ]; then\n  printf '%s\\n' '{\"decision\": \"block\", \"reason\": \"This request is for release notes, and the release-notes skill of this project has not been loaded. Load it with the Skill tool (skill: release-notes), then give the answer again, following the skill.\"}'\nfi\n"
+  },
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "stderr": "",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "as tests/data/kilo-events": "the project folder, temporary paths, the user's home folder and name, email addresses",
+    "the project's path as a session folder's name": "-tmp-kilo-eval-XXXXXXXX-project",
+    "Claude Code's temporary folder, claude-<user id>": "claude-UID",
+    "request_id": "REQUEST-ID-PLACEHOLDER",
+    "the API key": "[redacted]"
+  }
+}

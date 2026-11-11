@@ -482,8 +482,168 @@ Kilo was 7.8.27 here. The earlier Kilo spikes used 7.8.18.
 - More than one model, or more than one run of each case.
 - What a denied skill does to a scenario's pass rate.
 
+## Phase 5 Task 40: hooks to enforce a skill (2026-11-11)
+
+Task 40's rule 3 advises a hook when a skill's description is sound and the model still doesn't load the skill. This spike asks what that hook is on each target, whether it works, and what Whitney would need to stage one. It used Claude Code 2.1.322 with `claude-haiku-4-5`, and Kilo 7.8.27 with `kilo/anthropic/claude-haiku-4.5`.
+
+The project and prompt are the `skill-description` fixture's: the till, the `release-notes` skill, and "Write short release notes for the latest version of this project. Reply in chat only; don't create or change files." The skill tells the model to start its reply with `RN-FORMAT-4821`, so a reply shows whether the skill was followed.
+
+### Claude Code: what was run
+
+Twenty runs of `claude -p` through Whitney's own runner (`whitney.claude_code._claude_command` and `_run`): `--setting-sources project`, `--strict-mcp-config`, `--settings '{"permissions": {"allow": ["Bash", "Edit", "Write"]}}'`, `--output-format stream-json --verbose`, an empty temporary HOME. Two runs added `--include-hook-events`. The hooks were in the project's `.claude/settings.json`, as command hooks that run a script in `.claude/hooks/`. Every script saved its input to a file inside the project and did nothing outside it.
+
+The hooks come from Claude Code's [hooks reference](https://code.claude.com/docs/en/hooks), read 2026-11-11. It says:
+
+- A `UserPromptSubmit` or `SessionStart` hook's plain stdout is added to the model's context.
+- A `PreToolUse` hook can refuse a call with `permissionDecision: "deny"`, and its reason is shown to the model. Its matcher is the tool's name, and a hook matching `Skill` runs when the model calls that tool.
+- A `Stop` hook can keep the turn going with `{"decision": "block", "reason": ...}`.
+- No event loads a skill itself. A hook can only tell the model to, or refuse other work until it does.
+
+| Case | Hooks |
+|---|---|
+| No hook | None, and no `.claude/settings.json` |
+| Prompt reminder | `UserPromptSubmit`: when the prompt mentions release notes or a changelog, print "This project has a release-notes skill, and this request is one it covers. Load it with the Skill tool (skill: release-notes) before you answer, and follow it." |
+| Session reminder | `SessionStart`: always print "Project rule: for release notes or a changelog entry, load the release-notes skill with the Skill tool (skill: release-notes) before answering, and follow it." |
+| Tool gate | `UserPromptSubmit` prints nothing and notes that the prompt needs the skill. `PreToolUse` on `Skill` notes the call. `PreToolUse` on `Bash\|Read\|Glob\|Grep\|Edit\|Write` refuses the call until then |
+| Stop block | The same two notes. `Stop` blocks once, with a reason, if the skill was never called |
+
+The prompt reminder, as run:
+
+```json
+{"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prompt-reminder.sh"}]}]}}
+```
+
+```sh
+#!/bin/sh
+[ -n "$CLAUDE_PROJECT_DIR" ] || exit 0
+state="$CLAUDE_PROJECT_DIR/.claude/hook-state"
+mkdir -p "$state"
+input=$(cat)
+printf '%s\n' "$input" >> "$state/$(basename "$0" .sh).input.jsonl"
+if [ -n "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY is set for the hook" > "$state/env.txt"; else echo "ANTHROPIC_API_KEY is not set for the hook" > "$state/env.txt"; fi
+if printf '%s' "$input" | grep -qiE 'release notes|changelog'; then
+  echo "This project has a release-notes skill, and this request is one it covers. Load it with the Skill tool (skill: release-notes) before you answer, and follow it."
+fi
+```
+
+Only the last three lines are the hook. The lines above them saved what the spike wanted to see. The tool gate's refusal is the documented JSON on stdout: `{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "..."}}`.
+
+### Claude Code: results
+
+| Case | Runs | `Skill` call for `release-notes` | Reply followed the skill | What else |
+|---|---|---|---|---|
+| No hook | 6 | 1 | 1 | The other five wrote the notes themselves |
+| Prompt reminder | 4 (one with `--include-hook-events`) | 4 | 4 | `Skill` was the first call every time |
+| Session reminder | 3 | 3 | 3 | `Skill` was the first call every time |
+| Tool gate | 3 | 3 | 3 | One run called `Bash` first, was refused, then called `Skill`. Two called `Skill` first, so the gate refused nothing |
+| Stop block | 4 (one with `--include-hook-events`) | 4 | 4 | `Skill` was the first call every time, so the `Stop` hook never blocked |
+
+- **A reminder hook worked.** With a `UserPromptSubmit` or `SessionStart` reminder the skill loaded in 7 of 7 runs, against 1 of 6 without.
+- **The gate worked the one time it was needed.** The refusal reached the model, and its next call was `Skill`.
+- **Not shown: a `Stop` hook making a skill load.** It never had to block.
+- **Not explained:** in the tool gate and stop block cases the hooks told the model nothing before its first call, yet `Skill` came first in 6 of 7 runs, against 1 of 6 with no hook. The thinking blocks in the stream are empty, and the stream doesn't show what the model was sent (Task 31), so the spike can't say why. Seven runs is too few to rule out chance.
+- All of this is one skill, one prompt and Haiku.
+
+### Claude Code: what the stream shows
+
+A hook in the project's `.claude/settings.json` runs under Whitney's flags. All 14 runs with hooks left the files their scripts write.
+
+- **With Whitney's flags, only a `SessionStart` hook is in the stream.** It has two `system` events, before `init`:
+  - `hook_started`, with `hook_id`, `hook_name` (`SessionStart:startup`) and `hook_event` (`SessionStart`);
+  - `hook_response`, with the same three and `output`, `stdout`, `stderr`, `exit_code` and `outcome` (`success`).
+- **The other hooks leave no event of their own.** The `UserPromptSubmit` reminder isn't in the stream as text either, and the `init` event has no key that lists hooks. A stream from a run with a silent hook has the same event types as one with no hook.
+- **With `--include-hook-events`, every hook has the same two events.** `hook_name` was `UserPromptSubmit`, `PreToolUse:Skill`, `PostToolUse:Skill` and `Stop`. The `UserPromptSubmit` pair came before `init`.
+- **A hook's refusal looks like a permission refusal.** The tool result has `is_error: true` and the text "PreToolUse:Bash hook error: " followed by the hook's reason. The call is also listed in the `result` event's `permission_denials`, with `tool_name`, `tool_use_id` and `tool_input`. So Whitney's `_outcome` marked that run `ended_early`, though it finished and its `result` was `success`.
+
+Fixtures, each with a `.meta.json`: `hook-session-start`, `hook-pretooluse-deny` and `hook-events-flag` in `tests/data/claude-code-events/`. No test reads them yet.
+
+What each hook was given on stdin, as key names:
+
+| Hook | Keys |
+|---|---|
+| `UserPromptSubmit` | `cwd`, `hook_event_name`, `permission_mode`, `prompt`, `prompt_id`, `session_id`, `transcript_path` |
+| `SessionStart` | `cwd`, `hook_event_name`, `session_id`, `source` (`startup`), `transcript_path` |
+| `PreToolUse` | `cwd`, `hook_event_name`, `permission_mode`, `prompt_id`, `session_id`, `tool_input`, `tool_name`, `tool_use_id`, `transcript_path` |
+| `PostToolUse` | the same, and `duration_ms` and `tool_response` |
+| `Stop` | `background_tasks`, `cwd`, `hook_event_name`, `last_assistant_message`, `permission_mode`, `prompt_id`, `session_crons`, `session_id`, `stop_hook_active`, `transcript_path` |
+
+For the `Skill` tool, `tool_input` was `{"skill": "release-notes"}` and `tool_response` was `{"success": true, "commandName": "release-notes"}`.
+
+### Claude Code: the risk
+
+- **A hook is a shell command run as the user.** The docs: "Command hooks execute shell commands with your full user permissions. They can modify, delete, or access any files your user account can access."
+- **A `-p` run asks nobody.** The docs: Claude Code "never shows the dialog and treats the folder as trusted, so hooks committed in a repository's `.claude/settings.json` run in a folder you've never trusted". Every Whitney run is a `-p` run.
+- **The hook had the API key.** `ANTHROPIC_API_KEY` was set in the hook's environment in all 14 runs. It was also given the path of the session's transcript and the project folder.
+- **Nothing limits it.** A local `claude-code` run has no sandbox, and a hook isn't bound by the `permissions` block. A hook can read outside the project and use the network.
+- **A hook's command can name any file or program.** Staging "the hooks" means staging the scripts they run, and those scripts may need programs the run's machine doesn't have.
+
+### Kilo: what plays the role of a hook
+
+Kilo calls it a **plugin**. Its [plugins page](https://kilo.ai/docs/automate/extending/plugins), read 2026-11-11, describes a TypeScript or JavaScript module whose `server` function returns "hooks", and says plugins work in the CLI and the VS Code extension. Kilo has no shell-command hooks in a settings file.
+
+- **Where it is configured.** A file in `.kilo/plugin/` or `.kilo/plugins/` (`*.ts` or `*.js`) in the project, the same folder in `~/.config/kilo/`, or the `plugin` list in `kilo.jsonc`, which takes npm package names and file paths. The built-in `kilo-config` skill lists the folder pattern as `{plugin,plugins}/*.{ts,js}` and the `plugin` key. `kilo --help` has `kilo plugin <module>`, which installs one.
+- **The hooks that matter here**, from the docs and the types in `@kilocode/plugin` 7.8.27: `chat.message` (a user message arrived), `experimental.chat.system.transform` (add to the system prompt), `tool.execute.before` (runs before a tool; throwing refuses the call) and `tool.execute.after`. The docs call the `experimental.` ones liable to change.
+- **It doesn't load under `--pure`.** `kilo --help` describes `--pure` as "run without external plugins", and the docs say the same of `KILO_PURE=1`. With a plugin in the project's `.kilo/plugin/`, `kilo debug config --pure` still listed the file under `plugin` and `plugin_origins`, but the plugin's `server` function didn't run. Without `--pure` it ran, even for `kilo debug config`. Whitney always passes `--pure`.
+- **Whitney doesn't stage one.** The loader's asset folders don't include `plugin`, and it removes the `plugin` key from a staged config (`CONNECTION_CONFIG_KEYS`).
+- `kilo debug v2 --pure` printed `providers`, `default` and `small` only: nothing about plugins.
+
+### Kilo: results
+
+Eight runs of `kilo run --format json` through Whitney's runner (`_run_local_process`, with `kilo_home`'s temporary HOME and copy of the login). The fixture's description loaded the skill on Kilo, so these runs used a weaker one: "House format for this repository's notes." The plugins wrote what they saw to a file in the project and did nothing else.
+
+| Case | `--pure` | Runs | Plugin ran | `skill` call for `release-notes` | What else |
+|---|---|---|---|---|---|
+| No plugin | no (a mistake in the spike's script; Whitney passes it) | 2 | no plugin | 0 | |
+| Reminder plugin | yes | 1 | no | 1 | The skill loaded with no plugin running |
+| Reminder plugin | no | 3 | yes | 3 | `skill` was the first call every time |
+| Gate plugin | no | 2 | yes | 2 | One run called `read`, `bash`, `read` first. All three were refused, and its next call was `skill`. The other called `skill` first |
+
+The reminder plugin set a flag in `chat.message` when the prompt mentioned release notes, and added one line to the system prompt in `experimental.chat.system.transform`:
+
+```ts
+export default {
+  id: "skill-reminder",
+  server: async () => {
+    let needsSkill = false
+    return {
+      "chat.message": async (input: any, output: any) => {
+        const text = (output?.parts ?? []).filter((p: any) => p?.type === "text").map((p: any) => p.text).join(" ")
+        needsSkill = /release notes|changelog/i.test(text)
+      },
+      "experimental.chat.system.transform": async (input: any, output: any) => {
+        if (needsSkill) output.system.push("This project has a release-notes skill, and this request is one it covers. Load it with the skill tool (name: release-notes) before you answer, and follow it.")
+      },
+    }
+  },
+}
+```
+
+That is the plugin as run, without the lines that wrote its notes. The gate plugin kept the same flag and threw an `Error` from `tool.execute.before` for any tool but `skill` until `skill` had been called with `name` `release-notes`.
+
+- **Shown: a project plugin's hooks run in `kilo run` without `--pure`, and `tool.execute.before` can refuse tools until the skill is called.** The refused calls are `tool_use` events with `state.status` `error` and the thrown message in `state.error`. The run's exit code was 0.
+- **Not shown: that the reminder is why the skill loaded.** It loaded in 3 of 3 runs with the reminder and 0 of 2 with no plugin, but also in the one `--pure` run, where the plugin file was there and didn't run. Six runs can't separate the reminder from chance, or from whatever else a plugin file in the project changes.
+- **Not shown: a sound description that fails on Kilo.** The description had to be weakened to get a skill that didn't load.
+- **Nothing in the stream says a plugin ran.** The event types were `step_start`, `tool_use`, `text` and `step_finish` in every run.
+- **What the hooks were given.** `chat.message`: input `sessionID`, `agent`, `model`, `messageID`, `variant`; output `message`, `parts`. `experimental.chat.system.transform`: input `sessionID`, `model`; output `system`. It ran once for each of the run's five steps, in all three runs. `tool.execute.before`: input `tool`, `sessionID`, `callID`; output `args` (`name` for `skill`).
+- **Kilo writes into the project's `.kilo/`.** With a plugin folder there, each run left `.kilo/package.json` (a dependency on `@kilocode/plugin`), `package-lock.json` and `node_modules/`, under `--pure` too. Every run left a `.kilo/.gitignore` naming them, so `git status` doesn't show them.
+- **The risk is the same as a Claude Code hook's, and wider.** A plugin is code running inside Kilo's own process, where the Kilo login can be read, and it can change what the model is sent and what a tool is given.
+
+### What this means for Whitney
+
+- **Rule 3 can advise a hook on both targets, and can't test it on either.** Whitney stages no hooks and no plugins, and on Kilo `--pure` would stop a staged plugin running.
+- **On Claude Code, advise the `UserPromptSubmit` reminder.** It has a measured effect here, it refuses nothing, and it is three lines. The `PreToolUse` gate is the stricter step for a team the reminder doesn't satisfy.
+- **On Kilo, advise a plugin in `.kilo/plugin/`**, and say that Whitney has shown only that its hooks run and that its gate refuses, not that it raises how often a skill loads.
+- **To stage hooks, Whitney would need all of these:**
+  - An opt-in, off by default, that names what will run. The report lists each hook's command and the files it runs.
+  - A sandbox. A local run gives a hook the user's files and the API key, so hooks belong in Docker (Task 36a), with a key that is cheap to revoke.
+  - `--include-hook-events`, so the report can say which hooks ran and how each ended. Without it only `SessionStart` hooks are visible.
+  - A way to tell a hook's refusal from a permission rule's. Both are listed in `permission_denials`, so today a hook's refusal marks the run `ended_early` and could be read as a rule that held. The tool result's text, "PreToolUse:<tool> hook error: ", tells them apart.
+  - On Kilo, a run without `--pure` in a HOME with no plugins of its own, and a decision on the files Kilo writes into `.kilo/`.
+- **Until then, no hook runs in a Whitney run,** because the loader leaves `.claude/settings.json`'s hooks and `.kilo/plugin/` out of the staged project. The docs give `--settings '{"disableAllHooks": true}'` as the way to turn hooks off for one run whatever the project's settings say; the spike didn't try it.
+
 ## Not yet done
 
+- **Hooks and plugins (Task 40).** A `Stop` hook making a skill load; a hook's effect with a model other than Haiku or a skill other than `release-notes`; why silent hooks went with more `Skill` calls; a Kilo plugin's effect apart from chance; plugins in the VS Code extension.
 - `kilo serve` approve-once behaviour.
 - A subagent's own tool calls. They aren't in the parent's stream; `kilo export <sessionID>` might show them, but Whitney deletes the temporary HOME, and Kilo's session store with it, when the run ends.
 - Agent discovery in a staged project that isn't a git repository. Skills were checked in Phase 5 Task 8: Kilo reads `.claude/skills/` and `.agents/skills/` above the project up to the git root, and `check_no_inherited_instructions` now looks for both ([load-order.md](load-order.md#skill-folders)).
