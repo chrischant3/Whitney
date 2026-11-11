@@ -29,7 +29,7 @@ from inspect_ai.util import sandbox, store
 
 from whitney.credentials import kilo_auth_path
 from whitney.git_env import ISOLATED_GIT_ENV, isolated_git_env  # ISOLATED_GIT_ENV: callers import it from here too
-from whitney.project_files import KILO_CONFIG_DIRS, KILO_SKILL_DIRS, ROOT_INSTRUCTIONS
+from whitney.project_files import CLAUDE_CODE_ASSET_DIRS, KILO_CONFIG_DIRS, KILO_SKILL_DIRS, ROOT_INSTRUCTIONS
 from whitney.static_checks import parse_jsonc
 
 PROJECT_DIR = "project"
@@ -66,8 +66,11 @@ REDACTED = "[redacted]"
 # have. Kilo also reads skills from .claude/skills/ and .agents/skills/ in each
 # folder up to that root (KILO_SKILL_DIRS; seen with `kilo debug skill`,
 # docs/load-order.md), and setting GIT_CEILING_DIRECTORIES doesn't stop it; with no
-# .git there or above, Kilo reads none, so those are refused only then. The
-# .claude/ instruction files and .claude/skills/ are named, not the .claude folder: a
+# .git there or above, Kilo reads none, so those are refused only then. Claude Code
+# reads .claude/skills/ and .claude/agents/ (CLAUDE_CODE_ASSET_DIRS) from the folders
+# above a project that isn't a git repository, and from none above one that is (seen on
+# 2.1.322, docs/spike-findings.md, "Phase 5 Task 36"). The
+# .claude/ instruction files, .claude/skills/ and .claude/agents/ are named, not the .claude folder: a
 # real HOME always has ~/.claude/, and a temp folder under HOME would be refused for nothing.
 INHERITED_INSTRUCTION_NAMES = (
     *ROOT_INSTRUCTIONS, "CLAUDE.local.md", ".claude/CLAUDE.md", ".claude/AGENTS.md", "kilo.jsonc", "kilo.json", *KILO_CONFIG_DIRS,
@@ -75,7 +78,7 @@ INHERITED_INSTRUCTION_NAMES = (
 )  # fmt: skip
 # The names that can be the user's own, when TMPDIR is under HOME, so the refusal doesn't lead with removing them.
 USERS_OWN = {".claude/CLAUDE.md": "the file if it isn't your own Claude Code memory"} | {
-    folder: "the folder if it isn't your own skills" for folder in KILO_SKILL_DIRS
+    folder: f"the folder if it isn't your own {folder.split('/')[1]}" for folder in (*KILO_SKILL_DIRS, *CLAUDE_CODE_ASSET_DIRS)
 }
 MIN_SECRET_LENGTH = 8  # shorter values would redact ordinary words
 
@@ -427,7 +430,7 @@ async def _run_local_process(
     return redact_run(run, secrets)
 
 
-def check_no_inherited_instructions(project_dir: Path) -> None:
+def check_no_inherited_instructions(project_dir: Path, *, claude_code: bool = False) -> None:
     """Refuse to run if a folder above `project_dir` holds a file the harness would read.
 
     Workspaces live in the temporary folder, which anyone can write to on a
@@ -437,14 +440,22 @@ def check_no_inherited_instructions(project_dir: Path) -> None:
     skill folder (KILO_SKILL_DIRS) counts only when that folder or one above
     it holds a .git: Kilo reads them only up to a git worktree root.
 
+    Args:
+        claude_code: True for a Claude Code run, which also reads
+            CLAUDE_CODE_ASSET_DIRS from every folder above a project that
+            holds no .git of its own; they are then looked for too.
+
     Raises:
         RuntimeError: names the first such file found, or the first name
             that can't be checked (on Python 3.11 and 3.12, a path inside a
             folder the user can't read), so the run never starts unchecked.
     """
-    for folder in Path(project_dir).resolve().parents:
+    project_dir = Path(project_dir).resolve()
+    claude_codes = CLAUDE_CODE_ASSET_DIRS if claude_code and not (project_dir / ".git").exists() else ()
+    for folder in project_dir.parents:
         # Kilo reads skill folders only up to a git worktree root, so without one here they aren't looked for.
         names = [name for name in INHERITED_INSTRUCTION_NAMES if name not in KILO_SKILL_DIRS or _in_a_repository(folder)]
+        names = list(dict.fromkeys([*names, *claude_codes]))
         for name in names:
             path = folder / name
             try:
