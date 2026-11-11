@@ -141,6 +141,18 @@ class Record:
     file: FileInfo | None = field(default=None, compare=True, hash=False)
     trigger: str | None = None
     use: str | None = None
+    # What each of the eval file's own deny rules refused in this run: (rule, calls, the harness's words or None).
+    refusals: tuple[tuple[str, int, str | None], ...] = ()
+
+
+@dataclass
+class Refused:
+    """What one of an eval file's own deny rules refused, over every run that recorded it."""
+
+    calls: int = 0  # calls the harness refused under the rule
+    runs_refused: int = 0  # runs in which it refused at least one
+    runs: int = 0
+    said: str | None = None  # the harness's words, from the first refusal
 
 
 @dataclass
@@ -171,6 +183,9 @@ class EvalSummary:
     # In the template's runs of the file's scenarios: how often the skill or agent under test was used ("used",
     # "unused", "unknown" -> runs). Empty when no such run recorded it.
     usage: dict[str, int] = field(default_factory=dict)
+    # rule -> what it refused, for each deny rule of the eval file's own for a named skill or agent, in the
+    # order the file gave them. Every variant's runs count: the file's permissions are the same in each.
+    refused: dict[str, Refused] = field(default_factory=dict)
 
 
 def records_from_log(log: EvalLog) -> list[Record]:
@@ -195,9 +210,30 @@ def records_from_log(log: EvalLog) -> list[Record]:
         trigger = sample_metadata.get(TRIGGER_KEY)
         out.append(Record(
             eval_name, variant, str(sample.id), outcome, sample_metadata, role, info,
-            trigger=trigger if trigger in TRIGGER_KINDS else None, use=_use(sample, info),
+            trigger=trigger if trigger in TRIGGER_KINDS else None, use=_use(sample, info), refusals=_refusals(sample),
         ))
     return out
+
+
+def _refusals(sample: object) -> tuple[tuple[str, int, str | None], ...]:
+    """What the sample's score says each of the eval file's own deny rules refused (tasks._scenario_score).
+
+    Empty for a sample with no score, and for a score that records none or
+    records them in any other shape: a count the report can't trust isn't shown.
+    """
+    if sample.error or not sample.scores:
+        return ()
+    metadata = getattr(next(iter(sample.scores.values())), "metadata", None)
+    recorded = metadata.get("refusals") if isinstance(metadata, dict) else None
+    if not isinstance(recorded, list):
+        return ()
+    out = []
+    for item in recorded:
+        rule, calls, said = (item.get(key) for key in ("rule", "calls", "said")) if isinstance(item, dict) else (None, None, None)
+        if not isinstance(rule, str) or type(calls) is not int:
+            return ()
+        out.append((rule, calls, said if isinstance(said, str) else None))
+    return tuple(out)
 
 
 def _use(sample: object, info: FileInfo | None) -> str | None:
@@ -316,6 +352,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
     roles: dict[str, dict[str, str]] = defaultdict(dict)
     triggers: dict[str, dict[str, str]] = defaultdict(dict)
     usage: dict[str, dict[str, int]] = defaultdict(dict)
+    refused: dict[str, dict[str, Refused]] = defaultdict(dict)
     parts: dict[str, dict[str, dict[str, Cell]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(Cell)))
     for r in records:
         key = r.file.eval_file if r.file else r.eval_name
@@ -331,6 +368,12 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             triggers[key][r.scenario] = r.trigger
         elif r.use and r.variant == TEMPLATE_VARIANT:
             usage[key][r.use] = usage[key].get(r.use, 0) + 1
+        for rule, calls, said in r.refusals:
+            total = refused[key].setdefault(rule, Refused())
+            total.calls += calls
+            total.runs_refused += calls > 0
+            total.runs += 1
+            total.said = total.said or said
         passing, failing = (r.file.labels if r.file else EVALS[r.eval_name])[:2]
         if r.metadata.get("known_gap"):
             gaps[key][r.scenario] = r.metadata["known_gap"]
@@ -355,6 +398,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             problems=_problems(differ[key], malformed[key]),
             triggers=triggers[key],
             usage=usage[key],
+            refused=refused[key],
             parts={name: dict(cells) for name, cells in sorted(parts[key].items())} if triggers[key] else {},
         )
         for key in rows
@@ -508,6 +552,7 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
             parts.append(f"\nOnly `{TEMPLATE_VARIANT}` ran for this file, so there is no Δ.")
         if s.usage and s.file and s.file.under_test:
             parts.append(f"\n{_usage_note(s.usage, *s.file.under_test)}")
+        parts.extend(f"\n{_refused_note(rule, total)}" for rule, total in s.refused.items())
         for kind in TRIGGER_KINDS:
             prompts = {name: cells for name, cells in s.rows.items() if s.triggers.get(name) == kind}
             if prompts:
@@ -574,6 +619,27 @@ def _usage_note(usage: dict[str, int], kind: str, name: str) -> str:
         f"In the template's {runs} scenario {'run' if runs == 1 else 'runs'}, the {kind} `{_escaped(name)}` "
         f"{USE_WORDS[kind]} in {used}, wasn't in {unused} and couldn't be told in {unknown}."
     )
+
+
+SAID_LIMIT = 200  # characters of the harness's words kept in a refusal's line
+
+
+def _refused_note(rule: str, total: Refused) -> str:
+    """What one of the eval file's own deny rules refused, in the harness's words.
+
+    A rule that refused nothing is said to have shown nothing: the model
+    never called what it switches off, so these runs are no proof it works.
+    """
+    name = _escaped(rule).replace("`", "'")
+    runs = f"{total.runs} {'run' if total.runs == 1 else 'runs'}"
+    if not total.calls:
+        shown = "this" if total.runs == 1 else "these"
+        verb = "doesn't" if total.runs == 1 else "don't"
+        return f"The eval file switched off `{name}`. No run called it, so {shown} {runs} {verb} show the rule refusing anything."
+    said = " ".join((total.said or "").split())
+    said = said if len(said) <= SAID_LIMIT else said[:SAID_LIMIT] + "…"
+    calls = f"{total.calls} {'call' if total.calls == 1 else 'calls'}"
+    return f'The eval file switched off `{name}`. The harness refused {calls} to it, in {total.runs_refused} of {runs}: "{said}"'
 
 
 def _escaped(text: str) -> str:

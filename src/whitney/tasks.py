@@ -35,7 +35,7 @@ from inspect_ai.solver import Solver, TaskState, solver
 from inspect_ai.util import sandbox, store
 from pydantic import ValidationError
 
-from whitney import evalfile, evidence, setup_steps, shipped_evals, targets
+from whitney import evalfile, evidence, refusals, setup_steps, shipped_evals, targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model, redact
 from whitney.checks import OUTCOMES, CheckSpec, Evidence, FolderSnapshot, Verdict, combine, registry
 from whitney.checks.skills import was_used
@@ -561,7 +561,10 @@ def _scenario_task(
             target, model, {target: plan.harness_permissions[target]}, execution=execution,
             api_key_env=api_key_env, base_url=base_url, **named,
         )),
-        scorer=checks_scorer(plan.expect, labels, metrics, target, execution, api_key_env, python, plan.under_test, chosen),
+        scorer=checks_scorer(
+            plan.expect, labels, metrics, target, execution, api_key_env, python, plan.under_test, chosen,
+            plan.harness_permissions[target],
+        ),
         cleanup=_forget_before,
         sandbox=_sandbox_config(execution),
         metadata={
@@ -710,7 +713,7 @@ async def _forget_before(state: TaskState) -> None:
 def _checks_scorer(
     expect: dict[str, list[tuple[str, dict]]], labels: list[str], metrics: list[str], target: str, execution: str,
     api_key_env: str | None, python: str, under_test: tuple[str, str] | None = None,
-    chosen: dict[str, dict[str, str]] | None = None,
+    chosen: dict[str, dict[str, str]] | None = None, permissions: dict | None = None,
 ):
     """The scorer for scenario_eval's tasks, registered as scenario_checks with metrics for `labels` and `metrics`.
 
@@ -723,7 +726,10 @@ def _checks_scorer(
         python: the sandbox's Python, for the snapshot script.
         under_test: the skill or agent the file tests, if it tests one (see _scenario_score).
         chosen: scenario id -> its `kilo run` option, for the scenarios that have one (see _without_the_named_agent).
+        permissions: the eval file's harness_permissions for `target`, whose deny rules for a
+            named skill or agent the score reports on (whitney.refusals).
     """
+    asked_for = refusals.asked(target, permissions or {})
 
     async def score(state: TaskState, _target: Target) -> Score:
         checks = [(registry()[name], params) for name, params in expect[str(state.sample_id)]]
@@ -736,7 +742,8 @@ def _checks_scorer(
         verdicts = [(spec, spec.run(found, params)) for spec, params in checks]
         option = (chosen or {}).get(str(state.sample_id))
         verdicts = _without_the_named_agent(verdicts, option, run)
-        return _scenario_score(verdicts, labels, metrics, run, secrets, under_test=under_test, option=option)
+        refused = refusals.refused(target, asked_for, run) if asked_for else None
+        return _scenario_score(verdicts, labels, metrics, run, secrets, under_test=under_test, option=option, refused=refused)
 
     return score
 
@@ -744,6 +751,7 @@ def _checks_scorer(
 def _scenario_score(
     verdicts: list[tuple[CheckSpec, Verdict]], labels: list[str], metrics: list[str], run: dict, secrets: list[str],
     *, under_test: tuple[str, str] | None = None, option: dict[str, str] | None = None,
+    refused: list[dict] | None = None,
 ) -> Score:
     """One scenario's Inspect score from its checks' verdicts (see whitney.checks.combine).
 
@@ -764,6 +772,11 @@ def _scenario_score(
     printed no events at all, which are None. The report counts it over the template's runs,
     because a scenario that passed without the skill shows the model's
     default, not the skill.
+
+    `refused` is what each of the eval file's own deny rules for a skill or
+    an agent refused in this run (refusals.refused), or None if the file has
+    none. It goes into the metadata as `refusals`, the harness's words
+    redacted like every other text here.
     """
     used = {}
     if under_test and option == {"agent": under_test[1]} and under_test[0] == "agent":
@@ -788,8 +801,15 @@ def _scenario_score(
         metadata={
             "checks": [_check_record(spec, verdict, secrets) for spec, verdict in verdicts],
             **used,
+            **({"refusals": [_redacted_refusal(item, secrets) for item in refused]} if refused is not None else {}),
         },
     )
+
+
+def _redacted_refusal(refusal: dict, secrets: list[str]) -> dict:
+    """One rule's refusals for the score's metadata, with the harness's words redacted."""
+    said = refusal["said"]
+    return {**refusal, "said": redact(said, secrets) if said else said}
 
 
 def _check_record(spec: CheckSpec, verdict: Verdict, secrets: list[str]) -> dict:
