@@ -712,19 +712,19 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Description:** Added on 2026-11-10 from Christopher's Checkpoint C decision. A file's trigger tests are gated as one pool, so positive prompts that all pass can carry negative prompts that don't: 12 of 12 positives and 0 of 3 negatives is 80%. Judge each kind against the file's minimum and `min_conclusive`, as scenarios and trigger tests already are.
 
 **Acceptance criteria:**
-- [ ] `check_thresholds` judges a file's positive prompts and its negative prompts separately, and a problem names which kind fell short.
-- [ ] The report's gate line gives a rate for each kind.
-- [ ] The docs that say the two are pooled say they are separate. Each test whose expectation changes is named and confirmed by Christopher first.
+- [x] `check_thresholds` judges a file's positive prompts and its negative prompts separately, and a problem names which kind fell short. **2026-11-11:** 14 new tests in `tests/test_trigger.py` and `tests/test_cli_report_checks.py`; red then green in `docs/results/2026-11-11-trigger-gates.md`.
+- [x] The report's gate line gives a rate for each kind. **2026-11-11:** `test_the_gate_line_gives_a_rate_for_each_kind_of_prompt`; before and after in `docs/results/2026-11-11-trigger-gates.md`.
+- [ ] The docs that say the two are pooled say they are separate. Each test whose expectation changes is named and confirmed by Christopher first. **2026-11-11:** the docs are done (`README.md`, `docs/adding-tests.md`, the spec, `CHANGELOG.md`, both write-ups). Not ticked: 12 tests in `tests/test_trigger.py` expect the pooled gate, are unchanged and fail, and wait for Christopher's confirmation: `test_a_file_with_trigger_tests_gets_a_table_for_each_kind`, `test_the_gate_reads_scenarios_and_trigger_tests_separately`, `test_both_parts_falling_short_are_both_named`, `test_a_file_with_trigger_tests_and_no_scenarios_is_gated_on_the_trigger_tests`, `test_each_part_needs_enough_conclusive_runs_of_its_own`, `test_a_gap_marked_in_one_log_doesnt_take_another_logs_failing_runs_out_of_the_gate`, `test_a_run_counts_in_the_part_its_own_log_puts_it_in`, `test_a_file_whose_scenarios_are_all_known_gaps_fails_as_one_without_trigger_tests_does`, `test_trigger_tests_that_ran_only_in_the_control_fail_the_gate`, `test_a_known_gap_among_the_scenarios_stays_out_of_their_overall_row`, `test_a_file_with_only_trigger_tests_names_only_them_under_its_tables`, `test_inconclusive_trigger_runs_are_counted_in_the_prompt_tables_and_the_gate_line`.
 
 **Verification:**
-- [ ] `python scripts/check.py task`
-- [ ] `whitney report` on the logs of the 2026-11-10 skills and agents run still exits as that write-up says, or the write-up says what changed.
+- [ ] `python scripts/check.py task` **2026-11-11:** not ticked. It blocks on the commit, on the 12 tests above. With their proposed expectations applied and not committed it passed: 2,703 tests, changed-line coverage 100%, touched-function mutation score 99.4% of 338.
+- [x] `whitney report` on the logs of the 2026-11-10 skills and agents run still exits as that write-up says, or the write-up says what changed. **2026-11-11:** exit 1 with the same two lines; the write-up records the new lines under the tables.
 
 **Evidence:**
-- [ ] A test built from a saved log in which positives pass and negatives fail (the 12 of 12 and 0 of 3 case): it passes the gate before the change and fails after, with both outputs.
-- [ ] The report's gate line for that log, before and after.
-- [ ] `whitney report` on the 2026-11-10 skills and agents logs, and on the 2026-11-11 Claude Code run's logs if they are still kept, with each exit code and what changed.
-- [ ] Evidence items 5 to 7.
+- [x] A test built from a saved log in which positives pass and negatives fail (the 12 of 12 and 0 of 3 case): it passes the gate before the change and fails after, with both outputs. **2026-11-11:** `test_positive_prompts_that_all_pass_dont_carry_negative_prompts_that_fail`, both outputs in `docs/results/2026-11-11-trigger-gates.md`. The log is built by hand in the test, not saved from a run: no kept run has this outcome.
+- [x] The report's gate line for that log, before and after. **2026-11-11:** `docs/results/2026-11-11-trigger-gates.md`.
+- [x] `whitney report` on the 2026-11-10 skills and agents logs, and on the 2026-11-11 Claude Code run's logs if they are still kept, with each exit code and what changed. **2026-11-11:** both were kept; both exit 1 before and after, `docs/results/2026-11-11-trigger-gates.md`.
+- [ ] Evidence items 5 to 7. **2026-11-11:** not ticked. Item 5 is in `docs/results/2026-11-11-trigger-gates.md`. Item 6 is a self-review only. Item 7 waits for the 12 tests' confirmation and a CI run.
 
 **Dependencies:** None. After `v0.2.0`.
 

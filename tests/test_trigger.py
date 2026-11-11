@@ -843,6 +843,125 @@ def test_a_known_gap_among_the_scenarios_stays_out_of_their_overall_row():
     assert gate_problems([*skill_logs(), gap]) == []
 
 
+# --- Positive and negative prompts are gated apart (Task 29) -----------------------------------
+
+
+def prompt_logs(positive, negative, **changes):
+    """skill_logs with the template's outcomes for the positive prompt and for the negative one; None leaves a kind out."""
+    return skill_logs(**{
+        "positive-template": positive and log("template", "template", "asks-for-release-notes", positive, trigger="positive"),
+        "negative-template": negative and log("template", "template", "asks-for-a-bug-fix", negative, trigger="negative"),
+    } | changes)
+
+
+def test_positive_prompts_that_all_pass_dont_carry_negative_prompts_that_fail():
+    # 12 of 12 positives and 0 of 3 negatives: 80% as one pool, which reaches the minimum
+    logs = prompt_logs(["pass"] * 12, ["fail"] * 3)
+
+    assert gate_problems(logs) == ["release_notes: template negative trigger tests 0% is below the minimum 80%"]
+
+
+def test_negative_prompts_that_all_pass_dont_carry_positive_prompts_that_fail():
+    logs = prompt_logs(["fail"] * 3, ["pass"] * 12)
+
+    assert gate_problems(logs) == ["release_notes: template positive trigger tests 0% is below the minimum 80%"]
+
+
+def test_both_kinds_of_prompt_passing_pass_the_gate():
+    assert gate_problems(prompt_logs(["pass"] * 4 + ["fail"], ["pass"] * 4 + ["fail"])) == []
+
+
+def test_both_kinds_falling_short_are_named_positive_first():
+    assert gate_problems(prompt_logs(["pass", "fail"], ["fail"] * 4)) == [
+        "release_notes: template positive trigger tests 50% is below the minimum 80%",
+        "release_notes: template negative trigger tests 0% is below the minimum 80%",
+    ]
+
+
+def test_the_gate_line_gives_a_rate_for_each_kind_of_prompt():
+    report = rendered(prompt_logs(["pass"] * 12, ["fail"] * 3))
+
+    assert report.endswith(
+        "\nThe gate reads the template's scenarios, its positive trigger tests and its negative trigger tests separately: "
+        "scenarios 3/3, positive trigger tests 12/12, negative trigger tests 0/3.\n"
+    )
+
+
+def test_each_kind_of_prompt_needs_enough_conclusive_runs_of_its_own():
+    # 1 of 4 positive runs was conclusive; with the negatives counted in, 7 of 10 would be
+    early = prompt_logs(["pass"] + ["inconclusive"] * 3, ["pass"] * 6)
+    quiet = prompt_logs(["pass"] * 6, ["pass"] + ["inconclusive"] * 3)
+
+    assert gate_problems(early) == ["release_notes: only 1/4 template positive trigger test runs were conclusive, below the minimum 50%"]
+    assert gate_problems(quiet) == ["release_notes: only 1/4 template negative trigger test runs were conclusive, below the minimum 50%"]
+
+
+def test_a_kind_with_no_conclusive_run_fails_though_the_other_passed():
+    silent = prompt_logs(["pass"] * 6, ["inconclusive"] * 3)
+
+    assert gate_problems(silent) == [
+        "release_notes: template negative trigger tests had no conclusive runs, so they are below the minimum 80%"
+    ]
+
+
+def test_a_file_with_one_kind_of_prompt_is_gated_on_that_kind_only():
+    only_positive = prompt_logs(["pass"] * 3, None)
+    only_negative = prompt_logs(None, ["fail"] * 3, **{"positive-control": None})
+
+    assert gate_problems(only_positive) == []
+    assert rendered(only_positive).endswith(
+        "\nThe gate reads the template's scenarios and its positive trigger tests separately: "
+        "scenarios 3/3, positive trigger tests 3/3.\n"
+    )
+    assert gate_problems(only_negative) == ["release_notes: template negative trigger tests 0% is below the minimum 80%"]
+    assert rendered(only_negative).endswith(
+        "\nThe gate reads the template's scenarios and its negative trigger tests separately: "
+        "scenarios 3/3, negative trigger tests 0/3.\n"
+    )
+
+
+def test_a_file_with_no_scenarios_and_one_kind_of_prompt_names_only_that_kind_under_its_table():
+    only_negative = prompt_logs(None, ["pass"] * 3, **{"behaviour-baseline": None, "behaviour-template": None, "positive-control": None})
+
+    assert rendered(only_negative).endswith("\nThe gate reads the template's negative trigger tests: 3/3.\n")
+
+
+def test_positive_prompts_that_ran_only_in_the_control_fail_the_gate_though_the_negatives_passed():
+    logs = prompt_logs(None, ["pass"] * 3)
+
+    assert gate_problems(logs) == [
+        "release_notes: template positive trigger tests had no conclusive runs, so they are below the minimum 80%"
+    ]
+    assert rendered(logs).endswith("scenarios 3/3, positive trigger tests no runs, negative trigger tests 3/3.\n")
+
+
+def test_a_file_with_no_scenarios_is_gated_on_each_kind_of_prompt():
+    logs = prompt_logs(["pass"] * 3, ["pass", "pass", "fail"], **{"behaviour-baseline": None, "behaviour-template": None})
+
+    assert gate_problems(logs) == ["release_notes: template negative trigger tests 67% is below the minimum 80%"]
+    assert rendered(logs).endswith(
+        "\nThe gate reads the template's positive trigger tests and its negative trigger tests separately: "
+        "positive trigger tests 3/3, negative trigger tests 2/3.\n"
+    )
+
+
+def test_a_known_gap_among_the_prompts_stays_out_of_its_kinds_rate():
+    gap = marked_known_gap(log("template", "template", "known-hard-prompt", ["fail"] * 3, trigger="negative"))
+    logs = [*prompt_logs(["pass"] * 3, ["pass"] * 3), gap]
+
+    assert gate_problems(logs) == []
+    assert rendered(logs).endswith("positive trigger tests 3/3, negative trigger tests 3/3.\n")
+
+
+def test_min_conclusive_given_to_the_gate_is_each_kinds_bar():
+    logs = prompt_logs(["pass"] * 3 + ["inconclusive"], ["pass"] * 4)
+
+    assert gate_problems(logs) == []
+    assert gate_problems(logs, min_conclusive=1.0) == [
+        "release_notes: only 3/4 template positive trigger test runs were conclusive, below the minimum 100%"
+    ]
+
+
 # --- The totals under a trigger file's tables -------------------------------------------------
 
 

@@ -68,6 +68,6 @@ That was the right answer for a stream it couldn't read in full. Two things chan
 
 ## What this run doesn't show
 
-- **Rates.** One epoch each. The gate failed on the skill's file (scenarios 50%, trigger tests 75%, both under 80%), and with one run per prompt that says little.
+- **Rates.** One epoch each. The gate failed on the skill's file (scenarios 50%, trigger tests 75%, both under 80%), and with one run per prompt that says little. Since Task 29, later the same day, the gate reads positive and negative trigger tests separately: `whitney report` on this run's logs still exits 1, and its second line is now "template negative trigger tests 50% is below the minimum 80%" (positive 2/2, negative 1/2). See [2026-11-11-trigger-gates.md](2026-11-11-trigger-gates.md).
 - **`skill_not_loaded` and `subagent_not_delegated` failing.** Neither failed. They are tested against saved Claude Code streams that make them fail.
 - **A subagent loading a skill.** No run here did. The saved stream `subagent-loads-skill` covers it.
