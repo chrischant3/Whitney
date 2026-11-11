@@ -26,3 +26,10 @@ None provided. Source proposal: docs/proposal.md. Agreed MVP decision: VS Code e
 
 ## Constraints
 Read CONSTRAINTS.md before writing code. Do not weaken it to make a change pass. Run `python scripts/check.py task` before handing work back.
+
+## Git workflow
+Follows rule 13 of chrischant3/standards and `agent-skills:git-workflow-and-versioning`. Agents commit on a feature branch (`feature/`, `fix/`, `chore/` or `refactor/`), push it over SSH with `git push -u origin <branch>`, and open a pull request. Only the maintainer merges, tags and releases.
+- In Claude Code, `.claude/hooks/git-workflow-gate.sh` enforces this. It blocks commits and pushes on main, force pushes, PR merges, `gh api` writes, and any `.env` file in a commit (fixture `.env` files included, so the maintainer commits those).
+- Before `gh pr create`, run `python scripts/check.py task`, then the five pre-PR review skills in order: `code-review-and-quality`, `code-simplification`, `security-and-hardening`, `documentation-and-adrs`, `shipping-and-launch`. The gate refuses the PR until the review marker exists for the current HEAD; its message gives the command.
+- Write multi-line commit messages to a file and use `git commit -F <file>`; the gate reads each line of a command as a command.
+- Kilo sessions have no gate. These rules apply to them by instruction only.
