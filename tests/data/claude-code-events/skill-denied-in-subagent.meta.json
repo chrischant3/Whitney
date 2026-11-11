@@ -1,0 +1,39 @@
+{
+  "case": "skill-denied-in-subagent",
+  "about": "The eval file denies Skill(release-notes); a subagent's call to it is refused",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "Use the reviewer subagent, and tell it to load the release-notes skill with its Skill tool and then say in one sentence what the skill is for. Then tell me what it said.",
+  "harness_permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read"
+    ],
+    "deny": [
+      "Skill(release-notes)"
+    ]
+  },
+  "staged_files": [
+    ".claude/agents/reviewer.md",
+    ".claude/skills/release-notes/SKILL.md",
+    "AGENTS.md"
+  ],
+  "exit_code": 0,
+  "ended_early": true,
+  "permission_denials": [
+    {
+      "tool_name": "Skill",
+      "tool_use_id": "toolu_017ZZNMFw9mFjFSecK3v5FHP",
+      "tool_input": {
+        "skill": "release-notes"
+      }
+    }
+  ],
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

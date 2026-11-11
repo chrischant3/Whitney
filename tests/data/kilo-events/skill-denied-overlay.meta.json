@@ -1,0 +1,27 @@
+{
+  "case": "skill-denied-overlay",
+  "about": "The eval file's overlay denies the built-in skill kilo-config; the skill call is refused",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "kilo",
+  "harness_version": "7.8.27",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "prompt": "Load the kilo-config skill with your skill tool, then tell me in one sentence what it covers.",
+  "harness_permissions": {
+    "bash": "allow",
+    "edit": "allow",
+    "skill": {
+      "*": "allow",
+      "kilo-config": "deny"
+    }
+  },
+  "staged_files": [
+    "AGENTS.md",
+    "kilo.jsonc"
+  ],
+  "exit_code": 0,
+  "ended_early": null,
+  "permission_denials": null,
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

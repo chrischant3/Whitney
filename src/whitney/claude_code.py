@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 from inspect_ai.agent import Agent, AgentState, agent
@@ -30,6 +31,7 @@ from whitney.agent import (
     staged_project,
 )
 from whitney.git_env import isolated_git_env
+from whitney.refusals import Rule, asked, expected
 
 MODEL_PREFIX = "anthropic/"
 
@@ -60,7 +62,9 @@ def claude_code(
 
     Side effects: stores exit_code, the stream-json events, stderr,
     ended_early, permission_denials and api_key_source under RUN_STORE_KEY,
-    with the API key's value redacted.
+    with the API key's value redacted. A denied skill that a
+    `Skill(<name>)` rule in harness_permissions' `deny` list switched off
+    doesn't make ended_early true (see _outcome).
 
     Raises:
         ValueError: model isn't anthropic/<model> (at construction), or
@@ -69,6 +73,7 @@ def claude_code(
     if not model.startswith(MODEL_PREFIX):
         raise ValueError(f"the claude-code target runs Anthropic models: use --model anthropic/<model>, got {model!r}")
     command = _claude_command(model.removeprefix(MODEL_PREFIX), harness_permissions or {})
+    asked_for = asked("claude-code", harness_permissions or {})
 
     async def execute(state: AgentState) -> AgentState:
         key = os.environ.get(api_key_env)
@@ -78,10 +83,10 @@ def claude_code(
         prompt = [*command, "--", state.messages[-1].text]  # "--": a prompt such as "--version" stays the prompt
         if local_project_files is None:
             project_dir = Path((await sbox.exec(["pwd"], cwd=PROJECT_DIR)).stdout.strip())
-            run = await _run(prompt, project_dir, key, timeout)
+            run = await _run(prompt, project_dir, key, timeout, asked_for)
         else:
             with staged_project(local_project_files) as project_dir:
-                run = await _run(prompt, project_dir, key, timeout)
+                run = await _run(prompt, project_dir, key, timeout, asked_for)
                 if local_output_targets:
                     run["copied_outputs"], run["missing_outputs"] = await copy_outputs(
                         sbox, project_dir, local_output_targets
@@ -105,17 +110,17 @@ def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) ->
     ]  # fmt: skip
 
 
-async def _run(command: list[str], project_dir: Path, key: str, timeout: int) -> dict:
+async def _run(command: list[str], project_dir: Path, key: str, timeout: int, asked_for: Sequence[Rule] = ()) -> dict:
     check_no_inherited_instructions(project_dir, claude_code=True)
     with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
         env = {"PATH": os.environ["PATH"], "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
         run = await run_process(command, project_dir, {**env, **isolated_git_env(project_dir)}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
     run = redact_run(run, [key])  # its Bash tool can print the key, and the transcript goes into the eval log
-    return {**run, **_outcome(run["events"])}
+    return {**run, **_outcome(run["events"], asked_for)}
 
 
-def _outcome(events: str) -> dict:
+def _outcome(events: str, asked_for: Sequence[Rule]) -> dict:
     """What the transcript's init and result events say about the run.
 
     A run with a background subagent has more than one result event: the main
@@ -125,6 +130,11 @@ def _outcome(events: str) -> dict:
     is the last one's text. ended_early is True unless every result event
     reports success and none lists a denial: a denial means the harness, not
     the agent, decided.
+
+    One kind of denial doesn't count: a skill that `asked_for`, the eval
+    file's own deny rules, switched off (whitney.refusals). The file asked
+    for that refusal, and the agent carries on without the skill, so the
+    result is still the agent's. It stays in permission_denials.
     """
     init, results = {}, []
     for line in events.splitlines():
@@ -139,7 +149,7 @@ def _outcome(events: str) -> dict:
     denials = _all_denials(results)
     succeeded = bool(results) and all(r.get("subtype") == "success" and not r.get("is_error") for r in results)
     return {
-        "ended_early": not succeeded or bool(denials),
+        "ended_early": not succeeded or any(not expected(asked_for, denial) for denial in denials),
         "permission_denials": denials,
         "api_key_source": init.get("apiKeySource"),
         "final_text": results[-1].get("result") if results else None,

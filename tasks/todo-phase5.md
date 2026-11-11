@@ -964,20 +964,20 @@ Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `genera
 **Description:** Only one case is scored wrongly. On Claude Code a refused `Skill(<name>)` call is a permission denial, and `claude_code._outcome` marks any run with a denial as ended early, so every check is inconclusive. But the eval file asked for that refusal, and the agent carried on. A refused `Bash`, `Edit` or `Write` is different: there the harness may have decided the result, so it stays inconclusive.
 
 **Acceptance criteria:**
-- [ ] On `claude-code`, a denial of a `Skill` call whose skill matches a `Skill(<name>)` rule in the eval file's own `harness_permissions` `deny` list doesn't mark the run as ended early. Every other denial still does, including one of a skill the eval file didn't name.
-- [ ] The report shows each refusal the eval file asked for, on both targets: the rule, how many calls it refused, and the harness's own words. A deny rule that refused nothing is shown as such, so a reader can't take silence for proof.
-- [ ] `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated` read a refused call as loading or delegating nothing, on both targets. Tests from the captured streams say so.
-- [ ] The project-agent case is captured again with a prompt that makes the call.
-- [ ] `docs/adding-tests.md` says how to switch off a built-in skill or agent on each target, with the rules above, and what each harness's built-ins are. It says a bare `Skill` rule removes the tool but doesn't stop the model reading the skill's file.
-- [ ] `docs/spike-findings.md` records the captures, and that Kilo 7.8.27 was used where the earlier spikes used 7.8.18.
-- [ ] Fixtures are sanitised as the others are, and gitleaks passes.
+- [x] On `claude-code`, a denial of a `Skill` call whose skill matches a `Skill(<name>)` rule in the eval file's own `harness_permissions` `deny` list doesn't mark the run as ended early. Every other denial still does, including one of a skill the eval file didn't name. *(2026-11-11: tests/test_claude_code.py, from the recorded streams; `whitney run` exit 1 before, 0 after.)*
+- [x] The report shows each refusal the eval file asked for, on both targets: the rule, how many calls it refused, and the harness's own words. A deny rule that refused nothing is shown as such, so a reader can't take silence for proof. *(2026-11-11: tests/test_refusals_report.py; real report lines in docs/results/2026-11-11-denied-builtins.md.)*
+- [x] `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated` read a refused call as loading or delegating nothing, on both targets. Tests from the captured streams say so. *(2026-11-11: tests/test_refusals.py, eight recorded streams. One change to the checks: a failed `Agent` call with no `subagent_type` is no longer a call that couldn't be read.)*
+- [x] The project-agent case is captured again with a prompt that makes the call. *(2026-11-11: fixture `agent-denied`.)*
+- [x] `docs/adding-tests.md` says how to switch off a built-in skill or agent on each target, with the rules above, and what each harness's built-ins are. It says a bare `Skill` rule removes the tool but doesn't stop the model reading the skill's file. *(2026-11-11: docs/adding-tests.md, "Switching off a built-in skill or agent".)*
+- [x] `docs/spike-findings.md` records the captures, and that Kilo 7.8.27 was used where the earlier spikes used 7.8.18. *(2026-11-11: docs/spike-findings.md, "Phase 5 Task 36b".)*
+- [x] Fixtures are sanitised as the others are, and gitleaks passes. *(2026-11-11: saved by spikes/run_to_fixture.py, which refuses to write a file that still holds a local path, key, user name or email.)*
 
 **Evidence:**
-- [ ] The eight captures above saved as sanitised fixtures, and the project-agent case captured again.
-- [ ] One saved stream, the denied project skill, judged twice: under an eval file that set the rule (conclusive) and under one that didn't (still inconclusive).
-- [ ] The report for a run with a rule that refused calls, and for one whose rule refused nothing, each showing its line.
-- [ ] One real run per target after the change (cents), written up in `docs/results/`, with `whitney run`'s exit code before and after for the Claude Code case.
-- [ ] Evidence items 1 and 5 to 7.
+- [x] The eight captures above saved as sanitised fixtures, and the project-agent case captured again. *(2026-11-11: nine fixtures; the Kilo run with no rule and the eight others.)*
+- [x] One saved stream, the denied project skill, judged twice: under an eval file that set the rule (conclusive) and under one that didn't (still inconclusive). *(2026-11-11: tests/test_claude_code.py: with the rule, not ended early; without, ended early.)*
+- [x] The report for a run with a rule that refused calls, and for one whose rule refused nothing, each showing its line. *(2026-11-11: real lines for rules that refused calls on both targets. The line for a rule that refused nothing is from saved logs only, not a real run.)*
+- [x] One real run per target after the change (cents), written up in `docs/results/`, with `whitney run`'s exit code before and after for the Claude Code case. *(2026-11-11: docs/results/2026-11-11-denied-builtins.md.)*
+- [x] Evidence items 1 and 5 to 7. *(2026-11-11: in the pull request.)*
 
 **Dependencies:** 36. **Estimated scope:** M.
 

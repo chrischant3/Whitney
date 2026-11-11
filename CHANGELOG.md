@@ -2,6 +2,17 @@
 
 What changed in each release, and what anyone who forks Whitney or runs it in CI must update.
 
+## Unreleased
+
+### Changed
+
+- **A Claude Code run is graded differently when the eval file switches off a skill.** If the file's own `harness_permissions` denies `Skill(<name>)` and Claude Code refuses a call to that skill, the run is no longer inconclusive. The same logs' runs were inconclusive before, and `whitney run` could exit 1 where it now exits 0. Every other permission denial still makes the run inconclusive. Only exact names are read: a rule with a pattern, such as `Skill(review *)`, is treated as before.
+- **A failed `Agent` call that names no agent** no longer makes `subagent_delegated` and `subagent_not_delegated` inconclusive on Claude Code.
+
+### New
+
+- **The report shows each skill or agent an eval file switched off,** on both targets: how many calls the harness refused, in how many runs, and the harness's own words. See `docs/adding-tests.md`, "Switching off a built-in skill or agent".
+
 ## 0.2.0
 
 The first tagged release. Whitney becomes a command you install and point at your own project, and its checks grow from one rule to nine kinds of evidence.

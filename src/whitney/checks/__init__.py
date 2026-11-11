@@ -155,7 +155,8 @@ class Evidence:
     Attributes:
         exit_code: the harness's exit code; None if the agent recorded no run.
         ended_early: the agent's own record that the run stopped short (Claude
-            Code sets it on an error or a permission denial).
+            Code sets it on an error or a permission denial, other than a
+            denied skill the eval file's own deny rule named).
         events: the harness's event stream, already redacted.
         stderr: the harness's stderr, already redacted.
         initial_commits: commits the setup made before the agent started;

@@ -435,6 +435,53 @@ A skill and an agent were also put in `.claude/` in the folder above the project
 - Validation refuses a Claude Code agent under test whose frontmatter `name` isn't its file's name, because the checks look for the file's name.
 - A Claude Code run is refused when `.claude/skills/` or `.claude/agents/` is above a project that isn't a git repository.
 
+## Phase 5 Task 36b: switching off a built-in skill or agent (2026-11-11)
+
+Each harness ships its own skills and agents. Task 36's real run showed the model using them in place of a project's: Claude Code's `code-review` skill and its `general-purpose` agent. Ten real runs asked whether an eval file can switch one off, and what the stream then shows. Each run was a `whitney run` with a deny rule in the eval file's own `harness_permissions`, Haiku, one epoch. `spikes/run_to_fixture.py` saved nine of them as fixtures.
+
+Kilo was 7.8.27 here. The earlier Kilo spikes used 7.8.18.
+
+### Claude Code 2.1.322
+
+| Fixture | Rule in `deny` | What the stream shows |
+|---|---|---|
+| `skill-denied-builtin` | `Skill(code-review)` | Two `Skill` calls, each with an error result, "Skill execution blocked by permission rules". Both are in `permission_denials` |
+| `skill-denied` | `Skill(release-notes)`, a project skill | The same, once. The model then did the work itself |
+| `skill-denied-in-subagent` | `Skill(release-notes)` | The same, on a call made by a subagent |
+| `skill-tool-denied` | `Skill` | No `Skill` tool in the `init` event's `tools`, and no `Skill` call. The model read the skill's `SKILL.md` with `Read` and followed it |
+| `agent-denied-builtin` | `Agent(general-purpose)` | One `Agent` call with an error result, "Agent type 'general-purpose' has been denied by permission rule 'Agent(general-purpose)' from flagSettings." It is **not** in `permission_denials`. The call's `input` has no `subagent_type` |
+| `agent-denied` | `Agent(reviewer)`, a project agent | The same, with `subagent_type` "reviewer" |
+
+- A denied skill or agent stays in the `init` event's `skills` and `agents` lists. The rule refuses the call; it doesn't hide the name.
+- A first try at the project-agent case made no `Agent` call: Haiku called the built-in `code-review` skill. A prompt that named the `Agent` tool made the call.
+- An `Agent` call with no `subagent_type` goes to `general-purpose`.
+
+### Kilo 7.8.27
+
+`kilo debug skill --pure` and `kilo debug agent <name> --pure`, in an empty project with an empty HOME, list what Kilo ships: one skill, `kilo-config`; subagents `general` and `explore`; primary agents `code`, `ask`, `debug`, `orchestrator`, `plan` and `build`; and hidden agents `title`, `summary` and `compaction`. None of Claude Code's built-ins are there: they belong to the harness, not the model.
+
+| Fixture | Overlay permission | What the stream shows |
+|---|---|---|
+| `skill-builtin-loaded` | none | A `skill` call for `kilo-config` that completed |
+| `skill-denied-overlay` | `"skill": {"*": "allow", "kilo-config": "deny"}` | A `skill` call whose `state.status` is `error`. `state.error` is "The user has specified a rule which prevents you from using this specific tool call...", and `state.metadata.approval` is `{"source": "global", "rule": {"permission": "skill", "pattern": "kilo-config", "action": "deny"}}` |
+| `task-denied-overlay` | `"task": {"*": "allow", "general": "deny"}` | A `task` call refused the same way |
+
+- A rule from Whitney's overlay has `source` "global". The project's own rule has `source` "project" (`task-deny`, 2026-11-06).
+- `kilo debug skill` still lists `kilo-config` under the deny rule.
+- `"agent": {"explore": {"disable": true}}` in `kilo.jsonc` removes an agent: `kilo debug agent explore` then says it isn't found. Not tried in a run.
+
+### What Whitney does with this
+
+- `whitney.refusals` reads these refusals for each `Skill(<name>)` and `Agent(<name>)` in an eval file's Claude Code `deny` list, and each pattern set to `deny` under `skill` and `task` in its Kilo overlay.
+- A Claude Code run used to count as ended early on any permission denial, so a denied skill made every check inconclusive. A denial of a skill the eval file named no longer does. Kilo's runs were never affected.
+- The score records what each rule refused, and the report gives a line for each, with the harness's words.
+
+### Not shown
+
+- A rule with a pattern, such as `Skill(review *)`. Only exact names were captured, so only exact names are read.
+- More than one model, or more than one run of each case.
+- What a denied skill does to a scenario's pass rate.
+
 ## Phase 5 Task 40: hooks to enforce a skill (2026-11-11)
 
 Task 40's rule 3 advises a hook when a skill's description is sound and the model still doesn't load the skill. This spike asks what that hook is on each target, whether it works, and what Whitney would need to stage one. It used Claude Code 2.1.322 with `claude-haiku-4-5`, and Kilo 7.8.27 with `kilo/anthropic/claude-haiku-4.5`.
