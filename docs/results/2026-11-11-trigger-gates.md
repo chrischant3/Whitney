@@ -91,6 +91,6 @@ A self-review of the diff, not a second reader's.
 
 ## The gate
 
-Twelve existing tests in `tests/test_trigger.py` expect the pooled gate, or use a shared helper whose negative prompt passes 2 of 3 runs, which is 67% and now under the minimum. They are left as they were and fail, until the maintainer confirms each new expectation. So `python scripts/check.py task --base origin/main` blocks on the commit: 12 failed, 2,691 passed.
+Twelve existing tests in `tests/test_trigger.py` expected the pooled gate, or used a shared helper whose negative prompt passes 2 of 3 runs, which is 67% and now under the minimum. Christopher confirmed their new expectations on 2026-11-11, and kept 80% as the minimum for each kind for now. They changed in the branch's second commit; until then `python scripts/check.py task` blocked on them (12 failed, 2,691 passed).
 
-With the proposed expectations applied to the working tree and not committed, the same command passed: 2,703 tests, changed-line coverage 100%, touched-function mutation score 99.4% of 338 mutants. Its two survivors are in lines of `render_markdown` this change didn't touch. No CI run yet: the branch isn't pushed.
+The final `check.py task` result, and the code reviews' findings, are in the pull request.

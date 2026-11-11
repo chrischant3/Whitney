@@ -523,6 +523,12 @@ def _gated_parts(s: EvalSummary) -> list[tuple[str, Cell]]:
     with one kind of prompt, has fewer. A part whose runs were all known
     gaps, or all in other variants, is still judged, and fails for want of
     conclusive runs, as a file without trigger tests does.
+
+    A kind with no run in any log isn't judged, because the logs don't say
+    the file has it. Negative prompts run in the template only, so logs that
+    lost the template's negative runs would gate without them. One
+    `whitney run` writes each variant's samples to one log, so that takes a
+    log cut short or filtered by hand.
     """
     if not s.parts:
         return [("", s.overall.get(TEMPLATE_VARIANT, Cell()))]

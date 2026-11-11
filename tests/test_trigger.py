@@ -1101,3 +1101,12 @@ def test_a_file_whose_template_never_ran_gets_no_note():
     rendered_logs = rendered([log("baseline", "baseline", "writes-notes", ["fail"] * 2, used=[False, False])])
 
     assert "| writes-notes | 0/2 |" in rendered_logs and "In the template's" not in rendered_logs
+
+
+def test_a_minimum_replaced_for_the_run_applies_to_each_kind_of_prompt():
+    """The shared logs' negative prompt passes 2 of 3 runs: under the 80% default, over a 60% minimum."""
+    assert gate_problems(skill_logs()) == ["release_notes: template negative trigger tests 67% is below the minimum 80%"]
+    assert gate_problems(skill_logs(), min_rates={"skill_loaded": 0.6}) == []
+    assert gate_problems(skill_logs(), min_rates={"skill_loaded": 0.7}) == [
+        "release_notes: template negative trigger tests 67% is below the minimum 70%",
+    ]
