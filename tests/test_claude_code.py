@@ -187,6 +187,47 @@ def test_runs_that_end_before_the_agent_finished_are_not_complete(fake_claude, r
     assert not run_completed(run)
 
 
+def _result(text: str, denials: list[dict] | None = None, subtype: str = "success") -> dict:
+    return {"type": "result", "subtype": subtype, "is_error": subtype != "success", "permission_denials": denials or [], "result": text}
+
+
+DENIAL = {"tool_name": "Bash", "tool_use_id": "toolu_1", "tool_input": {"command": "git push origin main"}}
+
+
+def test_a_denial_in_an_earlier_result_is_kept_and_the_last_result_is_the_answer(fake_claude):
+    # A background subagent gives two result events: the main turn ending, then the answer after it
+    # finished (docs/spike-findings.md, "Claude Code: ... Subagents", Claude Code 2.1.322).
+    results = [_result("The reviewer is working.", [DENIAL]), _result("The reviewer found one bug.")]
+    fake_claude.control(FAKE_RESULT="\n".join(json.dumps(result) for result in results))
+
+    state = _run(claude_code(model=MODEL))
+
+    run = fake_claude.stored[RUN_STORE_KEY]
+    assert run["permission_denials"] == [DENIAL]
+    assert run["ended_early"] is True
+    assert state.messages[-1].text == "The reviewer found one bug."
+
+
+def test_a_denial_listed_in_two_results_is_kept_once(fake_claude):
+    other = {**DENIAL, "tool_use_id": "toolu_2"}
+    results = [_result("first", [DENIAL]), _result("second", [DENIAL, other])]
+    fake_claude.control(FAKE_RESULT="\n".join(json.dumps(result) for result in results))
+
+    _run(claude_code(model=MODEL))
+
+    assert fake_claude.stored[RUN_STORE_KEY]["permission_denials"] == [DENIAL, other]
+
+
+def test_an_earlier_result_that_failed_means_the_run_ended_early(fake_claude):
+    results = [_result("", subtype="error_max_turns"), _result("Done.")]
+    fake_claude.control(FAKE_RESULT="\n".join(json.dumps(result) for result in results))
+
+    _run(claude_code(model=MODEL))
+
+    run = fake_claude.stored[RUN_STORE_KEY]
+    assert run["ended_early"] is True and not run_completed(run)
+
+
 def test_timeouts_are_recorded_and_not_complete(fake_claude):
     fake_claude.control(FAKE_SLEEP="10")
 
