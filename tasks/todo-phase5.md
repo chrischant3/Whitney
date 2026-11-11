@@ -852,6 +852,27 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 
 **Dependencies:** 34. **Estimated scope:** M.
 
+### Task 36a: Claude Code: Docker execution
+
+Added 2026-11-11 at Christopher's request, ahead of Task 37. Numbered 36a so the later tasks keep their numbers.
+
+**Description:** A `claude-code` run is isolated by an empty temporary HOME, `--setting-sources project` and `--strict-mcp-config`. That keeps the user's settings, hooks, plugins and skills out, but the agent's shell commands can still read the host's files outside the project, and nothing limits the network (spike, "Permissions"). `--execution docker` exists for `kilo` only: `targets.check_target` refuses it for `claude-code`. This task adds it, so a team that needs the run isolated from the host can have that.
+
+**Step 1, a spike, before any code.** Run `claude -p` in a container against Inspect's model bridge, as Kilo's Docker mode does, with no other network. Record in `docs/spike-findings.md` what was set (such as `ANTHROPIC_BASE_URL`), whether the run completed, and whether its stream has the same shape as a local run's. If the bridge can't serve Claude Code, stop and show Christopher the fallback: `ANTHROPIC_API_KEY` passed into the container, with the network limited to Anthropic's API.
+
+**Acceptance criteria:**
+- [ ] The spike's result is in `docs/spike-findings.md`, and the route to the model was chosen with Christopher.
+- [ ] The sandbox image holds a pinned Claude Code. The report's harness version comes from the container.
+- [ ] `whitney run --target claude-code --execution docker` runs `claude -p` in the container, on the same staged files as a local run, with the same `--setting-sources project`, `--strict-mcp-config` and `--settings` grant.
+- [ ] The container can't read the host's files, and reaches no network but the route to the model. A test or the real run shows both.
+- [ ] No API key is written to the image, the log or the report.
+- [ ] Every check that supports `claude-code` gives the same verdict on a Docker run's stream as on a local one's. Tests from a stream recorded in the container.
+- [ ] The `--execution` help, the credential check, README, `docs/adding-tests.md` and AGENTS.md's "Deployment Target" say Docker works for both targets.
+
+**Verification:** `python scripts/check.py task`; one real Docker run (cents).
+
+**Dependencies:** 36. **Estimated scope:** M. Task 38 (`outside_canary_not_reached`) should say what a pass means in each execution mode once this is in.
+
 ### Task 37: Claude Code: stage `permissions` from `.claude/settings.json`; `permission_held`
 
 **Description:** A `deny` or `ask` rule in the project's `.claude/settings.json` refuses the call and lists it in `permission_denials` (spike, "Permissions"). Decision 8: stage only the `permissions` block. Hooks stay out (Later list).
