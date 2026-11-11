@@ -605,7 +605,7 @@ In the template's 3 scenario runs, the skill `release-notes` was loaded in 2, wa
 | asks-for-a-bug-fix | 2/3 |
 | **overall** | 2/3 |
 
-The gate reads the template's scenarios and its trigger tests separately: scenarios 3/3, trigger tests 5/6.
+The gate reads the template's scenarios, its positive trigger tests and its negative trigger tests separately: scenarios 3/3, positive trigger tests 3/3, negative trigger tests 2/3.
 """
 
 
@@ -618,8 +618,8 @@ def gate_problems(logs, **options):
 def test_the_gate_reads_scenarios_and_trigger_tests_separately():
     failing_triggers = skill_logs(**{"negative-template": log("template", "template", "asks-for-a-bug-fix", ["fail"] * 3, trigger="negative")})
 
-    assert gate_problems(skill_logs()) == []
-    assert gate_problems(failing_triggers) == ["release_notes: template trigger tests 50% is below the minimum 80%"]
+    assert gate_problems(skill_logs()) == ["release_notes: template negative trigger tests 67% is below the minimum 80%"]
+    assert gate_problems(failing_triggers) == ["release_notes: template negative trigger tests 0% is below the minimum 80%"]
 
 
 def test_trigger_tests_that_all_pass_dont_carry_scenarios_that_fail():
@@ -641,14 +641,15 @@ def test_both_parts_falling_short_are_both_named():
 
     assert gate_problems(failing) == [
         "release_notes: template scenarios 0% is below the minimum 80%",
-        "release_notes: template trigger tests 33% is below the minimum 80%",
+        "release_notes: template positive trigger tests 0% is below the minimum 80%",
+        "release_notes: template negative trigger tests 67% is below the minimum 80%",
     ]
 
 
 def test_a_file_with_trigger_tests_and_no_scenarios_is_gated_on_the_trigger_tests():
     only_triggers = skill_logs(**{"behaviour-baseline": None, "behaviour-template": None})
 
-    assert gate_problems(only_triggers) == []
+    assert gate_problems(only_triggers) == ["release_notes: template negative trigger tests 67% is below the minimum 80%"]
 
 
 def test_each_part_needs_enough_conclusive_runs_of_its_own():
@@ -660,9 +661,12 @@ def test_each_part_needs_enough_conclusive_runs_of_its_own():
     })
     silent = skill_logs(**{"behaviour-template": log("template", "template", "writes-notes", ["inconclusive"] * 3)})
 
-    assert gate_problems(early) == ["release_notes: only 1/4 template scenario runs were conclusive, below the minimum 50%"]
-    assert gate_problems(quiet) == ["release_notes: only 1/6 template trigger test runs were conclusive, below the minimum 50%"]
-    assert gate_problems(silent) == ["release_notes: template scenarios had no conclusive runs, so they are below the minimum 80%"]
+    assert gate_problems(early) == ["release_notes: only 1/4 template scenario runs were conclusive, below the minimum 50%", "release_notes: template negative trigger tests 67% is below the minimum 80%"]
+    assert gate_problems(quiet) == [
+        "release_notes: template positive trigger tests had no conclusive runs, so they are below the minimum 80%",
+        "release_notes: only 1/3 template negative trigger test runs were conclusive, below the minimum 50%",
+    ]
+    assert gate_problems(silent) == ["release_notes: template scenarios had no conclusive runs, so they are below the minimum 80%", "release_notes: template negative trigger tests 67% is below the minimum 80%"]
 
 
 def marked_known_gap(entry):
@@ -679,7 +683,7 @@ def test_a_gap_marked_in_one_log_doesnt_take_another_logs_failing_runs_out_of_th
         "other-template": log("template", "template", "other", ["pass"] * 3),
     })
 
-    assert gate_problems(logs) == ["release_notes: template scenarios 50% is below the minimum 80%"]
+    assert gate_problems(logs) == ["release_notes: template scenarios 50% is below the minimum 80%", "release_notes: template negative trigger tests 67% is below the minimum 80%"]
 
 
 def test_a_run_counts_in_the_part_its_own_log_puts_it_in():
@@ -687,7 +691,7 @@ def test_a_run_counts_in_the_part_its_own_log_puts_it_in():
     stale = log("trigger_control", "control", "writes-notes", ["fail"], trigger="positive")
     logs = skill_logs(**{"behaviour-template": log("template", "template", "writes-notes", ["fail"] * 3), "stale": stale})
 
-    assert gate_problems(logs) == ["release_notes: template scenarios 0% is below the minimum 80%"]
+    assert gate_problems(logs) == ["release_notes: template scenarios 0% is below the minimum 80%", "release_notes: template negative trigger tests 67% is below the minimum 80%"]
 
 
 def test_a_file_whose_scenarios_are_all_known_gaps_fails_as_one_without_trigger_tests_does():
@@ -696,20 +700,23 @@ def test_a_file_whose_scenarios_are_all_known_gaps_fails_as_one_without_trigger_
         "behaviour-template": marked_known_gap(log("template", "template", "writes-notes", ["fail"] * 3)),
     })
 
-    assert gate_problems(logs) == ["release_notes: template scenarios had no conclusive runs, so they are below the minimum 80%"]
-    assert "separately: scenarios no runs, trigger tests 5/6." in rendered(logs)
+    assert gate_problems(logs) == ["release_notes: template scenarios had no conclusive runs, so they are below the minimum 80%", "release_notes: template negative trigger tests 67% is below the minimum 80%"]
+    assert "separately: scenarios no runs, positive trigger tests 3/3, negative trigger tests 2/3." in rendered(logs)
 
 
 def test_trigger_tests_that_ran_only_in_the_control_fail_the_gate():
     logs = skill_logs(**{"positive-template": None, "negative-template": None})
 
-    assert gate_problems(logs) == ["release_notes: template trigger tests had no conclusive runs, so they are below the minimum 80%"]
+    assert gate_problems(logs) == ["release_notes: template positive trigger tests had no conclusive runs, so they are below the minimum 80%"]
 
 
 def test_a_file_with_only_trigger_tests_names_only_them_under_its_tables():
     text = rendered(skill_logs(**{"behaviour-baseline": None, "behaviour-template": None}))
 
-    assert text.rstrip().endswith("The gate reads the template's trigger tests: 5/6.")
+    assert text.rstrip().endswith(
+        "The gate reads the template's positive trigger tests and its negative trigger tests separately: "
+        "positive trigger tests 3/3, negative trigger tests 2/3."
+    )
 
 
 def test_an_agents_note_says_used_and_counts_runs_that_couldnt_be_told():
@@ -839,8 +846,8 @@ def test_a_known_gap_among_the_scenarios_stays_out_of_their_overall_row():
 
     assert "| known-hard (known gap) | — | 0/3 | — |" in text
     assert "| **overall** | 0/3 | 3/3 | +100% |" in text
-    assert "The gate reads the template's scenarios and its trigger tests separately: scenarios 3/3, trigger tests 5/6." in text
-    assert gate_problems([*skill_logs(), gap]) == []
+    assert "The gate reads the template's scenarios, its positive trigger tests and its negative trigger tests separately: scenarios 3/3, positive trigger tests 3/3, negative trigger tests 2/3." in text
+    assert gate_problems([*skill_logs(), gap]) == ["release_notes: template negative trigger tests 67% is below the minimum 80%"]
 
 
 # --- Positive and negative prompts are gated apart (Task 29) -----------------------------------
@@ -1053,7 +1060,7 @@ def test_inconclusive_trigger_runs_are_counted_in_the_prompt_tables_and_the_gate
     }))
 
     assert "| asks-for-a-bug-fix | 1/2 (1 inconclusive) |\n| **overall** | 1/2 (1 inconclusive) |" in report
-    assert report.endswith("separately: scenarios 3/3, trigger tests 4/5 (1 inconclusive).\n")
+    assert report.endswith("separately: scenarios 3/3, positive trigger tests 3/3, negative trigger tests 1/2 (1 inconclusive).\n")
 
 
 def test_a_score_without_metadata_leaves_the_use_of_the_skill_unknown():
