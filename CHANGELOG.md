@@ -4,6 +4,8 @@ What changed in each release, and what anyone who forks Whitney or runs it in CI
 
 ## Unreleased
 
+The next release is 0.3.0. It changes how some runs are graded, which before 1.0.0 bumps the minor part ([release checklist](docs/release-checklist.md), step 5).
+
 ### Changed
 
 - **The gate reads positive and negative trigger tests separately.** A file with trigger tests must now reach its minimum, and have enough conclusive runs, over its positive prompts and over its negative prompts, each on its own, as well as over its scenarios. Before, the two kinds were one pool, so 12 of 12 positive runs and 0 of 3 negative runs passed at 80%. The same logs can now fail: `whitney run` and `whitney report` exit 1 where they exited 0. The problem lines name the kind (`template negative trigger tests 0% is below the minimum 80%`, where they said `template trigger tests`), and the line under a file's tables gives a rate for each kind. Update anything that matches those lines. A kind with few prompts fails on one stray run, so give each kind enough prompts or epochs. For code that imports `whitney.report`: `TRIGGER_PART` is gone (`TRIGGER_PARTS` and `GATE_PARTS` replace it), and `EvalSummary.parts` has the keys `positive trigger test` and `negative trigger test` where it had `trigger test`.
