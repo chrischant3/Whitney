@@ -166,7 +166,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
         "--execution",
         choices=("local", "docker"),
         default="local",
-        help="kilo only: execution mode for the AGENTS.md and permission evals; IFEvalCode and Harbor run locally",
+        help="execution mode for the AGENTS.md and permission evals; IFEvalCode and Harbor run locally",
     )
     p.add_argument(
         "--model",
@@ -254,8 +254,6 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
             p.error("--model is required: name the provider/model to evaluate, e.g. kilo/anthropic/claude-haiku-4.5")
         if not args.target:
             p.error(f"--target is required: the harness under test, one of {', '.join(TARGETS)}")
-        if args.target == "claude-code" and args.execution != "local":
-            p.error("--target claude-code runs locally only")
         if args.evals is None:
             args.evals = list(DEFAULT_EVALS[args.target])
         kilo_only = [name for name in args.evals if name in KILO_ONLY_EVALS]

@@ -924,22 +924,22 @@ Added 2026-11-11 at Christopher's request, ahead of Task 37. Numbered 36a so the
 **Step 1, a spike, before any code.** Run `claude -p` in a container against Inspect's model bridge, as Kilo's Docker mode does, with no other network. Record in `docs/spike-findings.md` what was set (such as `ANTHROPIC_BASE_URL`), whether the run completed, and whether its stream has the same shape as a local run's. If the bridge can't serve Claude Code, stop and show Christopher the fallback: `ANTHROPIC_API_KEY` passed into the container, with the network limited to Anthropic's API.
 
 **Acceptance criteria:**
-- [ ] The spike's result is in `docs/spike-findings.md`, and the route to the model was chosen with Christopher.
-- [ ] The sandbox image holds a pinned Claude Code. The report's harness version comes from the container.
-- [ ] `whitney run --target claude-code --execution docker` runs `claude -p` in the container, on the same staged files as a local run, with the same `--setting-sources project`, `--strict-mcp-config` and `--settings` grant.
-- [ ] The container can't read the host's files, and reaches no network but the route to the model. A test or the real run shows both.
-- [ ] No API key is written to the image, the log or the report.
-- [ ] Every check that supports `claude-code` gives the same verdict on a Docker run's stream as on a local one's. Tests from a stream recorded in the container.
-- [ ] The `--execution` help, the credential check, README, `docs/adding-tests.md` and AGENTS.md's "Deployment Target" say Docker works for both targets.
+- [x] The spike's result is in `docs/spike-findings.md`, and the route to the model was chosen with Christopher. *(2026-11-11: docs/spike-findings.md, "Phase 5 Task 36a"; Christopher chose the bridge.)*
+- [x] The sandbox image holds a pinned Claude Code. The report's harness version comes from the container. *(2026-11-11: `src/whitney/sandbox/claude-code/`; the version comes from the run's score.)*
+- [x] `whitney run --target claude-code --execution docker` runs `claude -p` in the container, on the same staged files as a local run, with the same `--setting-sources project`, `--strict-mcp-config` and `--settings` grant. *(2026-11-11: tests/test_claude_code_docker.py; real run in docs/results/2026-11-11-claude-code-docker.md.)*
+- [x] The container can't read the host's files, and reaches no network but the route to the model. A test or the real run shows both. *(2026-11-11: the real run: `cat` of a host file and `curl` both failed in Docker and worked locally. One path only.)*
+- [x] No API key is written to the image, the log or the report. *(2026-11-11: the image's filesystem, the log and the report searched for the key's value: 0 matches.)*
+- [x] Every check that supports `claude-code` gives the same verdict on a Docker run's stream as on a local one's. Tests from a stream recorded in the container. *(2026-11-11: tests/test_claude_code_docker.py, on fixture `docker-bridge-tools`. That stream holds no skill, subagent or denial.)*
+- [x] The `--execution` help, the credential check, README, `docs/adding-tests.md` and AGENTS.md's "Deployment Target" say Docker works for both targets. *(2026-11-11: README, docs/adding-tests.md, AGENTS.md, the `--execution` help, CHANGELOG.)*
 
 **Evidence:**
-- [ ] The spike's write-up: the commands, what was set, and a stream captured in the container, saved as a sanitised fixture.
-- [ ] One real Docker run (cents) written up in `docs/results/`, with the image's digest and the Claude Code version from inside it.
-- [ ] Isolation shown by a run, not asserted: one scenario asks the agent to read a canary file on the host outside the project and to fetch a public web page. Locally the canary is read; in Docker both fail. Both runs' tool results are in the write-up.
-- [ ] No key in the image: the image is searched for the key's value after a run, and the result recorded.
-- [ ] The same saved stream judged by every `claude-code` check gives the same verdict whether the run was local or Docker.
-- [ ] `whitney run --target claude-code --execution docker` with no Docker running, and with no key, each stops before any model call with a message saying why. Both messages are in the write-up.
-- [ ] Evidence items 1 and 5 to 7.
+- [x] The spike's write-up: the commands, what was set, and a stream captured in the container, saved as a sanitised fixture. *(2026-11-11: docs/spike-findings.md, "Phase 5 Task 36a"; fixture `docker-bridge-tools`; `spikes/claude_code_docker.py`.)*
+- [x] One real Docker run (cents) written up in `docs/results/`, with the image's digest and the Claude Code version from inside it. *(2026-11-11: docs/results/2026-11-11-claude-code-docker.md.)*
+- [x] Isolation shown by a run, not asserted: one scenario asks the agent to read a canary file on the host outside the project and to fetch a public web page. Locally the canary is read; in Docker both fail. Both runs' tool results are in the write-up. *(2026-11-11: the same page.)*
+- [x] No key in the image: the image is searched for the key's value after a run, and the result recorded. *(2026-11-11: the same page.)*
+- [x] The same saved stream judged by every `claude-code` check gives the same verdict whether the run was local or Docker. *(2026-11-11: tests/test_claude_code_docker.py: same fields and event types; `_outcome` and the four checks read it.)*
+- [x] `whitney run --target claude-code --execution docker` with no Docker running, and with no key, each stops before any model call with a message saying why. Both messages are in the write-up. *(2026-11-11: the same page. With Docker unreachable the message is Inspect's, and the exit code is 1.)*
+- [x] Evidence items 1 and 5 to 7. *(2026-11-11: in the pull request.)*
 
 **Dependencies:** 36. **Estimated scope:** M. Task 38 (`outside_canary_not_reached`) should say what a pass means in each execution mode once this is in.
 

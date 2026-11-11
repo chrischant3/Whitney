@@ -4,6 +4,8 @@
 |---------------|-----------------|--------------------------|-------------------------------------|
 | `kilo`        | Kilo CLI        | `template/kilo/`         | Kilo Gateway or a named provider key |
 | `claude-code` | Claude Code CLI | `template/claude-code/`  | Anthropic API (`ANTHROPIC_API_KEY`) |
+
+Either target can run in Docker, where Inspect's bridge answers for the model.
 """
 
 from pathlib import Path
@@ -20,12 +22,10 @@ def check_target(target: str, execution: str = "local", base_url: str | None = N
     """Reject a target, or an option the target can't use.
 
     Raises:
-        ValueError: unknown target, or claude-code with Docker execution or a base URL.
+        ValueError: unknown target, or claude-code with a base URL.
     """
     if target not in TARGETS:
         raise ValueError(f"target must be one of {', '.join(TARGETS)}; got {target!r}")
-    if target == "claude-code" and execution != "local":
-        raise ValueError("the claude-code target runs locally only")
     if target == "claude-code" and base_url:
         raise ValueError("base_url applies to the kilo target only")
 
@@ -56,7 +56,7 @@ def build_agent(
             each in its own harness's format; only `target`'s is used.
         api_key_env: kilo: optional provider key variable (else the global
             Kilo config); claude-code: the Anthropic key variable, default
-            ANTHROPIC_API_KEY.
+            ANTHROPIC_API_KEY. Refused in Docker mode by either agent.
         kilo_agent, kilo_command: kilo only: run with `kilo run --agent NAME`
             or `--command NAME` (the kilo agent's agent_name and command_name).
         Other arguments are passed through to the kilo or claude_code agent.
@@ -73,7 +73,10 @@ def build_agent(
             harness_permissions=harness_permissions[target],
             local_project_files=local_project_files,
             local_output_targets=local_output_targets,
-            api_key_env=api_key_env or "ANTHROPIC_API_KEY",
+            # Docker mode has no key variable of its own: Inspect answers for the model. `execution` is
+            # given only for Docker, so a local run builds the agent as it always did.
+            **({"api_key_env": api_key_env, "execution": execution} if execution == "docker"
+               else {"api_key_env": api_key_env or "ANTHROPIC_API_KEY"}),
         )
     return kilo(
         model=model,

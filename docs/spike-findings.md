@@ -778,6 +778,43 @@ These are the first captures of a visible `deny` refusal for `read` and for `edi
 
 - The allow rule before the deny (`{"app.py": "allow", "*": "deny"}`). "Kilo removes a tool when the last rule for its permission is `*` deny" fits every capture, but the reverse order wasn't run.
 - The debug-log fixture (`scalar-edit-deny-logs`) keeps Kilo's random per-run values: `run=`, `projectID=`, session ids and a temporary file's name. None is the user's.
+
+## Phase 5 Task 36a: Claude Code in Docker, through Inspect's bridge (2026-11-11)
+
+Can `claude -p` run in a container with no network, its model calls served by Inspect's bridge, as Kilo's Docker mode does? Yes. `spikes/claude_code_docker.py` ran it: Claude Code 2.1.322, Haiku, Docker 29.4.3, Inspect 0.3.287, six runs (three prompts, twice).
+
+### What was set
+
+- **Image** (then `spikes/claude_docker/Dockerfile`, now `src/whitney/sandbox/claude-code/Dockerfile`): the same pinned `node:22-bookworm-slim` as Kilo's sandbox, with `npm install -g @anthropic-ai/claude-code@2.1.322`, run as the unprivileged `node` user.
+- **Container** (`compose.yaml` beside it): `network_mode: none`, `cap_drop: [ALL]`, `no-new-privileges`. The same as Kilo's.
+- **Environment for `claude -p`:** `HOME` an empty folder, `ANTHROPIC_BASE_URL=http://localhost:13131` (the bridge, no `/v1`), `ANTHROPIC_API_KEY=sk-none`, and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. The real key stays with Inspect on the host. The container never has it.
+- **Command:** the one a local run uses: `--setting-sources project --strict-mcp-config --settings <the grant> --model <name> --output-format stream-json --verbose`, with the prompt on stdin.
+
+### What happened
+
+| Prompt | Result |
+|---|---|
+| Reply PONG | exit 0, "PONG", one model call recorded by Inspect |
+| Run `wc -l till.py`, then read the file | exit 0; a `Bash` call and a `Read` call, both with results (fixture `docker-bridge-tools`) |
+| `cat` a file on the host outside the project, and `curl https://example.com` | exit 0; `cat`: "No such file or directory"; `curl`: "Could not resolve host: example.com" |
+
+- **The stream has the same shape as a local run's.** The `init` and `result` events have exactly the keys of a local run's (compared with `skill-not-loaded`), and the event types are the same. `claude_code._outcome` reads it unchanged.
+- **Inspect's log holds every model call,** as it does for Kilo in Docker. A local Claude Code run records none.
+- **The model's name matters.** With `--model inspect` the run worked, but Claude Code printed `[claude-code:unrecognized_model]` to stderr and its `total_cost_usd` was about twice the real figure. With `--model claude-haiku-4-5`, the name without its `anthropic/` prefix as a local run passes it, the bridge still answered with the eval's model, stderr was empty, and the `init` event names the model.
+- **`apiKeySource` is `ANTHROPIC_API_KEY`** in the `init` event, as in a local run, though the key is the placeholder.
+
+### Recommendation
+
+Use the bridge. The fallback in the plan (the real key passed into the container, with the network limited to Anthropic's API) isn't needed. Christopher agreed on 2026-11-11, and `--execution docker` for `claude-code` is built on it. The image moved to `src/whitney/sandbox/claude-code/`; the first real `whitney run` is in [results/2026-11-11-claude-code-docker.md](results/2026-11-11-claude-code-docker.md).
+
+### Not shown
+
+- A skill, a subagent or a denial in the container. Only `Bash` and `Read` were called.
+- A model other than Haiku, or a model the bridge would have to translate for. Kilo's Docker mode is limited to Anthropic and OpenAI models; Claude Code speaks only Anthropic's format, so a non-Anthropic `--model` would need the bridge to translate, which wasn't tried.
+- The host's files being out of reach was shown for one path. The container mounts nothing from the host; that is the compose file's doing, and isn't proved by one `cat`.
+- Whether Claude Code makes any call other than to `ANTHROPIC_BASE_URL` that it silently gave up on. With no network, none could succeed.
+- A long run. The longest was two model calls.
+
 ## Not yet done
 
 - **Hooks and plugins (Task 40).** A `Stop` hook making a skill load; a hook's effect with a model other than Haiku or a skill other than `release-notes`; why silent hooks went with more `Skill` calls; a Kilo plugin's effect apart from chance; plugins in the VS Code extension.
