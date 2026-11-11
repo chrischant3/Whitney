@@ -303,7 +303,7 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 
 `skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo and Claude Code output that makes them fail, so treat a pass from them as likely, not proven. On `claude-code`, `skill_loaded` and `subagent_delegated` each failed in a control in [one real run](results/2026-11-11-claude-code-skills-agents.md).
 
-The **gate** is the pass rate the template variant must reach for `whitney run` to exit 0. A file's gate is the highest among its checks, or its `min_pass_rate` if that is higher. At least half of the template's runs must also be conclusive. A file with [trigger tests](#trigger-tests) must clear both bars twice: once over its scenarios, once over its trigger tests. `--min-rate CHECK=VALUE` replaces one check's gate for a run, and the report prints it.
+The **gate** is the pass rate the template variant must reach for `whitney run` to exit 0. A file's gate is the highest among its checks, or its `min_pass_rate` if that is higher. At least half of the template's runs must also be conclusive. A file with [trigger tests](#trigger-tests) must clear both bars once for each part it has: its scenarios, its positive trigger tests and its negative trigger tests. `--min-rate CHECK=VALUE` replaces one check's gate for a run, and the report prints it.
 
 ### `no_secret_committed`
 
@@ -550,7 +550,9 @@ Rules that `whitney validate` checks:
 
 The skill's name is its folder's name. If the `name` inside `SKILL.md` differs, Kilo uses that one, the names won't match, and every positive prompt will fail.
 
-In the report, a file with trigger tests gets a table for its scenarios, then "Triggered on positive prompts" and "Stayed quiet on negative prompts". The gate reads the template's scenarios and its trigger tests separately. Each must reach the file's minimum, and each needs at least half of its own runs to be conclusive. Positive and negative prompts are counted together as trigger tests. Read together, trigger tests that all pass could carry a skill the agent loads and then doesn't follow. The report prints both rates under the tables.
+In the report, a file with trigger tests gets a table for its scenarios, then "Triggered on positive prompts" and "Stayed quiet on negative prompts". The gate reads three parts of the template separately: its scenarios, its positive trigger tests and its negative trigger tests. Each part the file has must reach the file's minimum, and each needs at least half of its own runs to be conclusive. Read together, trigger tests that all pass could carry a skill the agent loads and then doesn't follow, and positive prompts that all pass could carry negative prompts that don't: 12 of 12 and 0 of 3 is 80% as one pool. The report prints each part's rate under the tables, and a line that fails the gate names the part, such as `template negative trigger tests 0% is below the minimum 80%`.
+
+A kind with few prompts has little room: with one negative prompt run three times, one failing run is 67%, which is under a minimum of 80%. Write enough prompts of each kind, or run enough epochs, for one stray run not to decide the result.
 
 For any file that tests a skill or an agent, the report also says in how many of the template's scenario runs the skill loaded, or the agent was used. An agent is used when work is handed to it, or when the scenario runs it with `agent`. A scenario that passed in a run where the skill never loaded shows what the model does anyway, not what the skill adds.
 
