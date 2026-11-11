@@ -15,6 +15,7 @@ from whitney.project_files import (
     files_renamed,
     load_project_files_for,
     load_template_files,
+    without_instructions,
 )
 
 DEFAULT_HARBOR_DATASET = Path(__file__).resolve().parents[2] / "dataset/harbor/bigcodebench-hard-complete"
@@ -98,7 +99,7 @@ def bigcodebench_hard_complete(
         else load_template_files(targets.template_dir(target))
     )
     if variant == "baseline":
-        project_files.pop("AGENTS.md", None)
+        project_files = without_instructions(target, project_files)
 
     samples = []
     sample_ids = _disambiguate_sample_ids(harbor_tasks)

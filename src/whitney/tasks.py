@@ -52,7 +52,15 @@ from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state, run_
 from whitney.setup_steps import SetupError, SetupStep
 from whitney.target_names import TARGETS
 from whitney.validate import _spread_by_the_wrapper, staged_names, tested_permissions
-from whitney.variants import TEMPLATE, apply_variant, declared_variants, runs_in, spread_over_kilo_configs, staged_matches
+from whitney.variants import (
+    TEMPLATE,
+    apply_variant,
+    declared_variants,
+    for_claude_code_instructions,
+    runs_in,
+    spread_over_kilo_configs,
+    staged_matches,
+)
 
 ROOT = Path(__file__).parent.parent.parent
 # Read when a task is built, so a test can point EVALS_DIR at its own evals. The files are relative to it.
@@ -512,7 +520,10 @@ def _scenario_task(
         raise ValueError(f"{plan.eval_name} doesn't apply to the {target} target: {why}")
     staged = template_staged = _source_files(project_path, target, plan.evals_dir)
     if variant != TEMPLATE:
-        staged = apply_variant(staged, plan.adjust(plan.variants[variant], staged, plan.source))
+        chosen_variant = plan.variants[variant]
+        if target == "claude-code":
+            chosen_variant = for_claude_code_instructions(chosen_variant, staged)
+        staged = apply_variant(staged, plan.adjust(chosen_variant, staged, plan.source))
     secrets = evidence.run_secrets(target, execution, api_key_env)
     samples = []
     chosen: dict[str, dict[str, str]] = {}  # scenario id -> its `kilo run` option in this variant

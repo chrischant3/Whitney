@@ -151,16 +151,16 @@ def test_assets_are_read_as_utf8_whatever_the_locale(tmp_path, ascii_locale):
     assert load_template_files(tmp_path) == {"AGENTS.md": "- Règle : jamais de secrets\n"}
 
 
-# The claude-code target's loader. It stages one instruction file, always as AGENTS.md: root
-# AGENTS.md, else root CLAUDE.md, else .claude/CLAUDE.md (tasks/plan-phase5.md, decision 5, as
-# revised 2026-11-06). Nothing else is staged.
+# The claude-code target's loader. It stages what Claude Code's memory docs say it reads: root
+# CLAUDE.md and .claude/CLAUDE.md together, and AGENTS.md and .claude/AGENTS.md only when neither
+# CLAUDE.md is there, each under its own name (tasks/plan-phase5.md, decision 8). Nothing else is staged.
 
 
-@pytest.mark.parametrize("name", ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"])
-def test_a_claude_code_project_with_one_instruction_file_stages_it_without_kilo_config(tmp_path, name):
+@pytest.mark.parametrize("name", ["AGENTS.md", ".claude/AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"])
+def test_a_claude_code_project_with_one_instruction_file_stages_it_under_its_own_name_without_kilo_config(tmp_path, name):
     (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / name).write_text("- Team rule\n")
-    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "- Team rule\n"}
+    assert load_claude_code_project_files(tmp_path) == {name: "- Team rule\n"}
 
 
 def test_a_claude_code_project_stages_only_its_instruction_files(tmp_path):
@@ -171,6 +171,7 @@ def test_a_claude_code_project_stages_only_its_instruction_files(tmp_path):
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
     (tmp_path / "AGENTS.md").write_text("agents rule\n")
     (tmp_path / "CLAUDE.md").write_text("claude rule\n")
+    (tmp_path / "CLAUDE.local.md").write_text("my own rule\n")
     (tmp_path / "CONTEXT.md").write_text("kilo context\n")
     (tmp_path / "kilo.jsonc").write_text("{}")
     (tmp_path / "app.py").write_text("project source\n")
@@ -178,7 +179,36 @@ def test_a_claude_code_project_stages_only_its_instruction_files(tmp_path):
     (tmp_path / ".claude/.env").write_text("SECRET=x\n")
 
     assert load_claude_code_project_files(tmp_path) == {
-        "AGENTS.md": "agents rule\n",
+        "CLAUDE.md": "claude rule\n",
+        ".claude/CLAUDE.md": "folder rule\n",
+    }
+
+
+def test_agents_md_and_dot_claude_agents_md_are_staged_together_without_a_claude_md(tmp_path):
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/AGENTS.md").write_text("folder rule\n")
+    (tmp_path / "AGENTS.md").write_text("root rule\n")
+    (tmp_path / "CLAUDE.local.md").write_text("my own rule\n")  # never staged, so it doesn't hide AGENTS.md here
+
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "root rule\n", ".claude/AGENTS.md": "folder rule\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {
+        "CLAUDE.local.md": "personal and not committed; on its owner's machine it also stops Claude Code reading AGENTS.md",
+    }
+
+
+def test_a_claude_md_that_cannot_be_staged_still_hides_agents_md(tmp_path):
+    # Claude Code would see the CLAUDE.md and ignore AGENTS.md, so staging AGENTS.md would test a file it never reads.
+    (tmp_path / "shared.md").write_text("shared rule\n")
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "CLAUDE.md").symlink_to(tmp_path / "shared.md")
+    (project / "AGENTS.md").write_text("agents rule\n")
+
+    with pytest.raises(ValueError, match="^project has no Claude Code instructions to stage"):
+        load_claude_code_project_files(project)
+    assert files_not_staged_reasons("claude-code", project) == {
+        "CLAUDE.md": "a symlink or outside the project",
+        "AGENTS.md": "Claude Code doesn't read AGENTS.md beside a CLAUDE.md",
     }
 
 
@@ -187,8 +217,9 @@ def test_a_claude_code_project_without_instructions_is_told_which_files_were_loo
     with pytest.raises(ValueError) as raised:
         load_claude_code_project_files(tmp_path)
     assert str(raised.value) == (
-        "project has no Claude Code instructions (AGENTS.md, CLAUDE.md, .claude/CLAUDE.md; "
-        f"symlinks and files outside the project are skipped): {tmp_path.resolve()}"
+        "project has no Claude Code instructions to stage (CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md; "
+        "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped): "
+        f"{tmp_path.resolve()}"
     )
 
 
@@ -202,7 +233,7 @@ def test_claude_code_instruction_files_that_are_symlinks_are_not_staged(tmp_path
     (project / ".claude").mkdir()
     (project / ".claude/CLAUDE.md").write_text("folder rule\n")
 
-    assert load_claude_code_project_files(project) == {"AGENTS.md": "folder rule\n"}
+    assert load_claude_code_project_files(project) == {".claude/CLAUDE.md": "folder rule\n"}
 
 
 def test_a_dot_claude_folder_that_links_outside_the_project_stages_nothing(tmp_path):
@@ -246,11 +277,11 @@ def test_the_dot_claude_entries_left_out_are_named_for_the_report(tmp_path):
     (tmp_path / ".claude/settings.json").write_text('{"hooks": {}}')
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
 
-    assert files_not_staged("claude-code", tmp_path) == [".claude/CLAUDE.md", ".claude/settings.json", ".claude/skills/"]
+    assert files_not_staged("claude-code", tmp_path) == ["AGENTS.md", ".claude/settings.json", ".claude/skills/"]
     assert files_not_staged("kilo", tmp_path) == []
 
 
-def test_nothing_is_named_without_a_dot_claude_folder_and_a_dot_claude_md_beside_agents_md_is_named(tmp_path):
+def test_nothing_is_named_without_a_dot_claude_folder_and_agents_md_beside_a_dot_claude_md_is_named(tmp_path):
     (tmp_path / "AGENTS.md").write_text("rule\n")
     assert files_not_staged("claude-code", tmp_path) == []
     (tmp_path / ".claude").write_text("a file, not a folder")
@@ -258,14 +289,14 @@ def test_nothing_is_named_without_a_dot_claude_folder_and_a_dot_claude_md_beside
     (tmp_path / ".claude").unlink()
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
-    assert files_not_staged("claude-code", tmp_path) == [".claude/CLAUDE.md"]
+    assert files_not_staged("claude-code", tmp_path) == ["AGENTS.md"]
 
 
 def test_a_dot_claude_md_that_was_not_staged_is_named(tmp_path):
     (tmp_path / "AGENTS.md").write_text("rule\n")
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").symlink_to(tmp_path / "AGENTS.md")
-    assert files_not_staged("claude-code", tmp_path) == [".claude/CLAUDE.md"]
+    assert files_not_staged("claude-code", tmp_path) == ["AGENTS.md", ".claude/CLAUDE.md"]
 
 
 def test_a_dot_claude_folder_outside_the_project_is_named_but_not_listed(tmp_path):
@@ -282,7 +313,7 @@ def test_a_symlinked_dot_claude_folder_stages_nothing_through_it_and_is_named_wh
     (tmp_path / "CLAUDE.md").write_text("root rule\n")
     (tmp_path / ".claude").symlink_to(tmp_path)  # inside the project, but still a symlink
 
-    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "root rule\n"}
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": "root rule\n"}
     assert files_not_staged("claude-code", tmp_path) == [".claude/"]
 
 
@@ -305,7 +336,9 @@ def test_a_dot_claude_md_staged_under_another_case_is_not_named(tmp_path):
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/claude.md").write_text("folder rule\n")
 
-    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "folder rule\n"}
+    staged = load_claude_code_project_files(tmp_path)
+    assert staged == {".claude/CLAUDE.md": "folder rule\n"}
+    assert files_renamed("claude-code", tmp_path, staged) == {".claude/claude.md": ".claude/CLAUDE.md"}
     assert files_not_staged("claude-code", tmp_path) == []
 
 
@@ -331,8 +364,8 @@ def test_root_instruction_files_skipped_for_safety_are_named(tmp_path):
     (project / "CLAUDE.md").symlink_to(tmp_path / "shared/CLAUDE.md")
     (project / "AGENTS.md").symlink_to(project / "missing.md")  # a broken link is named too
 
-    assert load_claude_code_project_files(project) == {"AGENTS.md": "folder rule\n"}
-    assert files_not_staged("claude-code", project) == ["AGENTS.md", "CLAUDE.md"]
+    assert load_claude_code_project_files(project) == {".claude/CLAUDE.md": "folder rule\n"}
+    assert files_not_staged("claude-code", project) == ["CLAUDE.md", "AGENTS.md"]
 
 
 @pytest.mark.parametrize("count, expected_tail", [(50, ".claude/f49.md"), (52, "and 2 more")])
@@ -349,7 +382,7 @@ def test_the_not_staged_list_stops_at_fifty_names_and_counts_the_rest(tmp_path, 
     assert len(names) == min(count, 51)
 
 
-def test_a_dot_claude_md_that_cannot_be_checked_is_not_staged_and_the_folder_is_named(tmp_path, monkeypatch):
+def test_a_dot_claude_md_that_cannot_be_checked_still_hides_agents_md_and_the_folder_is_named(tmp_path, monkeypatch):
     # Python 3.11 and 3.12 raise PermissionError for a path inside a mode-000 folder; 3.14 returns False.
     (tmp_path / "AGENTS.md").write_text("rule\n")
     (tmp_path / ".claude").mkdir()
@@ -369,8 +402,10 @@ def test_a_dot_claude_md_that_cannot_be_checked_is_not_staged_and_the_folder_is_
     monkeypatch.setattr(Path, "is_file", is_file)
     monkeypatch.setattr(Path, "iterdir", iterdir)
 
-    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule\n"}
-    assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+    # It is there, so Claude Code would read it and not AGENTS.md; it can't be staged, so nothing is.
+    with pytest.raises(ValueError, match="^project has no Claude Code instructions to stage"):
+        load_claude_code_project_files(tmp_path)
+    assert files_not_staged("claude-code", tmp_path) == ["AGENTS.md", ".claude/"]
 
 
 def test_the_cap_never_hides_a_skipped_root_file(tmp_path):
@@ -384,74 +419,76 @@ def test_the_cap_never_hides_a_skipped_root_file(tmp_path):
 
     names = files_not_staged("claude-code", project)
 
-    assert names[0] == "CLAUDE.md"
-    assert names[1:] == [*(f".claude/f{number:02d}.md" for number in range(50)), "and 10 more"]
+    assert names[:2] == ["CLAUDE.md", "AGENTS.md"]
+    assert names[2:] == [*(f".claude/f{number:02d}.md" for number in range(50)), "and 10 more"]
 
 
 @pytest.mark.parametrize("name", ["CLAUDE.md", ".claude/CLAUDE.md"])
-def test_a_claude_md_beside_agents_md_is_named_not_staged_and_agents_md_is_staged(tmp_path, name):
-    # Claude Code ignored AGENTS.md once .claude/CLAUDE.md existed (docs/results/2026-11-06-claude-code-canary.md).
+def test_a_claude_md_beside_agents_md_is_staged_and_agents_md_is_named_not_staged(tmp_path, name):
+    # Claude Code reads AGENTS.md only without a CLAUDE.md (its memory docs; docs/spike-findings.md, 2026-11-11).
     (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / name).write_text("claude rule\n")
     (tmp_path / "AGENTS.md").write_text("agents rule\n")
 
-    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "agents rule\n"}
-    assert files_not_staged("claude-code", tmp_path) == [name]
-    assert files_renamed("claude-code", tmp_path, {"AGENTS.md": "agents rule\n"}) == {}
+    staged = load_claude_code_project_files(tmp_path)
+    assert staged == {name: "claude rule\n"}
+    assert files_not_staged("claude-code", tmp_path) == ["AGENTS.md"]
+    assert files_renamed("claude-code", tmp_path, staged) == {}
 
 
 @pytest.mark.parametrize("name", ["CLAUDE.md", ".claude/CLAUDE.md"])
-def test_a_claude_md_with_no_agents_md_beside_it_is_staged_as_agents_md_and_the_rename_is_named(tmp_path, name):
+def test_a_claude_md_with_no_agents_md_beside_it_is_staged_under_its_own_name_with_no_rename(tmp_path, name):
     (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / name).write_text("claude rule\n")
     staged = load_claude_code_project_files(tmp_path)
 
-    assert staged == {"AGENTS.md": "claude rule\n"}
-    assert files_renamed("claude-code", tmp_path, staged) == {name: "AGENTS.md"}
+    assert staged == {name: "claude rule\n"}
+    assert files_renamed("claude-code", tmp_path, staged) == {}
     assert files_not_staged("claude-code", tmp_path) == []
     assert (tmp_path / name).read_text() == "claude rule\n"  # the project itself is never changed
     assert not (tmp_path / "AGENTS.md").exists()
 
 
-def test_with_both_claude_md_files_and_no_agents_md_the_root_one_is_staged(tmp_path):
+def test_with_both_claude_md_files_both_are_staged(tmp_path):
+    # Claude Code loads them together, not one instead of the other (its memory docs, read 2026-11-11).
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
     (tmp_path / "CLAUDE.md").write_text("root rule\n")
     staged = load_claude_code_project_files(tmp_path)
 
-    assert staged == {"AGENTS.md": "root rule\n"}
-    assert files_renamed("claude-code", tmp_path, staged) == {"CLAUDE.md": "AGENTS.md"}
-    assert files_not_staged("claude-code", tmp_path) == [".claude/CLAUDE.md"]
+    assert staged == {"CLAUDE.md": "root rule\n", ".claude/CLAUDE.md": "folder rule\n"}
+    assert files_renamed("claude-code", tmp_path, staged) == {}
+    assert files_not_staged("claude-code", tmp_path) == []
 
 
-def test_an_agents_md_skipped_for_safety_gives_way_to_claude_md_and_is_named(tmp_path):
+def test_a_claude_md_is_staged_because_it_is_there_and_a_symlinked_agents_md_is_named(tmp_path):
     (tmp_path / "shared.md").write_text("shared rule\n")
     project = tmp_path / "project"
     project.mkdir()
     (project / "AGENTS.md").symlink_to(tmp_path / "shared.md")
     (project / "CLAUDE.md").write_text("root rule\n")
 
-    assert load_claude_code_project_files(project) == {"AGENTS.md": "root rule\n"}
+    assert load_claude_code_project_files(project) == {"CLAUDE.md": "root rule\n"}
     assert files_not_staged("claude-code", project) == ["AGENTS.md"]
 
 
 def test_a_rename_is_named_only_while_the_renamed_file_is_staged(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("root rule\n")
-    assert files_renamed("claude-code", tmp_path, {}) == {}  # the baseline drops AGENTS.md
+    assert files_renamed("claude-code", tmp_path, {}) == {}  # the baseline drops the instruction files
     assert files_renamed("kilo", tmp_path, {"AGENTS.md": "x"}) == {}
 
 
-def test_the_cap_never_hides_a_dot_claude_md(tmp_path):
+def test_the_cap_never_hides_a_dot_claude_agents_md(tmp_path):
     (tmp_path / "AGENTS.md").write_text("rule\n")
     (tmp_path / "CLAUDE.md").write_text("root rule\n")
     (tmp_path / ".claude").mkdir()
-    (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
+    (tmp_path / ".claude/AGENTS.md").write_text("folder rule\n")
     for number in range(60):
         (tmp_path / f".claude/0{number:02d}.md").write_text("x\n")  # digits sort ahead of "CLAUDE.md"
 
     names = files_not_staged("claude-code", tmp_path)
 
-    assert names[:2] == ["CLAUDE.md", ".claude/CLAUDE.md"]
+    assert names[:2] == ["AGENTS.md", ".claude/AGENTS.md"]
     assert names[2:] == [*(f".claude/0{number:02d}.md" for number in range(50)), "and 10 more"]
 
 
@@ -471,7 +508,7 @@ def test_the_dot_claude_entries_are_named_even_when_nothing_could_be_staged(tmp_
     assert files_not_staged("claude-code", tmp_path) == [".claude/settings.json"]
 
 
-def test_a_dot_claude_md_that_cannot_be_checked_is_never_staged_as_agents_md(tmp_path, monkeypatch):
+def test_a_dot_claude_md_that_cannot_be_checked_is_never_staged(tmp_path, monkeypatch):
     # With no root file to stage, .claude/CLAUDE.md is checked; 3.11 and 3.12 raise inside a mode-000 folder.
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
@@ -496,8 +533,7 @@ def test_each_name_left_out_has_its_reason(tmp_path):
     (tmp_path / ".claude/settings.json").write_text("{}")
 
     assert files_not_staged_reasons("claude-code", tmp_path) == {
-        "CLAUDE.md": "beside AGENTS.md",
-        ".claude/CLAUDE.md": "beside AGENTS.md",
+        "AGENTS.md": "Claude Code doesn't read AGENTS.md beside a CLAUDE.md",
         ".claude/agents/": "rest of .claude/",
         ".claude/settings.json": "rest of .claude/",
     }
@@ -510,11 +546,11 @@ def test_an_instruction_file_skipped_for_safety_and_one_beside_a_staged_claude_m
     (project / ".claude").mkdir(parents=True)
     (project / "AGENTS.md").symlink_to(tmp_path / "shared.md")
     (project / "CLAUDE.md").write_text("root rule\n")
-    (project / ".claude/CLAUDE.md").write_text("folder rule\n")
+    (project / ".claude/AGENTS.md").write_text("folder rule\n")
 
     assert files_not_staged_reasons("claude-code", project) == {
         "AGENTS.md": "a symlink or outside the project",
-        ".claude/CLAUDE.md": "beside CLAUDE.md",
+        ".claude/AGENTS.md": "Claude Code doesn't read AGENTS.md beside a CLAUDE.md",
     }
 
 
@@ -522,7 +558,10 @@ def test_a_dot_claude_md_that_is_a_symlink_has_the_safety_reason(tmp_path):
     (tmp_path / "AGENTS.md").write_text("rule\n")
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").symlink_to(tmp_path / "AGENTS.md")
-    assert files_not_staged_reasons("claude-code", tmp_path) == {".claude/CLAUDE.md": "a symlink or outside the project"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {
+        "AGENTS.md": "Claude Code doesn't read AGENTS.md beside a CLAUDE.md",
+        ".claude/CLAUDE.md": "a symlink or outside the project",
+    }
 
 
 def test_a_dot_claude_folder_named_whole_has_its_reason_and_the_count_has_none(tmp_path):
@@ -563,40 +602,40 @@ def case_insensitive(tmp_path):
     return found
 
 
-@pytest.mark.parametrize("name", ["claude.md", "agents.md"])
-def test_names_are_matched_as_the_filesystem_does_and_reported_as_spelled_on_disk(tmp_path, case_insensitive, name):
+@pytest.mark.parametrize("name, staged_as", [("claude.md", "CLAUDE.md"), ("agents.md", "AGENTS.md")])
+def test_names_are_matched_as_the_filesystem_does_and_reported_as_spelled_on_disk(tmp_path, case_insensitive, name, staged_as):
     (tmp_path / name).write_text("rule\n")
     if not case_insensitive:  # Linux: neither name is an instruction file
         with pytest.raises(ValueError, match="^project has no Claude Code instructions"):
             load_claude_code_project_files(tmp_path)
         return
     staged = load_claude_code_project_files(tmp_path)
-    assert staged == {"AGENTS.md": "rule\n"}
-    assert files_renamed("claude-code", tmp_path, staged) == {name: "AGENTS.md"}
+    assert staged == {staged_as: "rule\n"}
+    assert files_renamed("claude-code", tmp_path, staged) == {name: staged_as}
 
 
-def test_a_root_claude_md_spelled_otherwise_is_named_as_spelled_on_disk(tmp_path, case_insensitive):
-    (tmp_path / "AGENTS.md").write_text("rule\n")
-    (tmp_path / "Claude.md").write_text("root rule\n")
-    expected = {"Claude.md": "beside AGENTS.md"} if case_insensitive else {}
+def test_a_root_agents_md_spelled_otherwise_is_named_as_spelled_on_disk(tmp_path, case_insensitive):
+    (tmp_path / "CLAUDE.md").write_text("rule\n")
+    (tmp_path / "Agents.md").write_text("root rule\n")
+    expected = {"Agents.md": "Claude Code doesn't read AGENTS.md beside a CLAUDE.md"} if case_insensitive else {}
     assert files_not_staged_reasons("claude-code", tmp_path) == expected
 
 
-def test_a_case_variant_dot_claude_md_stays_ahead_of_the_cap(tmp_path, case_insensitive):
-    (tmp_path / "AGENTS.md").write_text("rule\n")
+def test_a_case_variant_dot_claude_agents_md_stays_ahead_of_the_cap(tmp_path, case_insensitive):
+    (tmp_path / "CLAUDE.md").write_text("rule\n")
     (tmp_path / ".claude").mkdir()
-    (tmp_path / ".claude/claude.md").write_text("folder rule\n")
+    (tmp_path / ".claude/agents.md").write_text("folder rule\n")
     for number in range(60):
         (tmp_path / f".claude/0{number:02d}.md").write_text("x\n")
 
     names = files_not_staged("claude-code", tmp_path)
 
-    assert names[0] == ".claude/claude.md"
-    expected = "beside AGENTS.md" if case_insensitive else "rest of .claude/"  # on Linux it isn't Claude Code's file
-    assert files_not_staged_reasons("claude-code", tmp_path)[".claude/claude.md"] == expected
+    assert names[0] == ".claude/agents.md"
+    expected = "Claude Code doesn't read AGENTS.md beside a CLAUDE.md" if case_insensitive else "rest of .claude/"  # on Linux it isn't Claude Code's file
+    assert files_not_staged_reasons("claude-code", tmp_path)[".claude/agents.md"] == expected
 
 
-def test_a_dot_claude_md_in_a_folder_that_cannot_be_listed_is_renamed_under_its_looked_up_name(tmp_path, monkeypatch):
+def test_a_dot_claude_md_in_a_folder_that_cannot_be_listed_keeps_its_looked_up_name(tmp_path, monkeypatch):
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
     real_iterdir = Path.iterdir
@@ -609,7 +648,8 @@ def test_a_dot_claude_md_in_a_folder_that_cannot_be_listed_is_renamed_under_its_
     monkeypatch.setattr(Path, "iterdir", iterdir)
     staged = load_claude_code_project_files(tmp_path)
 
-    assert files_renamed("claude-code", tmp_path, staged) == {".claude/CLAUDE.md": "AGENTS.md"}
+    assert staged == {".claude/CLAUDE.md": "folder rule\n"}
+    assert files_renamed("claude-code", tmp_path, staged) == {}
     assert files_not_staged("claude-code", tmp_path) == [".claude/"]
 
 
@@ -823,7 +863,7 @@ def test_a_claude_code_instruction_file_under_the_evals_path_is_refused_by_name(
         load_claude_code_project_files(tmp_path, evals_path=tmp_path / ".claude")
 
     assert str(raised.value) == (
-        f"{tmp_path.resolve() / '.claude/CLAUDE.md'} is the instruction file to stage, but it is under the evals path "
+        f"{tmp_path.resolve() / '.claude/CLAUDE.md'} is an instruction file to stage, but it is under the evals path "
         f"{(tmp_path / '.claude').resolve()}, whose files are never staged"
     )
 
@@ -896,9 +936,16 @@ def test_a_staged_file_has_no_reason(unsafe_project):
 
 
 @pytest.mark.parametrize("present, source, reason", [
-    (["AGENTS.md", "CLAUDE.md"], "CLAUDE.md", "the claude-code loader stages one instruction file, and this one is beside AGENTS.md"),
-    (["AGENTS.md", ".claude/settings.json"], ".claude/settings.json", "the claude-code loader stages one instruction file, and this one is rest of .claude/"),
-    (["AGENTS.md", "notes.md"], "notes.md", "the claude-code loader stages only one of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md, as AGENTS.md"),
+    (["CLAUDE.md", "CLAUDE.local.md"], "CLAUDE.local.md", (
+        "the claude-code loader stages only what Claude Code reads, and this file is left out: "
+        "personal and not committed; on its owner's machine it also stops Claude Code reading AGENTS.md"
+    )),
+    (["AGENTS.md", ".claude/settings.json"], ".claude/settings.json", (
+        "the claude-code loader stages only what Claude Code reads, and this file is left out: rest of .claude/"
+    )),
+    (["AGENTS.md", "notes.md"], "notes.md", (
+        "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md and .claude/AGENTS.md"
+    )),
 ])
 def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reason):
     for name in present:
@@ -909,12 +956,15 @@ def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reas
     assert not_staged_reason("claude-code", tmp_path, source, staged) == reason
 
 
-def test_a_claude_code_file_staged_under_another_name_has_no_reason(tmp_path):
+def test_any_instruction_file_name_has_no_reason_while_one_is_staged(tmp_path):
+    # agents-md.json names AGENTS.md, and stands for the project's instructions on both targets.
     (tmp_path / "CLAUDE.md").write_text("rule\n")
     staged = load_claude_code_project_files(tmp_path)
 
-    assert not_staged_reason("claude-code", tmp_path, "CLAUDE.md", staged) is None
-    assert not_staged_reason("claude-code", tmp_path, "AGENTS.md", staged) is None
+    for name in ("CLAUDE.md", ".claude/CLAUDE.md", "AGENTS.md", ".claude/AGENTS.md"):
+        assert not_staged_reason("claude-code", tmp_path, name, staged) is None
+    assert not_staged_reason("claude-code", tmp_path, "AGENTS.md", {}) == "the project has no such file"
+    assert not_staged_reason("kilo", tmp_path, "AGENTS.md", staged) == "the project has no such file"
 
 
 @pytest.mark.parametrize("case_blind, expected", [(True, {"rules/a.md", "rules/.dot.md"}), (False, set())])
@@ -1329,3 +1379,19 @@ def test_a_kilo_config_that_isnt_a_json_object_is_refused_by_name(tmp_path, text
         load_project_files_for("kilo", tmp_path)
 
     assert str(raised.value) == f".kilo/kilo.jsonc holds {kind}, not a JSON object, so Kilo can't read it as a config"
+
+
+def test_a_claude_md_that_cannot_be_checked_does_not_hide_agents_md(tmp_path, monkeypatch):
+    # Python 3.11 and 3.12 raise inside a mode-000 .claude/; Claude Code couldn't read that folder either.
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / ".claude").mkdir()
+    real_exists = Path.exists
+
+    def exists(path, *args, **kwargs):
+        if path.parent.name == ".claude":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_exists(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", exists)
+
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule\n"}

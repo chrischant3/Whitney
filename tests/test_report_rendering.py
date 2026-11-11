@@ -452,10 +452,10 @@ def test_project_paths_left_out_of_the_eval_projects_are_named_after_the_variant
         "### Not Staged\n"
         "\n"
         "The project held these, but Whitney didn't copy them into the eval projects, so the runs didn't use them. "
-        "Where the log records why, the reason follows each name. For `claude-code`, Whitney copies one instruction "
-        "file, as `AGENTS.md`. A `CLAUDE.md` beside `AGENTS.md` stays out because Whitney's `claude-code` evals and "
-        "their baseline (the same run with `AGENTS.md` removed) are about `AGENTS.md`, and in one run Claude Code "
-        "ignored `AGENTS.md` once `.claude/CLAUDE.md` existed.\n"
+        "Where the log records why, the reason follows each name. For `claude-code`, Whitney copies the instruction "
+        "files Claude Code reads: `CLAUDE.md` and `.claude/CLAUDE.md`, or `AGENTS.md` and `.claude/AGENTS.md` when "
+        "neither `CLAUDE.md` exists, so an `AGENTS.md` beside a `CLAUDE.md` stays out. `CLAUDE.local.md` is personal "
+        "and is never copied.\n"
         "\n"
         "| Eval variant | Not staged |\n"
         "|---|---|\n"
@@ -476,9 +476,9 @@ def test_the_count_of_names_left_off_the_not_staged_list_is_not_shown_as_a_path(
     assert "| `agents_md_template` | `.claude/a.md`, and 3 more |\n" in render_asset_provenance_markdown(logs)
 
 
-def test_a_claude_md_staged_as_agents_md_is_named_as_renamed():
+def test_a_claude_md_staged_under_another_case_is_named_as_renamed():
     logs = [
-        _asset_log("agents_md_template", {"AGENTS.md": "x"}, target="claude-code", renamed={"CLAUDE.md": "AGENTS.md"}),
+        _asset_log("agents_md_template", {"CLAUDE.md": "x"}, target="claude-code", renamed={"claude.md": "CLAUDE.md"}),
         _asset_log("agents_md_baseline", {}, target="claude-code", renamed={}),
     ]
 
@@ -487,13 +487,12 @@ def test_a_claude_md_staged_as_agents_md_is_named_as_renamed():
     assert (
         "|\n\n### Renamed for the Eval\n"
         "\n"
-        "Whitney's `claude-code` evals and their baseline (the same run with `AGENTS.md` removed) are about "
-        "`AGENTS.md`, so a project with no usable `AGENTS.md` has its `CLAUDE.md` staged under that name. Only the "
-        "temporary copy is renamed; the project itself is never changed.\n"
+        "On a case-insensitive disk, such as macOS's default, a file such as `claude.md` counts as `CLAUDE.md` and "
+        "is staged under that name. Only the temporary copy is renamed; the project itself is never changed.\n"
         "\n"
         "| Eval variant | Renamed |\n"
         "|---|---|\n"
-        "| `agents_md_template` | `CLAUDE.md` staged as `AGENTS.md` |\n"
+        "| `agents_md_template` | `claude.md` staged as `CLAUDE.md` |\n"
         "\n"
         "### File Snapshots\n"
     ) in report

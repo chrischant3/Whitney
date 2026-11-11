@@ -398,15 +398,17 @@ def test_nothing_is_named_as_not_staged_when_the_template_is_used():
     assert agents_md(target="kilo", model=MODEL).metadata["not_staged"] == []
 
 
-def test_a_claude_md_staged_as_agents_md_is_named_as_renamed_in_the_template_variant_only(tmp_path):
+def test_a_claude_md_is_staged_under_its_own_name_and_the_baseline_drops_it(tmp_path):
+    (tmp_path / ".claude").mkdir()
     (tmp_path / "CLAUDE.md").write_text("- Team rule\n")
+    (tmp_path / ".claude/CLAUDE.md").write_text("- Folder rule\n")
 
     template = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path))
     baseline = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path), variant="baseline")
 
-    assert template.metadata["evaluation_assets"] == {"AGENTS.md": "- Team rule\n"}
-    assert template.metadata["renamed"] == {"CLAUDE.md": "AGENTS.md"}
-    assert baseline.metadata["renamed"] == {}
+    assert template.metadata["evaluation_assets"] == {"CLAUDE.md": "- Team rule\n", ".claude/CLAUDE.md": "- Folder rule\n"}
+    assert template.metadata["renamed"] == {}
+    assert baseline.metadata["evaluation_assets"] == {}  # agents-md.json's baseline removes AGENTS.md, which stands for both
     assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["renamed"] == {}
 
 
@@ -416,7 +418,7 @@ def test_the_reason_each_name_was_left_out_is_recorded(tmp_path):
 
     task = agents_md(target="claude-code", model=CLAUDE_MODEL, project_path=str(tmp_path))
 
-    assert task.metadata["not_staged_reasons"] == {"CLAUDE.md": "beside AGENTS.md"}
+    assert task.metadata["not_staged_reasons"] == {"AGENTS.md": "Claude Code doesn't read AGENTS.md beside a CLAUDE.md"}
     assert agents_md(target="claude-code", model=CLAUDE_MODEL).metadata["not_staged_reasons"] == {}
 
 

@@ -68,7 +68,7 @@ REDACTED = "[redacted]"
 # .claude/CLAUDE.md file and .claude/skills/ are named, not the .claude folder: a
 # real HOME always has ~/.claude/, and a temp folder under HOME would be refused for nothing.
 INHERITED_INSTRUCTION_NAMES = (
-    *ROOT_INSTRUCTIONS, "CLAUDE.local.md", ".claude/CLAUDE.md", "kilo.jsonc", "kilo.json", *KILO_CONFIG_DIRS,
+    *ROOT_INSTRUCTIONS, "CLAUDE.local.md", ".claude/CLAUDE.md", ".claude/AGENTS.md", "kilo.jsonc", "kilo.json", *KILO_CONFIG_DIRS,
     *KILO_SKILL_DIRS,
 )  # fmt: skip
 # The names that can be the user's own, when TMPDIR is under HOME, so the refusal doesn't lead with removing them.

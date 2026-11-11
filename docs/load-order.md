@@ -157,6 +157,12 @@ On Linux, node-glob matches case-sensitively. **What Whitney does:** it expands 
 - Whether the VS Code extension resolves the same files. That's T9.
 - Agents and commands in folders above a staged project. Skills above it were checked in Task 8 ([above](#rules-skill-folders-and-instructions-globs)); `check_no_inherited_instructions` refuses a run with `.kilo/` or `.kilocode/` above the project, and with `.claude/skills/` or `.agents/skills/` above it inside a git repository ([above](#rules-skill-folders-and-instructions-globs)).
 
+## Claude Code
+
+Claude Code's own [memory docs](https://code.claude.com/docs/en/memory.md) (read 2026-11-11) give its order. It loads the root `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` together, from the working folder and every folder above it. It reads `AGENTS.md` and `.claude/AGENTS.md` only when none of those three is there. A spike on 2026-11-11 with Claude Code 2.1.322 agreed (`docs/spike-findings.md`).
+
+**What Whitney does:** the `claude-code` loader copies the files Claude Code would read, under their own names, but never `CLAUDE.local.md` ([adding-tests.md](adding-tests.md)). `check_no_inherited_instructions` refuses a run with any of these files in a folder above the project.
+
 ## Practical notes
 
 - Docker Desktop here has 4 GB of memory. Six Kilo sandboxes at once got the model proxy killed, so run with `--max-samples 2`.

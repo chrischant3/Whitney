@@ -14,7 +14,7 @@ from inspect_ai._eval.task.sandbox import read_sandboxenv_file
 
 from whitney import tasks as tasks_module
 from whitney.evalfile import EvalFile, V1File, Variant, load, read
-from whitney.project_files import load_project_files, set_external_directory
+from whitney.project_files import load_project_files, set_external_directory, without_instructions
 from whitney.static_checks import parse_jsonc
 from whitney.tasks import agents_md, kilo_jsonc
 from whitney.variants import (
@@ -25,6 +25,7 @@ from whitney.variants import (
     changes_nothing,
     declared_variants,
     default_baseline,
+    for_claude_code_instructions,
     pointer_from,
     pointer_tokens,
     repeated_removes,
@@ -469,3 +470,38 @@ def test_a_set_on_a_file_kilo_does_not_read_as_config_is_never_shadowed():
     assert shadowed_sets(files, variant(set={"other.json": {"/a": 1}})) == []
     [(where, _)] = shadowed_sets({**files, "kilo.json": "{}"}, variant(set={"other.json": {"/a": 1}, "kilo.json": {"/a": 1}}))
     assert where == ("set", "kilo.json", "/a")
+
+
+# The claude-code target stages CLAUDE.md, .claude/CLAUDE.md, AGENTS.md or .claude/AGENTS.md under their own
+# names, so a remove of any of them removes every one staged (tasks/todo-phase5.md, Task 34).
+
+
+def test_a_remove_of_an_instruction_file_widens_to_every_one_claude_code_was_given():
+    staged = {"CLAUDE.md": "a\n", ".claude/CLAUDE.md": "b\n", "notes.md": "c\n"}
+    variant = Variant(remove=["AGENTS.md", "notes.md", "CLAUDE.md"])
+
+    widened = for_claude_code_instructions(variant, staged)
+
+    assert widened.remove == ["CLAUDE.md", ".claude/CLAUDE.md", "notes.md"]
+    assert apply_variant(staged, widened) == {}
+
+
+def test_a_variant_without_an_instruction_file_remove_is_kept_as_it_is():
+    staged = {"AGENTS.md": "a\n", "notes.md": "c\n"}
+    variant = Variant(remove=["notes.md"])
+
+    assert for_claude_code_instructions(variant, staged) is variant
+    assert for_claude_code_instructions(Variant(remove=["AGENTS.md"]), staged).remove == ["AGENTS.md"]
+
+
+def test_a_remove_of_an_instruction_file_nothing_stands_for_is_kept_for_apply_variant_to_report():
+    variant = Variant(remove=["AGENTS.md"])
+    assert for_claude_code_instructions(variant, {"notes.md": "c\n"}) is variant
+
+
+def test_without_instructions_drops_agents_md_for_kilo_and_every_instruction_file_for_claude_code():
+    staged = {"AGENTS.md": "a\n", "CLAUDE.md": "b\n", ".claude/AGENTS.md": "c\n", "kilo.jsonc": "{}"}
+
+    assert without_instructions("kilo", staged) == {"CLAUDE.md": "b\n", ".claude/AGENTS.md": "c\n", "kilo.jsonc": "{}"}
+    assert without_instructions("claude-code", staged) == {"kilo.jsonc": "{}"}
+    assert staged["AGENTS.md"] == "a\n"  # the files given are left as they were

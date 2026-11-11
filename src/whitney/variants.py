@@ -28,7 +28,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from whitney.evalfile import TRIGGER_CONTROL, EvalFile, V1File, Variant, location, version_1_variants
-from whitney.project_files import CONFIG_PATHS
+from whitney.project_files import CONFIG_PATHS, claude_code_instructions
 from whitney.static_checks import parse_jsonc
 
 # The staged files as supplied. Every eval file runs it, so no declared variant may take the name.
@@ -305,6 +305,24 @@ def repeated_removes(variant: Variant) -> list[Located]:
 
 def _covers(entry: str, path: str) -> bool:
     return entry == path or (entry.endswith("/") and path.startswith(entry))
+
+
+def for_claude_code_instructions(variant: Variant, files: Mapping[str, str]) -> Variant:
+    """`variant` with each `remove` of a Claude Code instruction file widened to every one staged, for the claude-code target.
+
+    The claude-code loader stages whichever of CLAUDE.md, .claude/CLAUDE.md,
+    AGENTS.md and .claude/AGENTS.md Claude Code would read, under their own
+    names, so the default baseline of agents-md.json, which removes
+    AGENTS.md, has to remove them all to run with no project instructions
+    (project_files.claude_code_instructions). Other entries are kept, and a
+    path is listed once.
+
+    Returns:
+        `variant` itself if no `remove` entry names an instruction file that's staged under that name or another.
+    """
+    widened = [name for path in variant.remove for name in (claude_code_instructions(path, files) or [path])]
+    unique = list(dict.fromkeys(widened))
+    return variant if unique == variant.remove else variant.model_copy(update={"remove": unique})
 
 
 def spread_over_kilo_configs(variant: Variant, files: Mapping[str, str], source: str) -> Variant:
