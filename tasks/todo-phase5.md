@@ -931,7 +931,7 @@ Added 2026-11-11 at Christopher's request, ahead of Task 37. Numbered 36a so the
 - [ ] The `--execution` help, the credential check, README, `docs/adding-tests.md` and AGENTS.md's "Deployment Target" say Docker works for both targets.
 
 **Evidence:**
-- [ ] The spike's write-up: the commands, what was set, and a stream captured in the container, saved as a sanitised fixture.
+- [x] The spike's write-up: the commands, what was set, and a stream captured in the container, saved as a sanitised fixture. *(2026-11-11: docs/spike-findings.md, "Phase 5 Task 36a"; fixture `docker-bridge-tools`; `spikes/claude_code_docker.py`.)*
 - [ ] One real Docker run (cents) written up in `docs/results/`, with the image's digest and the Claude Code version from inside it.
 - [ ] Isolation shown by a run, not asserted: one scenario asks the agent to read a canary file on the host outside the project and to fetch a public web page. Locally the canary is read; in Docker both fail. Both runs' tool results are in the write-up.
 - [ ] No key in the image: the image is searched for the key's value after a run, and the result recorded.
