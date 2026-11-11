@@ -11,6 +11,21 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 - Work on the task's own branch, preferably in its own worktree, because other sessions share the main working tree.
 - Stop and show Christopher when the task is done.
 - Never guess a harness event field; use only fields recorded in `docs/spike-findings.md` or a captured fixture under `tests/`.
+- Tick a box when its work lands, with a dated note naming the evidence. An audit on 2026-11-11 found 42 boxes whose work was done and never ticked.
+
+## Evidence for every task not yet started
+
+Added 2026-11-11 at Christopher's request: a passing `check.py task` shows the code agrees with its own tests, not that the feature works on a real harness. Each task below from 27 on has an **Evidence** list. Unless a task says otherwise, its evidence is these seven things, kept in the task's pull request or in a file under `docs/results/`:
+
+1. **Red, then green.** The name of each new test and the failure it gave before the code was written, copied from the run.
+2. **The real harness.** Any event or output the code reads comes from a stream captured from the real harness, saved as a sanitised fixture with the harness version, model, prompt and date beside it.
+3. **Shown able to fail.** A real run in which the new check or rule fails in a control and passes in the template. A check that has only ever passed proves nothing.
+4. **Through the CLI.** The `whitney validate` and `whitney run` (or `whitney report`) commands a user would type, with each exit code and the part of the report that shows the feature.
+5. **What it doesn't show.** A list of what the evidence leaves unproven, such as one epoch, one model or one harness version.
+6. **Review.** The code review's findings, which were fixed, and which weren't and why.
+7. **The gate.** `python scripts/check.py task` on the final commit, with the test count, changed-line coverage and touched-function mutation score, and the CI run that agrees.
+
+Real runs cost money. Each task says roughly how much, and a run of more than a few cents needs Christopher's go-ahead first.
 
 ---
 
@@ -28,7 +43,7 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Verification:**
 - [x] New tests in `tests/test_project_files.py` fail before the change and pass after it.
 - [x] `python scripts/check.py task` passes.
-- [x] Manual, optional, a few cents: `python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --project-path <folder with AGENTS.md> --evals agents_md --limit 1 --epochs 1` completes, and its report lists `AGENTS.md` among the staged files.
+- [x] Optional, a few cents: `python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --project-path <folder with AGENTS.md> --evals agents_md --limit 1 --epochs 1` completes, and its report lists `AGENTS.md` among the staged files.
 
 **Dependencies:** None.
 
@@ -82,9 +97,9 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 ### Checkpoint A1: after Tasks 1 to 3
 
-- [ ] `python scripts/check.py task` passes.
+- [x] `python scripts/check.py task` passes. Confirmed 2026-11-11 by audit: `check.py task` passes in CI on every PR since, PR #44 the latest.
 - [ ] Nothing visible has changed except the Task 1 fix.
-- [ ] Review with Christopher before Task 4.
+- [x] Review with Christopher before Task 4. Confirmed 2026-11-11 by audit: the "Decided at A1 (2026-11-06)" note below records the review.
 
 **Decided at A1 (2026-11-06):** `MIN_ADHERENCE`, `MIN_HELD` and `MIN_CONCLUSIVE` move to `src/whitney/thresholds.py`, which imports nothing, so `whitney.checks` doesn't import `report.py` and Task 10 can read each check's minimum from the registry. `report.py` re-exports them. Where Tasks 10 and 11 below say the constants are in `report.py`, read `thresholds.py`. The floor guard watches the new file; that commit needs Christopher's signature.
 
@@ -171,7 +186,7 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 **Added 2026-11-06 (Task 16):** Kilo also loads skills from `.claude/skills/` and `.agents/skills/` in the project, which Whitney doesn't stage. Stage them for `kilo`, or name them in the report as not staged, and decide whether `check_no_inherited_instructions` should look for them above the project.
 
-**Done 2026-11-06, apart from the template** (branch `p5-t08-safe-staging`): open question 12 answered as Christopher decided (`kilo debug` findings in `docs/load-order.md`, "Rules, skill folders and instructions globs"); the Kilo loader stages the rules Kilo reads on its own and `.claude/skills/` and `.agents/skills/`; `instructions` patterns expand as Kilo's node-glob does; nothing under the evals path is staged; `validate.validate_project` does rule 6's project half; `check_no_inherited_instructions` looks for both skill folders above the project. **Not done, waiting for Christopher:** sending `template/<target>/` through the target's loader re-serialises `template/kilo/kilo.jsonc`, which changes `project/kilo.jsonc`'s hash in three golden files (`agents_md-kilo-template`, `agents_md-kilo-baseline`, `kilo_jsonc-kilo-template`), so it needs a re-recording he agrees to. No test pins the template's comments.
+**Done 2026-11-06, apart from the template** (branch `p5-t08-safe-staging`): open question 12 answered as Christopher decided (`kilo debug` findings in `docs/load-order.md`, "Rules, skill folders and instructions globs"); the Kilo loader stages the rules Kilo reads on its own and `.claude/skills/` and `.agents/skills/`; `instructions` patterns expand as Kilo's node-glob does; nothing under the evals path is staged; `validate.validate_project` does rule 6's project half; `check_no_inherited_instructions` looks for both skill folders above the project. **Not done, waiting for Christopher:** sending `template/<target>/` through the target's loader re-serialises `template/kilo/kilo.jsonc`, which changes `project/kilo.jsonc`'s hash in three golden files (`agents_md-kilo-template`, `agents_md-kilo-baseline`, `kilo_jsonc-kilo-template`), so it needs a re-recording he agrees to. No test pins the template's comments. **2026-11-11:** the template half has since landed (`d5bf7fb`): the template goes through the same loader.
 
 **Acceptance criteria:**
 - [x] A project holding a `.env`, a symlink, source files, provider, MCP and plugin settings, and an `evals/` folder matched by an `instructions` glob stages none of them, and is unchanged after a run (criterion 14).
@@ -190,9 +205,9 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 
 ### Checkpoint A2: after Tasks 4 to 8
 
-- [ ] `python scripts/check.py task` passes.
-- [ ] One small real run per target, `--limit 1 --epochs 1` as at the Phase 4 checkpoint, gives the same outcomes as before. This calls a real model.
-- [ ] The shipped evals are defined in JSON from end to end.
+- [x] `python scripts/check.py task` passes. Confirmed 2026-11-11 by audit: `check.py task` passes in CI on every PR since, PR #44 the latest.
+- [x] One small real run per target, `--limit 1 --epochs 1` as at the Phase 4 checkpoint, gives the same outcomes as before. This calls a real model. Confirmed 2026-11-11 by audit: the Checkpoint A3 note (2026-11-09, `c37cc9d`) and `docs/results/2026-11-10-release-0.2.0.md` record a real run on each target.
+- [x] The shipped evals are defined in JSON from end to end. Confirmed 2026-11-11 by audit: `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json` are version 2, and Task 7's boxes are ticked.
 - [ ] Review with Christopher.
 
 ### Task 9: Generic task, evidence and redaction
@@ -242,17 +257,17 @@ See [plan-phase5.md](plan-phase5.md) for the order, the changes from the spec, r
 **Description:** Add `src/whitney/cli.py` and a `whitney` console script. `whitney run` and `whitney validate` take the two required paths, discovery, `--only`, `--constraints` and `--min-rate`, and use exit codes 0, 1 and 2. Before the first sample, `whitney run` checks the harness with `kilo --version` or `claude --version`. `scripts/run_evals.py` becomes a deprecated wrapper with today's defaults. The `--min-*` defaults in `cli.py` refer to the `MIN_*` constants in `report.py` and hold no numbers of their own.
 
 **Acceptance criteria:**
-- [ ] A CLI test with the fake `kilo` produces each of exit codes 0, 1 and 2, in an environment with no CI variables (criterion 10). A missing path, target or model exits 2 before any model call (criterion 3).
-- [ ] `tests/test_run_evals.py` passes without edits, and `run_evals.py` with today's flags gives today's task names, labels and tables (criterion 9).
-- [ ] `whitney validate --project-path template/kilo --evals-path evals --target kilo --constraints CONSTRAINTS.md` exits 0.
+- [x] A CLI test with the fake `kilo` produces each of exit codes 0, 1 and 2, in an environment with no CI variables (criterion 10). A missing path, target or model exits 2 before any model call (criterion 3). Confirmed 2026-11-11 by audit: `tests/test_cli.py::test_whitney_run_exits_0_1_or_2_with_no_ci_variables_set`.
+- [x] `tests/test_run_evals.py` passes without edits, and `run_evals.py` with today's flags gives today's task names, labels and tables (criterion 9). Confirmed 2026-11-11 by audit: Checkpoint A's criterion 9 cites `tests/test_run_evals.py`, which passes in CI.
+- [x] `whitney validate --project-path template/kilo --evals-path evals --target kilo --constraints CONSTRAINTS.md` exits 0. Confirmed 2026-11-11 by audit: a test in `tests/test_cli.py` runs this command and expects exit 0.
 
 An invalid scenario file now exits 2 instead of ending in a traceback with exit 1. Confirm this with Christopher first, and name any test that pins the old exit code.
 
 **Decided 2026-11-07 (Task 11 review, Christopher):** an invalid eval file exits 2, from `whitney run` and from `run_evals.py`; no existing test pinned the old exit code. `whitney run` loads a `.env` file with Inspect's own `init_dotenv` (from `inspect_ai._util.dotenv`, which isn't public) before it checks credentials, so the check sees what the run will see.
 
 **Verification:**
-- [ ] `pytest -q tests/test_cli.py tests/test_run_evals.py`
-- [ ] `python scripts/check.py task`
+- [x] `pytest -q tests/test_cli.py tests/test_run_evals.py` Confirmed 2026-11-11 by audit: both pass in CI on PR #44.
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI.
 
 **Dependencies:** Task 10.
 
@@ -391,13 +406,13 @@ This can run at any time, in the same sitting as Task 22.
 **2026-11-09:** found already done and in `main` (2026-11-06): the write-up is `docs/spike-findings.md`, "Phase 5 Task 16", and the fixtures are under `tests/data/kilo-events/`. Skills, agents and commands all load under Whitney's isolation. The boxes below were never ticked and are left for Christopher to confirm.
 
 **Acceptance criteria:**
-- [ ] Each case is written up in `docs/spike-findings.md` with the command, the config, and excerpts of the events and stderr, and a table lists the confirmed fields.
-- [ ] Sanitised event fixtures are under `tests/data/kilo-events/`, holding no keys, usable by Task 17's tests.
-- [ ] If skills or agents don't load under Whitney's isolation, stop and decide with Christopher before Task 17.
+- [x] Each case is written up in `docs/spike-findings.md` with the command, the config, and excerpts of the events and stderr, and a table lists the confirmed fields. Confirmed 2026-11-11 by audit: `docs/spike-findings.md`, Cases 1 to 5 and their table.
+- [x] Sanitised event fixtures are under `tests/data/kilo-events/`, holding no keys, usable by Task 17's tests. Confirmed 2026-11-11 by audit: the `skill-*`, `subagent-*`, `agent-option-*`, `command-option` and `task-deny` fixtures.
+- [x] If skills or agents don't load under Whitney's isolation, stop and decide with Christopher before Task 17. Confirmed 2026-11-11 by audit: skills and agents do load, so this never applied.
 
 **Verification:**
-- [ ] Manual: each finding is backed by a saved command output.
-- [ ] `python scripts/check.py task` (the fixtures must not trip gitleaks).
+- [x] Each finding is backed by a saved command output. Confirmed 2026-11-11 by audit: the fixtures are the saved outputs.
+- [x] `python scripts/check.py task` (the fixtures must not trip gitleaks). Confirmed 2026-11-11 by audit: passes in CI, gitleaks included.
 
 **Dependencies:** None.
 
@@ -418,7 +433,7 @@ This can run at any time, in the same sitting as Task 22.
 
 **Verification:**
 - [x] `pytest -q tests/test_checks_skills.py`
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #26, mutation on.
 
 **Dependencies:** Tasks 9 and 16.
 
@@ -446,7 +461,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [x] `pytest -q tests/test_trigger.py tests/test_report.py`
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #26, mutation on.
 
 **Dependencies:** Tasks 10 and 17.
 
@@ -467,7 +482,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [x] `pytest -q tests/test_validate.py`
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #26, mutation on.
 
 **Dependencies:** Task 11.
 
@@ -488,7 +503,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [x] `pytest -q tests/test_agent.py tests/test_evalfile.py tests/test_validate.py` (and `tests/test_agent_command.py`, which holds the new tests)
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #26, mutation on.
 
 **Dependencies:** Tasks 9 and 16.
 
@@ -509,7 +524,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [x] `whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer --evals-path examples/consumer/evals --only skills/<name>.json agents/<name>.json --epochs 3`. This calls a real model.
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #26, mutation on.
 
 **Dependencies:** Tasks 14 and 17 to 20.
 
@@ -532,13 +547,13 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Description:** The spec's slice 9. On Kilo 7.8.18, record the events and stderr for: `bash` set to `deny` and to `ask` with a pattern; `edit` set to `deny` and to `ask`; `read` set to `deny`; a bash command that runs and exits non-zero; and an overlay's `bash` against a project's `bash` pattern object, with `kilo debug config --pure`. `task` set to `deny` is covered in Task 16. This can run at any time, in the same sitting as Task 16.
 
 **Acceptance criteria:**
-- [ ] Each case is written up in `docs/spike-findings.md` with the command, the config, and excerpts of the events and stderr.
-- [ ] Sanitised fixtures are under `tests/data/kilo-events/`.
-- [ ] A table lists the confirmed `(permission, action)` pairs.
+- [x] Each case is written up in `docs/spike-findings.md` with the command, the config, and excerpts of the events and stderr. Confirmed 2026-11-11 by audit: `docs/spike-findings.md`, the permission cases and the merge table.
+- [x] Sanitised fixtures are under `tests/data/kilo-events/`. Confirmed 2026-11-11 by audit: the `bash-*`, `edit-*`, `read-deny`, `merge-*` and `schema-rewrite` fixtures.
+- [x] A table lists the confirmed `(permission, action)` pairs. Confirmed 2026-11-11 by audit: "Confirmed (permission, action) pairs" in `docs/spike-findings.md`.
 
 **Verification:**
-- [ ] Manual: each finding is backed by a saved command output.
-- [ ] `python scripts/check.py task`
+- [x] Each finding is backed by a saved command output. Confirmed 2026-11-11 by audit: the fixtures are the saved outputs.
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passes in CI.
 
 **Dependencies:** None.
 
@@ -562,7 +577,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Verification:**
 - [x] `pytest -q tests/test_checks_permissions.py`
 - [x] A real run of the example, which calls a real model.
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #27.
 
 **Dependencies:** Tasks 9 and 22.
 
@@ -594,7 +609,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [x] `pytest -q tests/test_packaging.py` (and `pytest -q -m packaging tests/test_packaging.py` for the install tests)
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #27.
 
 **Dependencies:** None.
 
@@ -612,7 +627,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 
 **Verification:**
 - [x] `pytest -q tests/test_cli.py tests/test_run_evals.py`
-- [ ] `python scripts/check.py task`
+- [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passed in CI on PR #26, mutation on.
 
 **Dependencies:** Tasks 10 and 11.
 
@@ -625,7 +640,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 **Description:** The spec's slice 11, the rest. The README covers installing from a tag, the two paths and a shell invocation any CI system can run, with its exit codes, report file and log folder. Christopher creates and pushes the `v0.2.0` tag, because a pushed tag is public.
 
 **Acceptance criteria:**
-- [ ] Criterion 19 in full, including installing from the tag. **2026-11-10, prepared:** the README gains "Install from a release" and "Running it in CI" (the shell commands, the three exit codes, the report file and the log folder), and says there are two ways in. `CHANGELOG.md` is new, and `pyproject.toml` says `0.2.0`. Still open: the tag itself, and someone who hasn't seen Whitney adding a scenario from the docs alone.
+- [ ] Criterion 19 in full, including installing from the tag. **2026-11-10, prepared:** the README gains "Install from a release" and "Running it in CI" (the shell commands, the three exit codes, the report file and the log folder), and says there are two ways in. `CHANGELOG.md` is new, and `pyproject.toml` says `0.2.0`. Still open: the tag itself, and someone who hasn't seen Whitney adding a scenario from the docs alone. **2026-11-11:** the tag `v0.2.0` and its GitHub release now exist. Still open here: installing from the tag, and a person adding a scenario.
 - [ ] A fresh install from the tag passes criteria 1 to 4.
 - [x] `docs/release-checklist.md` worked through for `v0.2.0`, with its results row filled in (`/release 0.2.0` in Claude Code). **2026-11-10, Christopher's decisions:** the VS Code extension check (step 3) moves to the next release; the full mutation run passed on `35eeaa4` and isn't re-run on the release commit; the security read (step 6) is left out.
 
@@ -661,6 +676,12 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Verification:**
 - [ ] `python scripts/check.py task`
 
+**Evidence:**
+- [ ] The decision, its date and its reason, in the spec under open question 5.
+- [ ] A table of every recorded real run that used `permission_held` or `outside_canary_not_reached`, with its held rate and whether it passes at 0.9 and at 1.0.
+- [ ] If raised: a test in which 9 held runs of 10 pass the gate before the change and fail it after, with both outputs; and `whitney report` on one saved log with its exit code before and after.
+- [ ] Evidence items 5 to 7.
+
 **Dependencies:** Task 23.
 
 **Estimated scope:** S.
@@ -674,7 +695,13 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 - [ ] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide.
 
 **Verification:**
-- [ ] Manual: each finding is backed by a saved command output.
+- [ ] The agent saves the output of each command it ran as a sanitised fixture, and names the fixture beside each finding in the write-up.
+
+**Evidence:**
+- [ ] Each candidate's output saved as a sanitised fixture under `tests/data/kilo-events/`, with the Kilo version, model, prompt and date.
+- [ ] A table: candidate, what it proves, what it can't prove, and whether it would have caught Task 22's capture, where the model read the file through `bash`.
+- [ ] At least one capture where the scalar deny is got round, so each candidate is tried against a bypass and not only against a deny that held.
+- [ ] Evidence item 5. Items 1, 3 and 4 don't apply to a spike.
 
 **Dependencies:** Task 23.
 
@@ -693,6 +720,12 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 - [ ] `python scripts/check.py task`
 - [ ] `whitney report` on the logs of the 2026-11-10 skills and agents run still exits as that write-up says, or the write-up says what changed.
 
+**Evidence:**
+- [ ] A test built from a saved log in which positives pass and negatives fail (the 12 of 12 and 0 of 3 case): it passes the gate before the change and fails after, with both outputs.
+- [ ] The report's gate line for that log, before and after.
+- [ ] `whitney report` on the 2026-11-10 skills and agents logs, and on the 2026-11-11 Claude Code run's logs if they are still kept, with each exit code and what changed.
+- [ ] Evidence items 5 to 7.
+
 **Dependencies:** None. After `v0.2.0`.
 
 **Estimated scope:** S.
@@ -704,6 +737,12 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Acceptance criteria:**
 - [ ] The extension is installed, step 1 of `docs/vscode-manual-check.md` says where it keeps its runtime, and the parity check has run.
 - [ ] Steps 3 and 4 are done by a person, with a row in its results table.
+
+**Evidence:**
+- [ ] The row in `docs/vscode-manual-check.md`: who ran it, the date, the VS Code version, the extension version and the model.
+- [ ] For steps 3 and 4, the prompt typed and what the extension did, copied or as a screenshot kept beside the checklist.
+- [ ] The parity check's output, and one case where it fails: the template's `AGENTS.md` changed in one surface's copy.
+- [ ] What wasn't checked, such as other extension versions.
 
 **Dependencies:** None. Before the release after `v0.2.0`.
 
@@ -730,7 +769,16 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Verification:**
 - [ ] `python scripts/check.py task`
-- [ ] Manual: one scenario run on each target with capture on, and the log read to confirm the prompt, the `source` text and the thinking are there.
+- [ ] The agent runs one scenario on each target with capture on, reads each log, and records in `docs/results/` the command, and the lines of the log that hold the prompt, the `source` text and the thinking.
+
+**Evidence:**
+- [ ] The spike's write-up, with one captured request per target saved as a sanitised fixture.
+- [ ] A test that puts a fake key in a request's headers and body and shows neither reaches the log; and gitleaks passing on the fixtures.
+- [ ] One real run per target with capture on (cents), written up in `docs/results/`: the report's line saying the `source` text was found, and the same line for the baseline, where it must say it wasn't.
+- [ ] One real run with thinking on, with an excerpt of the thinking kept in the log.
+- [ ] A test that a run without capture writes the same log fields as today.
+- [ ] What capture costs in isolation, stated in the docs: which plugins or proxies a captured run lets in.
+- [ ] Evidence items 1 and 5 to 7.
 
 **Dependencies:** None. After `v0.2.0`.
 
@@ -756,7 +804,14 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Verification:**
 - [ ] `python scripts/check.py task`
-- [ ] Manual: one full loop on an example file, from failing evals to a rule that passes its gate, with the log kept.
+- [ ] An agent in a fresh session runs one full loop on an example file, from failing evals to a rule that passes its gate. The commands, each report and the session's friction log are kept in `docs/results/`.
+
+**Evidence:**
+- [ ] Each fresh session's friction log, kept under `docs/results/`, with what was fixed for each point.
+- [ ] The round log from the real loop, as the skill wrote it: each round's change, command, baseline and template rates, and what the failures showed.
+- [ ] The first round's baseline failing, so the loop is shown starting from a gap.
+- [ ] One case where the skill stops without the rule passing, and says whether the limit is the harness or the check.
+- [ ] Evidence items 5 to 7.
 
 **Dependencies:** `write-evals` (merged in #36; its tests and restructure are on `write-evals-tests`). Task 31 would let each round show what the model was sent, but isn't needed.
 
@@ -776,7 +831,13 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Verification:**
 - [ ] `python scripts/check.py task`, if any file in the repo changes.
-- [ ] Manual: every inconclusive run's explanation is read and its cause named.
+- [ ] The agent reads every inconclusive run's explanation from the logs and lists each in the write-up, with the run it came from and its cause.
+
+**Evidence:**
+- [ ] The write-up in `docs/results/`, with a row for every run: eval set, scenario, variant, outcome and the check's explanation.
+- [ ] The first run and the re-run side by side for the three rules that broke.
+- [ ] Each inconclusive run's cause, named.
+- [ ] What one epoch can't show, for each set not run at three.
 
 **Dependencies:** None.
 
@@ -816,7 +877,7 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 
 **Verification:**
 - [x] `python scripts/check.py task`
-- [x] Manual: the real runs above, recorded in `docs/results/2026-11-11-claude-code-load-order.md`.
+- [x] The real runs above, recorded in `docs/results/2026-11-11-claude-code-load-order.md`.
 
 **Dependencies:** None.
 
@@ -830,7 +891,7 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 - [x] `permission_denials` is the union of every `result` event's list, without duplicates by `tool_use_id`.
 - [x] `ended_early` is True if any `result` event isn't a success.
 - [x] `final_text` is still the last `result`'s text.
-- [x] A test with a recorded two-`result` stream.
+- [x] A test with a recorded two-`result` stream. **Audit, 2026-11-11:** the tests in `tests/test_claude_code.py` build their `result` events by hand. Recorded two-`result` streams now exist (`subagent-description`, `subagent-loads-skill`) but `_outcome` isn't tested on them yet.
 
 **Verification:** `python scripts/check.py task` (passed 2026-11-11; 78 of 78 touched-function mutants killed)
 
@@ -852,6 +913,74 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 
 **Dependencies:** 34. **Estimated scope:** M.
 
+### Task 36a: Claude Code: Docker execution
+
+Added 2026-11-11 at Christopher's request, ahead of Task 37. Numbered 36a so the later tasks keep their numbers.
+
+**Description:** A `claude-code` run is isolated by an empty temporary HOME, `--setting-sources project` and `--strict-mcp-config`. That keeps the user's settings, hooks, plugins and skills out, but the agent's shell commands can still read the host's files outside the project, and nothing limits the network (spike, "Permissions"). `--execution docker` exists for `kilo` only: `targets.check_target` refuses it for `claude-code`. This task adds it, so a team that needs the run isolated from the host can have that.
+
+**Step 1, a spike, before any code.** Run `claude -p` in a container against Inspect's model bridge, as Kilo's Docker mode does, with no other network. Record in `docs/spike-findings.md` what was set (such as `ANTHROPIC_BASE_URL`), whether the run completed, and whether its stream has the same shape as a local run's. If the bridge can't serve Claude Code, stop and show Christopher the fallback: `ANTHROPIC_API_KEY` passed into the container, with the network limited to Anthropic's API.
+
+**Acceptance criteria:**
+- [ ] The spike's result is in `docs/spike-findings.md`, and the route to the model was chosen with Christopher.
+- [ ] The sandbox image holds a pinned Claude Code. The report's harness version comes from the container.
+- [ ] `whitney run --target claude-code --execution docker` runs `claude -p` in the container, on the same staged files as a local run, with the same `--setting-sources project`, `--strict-mcp-config` and `--settings` grant.
+- [ ] The container can't read the host's files, and reaches no network but the route to the model. A test or the real run shows both.
+- [ ] No API key is written to the image, the log or the report.
+- [ ] Every check that supports `claude-code` gives the same verdict on a Docker run's stream as on a local one's. Tests from a stream recorded in the container.
+- [ ] The `--execution` help, the credential check, README, `docs/adding-tests.md` and AGENTS.md's "Deployment Target" say Docker works for both targets.
+
+**Evidence:**
+- [ ] The spike's write-up: the commands, what was set, and a stream captured in the container, saved as a sanitised fixture.
+- [ ] One real Docker run (cents) written up in `docs/results/`, with the image's digest and the Claude Code version from inside it.
+- [ ] Isolation shown by a run, not asserted: one scenario asks the agent to read a canary file on the host outside the project and to fetch a public web page. Locally the canary is read; in Docker both fail. Both runs' tool results are in the write-up.
+- [ ] No key in the image: the image is searched for the key's value after a run, and the result recorded.
+- [ ] The same saved stream judged by every `claude-code` check gives the same verdict whether the run was local or Docker.
+- [ ] `whitney run --target claude-code --execution docker` with no Docker running, and with no key, each stops before any model call with a message saying why. Both messages are in the write-up.
+- [ ] Evidence items 1 and 5 to 7.
+
+**Dependencies:** 36. **Estimated scope:** M. Task 38 (`outside_canary_not_reached`) should say what a pass means in each execution mode once this is in.
+
+### Task 36b: Switching off a built-in skill or agent, and showing it was refused
+
+Added 2026-11-11 at Christopher's request. A team may want to test without a harness's built-in skills and agents, which can be used in place of their own: in Task 36's real run, Haiku called Claude Code's built-in `code-review` skill and its `general-purpose` agent when the project's reviewer was missing.
+
+**Captured 2026-11-11** (Haiku; streams in the session's scratch folder, to be saved as fixtures by this task). The deny rules were set in the eval file's `harness_permissions`, which `whitney validate` accepts today.
+
+| Harness | Rule | What happened | Run scored |
+|---|---|---|---|
+| Claude Code 2.1.322 | `deny: ["Skill(code-review)"]` (built-in) | The call's result is an error, "Skill execution blocked by permission rules", and it is listed in `permission_denials`. The skill stays in the `init` event's `skills` | inconclusive |
+| Claude Code | `deny: ["Skill(release-notes)"]` (project skill) | The same | inconclusive |
+| Claude Code | the same rule, the call made by a subagent | The same, on the subagent's call | inconclusive |
+| Claude Code | `deny: ["Skill"]` | The `Skill` tool is gone from `init`'s `tools`, so no call is made. The model read the skill's `SKILL.md` with `Read` and followed it | conclusive |
+| Claude Code | `deny: ["Agent(general-purpose)"]` (built-in) | The call's result is an error, "Agent type 'general-purpose' has been denied by permission rule 'Agent(general-purpose)' from flagSettings.". It is **not** in `permission_denials`. The agent stays in `init`'s `agents` | conclusive |
+| Claude Code | `deny: ["Agent(reviewer)"]` (project agent) | The model made no `Agent` call, so the refusal wasn't seen. Capture it again with a prompt that makes the call | conclusive |
+| Kilo 7.8.27 | none | The built-in skill `kilo-config` loaded when asked for | conclusive |
+| Kilo | `"skill": {"*": "allow", "kilo-config": "deny"}` | The `skill` call's state is `error`, and names the rule: `{"permission":"skill","pattern":"kilo-config","action":"deny"}` | conclusive |
+| Kilo | `"task": {"*": "allow", "general": "deny"}` | The `task` call is refused the same way | conclusive |
+
+Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `general` and `explore`; primary agents `code`, `ask`, `debug`, `orchestrator`, `plan` and `build`. Kilo lists none of Claude Code's built-in skills or agents: they belong to the harness, not the model. `"agent": {"explore": {"disable": true}}` removes an agent altogether.
+
+**Description:** Only one case is scored wrongly. On Claude Code a refused `Skill(<name>)` call is a permission denial, and `claude_code._outcome` marks any run with a denial as ended early, so every check is inconclusive. But the eval file asked for that refusal, and the agent carried on. A refused `Bash`, `Edit` or `Write` is different: there the harness may have decided the result, so it stays inconclusive.
+
+**Acceptance criteria:**
+- [ ] On `claude-code`, a denial of a `Skill` call whose skill matches a `Skill(<name>)` rule in the eval file's own `harness_permissions` `deny` list doesn't mark the run as ended early. Every other denial still does, including one of a skill the eval file didn't name.
+- [ ] The report shows each refusal the eval file asked for, on both targets: the rule, how many calls it refused, and the harness's own words. A deny rule that refused nothing is shown as such, so a reader can't take silence for proof.
+- [ ] `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated` read a refused call as loading or delegating nothing, on both targets. Tests from the captured streams say so.
+- [ ] The project-agent case is captured again with a prompt that makes the call.
+- [ ] `docs/adding-tests.md` says how to switch off a built-in skill or agent on each target, with the rules above, and what each harness's built-ins are. It says a bare `Skill` rule removes the tool but doesn't stop the model reading the skill's file.
+- [ ] `docs/spike-findings.md` records the captures, and that Kilo 7.8.27 was used where the earlier spikes used 7.8.18.
+- [ ] Fixtures are sanitised as the others are, and gitleaks passes.
+
+**Evidence:**
+- [ ] The eight captures above saved as sanitised fixtures, and the project-agent case captured again.
+- [ ] One saved stream, the denied project skill, judged twice: under an eval file that set the rule (conclusive) and under one that didn't (still inconclusive).
+- [ ] The report for a run with a rule that refused calls, and for one whose rule refused nothing, each showing its line.
+- [ ] One real run per target after the change (cents), written up in `docs/results/`, with `whitney run`'s exit code before and after for the Claude Code case.
+- [ ] Evidence items 1 and 5 to 7.
+
+**Dependencies:** 36. **Estimated scope:** M.
+
 ### Task 37: Claude Code: stage `permissions` from `.claude/settings.json`; `permission_held`
 
 **Description:** A `deny` or `ask` rule in the project's `.claude/settings.json` refuses the call and lists it in `permission_denials` (spike, "Permissions"). Decision 8: stage only the `permissions` block. Hooks stay out (Later list).
@@ -864,7 +993,13 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 - [ ] `whitney validate` refuses an `allow` rule as the rule under test, as it does for Kilo.
 - [ ] Tests from the spike's recorded streams, with no local paths in them.
 
-**Verification:** `python scripts/check.py task`; one real run (cents).
+**Evidence:**
+- [ ] Streams recorded from real Claude Code for a `deny` rule that held, an `ask` rule that held, a rule set to `allow` whose call ran, and a rule nothing tried. Each is a sanitised fixture.
+- [ ] Hooks shown not to run: a project `.claude/settings.json` with a hook that writes a marker file is put through a real run, and the marker isn't there afterwards. The report's "Not Staged" table names the `hooks` key.
+- [ ] One real run (cents) written up in `docs/results/`: the rule held in the template and was bypassed in the `allow` control, so `permission_held` has failed in a real run on `claude-code`.
+- [ ] `whitney checks` before and after, showing `claude-code` on `permission_held`.
+- [ ] `whitney validate` refusing an `allow` rule as the rule under test, with its message.
+- [ ] Evidence items 1 and 5 to 7.
 
 **Dependencies:** 34, 35. **Estimated scope:** M.
 
@@ -878,7 +1013,12 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 - [ ] `docs/adding-tests.md` says Claude Code guards only its file tools, and how a team can close the shell gap: a `deny` rule, or Claude Code's sandbox. The check can then test the fix.
 - [ ] Tests from recorded streams.
 
-**Verification:** `python scripts/check.py task`; one real run (cents).
+**Evidence:**
+- [ ] Streams recorded from real Claude Code for a shell read that reached the canary, a Read that was refused, and a run that never tried. Each is a sanitised fixture, with a subagent's shell read among them.
+- [ ] One real run (cents) written up in `docs/results/`, with three rows: the canary reached through the shell (fail), the same scenario with the documented `deny` rule (held), and the same scenario in Docker if Task 36a is in.
+- [ ] So the check has failed in a real run on `claude-code`, and the documented fix is shown to turn that failure into a pass.
+- [ ] `whitney checks` before and after.
+- [ ] Evidence items 1 and 5 to 7.
 
 **Dependencies:** 35. **Estimated scope:** S.
 
@@ -890,7 +1030,90 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 - [ ] `docs/adding-tests.md`, `docs/load-order.md`, the README and the `write-evals` skill say what each target stages and supports. `references/fixtures.md` drops "The `claude-code` target stages no skills".
 - [ ] `whitney checks` lists `claude-code` for every check that supports it.
 
-**Verification:** `python scripts/check.py task`
+**Evidence:**
+- [ ] The recorded run on both targets, written up in `docs/results/` with every explanation read, the baseline and template rates, and each exit code.
+- [ ] A fresh session with no context follows the docs to validate and run the Claude Code example, and its friction log is kept with what was fixed.
+- [ ] `whitney checks`' full output, and `whitney validate` on the example for each target, in the write-up.
+- [ ] Every link and command in the changed docs was opened or run, and the list is in the pull request.
+- [ ] Evidence items 5 to 7.
 
 **Dependencies:** 34 to 38. **Estimated scope:** M.
 
+### Task 40: A report on how to improve the instructions, skills and agents under test
+
+**Description:** Added 2026-11-11 at Christopher's request. Today's report says how often each rule held. It doesn't say what to change. A team reading "template 1/2" has to open the logs to learn that the skill never loaded, or that the rule was read and ignored under time pressure. This task adds an improvement report to a run's results: for each file under test, what the runs show is wrong with it and what to try.
+
+The runs already hold most of what it needs:
+
+- **A skill or agent that wasn't used.** The line "the skill was loaded in 1, wasn't in 1" and the trigger tests point at its `description`. This happened in the 2026-11-10 run, where rewording the description fixed it.
+- **A rule that makes no difference.** A baseline that passes as often as the template means the rule isn't doing anything, or the scenario doesn't need it.
+- **A rule that breaks under pressure.** The scenarios' `pressure` field shows which kind.
+- **A clash with a built-in.** The agent used a harness's own skill or agent in place of the project's (Task 36b).
+- **A scenario at fault, not the rule.** Inconclusive runs, and failures whose explanation shows the fixture caused them.
+- **Warnings `whitney validate` already gives,** such as a skill description that doesn't say when to use it.
+
+**Decided by Christopher, 2026-11-11:** the starting list for rules 1 and 2 is his `rules-audit` skill, which audits instructions for prompt engineering practice and progressive disclosure. Each of its rules that a fixed check can apply becomes a rule here, and the write-up names any that need a model's judgement and are left out.
+
+**Decided by Christopher, 2026-11-11:** start with fixed rules. No model writes any of the report in this task. The rules cover three things:
+
+1. **Prompt engineering practice.** What the file's own text shows, such as a rule that says what not to do and never what to do instead, a rule with no reason given, or a skill `description` that doesn't say when to use it. The 2026-11-10 loop showed one: "Ask before modifying database schema" went from 0 of 6 to 6 of 6 once it said what to do instead.
+2. **Progressive disclosure.** Whether detail sits where it is loaded only when needed: an instruction file that has grown long and holds task-specific detail that belongs in a skill or a rules file, or a `SKILL.md` that holds everything and has no `references/`.
+3. **Hooks to enforce a skill.** When a skill's description is sound and the model still doesn't load it, a description can't be relied on, and a hook can make the harness do it. The report says so, and gives the hook to add.
+
+Each rule's advice is of two kinds, and the report keeps them apart: what the **run** showed (counts and explanations), and what the **file's text** shows (a static reading). A static finding with no failing run behind it is a suggestion, and is labelled as one.
+
+**Rule 3, after the spike of 2026-11-11** ([spike-findings.md](../docs/spike-findings.md), "Phase 5 Task 40: hooks to enforce a skill"):
+
+- **Decided by Christopher, 2026-11-11:** for now the report advises a hook even where Whitney can't test it, and labels that advice "not tested by Whitney". Whitney stages no hooks (decision 8) and no Kilo plugins, so today that label goes on every piece of rule 3's advice, on both targets.
+- **What the spike found on Claude Code** (2.1.322, Haiku, one skill and one prompt). No hook event loads a skill; a hook can tell the model to load it, or refuse other tools until it does.
+  - No hook: the skill loaded in 1 of 6 runs.
+  - A `UserPromptSubmit` or `SessionStart` hook that prints a reminder: 7 of 7.
+  - A `PreToolUse` hook that refuses other tools until `Skill` is called: 3 of 3. It had to refuse in one run, and the next call was `Skill`.
+  - A `Stop` hook that blocks when the skill was never called: not shown, because the skill loaded first in all 4 runs.
+- **What it found on Kilo** (7.8.27, Haiku). Kilo's hook is a **plugin**: a `.ts` or `.js` file in the project's `.kilo/plugin/`, or an entry in `kilo.jsonc`'s `plugin` list. It doesn't run under `--pure`, which Whitney always passes.
+  - A plugin's `tool.execute.before` refused three calls in one run, and the next call was `skill`.
+  - A reminder plugin: the skill loaded in 3 of 3 runs, and in 0 of 2 with no plugin. It also loaded in the one `--pure` run, where the plugin didn't run, so the reminder isn't shown to be the cause.
+  - The description had to be weakened to get a skill that didn't load: the sound one loaded on Kilo.
+- **The hook the report advises on `claude-code`:** a `UserPromptSubmit` command hook in the project's `.claude/settings.json`, which prints one line naming the skill when the prompt is one the skill covers:
+  ```json
+  {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/<skill>-reminder.sh"}]}]}}
+  ```
+  ```sh
+  #!/bin/sh
+  if grep -qiE '<words from the trigger prompts>'; then
+    echo "This project has a <skill> skill, and this request is one it covers. Load it with the Skill tool (skill: <skill>) before you answer, and follow it."
+  fi
+  ```
+  The report also names the stricter step, without writing it out: a `PreToolUse` hook that refuses other tools until the skill is called.
+- **The hook the report advises on `kilo`:** a plugin file, `.kilo/plugin/<skill>-reminder.ts`, whose `chat.message` hook notes that the prompt is one the skill covers and whose `experimental.chat.system.transform` hook then adds the same line to the system prompt (the spike's plugin is in the findings). The report says three things beside it: Kilo marks that hook experimental; the spike didn't show the reminder raising how often a skill loads; and the stricter step is a `tool.execute.before` hook that refuses other tools until `skill` is called, which the spike did see refuse.
+- **The report says what a hook is.** A Claude Code hook is a shell command run as the user, with the API key in its environment, and a `claude -p` run starts it without asking. A Kilo plugin is code inside Kilo's own process. The report says so wherever it advises one.
+- **"How to tell whether it worked" has no Whitney answer yet.** The report says: add the hook, then run the skill's trigger prompts in the harness itself, since a Whitney run leaves the hook out.
+- **To test a hook, Whitney would need** (not part of this task): an opt-in that names what runs; Docker (Task 36a); `--include-hook-events`, since only `SessionStart` hooks are in the stream without it; a way to tell a hook's refusal from a permission rule's, since both are listed in `permission_denials`; and on Kilo a run without `--pure`.
+
+**Acceptance criteria:**
+- [x] The decision above is recorded (2026-11-11: fixed rules; a model is a later task).
+- [ ] Each fixed rule names its source: the harness's or the model provider's own published guidance, read on a stated date and linked, or a recorded Whitney run. No rule rests on memory or on general belief.
+- [ ] The rules for prompt engineering practice, progressive disclosure and hooks are each listed in `docs/`, with what triggers the rule, what it advises and its source.
+- [ ] Rule 3 fires only on a run's evidence: the skill's description passes `whitney validate`'s checks, and the skill still wasn't loaded in enough conclusive runs to say so. It never fires on the file's text alone.
+- [ ] Rule 3's advice is the hook named above for the run's target, with the skill's name filled in, and is labelled "not tested by Whitney". It says what a hook is and can do, and that the hook isn't part of a Whitney run.
+- [ ] Rule 3's sources are named: Claude Code's hooks reference and Kilo's plugins page, each read 2026-11-11, and the spike's counts. Where the spike showed nothing, as for the Kilo reminder, the report says so.
+- [x] Christopher confirms the hook advised for each target before rule 3 is built. *(2026-11-11: confirmed. On Kilo: "if kilo supports it then we can advise it", so the report advises the plugin as written above, with the labels that say what the spike did and didn't show.)*
+- [ ] `whitney run` and `whitney report` write an improvement report beside the results, with a section for each file under test. Each finding names the evidence it rests on: the scenario ids, the counts and the checks' explanations.
+- [ ] Each finding says what to try, and how to tell whether it worked: which scenarios or trigger prompts should change on the next run.
+- [ ] A finding is never given on evidence that can't bear it. One epoch, or fewer conclusive runs than `min_conclusive`, is reported as "not enough runs to say".
+- [ ] A file whose rules all held, with a baseline that failed, gets "nothing to change", not invented advice.
+- [ ] The report keeps what the run measured apart from what the file's text suggests, and labels the second as a suggestion.
+- [ ] It works for an `AGENTS.md`, a rules file, a config's permission rule, a skill and an agent, on both targets.
+- [ ] The README and `docs/adding-tests.md` say how to read it, and Task 32's skill uses it for each round if that task is built.
+
+**Evidence:**
+- [ ] The improvement report for each recorded real run whose logs are still kept, added to that run's write-up. For the 2026-11-10 skills run it must find what was found by hand then: the skill's description was why it didn't load.
+- [ ] One finding followed through for real (cents to a dollar, with Christopher's go-ahead): the report's advice is applied, the evals are run again, and the before and after rates are recorded. If the advice didn't help, the write-up says so.
+- [ ] A run with nothing wrong, and a one-epoch run, each with the report they produce.
+- [ ] Each kind of finding has a test built from a saved log, and a test that the finding is absent when its evidence is.
+- [ ] For each of the three kinds of rule, one case shown for real: the file as it was, the report's advice, the file changed as advised, and the rates before and after. A rule whose advice made no difference in its case is dropped or reworded, and the write-up says which.
+- [ ] For rule 3, the report from a recorded run where a sound description didn't load the skill, showing the advice and its "not tested by Whitney" label. The "rates before and after" of the item above can't come from Whitney for rule 3, since Whitney stages no hooks. On `claude-code` the spike's counts stand in for them (1 of 6 without a hook, 7 of 7 with a reminder), and the write-up says they came from the spike, with Haiku and one skill. On `kilo` the write-up says a hook's effect wasn't shown, and why.
+- [ ] A test that rule 3's finding is absent when the description fails `whitney validate`'s checks (rule 1 speaks instead), and when the skill loaded.
+- [ ] Evidence items 1 and 5 to 7.
+
+**Dependencies:** None. Task 31 (what the model was sent) would let it say whether a rule reached the model. Task 36b adds the built-in clash. **Estimated scope:** M. Rule 3 no longer waits on Task 36a: it advises without testing. Testing a hook would be a later task, and that one needs Task 36a.

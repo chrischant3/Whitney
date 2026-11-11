@@ -27,6 +27,9 @@ None provided. Source proposal: docs/proposal.md. Agreed MVP decision: VS Code e
 ## Constraints
 Read CONSTRAINTS.md before writing code. Do not weaken it to make a change pass. Run `python scripts/check.py task` before handing work back.
 
+## Evidence
+An agent gathers the evidence that a task is done. Write every verification and evidence step so an agent can carry it out and leave something a person can check afterwards: the command it ran, the output, a saved log or fixture, or a file under `docs/results/`. Don't write a step as "Manual:" or leave one for a person to do. If you can't see how an agent could gather a piece of evidence, say so and ask before writing the step. A decision that is the maintainer's to make, such as a changed expectation, is a decision to ask for. It is not a verification step. One exception, agreed 2026-11-11: the VS Code extension checklist (`docs/vscode-manual-check.md`) is run by a person with the extension installed.
+
 ## Git workflow
 Follows `agent-skills:git-workflow-and-versioning`. When you commit, use a feature branch (`feature/`, `fix/`, `chore/` or `refactor/`). When asked to ship, push it over SSH with `git push -u origin <branch>` and open a pull request. Only the maintainer merges, tags and releases.
 - In Claude Code, `.claude/hooks/git-workflow-gate.sh` enforces part of this. It blocks commits and pushes while on main, pushes that target main, force pushes, PR merges, `gh api` writes, and a commit that includes a `.env` file (templates such as `.env.example` aside). `.claude/settings.json` denies `git add` of a `.env` file, so the maintainer commits fixture `.env` files, and auto-allows pushes only for the four branch prefixes. Branch names, SSH, tags and releases are by instruction.
