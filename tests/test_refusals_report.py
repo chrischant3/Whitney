@@ -175,7 +175,7 @@ def test_refusals_a_log_records_in_another_shape_are_left_out(odd):
     assert "switched off" not in rendered([log("template", [odd])])
 
 
-def test_a_rule_whose_name_holds_a_pipe_or_a_backtick_cant_break_the_report():
-    text = rendered([log("template", [[{"rule": "skill: a|b`c", "calls": 0, "said": None}]])])
+def test_a_rule_whose_name_holds_a_newline_or_a_backtick_cant_break_the_report():
+    text = rendered([log("template", [[{"rule": "skill: a\nb`c", "calls": 0, "said": None}]])])
 
-    assert "The eval file switched off `skill: a\\|b'c`." in text
+    assert "The eval file switched off `skill: a b'c`." in text

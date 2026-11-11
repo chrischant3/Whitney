@@ -298,7 +298,8 @@ def _claude_calls(events: str, tool: str, name_key: str) -> _Calls:
             # One of this tool's calls, and which skill or agent it names is unknown. One case is known: an
             # `Agent` call may leave out `subagent_type`, and one that failed delegated nothing whoever it
             # was for (agent-denied-builtin: Claude Code refused it under general-purpose's rule).
-            unreadable += not (called == "Agent" and failed[use_id])
+            if not (called == "Agent" and failed[use_id]):
+                unreadable += 1
         elif not failed[use_id]:
             names.append(name)
             callers.setdefault(name, []).append(_caller(parent, agents))

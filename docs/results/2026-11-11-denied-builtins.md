@@ -1,6 +1,6 @@
 # Switching off a built-in skill or agent, 2026-11-11
 
-Can an eval file test without a harness's own skills and agents, and does the report show they were refused? Task 36b of the Phase 5 plan ([tasks/todo-phase5.md](../../tasks/todo-phase5.md)) asked. Twelve real runs answer it: ten captures before the change, and one run on each target after it.
+Can an eval file test without a harness's own skills and agents, and does the report show they were refused? Task 36b of the Phase 5 plan ([tasks/todo-phase5.md](../../tasks/todo-phase5.md)) asked. Twelve real runs answer it: ten captures before the change (nine in the table below, and a first try at the project's agent in which the model made no `Agent` call), and one run on each target after it.
 
 All runs used Haiku (`anthropic/claude-haiku-4-5` on Claude Code 2.1.322, `kilo/anthropic/claude-haiku-4.5` on Kilo 7.8.27), one epoch, local execution, Whitney 0.2.0 plus this task's branch. The projects were temporary: the example's `AGENTS.md` and `till` fixture, with the release-notes skill and reviewer agent under `.claude/` for Claude Code, and an empty `kilo.jsonc` for Kilo. The logs were kept in a scratch folder and are not committed. Nine streams are saved as fixtures ([spike-findings.md](../spike-findings.md), "Phase 5 Task 36b").
 

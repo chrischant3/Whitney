@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -94,7 +95,7 @@ def refused(target: str, rules: list[Rule], run: dict) -> list[dict]:
     return out
 
 
-def expected(rules: list[Rule], denial: dict) -> bool:
+def expected(rules: Sequence[Rule], denial: dict) -> bool:
     """True if a Claude Code permission denial is of a skill one of `rules` names, so the eval file asked for it."""
     tool_input = denial.get("tool_input")
     skill = tool_input.get("skill") if isinstance(tool_input, dict) else None
@@ -120,7 +121,8 @@ def _claude_blocks(run: dict, kind: str) -> list[dict]:
     for event in _events(run):
         message = event.get("message")
         content = message.get("content") if isinstance(message, dict) else None
-        blocks += [block for block in content if isinstance(block, dict) and block.get("type") == kind] if isinstance(content, list) else []
+        if isinstance(content, list):
+            blocks += [block for block in content if isinstance(block, dict) and block.get("type") == kind]
     return blocks
 
 
@@ -152,7 +154,7 @@ def _claude_refusals(rule: Rule, run: dict) -> list[str | None]:
         denials = [denial for denial in run.get("permission_denials") or [] if expected([rule], denial)]
         return [results.get(denial.get("tool_use_id")) for denial in denials]
     calls = [block.get("id") for block in _claude_blocks(run, "tool_use") if block.get("name") == AGENT_TOOL]
-    return [results[call] for call in calls if f"permission rule '{rule.text}'" in results.get(call, "")]
+    return [results[call] for call in calls if f"has been denied by permission rule '{rule.text}'" in results.get(call, "")]
 
 
 def _kilo_refusals(rule: Rule, run: dict) -> list[str]:

@@ -12,8 +12,8 @@ the spikes do, and writes `<name>.jsonl` and `<name>.meta.json`.
 The log already has the run's key redacted (whitney.agent.redact_run). This
 replaces the machine's paths, user name and email addresses, and for Claude
 Code the request ids, in the events and in the meta file. It then refuses to
-write anything if a local path, a key, the user's name or an email address is
-still there. Run gitleaks on the result before committing it.
+write anything if a local path, an `sk-` key, the user's name or an email
+address is still there. Run gitleaks on the result before committing it.
 """
 
 from __future__ import annotations
@@ -71,8 +71,9 @@ def fixture(run: dict, project_dir: str | None, target: str) -> tuple[str, int]:
     return "\n".join(lines) + "\n", skipped
 
 
-# What must never be in a fixture: a home folder, a per-user temporary folder, or a key.
-LEFT_BEHIND = re.compile(r"/Users/|/home/(?!user\b)|/var/folders/|(?<![A-Za-z])sk-[A-Za-z0-9_-]{20,}")
+# What must never be in a fixture: a home folder, a per-user temporary folder, or an Anthropic-style `sk-` key.
+# It knows no other kind of key, which is why gitleaks is still run on the result.
+LEFT_BEHIND = re.compile(r"/Users/|/home/(?!user\b)|/root/|/var/folders/|(?<![A-Za-z])sk-[A-Za-z0-9_-]{20,}")
 
 
 def clean(value: object, project_dir: str | None, target: str) -> object:
@@ -81,7 +82,7 @@ def clean(value: object, project_dir: str | None, target: str) -> object:
 
 
 def check_nothing_left(text: str, where: str) -> None:
-    """Stop if `text` still holds a local path, a key, this user's name or an email address.
+    """Stop if `text` still holds a local path, an `sk-` key, this user's name or an email address.
 
     The replacements come from this machine: its home folder, user name and
     temporary folder. A log made elsewhere, or a name at the start of a line
@@ -108,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--about", required=True, help="one sentence on what the stream holds")
     parser.add_argument("--out", type=Path, required=True, help="the fixtures folder")
     args = parser.parse_args(argv)
+    if Path(args.name).name != args.name:
+        raise SystemExit("--name is a file name, not a path")
 
     run, metadata, prompt = the_run(args.logs, args.sample)
     target = metadata["target"]

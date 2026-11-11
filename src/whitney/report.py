@@ -229,7 +229,9 @@ def _refusals(sample: object) -> tuple[tuple[str, int, str | None], ...]:
         return ()
     out = []
     for item in recorded:
-        rule, calls, said = (item.get(key) for key in ("rule", "calls", "said")) if isinstance(item, dict) else (None, None, None)
+        if not isinstance(item, dict):
+            return ()
+        rule, calls, said = item.get("rule"), item.get("calls"), item.get("said")
         if not isinstance(rule, str) or type(calls) is not int or calls < 0:
             return ()
         out.append((rule, calls, said if isinstance(said, str) else None))
@@ -631,7 +633,7 @@ def _refused_note(rule: str, total: Refused) -> str:
     was read, whether or not the model called what it switches off, so
     these runs are no proof it works.
     """
-    name = _escaped(rule).replace("`", "'")
+    name = " ".join(rule.split()).replace("`", "'")  # one line, and nothing that closes the code span early
     runs = f"{total.runs} {'run' if total.runs == 1 else 'runs'}"
     if not total.calls:
         shown = "this" if total.runs == 1 else "these"

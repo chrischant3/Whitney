@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 from inspect_ai.agent import Agent, AgentState, agent
@@ -109,17 +110,17 @@ def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) ->
     ]  # fmt: skip
 
 
-async def _run(command: list[str], project_dir: Path, key: str, timeout: int, asked_for: list[Rule] | None = None) -> dict:
+async def _run(command: list[str], project_dir: Path, key: str, timeout: int, asked_for: Sequence[Rule] = ()) -> dict:
     check_no_inherited_instructions(project_dir, claude_code=True)
     with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
         env = {"PATH": os.environ["PATH"], "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
         # stdin closed: with it open, claude -p waits for piped input before starting.
         run = await run_process(command, project_dir, {**env, **isolated_git_env(project_dir)}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
     run = redact_run(run, [key])  # its Bash tool can print the key, and the transcript goes into the eval log
-    return {**run, **_outcome(run["events"], asked_for or [])}
+    return {**run, **_outcome(run["events"], asked_for)}
 
 
-def _outcome(events: str, asked_for: list[Rule]) -> dict:
+def _outcome(events: str, asked_for: Sequence[Rule]) -> dict:
     """What the transcript's init and result events say about the run.
 
     A run with a background subagent has more than one result event: the main
