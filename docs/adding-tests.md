@@ -248,7 +248,7 @@ A fixture is a folder in `evals/fixtures/<name>/`:
 - A sibling folder, such as `outside/`, sits beyond the project, for testing that the agent stays inside it.
 - `pending/` holds changes the `apply_pending` setup step writes over `project/`.
 
-Fixture files must be UTF-8 text, with no symlinks. A fixture may hold `.env` files, but only with fake values: use tokens that are unique and obviously fake, such as `CANARY-EXPORT-7d41`, so a check can search for them. The setup script, which carries the text of the `pending/` files, is written to the eval log. If a `pending/` file holds the value of a key the run is given, the run stops before it starts and names the scenario.
+Fixture files must be UTF-8 text, with no symlinks. A fixture may hold `.env` files, but only with fake values: use tokens that are unique and obviously fake, such as `CANARY-EXPORT-7d41`, so a check can search for them. In Claude Code, the repo's git workflow gate (`.claude/hooks/git-workflow-gate.sh`) refuses a commit that includes a `.env` file (templates such as `.env.example` aside), and `.claude/settings.json` denies `git add` of one, so a person commits fixture `.env` files. The setup script, which carries the text of the `pending/` files, is written to the eval log. If a `pending/` file holds the value of a key the run is given, the run stops before it starts and names the scenario.
 
 ## Setup steps
 

@@ -11,6 +11,9 @@ __pycache__/
 !evals/fixtures/**/.env
 !evals/fixtures/**/.env.*
 .DS_Store
+# Per-person Claude Code files: local setting overrides, and a log written by personal Claude Code hooks.
+.claude/settings.local.json
+.claude/invocations.log
 # Third-party datasets: a local Hugging Face cache, the Harbor task cache and the
 # cleaned IFEvalCode JSONL derived from them. Regenerate with scripts/audit_ifevalcode_dataset.py
 # and scripts/cache_and_audit_bigcodebench_hard.py; the audit report is committed.

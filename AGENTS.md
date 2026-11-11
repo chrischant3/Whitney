@@ -26,3 +26,10 @@ None provided. Source proposal: docs/proposal.md. Agreed MVP decision: VS Code e
 
 ## Constraints
 Read CONSTRAINTS.md before writing code. Do not weaken it to make a change pass. Run `python scripts/check.py task` before handing work back.
+
+## Git workflow
+Follows `agent-skills:git-workflow-and-versioning`. When you commit, use a feature branch (`feature/`, `fix/`, `chore/` or `refactor/`). When asked to ship, push it over SSH with `git push -u origin <branch>` and open a pull request. Only the maintainer merges, tags and releases.
+- In Claude Code, `.claude/hooks/git-workflow-gate.sh` enforces part of this. It blocks commits and pushes while on main, pushes that target main, force pushes, PR merges, `gh api` writes, and a commit that includes a `.env` file (templates such as `.env.example` aside). `.claude/settings.json` denies `git add` of a `.env` file, so the maintainer commits fixture `.env` files, and auto-allows pushes only for the four branch prefixes. Branch names, SSH, tags and releases are by instruction.
+- Before `gh pr create`, run the five pre-PR review skills in order on the diff against main: `agent-skills:code-review-and-quality`, `agent-skills:code-simplification`, `agent-skills:security-and-hardening`, `agent-skills:documentation-and-adrs`, `agent-skills:shipping-and-launch`. Then run `python scripts/check.py task` on the final commit. The gate refuses the PR until the review marker exists for the current HEAD; its message gives the command.
+- Write a multi-line commit message with the Write tool to a file outside the working tree, then `git commit -F <file>`. The gate reads each line of a command as a command, so a message passed inline, or written with a heredoc, can be refused.
+- Kilo sessions have no gate. These rules apply to them by instruction only.
