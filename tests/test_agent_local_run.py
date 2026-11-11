@@ -708,3 +708,68 @@ def test_a_folder_whose_repository_can_not_be_checked_counts_as_one(tmp_path, mo
     monkeypatch.setattr(Path, "exists", exists)
     with pytest.raises(RuntimeError, match=r"\.claude/skills is above the project"):
         check_no_inherited_instructions(tmp_path / "project")
+
+
+# --- Claude Code's skills and agents above the project (Phase 5 Task 36) ---------------------
+# Claude Code 2.1.322 offered a skill and an agent from the folder above a project that wasn't a
+# git repository, and neither once the project was one (docs/spike-findings.md, "Phase 5 Task 36").
+
+
+@pytest.mark.parametrize("planted", [".claude/skills", ".claude/agents"])
+def test_claude_codes_skills_or_agents_above_a_project_that_is_no_repository_are_refused(tmp_path, planted):
+    from whitney.agent import check_no_inherited_instructions
+
+    (tmp_path / "above" / planted).mkdir(parents=True)
+    project = tmp_path / "above" / "mid" / "project"
+    project.mkdir(parents=True)
+
+    with pytest.raises(RuntimeError) as raised:
+        check_no_inherited_instructions(project, claude_code=True)
+
+    assert str(raised.value) == (
+        f"{(tmp_path / 'above' / planted).resolve()} is above the project, where the harness would read it as instructions or "
+        f"config the eval never declared. Set TMPDIR to a folder with none above it, or remove the folder if it isn't your own "
+        f"{planted.split('/')[1]}."
+    )
+    check_no_inherited_instructions(project)  # Kilo reads neither there: no repository, and never .claude/agents
+
+
+@pytest.mark.parametrize("planted", [".claude/skills", ".claude/agents"])
+@pytest.mark.parametrize("git", ["folder", "file"])
+def test_claude_codes_skills_or_agents_above_a_project_that_is_a_repository_are_not_read(tmp_path, planted, git):
+    from whitney.agent import check_no_inherited_instructions
+
+    (tmp_path / "above" / planted).mkdir(parents=True)
+    project = tmp_path / "above" / "project"
+    project.mkdir()
+    if git == "folder":
+        (project / ".git").mkdir()
+    else:
+        (project / ".git").write_text("gitdir: elsewhere\n")  # a worktree's .git is a file
+
+    check_no_inherited_instructions(project, claude_code=True)
+
+
+def test_only_a_dot_git_spelled_so_makes_the_project_a_repository(tmp_path, monkeypatch):
+    """On a case-insensitive disk .GIT would find .git, so the disk is made to tell them apart."""
+    from whitney.agent import check_no_inherited_instructions
+
+    (tmp_path / "above" / ".claude" / "agents").mkdir(parents=True)
+    project = tmp_path / "above" / "project"
+    (project / ".git").mkdir(parents=True)
+    real_exists = Path.exists
+    monkeypatch.setattr(Path, "exists", lambda path, *a, **k: real_exists(path, *a, **k) and path.name in os.listdir(path.parent))
+
+    check_no_inherited_instructions(project, claude_code=True)
+
+
+def test_a_claude_code_run_checks_for_agents_above_the_project(tmp_path, monkeypatch):
+    import asyncio
+
+    from whitney import claude_code
+
+    (tmp_path / ".claude" / "agents").mkdir(parents=True)
+    (tmp_path / "project").mkdir()
+
+    with pytest.raises(RuntimeError, match=r"\.claude/agents is above the project"):
+        asyncio.run(claude_code._run(["claude"], tmp_path / "project", "key-for-the-test", 5))

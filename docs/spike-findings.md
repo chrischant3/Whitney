@@ -380,6 +380,61 @@ The project's `.claude/settings.json` applied alongside the `--settings` block, 
 - **`outside_canary_not_reached` would fail on `claude-code` through Bash.** Claude Code guards only its file tools, not shell commands. Whether to support the check there, and what a pass would mean, needs deciding.
 - **`_outcome` in `claude_code.py` reads only the last `result` and the last `init`.** A run with a background subagent has two of each, so denials from the first turn could be missed. It should gather `permission_denials` from every `result` event.
 
+## Phase 5 Task 36: Claude Code's stream for skills and subagents (2026-11-11)
+
+The 2026-11-11 spike above kept no streams, so Task 36 ran its cases again and saved them. `spikes/claude_code_shapes.py` runs `claude -p` through Whitney's own runner (`whitney.claude_code._claude_command` and `_run`), with Claude Code 2.1.322 and `claude-haiku-4-5`, and writes sanitised fixtures to `tests/data/claude-code-events/`. Each fixture has a `.meta.json` beside it with the prompt, the project's files and the exit code.
+
+| Fixture | What it holds |
+|---|---|
+| `skill-named` | A `Skill` call that worked, for a skill the prompt named |
+| `skill-description` | A prompt that matched the skill's description. The model wrote the notes itself and made no `Skill` call |
+| `skill-not-loaded` | A prompt about something else. One `Read` call, no `Skill` call |
+| `no-tool-call` | A reply with no tool call at all |
+| `skill-missing` | A `Skill` call naming a skill that isn't there. Its result is an error |
+| `subagent-description` | An `Agent` call that worked, the subagent's own `Bash` call, and two `result` events |
+| `subagent-not-delegated` | A prompt about something else. One `Read` call, no `Agent` call |
+| `agent-missing` | An `Agent` call naming an agent that isn't there. Its result is an error |
+| `subagent-loads-skill` | An `Agent` call, then a `Skill` call made by the subagent |
+| `skill-forked` | Not from the spike: one run of the [real run](results/2026-11-11-claude-code-skills-agents.md). A built-in skill that ran as a subagent of its own, with three `tool_progress` events |
+
+### Confirmed fields
+
+- **Event types.** Every line is an object whose `type` is `system`, `assistant`, `user` or `result`. The real run added a fifth, `tool_progress`: a heartbeat printed every 30 seconds of a long tool call, with `tool_name`, `parent_tool_use_id`, `elapsed_time_seconds` and `heartbeat: true`. The `system` subtypes seen are `init`, `thinking_tokens`, `background_tasks_changed`, `task_started`, `task_progress`, `task_updated` and `task_notification`.
+- **A tool call** is a block in an `assistant` event's `message.content` list: `{"type": "tool_use", "id": ..., "name": ..., "input": {...}}`. The other block types seen there are `thinking` and `text`. Each event held one block.
+- **A tool result** is a block in a `user` event's `message.content` list: `{"type": "tool_result", "tool_use_id": ..., "content": ...}`. `is_error` was `true`, `false` or left out. The other block type seen there is `text`.
+- **A skill loads** through a call named `Skill` whose `input.skill` is the skill's name. Its result is the text "Launching skill: release-notes". For a skill that isn't there, the result has `is_error: true` and the text "Unknown skill: ...".
+- **An agent is handed work** through a call named `Agent` whose `input.subagent_type` is the agent's name. Its result says "Async agent launched successfully". For an agent that isn't there, the result has `is_error: true` and the text "Agent type '...' not found". The `init` event's `tools` list names this tool `Task`, but the call in the stream is named `Agent`.
+- **A subagent's own events** have `parent_tool_use_id` set to the `Agent` call's `id`. The main agent's have it set to `null`.
+
+### Names, and folders above the project
+
+Two more runs, not saved as fixtures, asked what the `init` event's `skills` and `agents` lists hold for a project with canary files.
+
+| Project holds | Offered as |
+|---|---|
+| `.claude/skills/dir-skill-a/SKILL.md` with `name: front-skill-b` | `dir-skill-a`: a skill is named by its folder |
+| `.claude/skills/nameless-skill/SKILL.md` with no `name` | `nameless-skill` |
+| `.claude/skills/nested/deep-skill/SKILL.md` | Not offered: only folders directly in `.claude/skills/` are skills |
+| `.claude/agents/file-agent-c.md` with `name: front-agent-d` | `front-agent-d`: an agent is named by its frontmatter |
+| `.claude/agents/nameless-agent.md` with no `name` | Not offered |
+| `.claude/agents/sub/nested-agent.md` with `name: nested-agent` | `nested-agent`: agents in subfolders are read |
+
+A skill and an agent were also put in `.claude/` in the folder above the project.
+
+| The project | The skill and agent above it |
+|---|---|
+| is a git repository (`.git` in the project) | Not offered |
+| isn't one, and no folder above is | **Offered** |
+
+### What Whitney does with this
+
+- The four checks read `Skill` and `Agent` calls, and count a call only if its result is in the stream and isn't an error.
+- A skill that runs as a subagent of its own (`skill-forked`) starts with a `Skill` call and no `Agent` call, so the delegation checks don't count it.
+- A subagent's calls are read like any other, so a skill a subagent loaded counts as loaded, and a run that handed work to a subagent can still show a skill wasn't loaded. On Kilo that run is inconclusive.
+- The loader stages `.claude/skills/` and `.claude/agents/`.
+- Validation refuses a Claude Code agent under test whose frontmatter `name` isn't its file's name, because the checks look for the file's name.
+- A Claude Code run is refused when `.claude/skills/` or `.claude/agents/` is above a project that isn't a git repository.
+
 ## Not yet done
 
 - `kilo serve` approve-once behaviour.

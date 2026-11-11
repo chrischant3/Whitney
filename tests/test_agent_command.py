@@ -452,9 +452,32 @@ def test_either_field_is_refused_in_a_file_that_applies_to_claude_code(project, 
 
 
 def test_a_file_whose_checks_keep_it_to_kilo_needs_no_targets(project):
-    data = eval_file({"id": "a", "prompt": "p", "agent": "reviewer", "expect": [{"check": "skill_not_loaded", "skill": "x"}]})
+    data = eval_file({
+        "id": "a", "prompt": "p", "agent": "reviewer",
+        "expect": [{"check": "permission_held", "permission": "bash", "pattern": "git push *", "action": "deny", "forbidden_input": r"\bgit\s+push\b"}],
+    }, variants={})
     del data["targets"]
     write(project, data)
+
+    assert validate_evals(project / "evals").problems == []
+
+
+def test_a_file_whose_checks_support_claude_code_needs_targets_to_name_an_agent(project):
+    """skill_not_loaded kept such a file to Kilo until Task 36; now the file would run on claude-code too."""
+    data = eval_file({"id": "a", "prompt": "p", "agent": "reviewer", "expect": [{"check": "skill_not_loaded", "skill": "x"}]})
+    del data["targets"]
+    path = write(project, data)
+
+    assert [(p.file, p.location) for p in validate_evals(project / "evals").problems] == [(path, "scenarios[0].agent")]
+
+
+def test_a_file_whose_source_is_kilos_alone_needs_no_targets(project):
+    data = eval_file(
+        {"id": "a", "prompt": "p", "agent": "reviewer", "expect": [{"check": "skill_not_loaded", "skill": "x"}]},
+        source=".kilo/agents/reviewer.md",
+    )
+    del data["targets"]
+    write(project, data, "agents/reviewer.json")
 
     assert validate_evals(project / "evals").problems == []
 

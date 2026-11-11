@@ -163,7 +163,7 @@ def test_a_claude_code_project_with_one_instruction_file_stages_it_under_its_own
     assert load_claude_code_project_files(tmp_path) == {name: "- Team rule\n"}
 
 
-def test_a_claude_code_project_stages_only_its_instruction_files(tmp_path):
+def test_a_claude_code_project_stages_only_its_instruction_files_skills_and_agents(tmp_path):
     # The 2026-11-05 reproduction: AGENTS.md and a skill under .claude/, no Kilo config.
     (tmp_path / ".claude/skills/demo").mkdir(parents=True)
     (tmp_path / ".claude/skills/demo/SKILL.md").write_text("demo skill\n")
@@ -181,6 +181,7 @@ def test_a_claude_code_project_stages_only_its_instruction_files(tmp_path):
     assert load_claude_code_project_files(tmp_path) == {
         "CLAUDE.md": "claude rule\n",
         ".claude/CLAUDE.md": "folder rule\n",
+        ".claude/skills/demo/SKILL.md": "demo skill\n",  # staged since Phase 5 Task 36
     }
 
 
@@ -289,8 +290,8 @@ def test_a_claude_code_project_without_instructions_is_told_which_files_were_loo
         load_claude_code_project_files(tmp_path)
     assert str(raised.value) == (
         "project has no Claude Code instructions to stage (CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md; "
-        "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped): "
-        f"{tmp_path.resolve()}"
+        "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped), "
+        f"and no skills or agents (.claude/skills/, .claude/agents/): {tmp_path.resolve()}"
     )
 
 
@@ -348,7 +349,7 @@ def test_the_dot_claude_entries_left_out_are_named_for_the_report(tmp_path):
     (tmp_path / ".claude/settings.json").write_text('{"hooks": {}}')
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
 
-    assert files_not_staged("claude-code", tmp_path) == ["AGENTS.md", ".claude/settings.json", ".claude/skills/"]
+    assert files_not_staged("claude-code", tmp_path) == ["AGENTS.md", ".claude/settings.json"]  # the skill is staged
     assert files_not_staged("kilo", tmp_path) == []
 
 
@@ -395,9 +396,9 @@ def test_a_symlinked_entry_in_dot_claude_is_named_without_following_it(tmp_path)
     (project / ".claude/CLAUDE.md").write_text("folder rule\n")
     (project / ".claude/shared").symlink_to(tmp_path / "outside")
     (project / ".claude/alias.md").symlink_to(project / ".claude/CLAUDE.md")
-    (project / ".claude/agents").mkdir()  # a real folder gets its "/"; the linked one doesn't
+    (project / ".claude/commands").mkdir()  # a real folder gets its "/"; the linked one doesn't
 
-    assert files_not_staged("claude-code", project) == [".claude/agents/", ".claude/alias.md", ".claude/shared"]
+    assert files_not_staged("claude-code", project) == [".claude/alias.md", ".claude/commands/", ".claude/shared"]
 
 
 def test_a_dot_claude_md_staged_under_another_case_is_not_named(tmp_path):
@@ -599,13 +600,13 @@ def test_a_dot_claude_md_that_cannot_be_checked_is_never_staged(tmp_path, monkey
 def test_each_name_left_out_has_its_reason(tmp_path):
     (tmp_path / "AGENTS.md").write_text("rule\n")
     (tmp_path / "CLAUDE.md").write_text("root rule\n")
-    (tmp_path / ".claude/agents").mkdir(parents=True)
+    (tmp_path / ".claude/commands").mkdir(parents=True)
     (tmp_path / ".claude/CLAUDE.md").write_text("folder rule\n")
     (tmp_path / ".claude/settings.json").write_text("{}")
 
     assert files_not_staged_reasons("claude-code", tmp_path) == {
         "AGENTS.md": "Claude Code doesn't read AGENTS.md beside a CLAUDE.md",
-        ".claude/agents/": "rest of .claude/",
+        ".claude/commands/": "rest of .claude/",
         ".claude/settings.json": "rest of .claude/",
     }
     assert files_not_staged_reasons("kilo", tmp_path) == {}
@@ -1015,7 +1016,8 @@ def test_a_staged_file_has_no_reason(unsafe_project):
         "the claude-code loader stages only what Claude Code reads, and this file is left out: rest of .claude/"
     )),
     (["AGENTS.md", "notes.md"], "notes.md", (
-        "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md and .claude/AGENTS.md"
+        "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md, "
+        "and the files under .claude/skills/ and .claude/agents/"
     )),
 ])
 def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reason):
@@ -1469,3 +1471,176 @@ def test_a_claude_md_that_cannot_be_checked_does_not_hide_agents_md(tmp_path, mo
     monkeypatch.setattr(Path, "exists", exists)
 
     assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule\n"}
+
+
+# --- Claude Code's skills and agents (Phase 5 Task 36) ---------------------------------------
+
+
+def _claude_project(root, files):
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(text, bytes):
+            (root / name).write_bytes(text)
+        else:
+            (root / name).write_text(text)
+    return root
+
+
+def test_the_claude_code_loader_stages_every_safe_file_under_skills_and_agents(tmp_path):
+    _claude_project(tmp_path, {
+        "CLAUDE.md": "rule\n",
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/skills/review/scripts/check.sh": "echo check\n",
+        ".claude/skills/review/.env": "SECRET=x\n",
+        ".claude/skills/review/.env.example": "NAME=\n",
+        ".claude/skills/review/node_modules/pkg/index.js": "x\n",
+        ".claude/agents/helper.md": "helper agent\n",
+        ".claude/agents/team/lead.md": "lead agent\n",
+        ".claude/commands/shout.md": "not staged\n",
+        ".kilo/skills/k/SKILL.md": "Kilo's, not staged\n",
+        ".agents/skills/a/SKILL.md": "not Claude Code's\n",
+    })
+
+    assert load_claude_code_project_files(tmp_path) == {
+        "CLAUDE.md": "rule\n",
+        ".claude/skills/review/.env.example": "NAME=\n",
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/skills/review/scripts/check.sh": "echo check\n",
+        ".claude/agents/helper.md": "helper agent\n",
+        ".claude/agents/team/lead.md": "lead agent\n",
+    }
+    assert files_not_staged("claude-code", tmp_path) == [".claude/commands/"]
+
+
+@pytest.mark.parametrize("files", [
+    {".claude/skills/review/SKILL.md": "review skill\n"},
+    {".claude/agents/helper.md": "helper agent\n"},
+])
+def test_a_claude_code_project_with_skills_or_agents_needs_no_instruction_file(tmp_path, files):
+    assert load_claude_code_project_files(_claude_project(tmp_path, files)) == files
+
+
+def test_an_empty_skills_folder_is_not_something_to_stage(tmp_path):
+    (tmp_path / ".claude/skills").mkdir(parents=True)
+    (tmp_path / ".claude/agents").mkdir()
+
+    with pytest.raises(ValueError, match="^project has no Claude Code instructions to stage"):
+        load_claude_code_project_files(tmp_path)
+    assert files_not_staged("claude-code", tmp_path) == []
+
+
+@pytest.mark.parametrize("folder", [".claude/skills", ".claude/agents"])
+def test_a_symlinked_skills_or_agents_folder_is_named_and_nothing_is_staged_through_it(tmp_path, folder):
+    project = _claude_project(tmp_path / "project", {"AGENTS.md": "rule\n", ".claude/notes.md": "x\n"})
+    inside = _claude_project(project / "shared", {"x/SKILL.md": "linked\n", "x.md": "linked\n"})
+    (project / folder).symlink_to(inside)
+
+    assert load_claude_code_project_files(project) == {"AGENTS.md": "rule\n"}
+    assert files_not_staged_reasons("claude-code", project) == {
+        folder: "a symlink or outside the project", ".claude/notes.md": "rest of .claude/",
+    }
+
+
+def test_a_symlinked_file_or_folder_inside_skills_is_skipped(tmp_path):
+    project = _claude_project(tmp_path / "project", {
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/agents/helper.md": "helper agent\n",
+    })
+    (tmp_path / "outside.md").write_text("outside\n")
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "outside/SKILL.md").write_text("outside skill\n")
+    (project / ".claude/skills/review/notes.md").symlink_to(tmp_path / "outside.md")
+    (project / ".claude/skills/linked").symlink_to(tmp_path / "outside")
+    (project / ".claude/agents/linked.md").symlink_to(project / ".claude/agents/helper.md")
+
+    assert load_claude_code_project_files(project) == {
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/agents/helper.md": "helper agent\n",
+    }
+
+
+def test_a_symlinked_dot_claude_stages_no_skills_or_agents(tmp_path):
+    project = _claude_project(tmp_path / "project", {"AGENTS.md": "rule\n"})
+    _claude_project(project / "real", {"skills/x/SKILL.md": "x\n", "agents/y.md": "y\n"})
+    (project / ".claude").symlink_to(project / "real")
+
+    assert load_claude_code_project_files(project) == {"AGENTS.md": "rule\n"}
+    assert files_not_staged("claude-code", project) == [".claude/"]
+
+
+def test_a_skills_entry_that_is_a_file_is_the_rest_of_dot_claude(tmp_path):
+    _claude_project(tmp_path, {"AGENTS.md": "rule\n", ".claude/skills": "not a folder\n"})
+
+    assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {".claude/skills": "rest of .claude/"}
+
+
+def test_a_skill_file_that_is_not_utf8_is_left_out_and_named_and_the_rest_are_staged(tmp_path):
+    _claude_project(tmp_path, {
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/skills/review/logo.png": b"\xff\xfe\x00",
+        ".claude/agents/helper.md": b"\xff\xfe\x00",
+    })
+
+    assert load_claude_code_project_files(tmp_path) == {".claude/skills/review/SKILL.md": "review skill\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {
+        ".claude/agents/helper.md": "not UTF-8 text", ".claude/skills/review/logo.png": "not UTF-8 text",
+    }
+    assert not_staged_reason("claude-code", tmp_path, ".claude/agents/helper.md", load_claude_code_project_files(tmp_path)) == (
+        "the claude-code loader stages only what Claude Code reads, and this file is left out: not UTF-8 text"
+    )
+
+
+def test_claude_code_skills_under_the_evals_path_are_never_staged(tmp_path):
+    _claude_project(tmp_path, {
+        "AGENTS.md": "rule\n",
+        ".claude/skills/review/SKILL.md": "review skill\n",
+        ".claude/skills/evals/fixtures/repo/project/SKILL.md": "a fixture\n",
+        ".claude/skills/evals/bad.bin": b"\xff\xfe\x00",
+    })
+    evals = tmp_path / ".claude/skills/evals"
+
+    assert load_claude_code_project_files(tmp_path, evals_path=evals) == {
+        "AGENTS.md": "rule\n", ".claude/skills/review/SKILL.md": "review skill\n",
+    }
+    assert files_not_staged("claude-code", tmp_path, evals_path=evals) == []
+    assert files_not_staged("claude-code", tmp_path) == [".claude/skills/evals/bad.bin"]
+
+
+@pytest.mark.parametrize("folder", [".claude/skills", ".claude/agents"])
+def test_a_skills_or_agents_folder_that_cannot_be_read_is_named_whole_and_the_other_is_staged(tmp_path, monkeypatch, folder):
+    files = {"AGENTS.md": "rule\n", ".claude/skills/x/SKILL.md": "skill\n", ".claude/agents/y.md": "agent\n"}
+    _claude_project(tmp_path, files)
+    real_iterdir = Path.iterdir
+
+    def iterdir(path):
+        if path == tmp_path.resolve() / folder:
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert staged == {name: text for name, text in files.items() if not name.startswith(folder)}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {f"{folder}/": "a symlink, or can't be read"}
+
+
+def test_a_file_outside_the_two_folders_is_told_what_the_claude_code_loader_stages(tmp_path):
+    _claude_project(tmp_path, {"AGENTS.md": "rule\n", ".claude/commands/shout.md": "x\n", "docs/skills/x/SKILL.md": "x\n"})
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert not_staged_reason("claude-code", tmp_path, "docs/skills/x/SKILL.md", staged) == (
+        "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md, "
+        "and the files under .claude/skills/ and .claude/agents/"
+    )
+    assert not_staged_reason("claude-code", tmp_path, ".claude/skills/x/SKILL.md", staged) == "the project has no such file"
+
+
+def test_a_claude_md_staged_under_another_spelling_has_no_reason_to_be_left_out(tmp_path, case_insensitive):
+    (tmp_path / "claude.md").write_text("rule\n")
+    (tmp_path / "AGENTS.md").write_text("other\n")  # so a case-sensitive disk, where claude.md is no instruction file, has one
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert staged == ({"CLAUDE.md": "rule\n"} if case_insensitive else {"AGENTS.md": "other\n"})
+    assert (not_staged_reason("claude-code", tmp_path, "claude.md", staged) is None) == case_insensitive

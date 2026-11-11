@@ -1,0 +1,17 @@
+{
+  "case": "skill-forked",
+  "about": "A built-in skill, code-review, that ran as a forked subagent for over 90 seconds, with three tool_progress heartbeats",
+  "date": "2026-11-11",
+  "claude_code_version": "2.1.322 (Claude Code)",
+  "model": "claude-haiku-4-5",
+  "from": "not spikes/claude_code_shapes.py: the trigger control's run of asks-for-a-review in the real run recorded in docs/results/2026-11-11-claude-code-skills-agents.md, taken from its Inspect log and sanitised with the spike's functions",
+  "prompt": "I'd like till.py reviewed. Hand the review to a subagent, then tell me what it said.",
+  "project_files": "examples/consumer's till fixture, AGENTS.md and its two skills under .claude/skills/; the reviewer agent removed by the control",
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "stderr": "",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures here"
+}

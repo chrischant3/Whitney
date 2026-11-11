@@ -89,22 +89,22 @@ Whitney is at its first milestone. A **check** is the code that decides whether 
 | `no_file_edits` | Files a rule protects weren't added, changed or deleted | `AGENTS.md` in `examples/consumer`: never edit `vendor/` | `kilo`, `claude-code` |
 | `outside_canary_not_reached` | Reads, writes and shell commands that reach outside the project were blocked | `kilo.jsonc`: `"external_directory": "ask"`, in `evals/configuration/kilo-jsonc.json` | `kilo` |
 | `permission_held` | Kilo refused what a permission rule forbids, such as a `bash` command pattern | `kilo.jsonc` in `examples/consumer`: `"git push *": "deny"` | `kilo` |
-| `skill_loaded`, `skill_not_loaded` | The agent loaded a named skill, or left it alone | The trigger tests for `.kilo/skills/release-notes/` in `examples/consumer` | `kilo` |
-| `subagent_delegated`, `subagent_not_delegated` | The agent handed work to a named subagent, or didn't | The trigger tests for `.kilo/agents/reviewer.md` in `examples/consumer` | `kilo` |
+| `skill_loaded`, `skill_not_loaded` | The agent loaded a named skill, or left it alone | The trigger tests for `.kilo/skills/release-notes/` in `examples/consumer` | `kilo`, `claude-code` |
+| `subagent_delegated`, `subagent_not_delegated` | The agent handed work to a named subagent, or didn't | The trigger tests for `.kilo/agents/reviewer.md` in `examples/consumer` | `kilo`, `claude-code` |
 
-For `kilo`, an eval file can also test a skill or an agent: whether the agent does what it says, and whether the right prompts use it ([Testing a skill or an agent](docs/adding-tests.md#testing-a-skill-or-an-agent)). The two checks for a skill or subagent that should stay unused haven't yet failed in a recorded real run, so a pass from them is likely, not proven.
+An eval file can also test a skill or an agent, on either target: whether the agent does what it says, and whether the right prompts use it ([Testing a skill or an agent](docs/adding-tests.md#testing-a-skill-or-an-agent)). On `claude-code` the skill or agent is under `.claude/skills/` or `.claude/agents/`. The two checks for a skill or subagent that should stay unused haven't yet failed in a recorded real run, so a pass from them is likely, not proven.
 
 The benchmark evals, `ifevalcode` and `bigcodebench_hard_complete`, test the agent's code on IFEvalCode and BigCodeBench-Hard with and without the template, for both targets. They are optional and need Docker.
 
-[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-10-permissions.md](docs/results/2026-11-10-permissions.md), for its permission rule, [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent.
+[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-10-permissions.md](docs/results/2026-11-10-permissions.md), for its permission rule, [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent. The same skill and agent were run once on `claude-code`: [docs/results/2026-11-11-claude-code-skills-agents.md](docs/results/2026-11-11-claude-code-skills-agents.md).
 
 Not supported yet:
 
 - **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, registered with `check(...)`. `whitney run` and `inspect eval` run any eval file through `scenario_eval` (below); the deprecated `scripts/run_evals.py` reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`.
-- **Claude Code settings, skills and agents.** With `--project-path`, the `claude-code` target copies the instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md` ([Claude Code's memory docs](https://code.claude.com/docs/en/memory.md)). `CLAUDE.local.md` is personal, so it isn't copied. The rest of `.claude/`, such as `settings.json`, skills and agents, isn't copied either, and the report lists what was left out and why.
+- **Claude Code settings.** With `--project-path`, the `claude-code` target copies the instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md` ([Claude Code's memory docs](https://code.claude.com/docs/en/memory.md)). It also copies `.claude/skills/` and `.claude/agents/`. `CLAUDE.local.md` is personal, so it isn't copied. The rest of `.claude/`, such as `settings.json` and commands, isn't copied either, and the report lists what was left out and why.
 - **Which instruction wins** when two files disagree.
 
-Instruction order, and skills and agents on Claude Code, are planned: see Future work in [docs/proposal.md](docs/proposal.md). Gaps found in what is tested: [docs/findings/](docs/findings/).
+Claude Code permissions are planned: see Future work in [docs/proposal.md](docs/proposal.md). Gaps found in what is tested: [docs/findings/](docs/findings/).
 
 ## Targets
 

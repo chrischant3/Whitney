@@ -369,7 +369,7 @@ def test_an_unknown_execution_mode_is_named():
 CLAUDE_MODEL = "anthropic/claude-haiku-4-5"
 
 
-def test_a_claude_code_project_needs_no_kilo_config_and_its_dot_claude_folder_is_named(tmp_path):
+def test_a_claude_code_project_needs_no_kilo_config_and_its_skills_are_staged(tmp_path):
     # The 2026-11-05 reproduction: AGENTS.md and a skill under .claude/, no Kilo config.
     (tmp_path / "AGENTS.md").write_text("- Team rule\n")
     (tmp_path / ".claude/skills/demo").mkdir(parents=True)
@@ -380,11 +380,12 @@ def test_a_claude_code_project_needs_no_kilo_config_and_its_dot_claude_folder_is
 
     staged = _project_files(template.dataset[0])
     assert staged["AGENTS.md"] == "- Team rule\n"
-    assert not any(name.startswith(".claude/") for name in staged)
-    assert template.metadata["evaluation_assets"] == {"AGENTS.md": "- Team rule\n"}
+    skill = {".claude/skills/demo/SKILL.md": "demo skill\n"}  # staged since Phase 5 Task 36
+    assert {name: text for name, text in staged.items() if name.startswith(".claude/")} == skill
+    assert template.metadata["evaluation_assets"] == {"AGENTS.md": "- Team rule\n", **skill}
     assert template.metadata["asset_source"] == "local project"
-    assert baseline.metadata["evaluation_assets"] == {}
-    assert template.metadata["not_staged"] == baseline.metadata["not_staged"] == [".claude/skills/"]
+    assert baseline.metadata["evaluation_assets"] == skill  # the baseline removes the instructions, not the skills
+    assert template.metadata["not_staged"] == baseline.metadata["not_staged"] == []
 
 
 def test_the_kilo_target_still_needs_a_kilo_config_in_the_project(tmp_path):

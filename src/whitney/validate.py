@@ -83,10 +83,12 @@ from whitney.variants import (
 PROJECT, PENDING = PROJECT_DIR, PENDING_DIR
 KNOWN_GAP = re.compile(r"E\d+: .+")
 # Where Kilo 7.8.18 loads a project's skills and agents from, each named by its folder or file
-# (docs/spike-findings.md, "Case 2: the same skill in other folders").
+# (docs/spike-findings.md, "Case 2: the same skill in other folders"), and where Claude Code 2.1.322
+# does: .claude/skills/<name>/SKILL.md and .claude/agents/<name>.md ("Phase 5 Task 36"). Each loader
+# stages only its own harness's folders, so a path here is one the run's harness reads.
 STAGED = {
     "skill": re.compile(r"(?:\.kilo|\.kilocode|\.claude|\.agents)/skills?/([^/]+)/SKILL\.md"),
-    "agent": re.compile(r"(?:\.kilo|\.kilocode)/agents?/([^/]+)\.md"),
+    "agent": re.compile(r"(?:(?:\.kilo|\.kilocode)/agents?|\.claude/agents)/([^/]+)\.md"),
     # Kilo turns the .md files in its workflows folders into commands too (docs/load-order.md).
     "command": re.compile(r"(?:\.kilo|\.kilocode)/(?:commands?|workflows)/([^/]+)\.md"),
 }
@@ -477,7 +479,7 @@ def validate_project(
         return [Problem(Path(project_path), "", f"the {target} loader can't stage this project: {e}")]
     problems = []
     for eval_file in eval_files:
-        if eval_file.targets is not None and target not in eval_file.targets:
+        if target not in eval_file.applies_to():
             continue
         reason = not_staged_reason(target, project_path, eval_file.source, staged, evals_path=evals_path)
         if reason is not None:
@@ -486,7 +488,38 @@ def validate_project(
         problems += _named_problems(eval_file, staged)
         if target == "kilo":
             problems += _permission_rule_problems(eval_file, staged)
+        else:
+            problems += _agent_name_problems(eval_file, staged)
         problems += validate_variants(eval_file, staged, target=target)
+    return problems
+
+
+def _agent_name_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
+    """A Claude Code agent under test, or one a negative prompt names as owner, whose frontmatter `name` isn't its file's.
+
+    Claude Code 2.1.322 offers an agent under the `name` in its frontmatter,
+    and doesn't offer one without it (docs/spike-findings.md, "Phase 5 Task
+    36"). The checks look for the file's name, so the two must be the same.
+    A skill is offered under its folder's name, so it has no such rule.
+    """
+    tested = under_test(eval_file.source)
+    if tested is None or tested[0] != "agent":
+        return []
+    agents = staged_names(staged, "agent")
+    named = [("source", tested[1])]
+    if eval_file.trigger is not None:
+        named += [(f"trigger.negative[{index}].owner", prompt.owner) for index, prompt in enumerate(eval_file.trigger.negative)]
+    problems = []
+    for at, name in named:
+        if name not in agents:
+            continue  # not staged: not_staged_reason or _owner_problems says so
+        given = frontmatter_value(staged[agents[name]], "name")
+        if given != name:
+            said = f"its frontmatter names it '{given}'" if given else "its frontmatter has no name"
+            problems.append(Problem(eval_file.path, at, (
+                f"Claude Code calls an agent by the name in its frontmatter, and {said}; Whitney looks for '{name}', "
+                f"the file's name, so set `name: {name}` in {agents[name]}"
+            )))
     return problems
 
 
@@ -494,7 +527,7 @@ def staged_names(staged: Mapping[str, str], kind: str) -> dict[str, str]:
     """The staged skills, agents or commands (`kind`), each name with its file's path, in name order.
 
     The name is the skill's folder or the file's stem, from the folders Kilo
-    loads each kind from (STAGED).
+    or Claude Code loads each kind from (STAGED).
     """
     found = {match.group(1): path for path in sorted(staged, reverse=True) if (match := STAGED[kind].fullmatch(path))}
     return dict(sorted(found.items()))
@@ -502,7 +535,7 @@ def staged_names(staged: Mapping[str, str], kind: str) -> dict[str, str]:
 
 def _kilo_only_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec]) -> list[Found]:
     """A scenario's `agent` or `command` in a file that applies to claude-code: only Kilo has `kilo run --agent`."""
-    if "claude-code" not in (eval_file.targets or TARGETS):
+    if "claude-code" not in eval_file.applies_to():
         return []
     scenarios = eval_file.resolved()
     used = [checks[e.check] for scenario in scenarios for e in scenario.expect if e.check in checks]
@@ -890,7 +923,7 @@ def permission_warnings(eval_files: list[EvalFile], project_path: Path, *, evals
         return []
     warnings = []
     for eval_file in eval_files:
-        if eval_file.targets is not None and "kilo" not in eval_file.targets:
+        if "kilo" not in eval_file.applies_to():
             continue
         if PurePosixPath(eval_file.source).name not in KILO_CONFIG_NAMES or eval_file.source not in staged:
             continue

@@ -66,9 +66,12 @@ GLOB_CASE_BLIND = sys.platform in ("darwin", "win32")
 # (https://code.claude.com/docs/en/memory.md, read 2026-11-11; tasks/plan-phase5.md, decision 8):
 # CLAUDE.md and .claude/CLAUDE.md together, and AGENTS.md and .claude/AGENTS.md only when neither
 # CLAUDE.md is there. Each is staged under its own name. CLAUDE.local.md is personal and usually
-# not committed, so it's never staged, only named. The rest of .claude/ stays out: settings.json
-# can hold hooks, which run commands (spec open question 8).
+# not committed, so it's never staged, only named. The project's skills and agents, .claude/skills/
+# and .claude/agents/, are staged too: Claude Code 2.1.322 offers both (docs/spike-findings.md,
+# "Phase 5 Task 36"). The rest of .claude/ stays out: settings.json can hold hooks, which run
+# commands (spec open question 8).
 CLAUDE_CODE_DIR = ".claude"
+CLAUDE_CODE_ASSET_DIRS = (f"{CLAUDE_CODE_DIR}/skills", f"{CLAUDE_CODE_DIR}/agents")
 AGENTS_MD = "AGENTS.md"
 CLAUDE_MD = "CLAUDE.md"
 CLAUDE_LOCAL_MD = "CLAUDE.local.md"
@@ -185,7 +188,7 @@ def _load_kilo(root: Path, evals_path: Path | None) -> tuple[dict[str, str], lis
 
 
 def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None = None) -> dict[str, str]:
-    """Load the instruction files Claude Code would read, each under its own name, and nothing else.
+    """Load the instruction files, skills and agents Claude Code would read, each under its own name, and nothing else.
 
     Claude Code reads root CLAUDE.md and .claude/CLAUDE.md together, and
     AGENTS.md and .claude/AGENTS.md only when neither CLAUDE.md is there
@@ -193,16 +196,21 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     still hides AGENTS.md, because Claude Code would see it. The same rules
     as load_project_files apply: a file that is a symlink, or that resolves
     outside the project, is skipped. A .claude folder that is itself a
-    symlink is never followed. files_not_staged names what was left out,
-    and files_renamed a file whose name differs only in case. No Kilo config
-    is needed.
+    symlink is never followed. Every file under .claude/skills/ and
+    .claude/agents/ (CLAUDE_CODE_ASSET_DIRS) is staged by the same rules,
+    with .env files and the excluded folders left out as for Kilo; one that
+    isn't UTF-8 is left out and named. files_not_staged names what was left
+    out, and files_renamed a file whose name differs only in case. No Kilo
+    config is needed, and a project with skills or agents needs no
+    instruction file.
 
     Args:
         project_dir: the project folder. It is read, never written.
         evals_path: the evals root, whose files are never staged.
 
     Returns:
-        {name: text} for each staged file, named as in CLAUDE_CODE_INSTRUCTIONS.
+        {name: text} for each staged file: the instruction files, named as
+        in CLAUDE_CODE_INSTRUCTIONS, then the skills' and agents' files.
 
     Raises:
         FileNotFoundError: project_dir doesn't exist.
@@ -215,10 +223,12 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     root = _project_root(project_dir)
     evals = _evals_root(root, evals_path)
     sources = _claude_code_sources(root)
-    if not sources:
+    assets = _claude_code_assets(root, evals)[0]
+    if not sources and not assets:
         raise ValueError(
             f"project has no Claude Code instructions to stage ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}; "
-            "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped): "
+            "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped), "
+            f"and no skills or agents ({', '.join(f'{folder}/' for folder in CLAUDE_CODE_ASSET_DIRS)}): "
             f"{root}{_hidden_by_claude_md(root)}"
         )
     for source in sources:
@@ -228,7 +238,29 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
                 f"{root / source} is an instruction file to stage, but it is under the evals path {evals.path}, "
                 "whose files are never staged"
             )
-    return {source: _read_instruction(root / source) for source in sources}
+    return {**{source: _read_instruction(root / source) for source in sources}, **assets}
+
+
+def _claude_code_assets(root: Path, evals: "_EvalsFolder | None") -> tuple[dict[str, str], list[tuple[str, str]]]:
+    """The files under CLAUDE_CODE_ASSET_DIRS to stage, and (name, reason) for each file or folder left out.
+
+    A folder that is a symlink, or under one, holds nothing to stage, and
+    files_not_staged names it. One that can't be read is left out whole and
+    named, as is a file that isn't UTF-8.
+    """
+    files, left_out = {}, []
+    for folder in CLAUDE_CODE_ASSET_DIRS:
+        try:
+            found = list(_walk_files(root / folder, root, evals))
+        except OSError:
+            left_out.append((f"{folder}/", WHOLE_REASON))
+            continue
+        for relative, path in found:
+            try:
+                files[f"{folder}/{relative}"] = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                left_out.append((f"{folder}/{relative}", NOT_UTF8_REASON))
+    return files, left_out
 
 
 def claude_code_instructions(relative: str, staged: Mapping[str, str]) -> list[str]:
@@ -328,12 +360,15 @@ def files_not_staged(target: str, project_dir: Path, *, evals_path: Path | None 
     named one level down, a folder with a trailing "/", rather than file by
     file. A symlinked entry is named without being followed. A .claude/
     that is a symlink, or that can't be read, is named as a whole, so
-    nothing it points to is listed. Only names are read, never contents.
+    nothing it points to is listed. .claude/skills/ and .claude/agents/ are
+    staged, so they're named only for what was left out: a file that isn't
+    UTF-8 text by its path, and a folder that is a symlink or can't be read.
+    Outside those two folders only names are read, never contents.
 
     Args:
         target: "kilo" or "claude-code".
         project_dir: the project folder.
-        evals_path: the evals path the loader was given (kilo only).
+        evals_path: the evals path the loader was given.
 
     Returns:
         For kilo, the names sorted, cut at NOT_STAGED_LIMIT as below. For
@@ -357,13 +392,13 @@ def files_not_staged_reasons(target: str, project_dir: Path, *, evals_path: Path
     Args:
         target: "kilo" or "claude-code".
         project_dir: the project folder.
-        evals_path: the evals path the loader was given (kilo only).
+        evals_path: the evals path the loader was given.
 
     Returns:
         {name: short reason} for every name files_not_staged lists except a
         last "and N more". The reasons are NOT_UTF8_REASON and
         SKILL_PATHS_REASON for kilo, and IGNORED_REASON, LOCAL_REASON,
-        UNSAFE_REASON, REST_REASON and WHOLE_REASON for claude-code.
+        UNSAFE_REASON, REST_REASON, WHOLE_REASON and NOT_UTF8_REASON for claude-code.
 
     Raises:
         FileNotFoundError, ValueError: as files_not_staged raises them.
@@ -416,10 +451,13 @@ def not_staged_reason(
     if not _is_safe_file(full):
         return f".env files are never staged, except {', '.join(sorted(SAFE_ENV_FILES)[:-1])} and {sorted(SAFE_ENV_FILES)[-1]}"
     if target == "claude-code":
-        reasons = files_not_staged_reasons(target, root)
+        reasons = files_not_staged_reasons(target, root)  # a file under the evals path was answered above
         if relative in reasons:
             return f"the claude-code loader stages only what Claude Code reads, and this file is left out: {reasons[relative]}"
-        return f"the claude-code loader stages only {', '.join(CLAUDE_CODE_INSTRUCTIONS[:-1])} and {CLAUDE_CODE_INSTRUCTIONS[-1]}"
+        return (
+            f"the claude-code loader stages only {', '.join(CLAUDE_CODE_INSTRUCTIONS)}, "
+            f"and the files under {' and '.join(f'{folder}/' for folder in CLAUDE_CODE_ASSET_DIRS)}"
+        )
     left_out = dict(_load_kilo(root, evals_path)[1])
     if relative in left_out:
         return f"it is {left_out[relative]}"
@@ -616,7 +654,10 @@ def _not_staged(target: str, project_dir: Path, evals_path: Path | None) -> tupl
     ]
     others = []
     folder_instructions = {name.casefold() for name in (DOT_CLAUDE_MD, DOT_AGENTS_MD)}
-    for name, reason in sorted(_unstaged_claude_entries(root, sources)):
+    entries = _unstaged_claude_entries(root, sources)
+    if not any(name == f"{CLAUDE_CODE_DIR}/" for name, _ in entries):  # a .claude/ named whole says it all
+        entries += _claude_code_assets(root, _evals_folder(evals_path))[1]
+    for name, reason in sorted(entries):
         # .claude/'s instruction files, in any spelling, go ahead of the cap: the report most needs to name them.
         (first if name.casefold() in folder_instructions else others).append((name, reason))
     return _capped(first, others)
@@ -713,8 +754,12 @@ def _unstaged_claude_entries(root: Path, sources: list[str]) -> list[tuple[str, 
         for entry in entries:
             relative = instructions.get(entry.name)
             if relative is None:
-                suffix = "/" if not entry.is_symlink() and entry.is_dir() else ""
-                items.append((f"{CLAUDE_CODE_DIR}/{entry.name}{suffix}", REST_REASON))
+                is_folder = not entry.is_symlink() and entry.is_dir()
+                name = f"{CLAUDE_CODE_DIR}/{entry.name}"
+                if name not in CLAUDE_CODE_ASSET_DIRS:
+                    items.append((f"{name}{'/' if is_folder else ''}", REST_REASON))
+                elif not is_folder:  # a skills or agents that is a link, or a file, holds nothing to stage
+                    items.append((name, UNSAFE_REASON if entry.is_symlink() else REST_REASON))
             elif relative not in sources:
                 items.append((f"{CLAUDE_CODE_DIR}/{entry.name}", _instruction_reason(root, relative)))
         return items

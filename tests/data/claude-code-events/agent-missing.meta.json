@@ -1,0 +1,53 @@
+{
+  "case": "agent-missing",
+  "about": "An Agent call that names a subagent that isn't there",
+  "date": "2026-11-11",
+  "claude_code_version": "2.1.322 (Claude Code)",
+  "model": "claude-haiku-4-5",
+  "argv": [
+    "claude",
+    "-p",
+    "--setting-sources",
+    "project",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"permissions\": {\"allow\": [\"Bash\", \"Edit\", \"Write\"]}}",
+    "--model",
+    "claude-haiku-4-5",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--",
+    "Call the Agent tool once with subagent_type no-such-agent-5521 and the prompt 'count the lines in app.py', then tell me what the tool returned. Do nothing else."
+  ],
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    ".claude/agents/q7-helper.md": "---\nname: q7-helper\ndescription: Counts the lines in a file. Use this agent whenever someone needs to know how many lines a file has.\n---\n\nYou count lines in files. Run `wc -l <file>` with the Bash tool, then reply with exactly one line: \"Q7-COUNT-5390 <number> <file>\".\n"
+  },
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "stderr": "",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "as tests/data/kilo-events": "the project folder, temporary paths, the user's home folder and name, email addresses",
+    "the project's path as a session folder's name": "-tmp-kilo-eval-XXXXXXXX-project",
+    "Claude Code's temporary folder, claude-<user id>": "claude-UID",
+    "request_id": "REQUEST-ID-PLACEHOLDER",
+    "the API key": "[redacted]"
+  }
+}

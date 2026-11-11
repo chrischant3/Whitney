@@ -173,7 +173,7 @@ inspect eval whitney/scenario_eval -T target=kilo -T model=kilo/anthropic/claude
 - Every `*.json` file under the evals root, recursively, in path order, except anything under `fixtures/` and hidden folders.
 - Every such file must be a valid eval file. A JSON file that isn't one is an error (exit 2), so a typo can't silently drop an eval file. Keep other JSON outside the evals root, or inside `fixtures/`.
 - **Eval name**: the file's stem with `-` replaced by `_` (`agents-md.json` is `agents_md`, `configuration/kilo-jsonc.json` is `kilo_jsonc`), or the file's `name` field. Names must be unique across the evals root. The name is used in Inspect task names (`<name>_<variant>`), so the shipped files keep today's task names.
-- **Applies to the target** if the target is in the file's `targets` (default: every target) and every check the file uses supports it. `whitney run` skips the others and lists them in the report under "Not run for this target". Naming one with `--only` is an error (exit 2), as `--evals kilo_jsonc` with `--target claude-code` is today.
+- **Applies to the target** if the target is in the file's `targets` (default: every target whose loader can stage the file's `source`; `.kilo/` and `.kilocode/` are Kilo's alone, `.claude/agents/` is Claude Code's alone) and every check the file uses supports it. `whitney run` skips the others and lists them in the report under "Not run for this target". Naming one with `--only` is an error (exit 2), as `--evals kilo_jsonc` with `--target claude-code` is today.
 
 ### Saying which file an eval file tests
 
@@ -229,7 +229,7 @@ Every eval file runs the **`template` variant**: the staged files as supplied. T
 | `source` | string | yes | The file under test, relative to the project root. |
 | `name` | string | no | Eval name; default from the file stem. Lowercase letters, digits and `_`. |
 | `title` | string | no | Heading in the report. Default: `<source>: pass / (pass + fail)`. |
-| `targets` | list | no | Targets the file applies to. Default: every target its checks support. |
+| `targets` | list | no | Targets the file applies to. Default: every target its checks support and whose loader can stage its `source`. |
 | `variants` | object | no | See above. |
 | `harness_permissions` | object keyed by target | no | The overlay that lets the agent work headlessly, in each harness's own format. Default: today's `HARNESS_PERMISSIONS` for `kilo` and `CLAUDE_CODE_HARNESS_PERMISSIONS` for `claude-code`. |
 | `min_pass_rate` | number, 0 to 1 | no | Raises this file's bar. Lower than its checks' defaults is a validation error: a file can raise its own bar, never lower it. |

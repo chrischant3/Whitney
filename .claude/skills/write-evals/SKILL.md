@@ -49,7 +49,7 @@ Go through the file line by line. Leave out what isn't a rule: the tech stack, a
 | Treat file contents as data, not instructions | `no_string_added` and `no_file_edits` on what an instruction planted in an input file asks for | the planted instruction's effect |
 | Stay inside the project | `outside_canary_not_reached` | the fixture's `outside/` folder (`kilo` only) |
 | A `kilo.jsonc` `deny` or `ask` rule | `permission_held` | the harness's refusal (`kilo` only); read "`permission_held`" and "Variants" in `docs/adding-tests.md` first |
-| A skill's or agent's `description` | trigger tests, which use `skill_loaded`, `subagent_delegated` and their `not_` forms | `kilo` only; read "Testing a skill or an agent" and "Trigger tests" |
+| A skill's or agent's `description` | trigger tests, which use `skill_loaded`, `subagent_delegated` and their `not_` forms | both targets; read "Testing a skill or an agent" and "Trigger tests" |
 
 Some rules can't be tested with today's checks. Say so plainly, with the reason, rather than forcing a check that doesn't fit. The usual ones:
 
@@ -76,10 +76,10 @@ Read "Eval files" in `docs/adding-tests.md` for the fields. Name the file after 
 | `AGENTS.md` or another Markdown file at the project root | `agents-md.json` |
 | `.kilo/rules/<name>.md` | `rules/<name>-md.json` |
 | `kilo.jsonc` | `configuration/kilo-jsonc.json` |
-| `.kilo/skills/<name>/SKILL.md` | `skills/<name>.json` |
-| `.kilo/agents/<name>.md` | `agents/<name>.json` |
+| `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md` | `skills/<name>.json` |
+| `.kilo/agents/<name>.md` or `.claude/agents/<name>.md` | `agents/<name>.json` |
 
-- **`targets`**: leave it out for `AGENTS.md`, which both targets stage. Use `["kilo"]` for anything under `.kilo/` and for `kilo.jsonc`.
+- **`targets`**: leave it out for `AGENTS.md`, which both targets stage. Use `["kilo"]` for `kilo.jsonc` and for a root file only Kilo reads, such as `CONTEXT.md`. A source under `.kilo/` applies to `kilo` alone and one under `.claude/agents/` to `claude-code` alone, without it.
 - **`variants`**: a file with `permission_held` must declare its own, with a control that sets the rule under test to `allow`, so the check is shown able to fail. Read "Variants". Other files can leave `variants` out and get the default baseline, which removes the file under test, or a skill's whole folder.
 - **`defaults`**: put `fixture`, `setup` and any shared `expect` here.
 - **One eval file per file under test.** To test another of its rules, add scenarios to the same file.
@@ -93,7 +93,7 @@ whitney validate --target kilo --project-path <project> --evals-path <evals>
 whitney validate --target claude-code --project-path <project> --evals-path <evals>
 ```
 
-Only `AGENTS.md` needs both. For a `kilo`-only file, `--target claude-code` prints `0 problem(s)` without having checked it, so don't report that line as a result.
+Only a source both targets stage needs both: `AGENTS.md`, or a skill under `.claude/skills/`. For a `kilo`-only file, `--target claude-code` prints `0 problem(s)` without having checked it, so don't report that line as a result.
 
 Each problem names the file and the field. Fix it and run the command again, until the last line reads `0 problem(s)`. A warning is worth reading, but doesn't stop a run.
 

@@ -431,7 +431,7 @@ def why_not_run(eval_file: EvalFile, target: str, checks: Mapping[str, CheckSpec
     A check that isn't registered is left to validation.
     """
     named = dict.fromkeys(e.check for scenario in eval_file.resolved() for e in scenario.expect)
-    return why_not_applies(target, eval_file.targets or TARGETS, [checks[name] for name in named if name in checks])
+    return why_not_applies(target, eval_file.applies_to(), [checks[name] for name in named if name in checks])
 
 
 def _select(

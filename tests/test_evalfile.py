@@ -628,3 +628,49 @@ def test_a_file_read_carries_the_sha256_of_the_bytes_it_was_read_from(tmp_path):
 
     assert read(v2).sha256 == load(v2).sha256 == hashlib.sha256(v2.read_bytes()).hexdigest()
     assert old.sha256 == upgraded.sha256 == hashlib.sha256(v1.read_bytes()).hexdigest()
+
+
+# --- Which targets a file applies to (Phase 5 Task 36) ---------------------------------------
+
+
+@pytest.mark.parametrize("source, targets", [
+    ("AGENTS.md", ("kilo", "claude-code")),
+    ("kilo.jsonc", ("kilo", "claude-code")),
+    (".kilo/skills/release-notes/SKILL.md", ("kilo",)),
+    (".kilo/agents/reviewer.md", ("kilo",)),
+    (".kilo/commands/shout.md", ("kilo",)),
+    (".kilocode/rules/style.md", ("kilo",)),
+    (".claude/agents/reviewer.md", ("claude-code",)),
+    (".claude/agents/team/reviewer.md", ("claude-code",)),
+    # Kilo reads .claude/skills/ too (docs/load-order.md), and both read the .claude instruction files' folder.
+    (".claude/skills/release-notes/SKILL.md", ("kilo", "claude-code")),
+    (".claude/CLAUDE.md", ("kilo", "claude-code")),
+    (".kilo", ("kilo", "claude-code")),
+    ("docs/.kilo/skills/x/SKILL.md", ("kilo", "claude-code")),
+])
+def test_a_source_only_one_harness_reads_keeps_a_file_without_targets_to_that_harness(tmp_path, source, targets):
+    assert evalfile.source_targets(source) == targets
+    assert load(write(tmp_path, v2(source=source))).applies_to() == targets
+
+
+@pytest.mark.parametrize("source", [".kilo/skills/release-notes/SKILL.md", ".claude/agents/reviewer.md", "AGENTS.md"])
+@pytest.mark.parametrize("declared", [["kilo"], ["claude-code"], ["claude-code", "kilo"]])
+def test_a_files_own_targets_stand_whatever_its_source(tmp_path, source, declared):
+    """So validation can say the source isn't staged for a target the file names, rather than drop the target unseen."""
+    assert load(write(tmp_path, v2(source=source, targets=declared))).applies_to() == tuple(declared)
+
+
+@pytest.mark.parametrize("source, tested", [
+    (".kilo/skills/release-notes/SKILL.md", ("skill", "release-notes")),
+    (".claude/skills/release-notes/SKILL.md", ("skill", "release-notes")),
+    (".kilo/agents/reviewer.md", ("agent", "reviewer")),
+    (".claude/agents/reviewer.md", ("agent", "reviewer")),
+    (".claude/agents/team/reviewer.md", None),
+    (".claude/skills/group/release-notes/SKILL.md", None),
+    (".agents/skills/release-notes/SKILL.md", None),
+    ("x.claude/agents/reviewer.md", None),
+    (".claude/skills/release-notes/SKILL.md.bak", None),
+    ("AGENTS.md", None),
+])
+def test_a_claude_code_skill_or_agent_is_a_source_trigger_tests_can_test(source, tested):
+    assert evalfile.under_test(source) == tested
