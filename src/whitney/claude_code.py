@@ -116,12 +116,17 @@ async def _run(command: list[str], project_dir: Path, key: str, timeout: int) ->
 
 
 def _outcome(events: str) -> dict:
-    """What the transcript's init and final result events say about the run.
+    """What the transcript's init and result events say about the run.
 
-    ended_early is True unless a result event reports success with no
-    permission denials: a denial means the harness, not the agent, decided.
+    A run with a background subagent has more than one result event: the main
+    turn ending, then the answer once the subagent finished
+    (docs/spike-findings.md, Claude Code 2.1.322). So permission_denials
+    gathers every result event's list, once per tool_use_id, and final_text
+    is the last one's text. ended_early is True unless every result event
+    reports success and none lists a denial: a denial means the harness, not
+    the agent, decided.
     """
-    init, result = {}, None
+    init, results = {}, []
     for line in events.splitlines():
         try:
             event = json.loads(line)
@@ -130,12 +135,24 @@ def _outcome(events: str) -> dict:
         if event.get("type") == "system" and event.get("subtype") == "init":
             init = event
         elif event.get("type") == "result":
-            result = event
-    denials = (result or {}).get("permission_denials") or []
-    succeeded = bool(result) and result.get("subtype") == "success" and not result.get("is_error")
+            results.append(event)
+    denials = _all_denials(results)
+    succeeded = bool(results) and all(r.get("subtype") == "success" and not r.get("is_error") for r in results)
     return {
         "ended_early": not succeeded or bool(denials),
         "permission_denials": denials,
         "api_key_source": init.get("apiKeySource"),
-        "final_text": (result or {}).get("result"),
+        "final_text": results[-1].get("result") if results else None,
     }
+
+
+def _all_denials(results: list[dict]) -> list[dict]:
+    """Every result event's permission denials, in order, each tool_use_id once; one without an id is always kept."""
+    denials, seen = [], set()
+    for result in results:
+        for denial in result.get("permission_denials") or []:
+            key = denial.get("tool_use_id")
+            if key is None or key not in seen:
+                seen.add(key)
+                denials.append(denial)
+    return denials

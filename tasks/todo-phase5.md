@@ -827,12 +827,12 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 **Description:** A background subagent makes `claude -p` emit two `result` events (spike, "Subagents"). `_outcome` in `claude_code.py` keeps only the last, so a denial in the first turn is lost, and a run the harness decided could be scored as conclusive.
 
 **Acceptance criteria:**
-- [ ] `permission_denials` is the union of every `result` event's list, without duplicates by `tool_use_id`.
-- [ ] `ended_early` is True if any `result` event isn't a success.
-- [ ] `final_text` is still the last `result`'s text.
-- [ ] A test with a recorded two-`result` stream.
+- [x] `permission_denials` is the union of every `result` event's list, without duplicates by `tool_use_id`.
+- [x] `ended_early` is True if any `result` event isn't a success.
+- [x] `final_text` is still the last `result`'s text.
+- [x] A test with a recorded two-`result` stream.
 
-**Verification:** `python scripts/check.py task`
+**Verification:** `python scripts/check.py task` (passed 2026-11-11; 78 of 78 touched-function mutants killed)
 
 **Dependencies:** None. **Estimated scope:** XS.
 
