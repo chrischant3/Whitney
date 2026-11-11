@@ -648,6 +648,8 @@ inspect view
 
 ## Evaluating a local project
 
+Add `--execution docker` to run either target in a container with no network, when the agent must not reach your machine's files or the internet. The README's Docker mode sections say what each target needs.
+
 Pass `--project-path /path/to/project` to `whitney run` (or to the deprecated `run_evals.py`). The source directory is read-only. Whitney copies the project's configuration and instruction files into the disposable scenario projects, the temporary folders each scenario runs in. These copies are the **staged files**, and which files they are depends on `--target`:
 
 | Target | Staged files |

@@ -699,6 +699,21 @@ def _control_warnings(s: EvalSummary, variants: tuple[str, ...]) -> list[str]:
     return warnings
 
 
+def _container_versions(log: EvalLog) -> set[str]:
+    """The harness versions a log's scores recorded, for a Docker run, whose harness is the image's.
+
+    The log's own metadata has none then: Whitney checks no harness on the host.
+    """
+    versions = set()
+    for sample in getattr(log, "samples", None) or []:
+        for score in (getattr(sample, "scores", None) or {}).values():
+            metadata = getattr(score, "metadata", None)
+            version = metadata.get("harness_version") if isinstance(metadata, dict) else None
+            if isinstance(version, str) and version:
+                versions.add(version)
+    return versions
+
+
 def render_header(
     logs: list[EvalLog], evals_path: str | Path | None = None, min_rates: Mapping[str, float] | None = None
 ) -> str:
@@ -728,6 +743,8 @@ def render_header(
         for key, values in recorded.items():
             if metadata.get(key):
                 values.add(str(metadata[key]))
+        if not metadata.get("harness_version"):
+            recorded["harness_version"].update(_container_versions(log))
     lines = []
     if files:
         shown = {key: ", ".join(f"`{v}`" for v in sorted(values)) or NOT_RECORDED for key, values in recorded.items()}

@@ -227,13 +227,27 @@ def test_a_task_that_cannot_be_built_exits_2(consumer, monkeypatch, capsys):
     assert "whitney: error: api_key_env and base_url apply to local execution" in capsys.readouterr().err
 
 
-def test_claude_code_cannot_run_in_docker(consumer, monkeypatch, capsys):
-    _no_model_calls(monkeypatch)
+def test_claude_code_runs_in_docker_without_checking_the_hosts_claude(consumer, monkeypatch, recorded):
+    """Until Phase 5 Task 36a this exited 2: "the claude-code target runs locally only"."""
+    monkeypatch.setattr(cli, "harness_version", lambda target, **kwargs: pytest.fail("checked the host's harness"))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     args = _for_claude_code(_run_args(consumer, "--execution", "docker"))
 
-    assert cli.main(args) == 2
+    assert cli.main(args) == 0
 
-    assert "whitney: error: the claude-code target runs locally only\n" in capsys.readouterr().err
+    [(task, options)] = recorded.calls
+    assert options["model"] == args[args.index("--model") + 1]  # Inspect answers for the model
+    assert task.metadata["target"] == "claude-code" and task.metadata["execution"] == "docker"
+    assert task.sandbox.type == "docker" and task.sandbox.config.endswith("sandbox/claude-code/compose.yaml")
+
+
+def test_a_claude_code_docker_run_without_inspects_key_stops_before_any_model_call(consumer, monkeypatch, capsys):
+    _no_model_calls(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    assert cli.main(_for_claude_code(_run_args(consumer, "--execution", "docker"))) == 2
+
+    assert "ANTHROPIC_API_KEY is not set; put it in .env or the environment" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("target, extra, variable", [

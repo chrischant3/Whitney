@@ -67,6 +67,8 @@ def test_the_wheel_holds_the_sandbox_files(wheel):
 
     assert "whitney/sandbox/compose.yaml" in names
     assert "whitney/sandbox/Dockerfile" in names
+    assert "whitney/sandbox/claude-code/compose.yaml" in names
+    assert "whitney/sandbox/claude-code/Dockerfile" in names
 
 
 def test_the_wheel_holds_the_package_and_nothing_else_from_the_repository(wheel):
