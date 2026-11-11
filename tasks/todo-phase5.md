@@ -1052,6 +1052,8 @@ The runs already hold most of what it needs:
 - **A scenario at fault, not the rule.** Inconclusive runs, and failures whose explanation shows the fixture caused them.
 - **Warnings `whitney validate` already gives,** such as a skill description that doesn't say when to use it.
 
+**Decided by Christopher, 2026-11-11:** the starting list for rules 1 and 2 is his `rules-audit` skill, which audits instructions for prompt engineering practice and progressive disclosure. Each of its rules that a fixed check can apply becomes a rule here, and the write-up names any that need a model's judgement and are left out.
+
 **Decided by Christopher, 2026-11-11:** start with fixed rules. No model writes any of the report in this task. The rules cover three things:
 
 1. **Prompt engineering practice.** What the file's own text shows, such as a rule that says what not to do and never what to do instead, a rule with no reason given, or a skill `description` that doesn't say when to use it. The 2026-11-10 loop showed one: "Ask before modifying database schema" went from 0 of 6 to 6 of 6 once it said what to do instead.
@@ -1095,7 +1097,7 @@ Each rule's advice is of two kinds, and the report keeps them apart: what the **
 - [ ] Rule 3 fires only on a run's evidence: the skill's description passes `whitney validate`'s checks, and the skill still wasn't loaded in enough conclusive runs to say so. It never fires on the file's text alone.
 - [ ] Rule 3's advice is the hook named above for the run's target, with the skill's name filled in, and is labelled "not tested by Whitney". It says what a hook is and can do, and that the hook isn't part of a Whitney run.
 - [ ] Rule 3's sources are named: Claude Code's hooks reference and Kilo's plugins page, each read 2026-11-11, and the spike's counts. Where the spike showed nothing, as for the Kilo reminder, the report says so.
-- [ ] Christopher confirms the hook advised for each target before rule 3 is built.
+- [x] Christopher confirms the hook advised for each target before rule 3 is built. *(2026-11-11: confirmed. On Kilo: "if kilo supports it then we can advise it", so the report advises the plugin as written above, with the labels that say what the spike did and didn't show.)*
 - [ ] `whitney run` and `whitney report` write an improvement report beside the results, with a section for each file under test. Each finding names the evidence it rests on: the scenario ids, the counts and the checks' explanations.
 - [ ] Each finding says what to try, and how to tell whether it worked: which scenarios or trigger prompts should change on the next run.
 - [ ] A finding is never given on evidence that can't bear it. One epoch, or fewer conclusive runs than `min_conclusive`, is reported as "not enough runs to say".
