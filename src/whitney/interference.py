@@ -14,6 +14,7 @@ from whitney.project_files import (
     files_renamed,
     load_project_files_for,
     load_template_files,
+    without_instructions,
 )
 from whitney.prompt_injection import scan_record
 
@@ -84,7 +85,7 @@ def ifevalcode(
         else load_template_files(targets.template_dir(target))
     )
     if variant == "baseline":
-        project_files.pop("AGENTS.md", None)
+        project_files = without_instructions(target, project_files)
 
     samples = []
     for record in records:

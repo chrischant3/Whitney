@@ -939,11 +939,21 @@ def test_an_eval_file_for_other_targets_is_not_checked_against_this_project(eval
     assert validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals) == []
 
 
-def test_a_claude_code_source_staged_as_agents_md_is_valid(evals, tmp_path):
+def test_a_claude_code_source_staged_under_its_own_name_is_valid(evals, tmp_path):
     write(evals, eval_file(source="CLAUDE.md", variants={}))
     project = _project(tmp_path / "project", {"CLAUDE.md": "- rule\n"})
 
     assert validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals) == []
+
+
+def test_agents_md_evals_and_their_baseline_are_valid_for_a_claude_md_project(evals, tmp_path):
+    # agents-md.json stands for the project's instructions on both targets (tasks/todo-phase5.md, Task 34),
+    # and its default baseline removes every instruction file Claude Code was given.
+    write(evals, eval_file())
+    project = _project(tmp_path / "project", {"CLAUDE.md": "- rule\n", ".claude/CLAUDE.md": "- folder rule\n"})
+
+    assert validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals) == []
+    assert validate_project(validate_evals(evals).files, project, "kilo", evals_path=evals) != []  # Kilo needs its config
 
 
 @pytest.mark.parametrize("target, files, message", [

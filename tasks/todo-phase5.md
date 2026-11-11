@@ -796,18 +796,18 @@ Added on 2026-11-11, from the spike in `docs/spike-findings.md` ("Claude Code: i
 Whitney does the opposite today. It stages one file, always as `AGENTS.md`, preferring `AGENTS.md` over `CLAUDE.md` (decision 5). So for a project with both, it tests the file Claude Code ignores. This task makes the loader stage what Claude Code would read, under each file's own name.
 
 **Acceptance criteria:**
-- [ ] When the project has root `CLAUDE.md` or `.claude/CLAUDE.md`, both that exist are staged under their own names, and `AGENTS.md` and `.claude/AGENTS.md` are named as left out, with the reason "Claude Code doesn't read AGENTS.md beside a CLAUDE.md".
-- [ ] Otherwise, `AGENTS.md` and `.claude/AGENTS.md`, if they exist, are staged under their own names.
-- [ ] `CLAUDE.local.md` is never staged: it's personal and usually not committed. It's named as left out, and the report says it would stop Claude Code reading `AGENTS.md` on that person's machine.
-- [ ] Nothing is renamed, so the "Renamed for the Eval" table is empty for `claude-code`. Decide whether to remove `files_renamed` or keep it for Kilo.
-- [ ] The safety rules stay: a symlink, or a file resolving outside the project, is skipped and named. A skipped `CLAUDE.md` doesn't make `AGENTS.md` load, because Claude Code would still see the `CLAUDE.md`.
-- [ ] `check_no_inherited_instructions` refuses a run with a `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md` or `.claude/AGENTS.md` in a folder above the staged project, since Claude Code reads every folder above.
-- [ ] The default baseline removes every staged instruction file, so it's a run with no project instructions at all.
-- [ ] Eval file naming: `agents-md.json` stays the eval for the project's instructions on both targets. Recommended: the report names which files were staged, rather than adding a `claude-md.json`. Confirm with Christopher before building.
-- [ ] Decision 5 in `plan-phase5.md` is marked as replaced, and `docs/load-order.md` and the comment above `CLAUDE_CODE_DIR` in `project_files.py` say the new order.
-- [ ] One real run per case (cents, Haiku) confirms Claude Code reads what was staged: `CLAUDE.md` and `.claude/CLAUDE.md` together, and `.claude/AGENTS.md` alone.
+- [x] When the project has root `CLAUDE.md` or `.claude/CLAUDE.md`, both that exist are staged under their own names, and `AGENTS.md` and `.claude/AGENTS.md` are named as left out, with the reason "Claude Code doesn't read AGENTS.md beside a CLAUDE.md".
+- [x] Otherwise, `AGENTS.md` and `.claude/AGENTS.md`, if they exist, are staged under their own names.
+- [x] `CLAUDE.local.md` is never staged: it's personal and usually not committed. It's named as left out, and the report says it would stop Claude Code reading `AGENTS.md` on that person's machine.
+- [x] Nothing is renamed, so the "Renamed for the Eval" table is empty for `claude-code`. Decided: `files_renamed` stays, for a name that differs only in case, such as `claude.md` on macOS.
+- [x] The safety rules stay: a symlink, or a file resolving outside the project, is skipped and named. A skipped `CLAUDE.md` doesn't make `AGENTS.md` load, because Claude Code would still see the `CLAUDE.md`.
+- [x] `check_no_inherited_instructions` refuses a run with a `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md` or `.claude/AGENTS.md` in a folder above the staged project, since Claude Code reads every folder above.
+- [x] The default baseline removes every staged instruction file, so it's a run with no project instructions at all.
+- [x] Eval file naming: `agents-md.json` stays the eval for the project's instructions on both targets. Recommended: the report names which files were staged, rather than adding a `claude-md.json`. Christopher confirmed on 2026-11-11.
+- [x] Decision 5 in `plan-phase5.md` is marked as replaced, and `docs/load-order.md` and the comment above `CLAUDE_CODE_DIR` in `project_files.py` say the new order.
+- [x] One real run per case (cents, Haiku) confirms Claude Code reads what was staged: `CLAUDE.md` and `.claude/CLAUDE.md` together, and `.claude/AGENTS.md` alone.
 
-**Tests whose expectations change** (Christopher chose the documented order on 2026-11-11; each change is listed in the PR, and he confirms the list before the tests are edited):
+**Tests whose expectations change** (Christopher approved these four on 2026-11-11; every other changed test is listed in the PR for his confirmation):
 - `test_a_claude_md_beside_agents_md_is_named_not_staged_and_agents_md_is_staged` (`tests/test_project_files.py`): the `CLAUDE.md` is staged, and `AGENTS.md` is named as left out.
 - `test_a_claude_md_with_no_agents_md_beside_it_is_staged_as_agents_md_and_the_rename_is_named`: staged under its own name, with no rename.
 - `test_with_both_claude_md_files_and_no_agents_md_the_root_one_is_staged`: both are staged.
@@ -815,8 +815,8 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 - Any other test that expects `{"AGENTS.md": ...}` from a `CLAUDE.md`, found by running the suite after the change.
 
 **Verification:**
-- [ ] `python scripts/check.py task`
-- [ ] Manual: the real runs above, recorded in `docs/results/`.
+- [x] `python scripts/check.py task`
+- [x] Manual: the real runs above, recorded in `docs/results/2026-11-11-claude-code-load-order.md`.
 
 **Dependencies:** None.
 

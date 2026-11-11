@@ -72,6 +72,7 @@ from whitney.variants import (
     apply_variant,
     changes_nothing,
     declared_variants,
+    for_claude_code_instructions,
     pointer_tokens,
     repeated_removes,
     shadowed_sets,
@@ -396,7 +397,7 @@ def _declared_variant_problems(eval_file: EvalFile) -> list[Found]:
     return found
 
 
-def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
+def validate_variants(eval_file: EvalFile, staged: Mapping[str, str], *, target: str | None = None) -> list[Problem]:
     """Rule 6, the half that needs the project: each variant against the files staged for it.
 
     A variant must change the staged files, its `remove` paths and `set`
@@ -409,6 +410,9 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
     Args:
         eval_file: a loaded eval file.
         staged: the files the project loader staged, project-relative path to text.
+        target: the target staged for. For claude-code, a `remove` of an
+            instruction file removes every one staged, as a run does
+            (variants.for_claude_code_instructions).
 
     Returns:
         One Problem per finding. A variant the file declares is named at
@@ -423,6 +427,8 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Pr
             continue
         if _spread_by_the_wrapper(eval_file):
             variant = spread_over_kilo_configs(variant, staged, eval_file.source)
+        if target == "claude-code":
+            variant = for_claude_code_instructions(variant, staged)
         try:
             changed = apply_variant(staged, variant)
             problems = shadowed_sets(staged, variant)
@@ -446,7 +452,8 @@ def validate_project(
 
     The project is loaded with `target`'s loader, leaving out evals_path.
     Each eval file that applies to the target must have its `source` staged
-    (for claude-code, staged as AGENTS.md counts); if it isn't, the problem
+    (for claude-code, any staged instruction file counts for an instruction
+    file's name: see project_files.claude_code_instructions); if it isn't, the problem
     says which rule left it out (project_files.not_staged_reason). Then its
     variants are checked against the staged files (validate_variants), so a
     `remove` of a file that isn't staged is reported, though a run of the
@@ -477,7 +484,7 @@ def validate_project(
         problems += _named_problems(eval_file, staged)
         if target == "kilo":
             problems += _permission_rule_problems(eval_file, staged)
-        problems += validate_variants(eval_file, staged)
+        problems += validate_variants(eval_file, staged, target=target)
     return problems
 
 

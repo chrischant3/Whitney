@@ -208,8 +208,8 @@ def test_a_claude_code_project_path_stages_its_claude_md_and_names_what_it_left_
         target="claude-code", model="anthropic/claude-haiku-4-5", project_path=str(project), samples_per_language=1
     )
 
-    assert task.metadata["evaluation_assets"] == {"AGENTS.md": "- Team rule\n"}
-    assert task.metadata["renamed"] == {"CLAUDE.md": "AGENTS.md"}
+    assert task.metadata["evaluation_assets"] == {"CLAUDE.md": "- Team rule\n"}
+    assert task.metadata["renamed"] == {}
     assert task.metadata["not_staged"] == [".claude/settings.json"]
     assert task.metadata["asset_source"] == "local project"
     assert ifevalcode(target="kilo", model=MODEL, samples_per_language=1).metadata["not_staged"] == []
@@ -221,6 +221,7 @@ def test_a_claude_code_baseline_names_no_rename(tmp_path, fake_ifevalcode):
         target="claude-code", model="anthropic/claude-haiku-4-5", project_path=str(tmp_path),
         samples_per_language=1, variant="baseline",
     )
+    assert task.metadata["evaluation_assets"] == {}  # the CLAUDE.md is dropped, not only AGENTS.md
     assert task.metadata["renamed"] == {}
     assert task.metadata["not_staged_reasons"] == {}
 
