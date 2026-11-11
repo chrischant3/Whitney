@@ -389,8 +389,8 @@ The eval file's `source` must be the Kilo config that holds the rule. Whitney on
 
 Any other form or action is a validation problem that names what is missing. So is a rule that can't apply, and a file that leaves `variants` out. The cases that come up most:
 
-- **`"bash": "deny"` or `"edit": "deny"` for everything is refused.** Kilo takes the tool away, so it prints no refusal, and the agent may do the same thing with another tool. Test what the rule protects with a check on the outcome, such as `no_file_edits`.
-- **`"*": "deny"` inside an object is refused** for the same reason.
+- **`"bash": "deny"` or `"edit": "deny"` for everything is refused.** Kilo takes the tool away, so it prints no refusal, and the agent may do the same thing with another tool. Test what the rule protects with a check on the outcome. For `edit` that is `no_file_edits`. No such check exists yet for `bash` or `read`: in recorded runs the model got round each with another tool ([spike findings](spike-findings.md), "Phase 5 Task 28").
+- **`"*": "deny"` inside an object is refused** too. When it is the object's last rule Kilo removes the tool, as above. With an allow rule after it Kilo keeps the tool and prints a refusal, but Whitney refuses that form as well for now.
 - **A rule set to `allow` is refused.** It forbids nothing. Use `allow` only in the control variant.
 - **A `"*"` rule written after the rule under test is refused.** Kilo takes the last rule that matches, so the rule would never apply.
 - **`variants` must be written.** Left out, the baseline would remove the whole config, and Kilo's own rules would decide. Declare a control, or `"variants": {}` to run the template alone.

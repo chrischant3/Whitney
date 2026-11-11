@@ -1,0 +1,3 @@
+--- stdout ---
+--- stderr ---
+Tool read is disabled for agent code

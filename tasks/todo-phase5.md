@@ -691,17 +691,19 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Description:** A scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so Kilo prints no refusal, and in Task 22's capture the model read the file through `bash` instead. `permission_held` covers pattern rules and `ask` only, and validation refuses a scalar deny. Find out what could show a scalar deny held: the tool list from `kilo debug agent`, the absence of the tool's calls in the event stream, a check on the outcome (`no_file_edits` for `edit`), or a mix. For each, say what it proves and what a model routing round the rule would look like.
 
 **Acceptance criteria:**
-- [ ] Each candidate is tried on real Kilo, with the command, the config and the output written up in `docs/spike-findings.md`.
-- [ ] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide.
+- [x] Each candidate is tried on real Kilo, with the command, the config and the output written up in `docs/spike-findings.md`. **2026-11-11:** "Phase 5 Task 28: evidence for a scalar deny", eight candidates on Kilo 7.8.27, 10 model runs and 17 `kilo debug agent` calls from `spikes/scalar_deny_shapes.py`.
+- [x] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide. **2026-11-11:** "Recommendation, for Christopher to decide" in that section: stay refused, and point `edit` authors to `no_file_edits`. The decision itself is not made.
 
 **Verification:**
-- [ ] The agent saves the output of each command it ran as a sanitised fixture, and names the fixture beside each finding in the write-up.
+- [x] The agent saves the output of each command it ran as a sanitised fixture, and names the fixture beside each finding in the write-up. **2026-11-11:** `tests/data/kilo-events/scalar-*`, 54 files for 27 cases; gitleaks found nothing in them.
 
 **Evidence:**
-- [ ] Each candidate's output saved as a sanitised fixture under `tests/data/kilo-events/`, with the Kilo version, model, prompt and date.
-- [ ] A table: candidate, what it proves, what it can't prove, and whether it would have caught Task 22's capture, where the model read the file through `bash`.
-- [ ] At least one capture where the scalar deny is got round, so each candidate is tried against a bypass and not only against a deny that held.
-- [ ] Evidence item 5. Items 1, 3 and 4 don't apply to a spike.
+- [x] Each candidate's output saved as a sanitised fixture under `tests/data/kilo-events/`, with the Kilo version, model, prompt and date. **2026-11-11:** each `scalar-*.meta.json` (`kilo_version` 7.8.27, `model`, `argv`, `date`). Candidates 5 and 6 read the candidate 3 fixtures.
+- [x] A table: candidate, what it proves, what it can't prove, and whether it would have caught Task 22's capture, where the model read the file through `bash`. **2026-11-11:** "The candidates side by side" in the section.
+- [x] At least one capture where the scalar deny is got round, so each candidate is tried against a bypass and not only against a deny that held. **2026-11-11:** `scalar-edit-deny-bypassed`, `scalar-read-deny-bypassed` and `scalar-bash-deny-bypassed`. Candidate 4's error didn't occur in a bypass run, and candidate 8 wasn't tried against one; the table says so.
+- [x] Evidence item 5. Items 1, 3 and 4 don't apply to a spike. **2026-11-11:** "Not shown" at the end of the section.
+
+**Decided by Christopher, 2026-11-11:** the spike's recommendation stands. `permission_held` keeps refusing a scalar deny. For `edit`, authors use `no_file_edits`. `read` and `bash` stay refused until an outcome check exists for them. The deny-then-allow form and a "tool not offered" report line are not taken up now.
 
 **Dependencies:** Task 23.
 
