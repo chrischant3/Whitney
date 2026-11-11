@@ -17,7 +17,7 @@ See [plan.md](plan.md) for decisions, risks and open questions.
 Done 2026-11-02; see `docs/spike-findings.md` § T1.
 
 **Verification:**
-- [ ] Manual check: `inspect view` shows the sample transcript and model usage
+- [ ] The agent reads the run's log (`inspect log dump`) and records the sample's transcript and model usage it holds, which is what `inspect view` shows
 
 **Dependencies:** None
 **Files likely touched:** `spikes/kilo_bridge.py`, `docker/Dockerfile`, `docker/compose.yaml`
@@ -32,7 +32,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 - [x] Findings written to `docs/load-order.md` (draft) and `docs/spike-findings.md`
 
 **Verification:**
-- [x] Manual check: each finding is backed by a saved log or command output Confirmed 2026-11-11 by audit: `docs/spike-findings.md` holds the command excerpts, and `spikes/load_order.py` reruns them.
+- [x] Each finding is backed by a saved log or command output Confirmed 2026-11-11 by audit: `docs/spike-findings.md` holds the command excerpts, and `spikes/load_order.py` reruns them.
 
 **Dependencies:** T1
 **Files likely touched:** `spikes/load_order.py`, `docs/load-order.md`
@@ -104,7 +104,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 
 **Verification:**
 - [x] Tests pass: `pytest -q tests/test_agents_md.py` Confirmed 2026-11-11 by audit: that file was renamed; `tests/test_tasks.py` and `tests/test_scoring.py` cover it (plan.md), and the suite passes in CI on PR #44.
-- [ ] Manual check: `inspect view` shows per-scenario results and explanations
+- [ ] The agent reads the run's log (`inspect log dump`) and records each scenario's result and explanation, which is what `inspect view` shows
 
 **Dependencies:** T1, T4, T5
 **Files likely touched:** `evals/agents-md.json`, `evals/fixtures/repo-with-env/`, `src/whitney/agents_md.py`, `tests/test_agents_md.py`
@@ -121,7 +121,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 
 **Verification:**
 - [x] Tests pass: `pytest -q tests/test_permissions.py` Confirmed 2026-11-11 by audit: that file was renamed; `tests/test_tasks.py` and `tests/test_scoring.py` cover it (plan.md), and the suite passes in CI on PR #44.
-- [ ] Manual check: control and `ask` runs side by side in `inspect view`
+- [ ] The agent reads the control run's log and the `ask` run's log, and records the two results and explanations side by side
 
 **Dependencies:** T1, T2, T4, T5
 **Files likely touched:** `evals/configuration/kilo-jsonc.json`, `evals/fixtures/outside-dir/`, `src/whitney/permissions.py`, `tests/test_permissions.py`
@@ -173,7 +173,7 @@ Results: `docs/results/2026-11-02-phase2.md`.
 - [x] README commands are copied from a verified run
 
 **Verification:**
-- [ ] Manual check: follow `docs/adding-tests.md` from a clean clone
+- [ ] An agent in a fresh session follows `docs/adding-tests.md` from a clean clone, and its commands, output and friction log are kept
 
 **Dependencies:** T8, T9
 **Files likely touched:** `README.md`, `docs/*.md`

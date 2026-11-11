@@ -43,7 +43,7 @@ Real runs cost money. Each task says roughly how much, and a run of more than a 
 **Verification:**
 - [x] New tests in `tests/test_project_files.py` fail before the change and pass after it.
 - [x] `python scripts/check.py task` passes.
-- [x] Manual, optional, a few cents: `python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --project-path <folder with AGENTS.md> --evals agents_md --limit 1 --epochs 1` completes, and its report lists `AGENTS.md` among the staged files.
+- [x] Optional, a few cents: `python scripts/run_evals.py --target claude-code --model anthropic/claude-haiku-4-5 --project-path <folder with AGENTS.md> --evals agents_md --limit 1 --epochs 1` completes, and its report lists `AGENTS.md` among the staged files.
 
 **Dependencies:** None.
 
@@ -411,7 +411,7 @@ This can run at any time, in the same sitting as Task 22.
 - [x] If skills or agents don't load under Whitney's isolation, stop and decide with Christopher before Task 17. Confirmed 2026-11-11 by audit: skills and agents do load, so this never applied.
 
 **Verification:**
-- [x] Manual: each finding is backed by a saved command output. Confirmed 2026-11-11 by audit: the fixtures are the saved outputs.
+- [x] Each finding is backed by a saved command output. Confirmed 2026-11-11 by audit: the fixtures are the saved outputs.
 - [x] `python scripts/check.py task` (the fixtures must not trip gitleaks). Confirmed 2026-11-11 by audit: passes in CI, gitleaks included.
 
 **Dependencies:** None.
@@ -552,7 +552,7 @@ Positive prompts expand into scenarios expecting `skill_loaded`, or `subagent_de
 - [x] A table lists the confirmed `(permission, action)` pairs. Confirmed 2026-11-11 by audit: "Confirmed (permission, action) pairs" in `docs/spike-findings.md`.
 
 **Verification:**
-- [x] Manual: each finding is backed by a saved command output. Confirmed 2026-11-11 by audit: the fixtures are the saved outputs.
+- [x] Each finding is backed by a saved command output. Confirmed 2026-11-11 by audit: the fixtures are the saved outputs.
 - [x] `python scripts/check.py task` Confirmed 2026-11-11 by audit: passes in CI.
 
 **Dependencies:** None.
@@ -695,7 +695,7 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 - [ ] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide.
 
 **Verification:**
-- [ ] Manual: each finding is backed by a saved command output.
+- [ ] The agent saves the output of each command it ran as a sanitised fixture, and names the fixture beside each finding in the write-up.
 
 **Evidence:**
 - [ ] Each candidate's output saved as a sanitised fixture under `tests/data/kilo-events/`, with the Kilo version, model, prompt and date.
@@ -769,7 +769,7 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Verification:**
 - [ ] `python scripts/check.py task`
-- [ ] Manual: one scenario run on each target with capture on, and the log read to confirm the prompt, the `source` text and the thinking are there.
+- [ ] The agent runs one scenario on each target with capture on, reads each log, and records in `docs/results/` the command, and the lines of the log that hold the prompt, the `source` text and the thinking.
 
 **Evidence:**
 - [ ] The spike's write-up, with one captured request per target saved as a sanitised fixture.
@@ -804,7 +804,7 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Verification:**
 - [ ] `python scripts/check.py task`
-- [ ] Manual: one full loop on an example file, from failing evals to a rule that passes its gate, with the log kept.
+- [ ] An agent in a fresh session runs one full loop on an example file, from failing evals to a rule that passes its gate. The commands, each report and the session's friction log are kept in `docs/results/`.
 
 **Evidence:**
 - [ ] Each fresh session's friction log, kept under `docs/results/`, with what was fixed for each point.
@@ -831,7 +831,7 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Verification:**
 - [ ] `python scripts/check.py task`, if any file in the repo changes.
-- [ ] Manual: every inconclusive run's explanation is read and its cause named.
+- [ ] The agent reads every inconclusive run's explanation from the logs and lists each in the write-up, with the run it came from and its cause.
 
 **Evidence:**
 - [ ] The write-up in `docs/results/`, with a row for every run: eval set, scenario, variant, outcome and the check's explanation.
@@ -877,7 +877,7 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 
 **Verification:**
 - [x] `python scripts/check.py task`
-- [x] Manual: the real runs above, recorded in `docs/results/2026-11-11-claude-code-load-order.md`.
+- [x] The real runs above, recorded in `docs/results/2026-11-11-claude-code-load-order.md`.
 
 **Dependencies:** None.
 
