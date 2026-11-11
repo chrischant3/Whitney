@@ -140,10 +140,10 @@ def test_a_rule_that_refused_nothing_is_reported_so_silence_isnt_taken_for_proof
     logs = [log("template", [[skill(0)], [skill(0)]])]
 
     assert (
-        "\nThe eval file switched off `Skill(code-review)`. No run called it, "
+        "\nThe eval file switched off `Skill(code-review)`. No call was refused under it, "
         "so these 2 runs don't show the rule refusing anything.\n"
     ) in rendered(logs)
-    assert "No run called it, so this 1 run doesn't show the rule refusing anything." in rendered([log("template", [[skill(0)]])])
+    assert "No call was refused under it, so this 1 run doesn't show the rule refusing anything." in rendered([log("template", [[skill(0)]])])
 
 
 def test_each_rule_gets_its_own_line_in_the_order_the_file_gave_them():
@@ -169,7 +169,7 @@ def test_a_report_of_logs_with_no_refusals_says_nothing_about_them():
 
 @pytest.mark.parametrize("odd", [
     "Skill(code-review)", [7], [{"rule": 7, "calls": 1, "said": "x"}], [{"rule": "Skill(a)", "calls": "many", "said": "x"}],
-    [{"rule": "Skill(a)", "calls": True, "said": "x"}], [{"rule": "Skill(a)"}],
+    [{"rule": "Skill(a)", "calls": True, "said": "x"}], [{"rule": "Skill(a)"}], [{"rule": "Skill(a)", "calls": -1, "said": "x"}],
 ])
 def test_refusals_a_log_records_in_another_shape_are_left_out(odd):
     assert "switched off" not in rendered([log("template", [odd])])

@@ -11,19 +11,22 @@ the spikes do, and writes `<name>.jsonl` and `<name>.meta.json`.
 
 The log already has the run's key redacted (whitney.agent.redact_run). This
 replaces the machine's paths, user name and email addresses, and for Claude
-Code the request ids. Run gitleaks on the result before committing it.
+Code the request ids, in the events and in the meta file. It then refuses to
+write anything if a local path, a key, the user's name or an email address is
+still there. Run gitleaks on the result before committing it.
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import re
 from pathlib import Path
 
 import claude_code_shapes
 from inspect_ai.log import list_eval_logs, read_eval_log
-from skill_agent_shapes import LONG_TEXT, _trim, sanitise, sanitise_emails
+from skill_agent_shapes import EMAIL, KEEP_EMAILS, LONG_TEXT, _trim, sanitise, sanitise_emails
 
 # A staged project's folder, as either harness prints it on macOS or Linux.
 PROJECT_DIR = re.compile(r"(?:/private)?(?:/var/folders/[^\"\\ ]+?/T|/tmp)/tmp[A-Za-z0-9_]+/project")
@@ -68,6 +71,34 @@ def fixture(run: dict, project_dir: str | None, target: str) -> tuple[str, int]:
     return "\n".join(lines) + "\n", skipped
 
 
+# What must never be in a fixture: a home folder, a per-user temporary folder, or a key.
+LEFT_BEHIND = re.compile(r"/Users/|/home/(?!user\b)|/var/folders/|(?<![A-Za-z])sk-[A-Za-z0-9_-]{20,}")
+
+
+def clean(value: object, project_dir: str | None, target: str) -> object:
+    """A parsed JSON `value` with paths and names replaced, emails replaced and long strings cut."""
+    return _trim(sanitise_emails(json.loads(sanitised(json.dumps(value), project_dir, target))))
+
+
+def check_nothing_left(text: str, where: str) -> None:
+    """Stop if `text` still holds a local path, a key, this user's name or an email address.
+
+    The replacements come from this machine: its home folder, user name and
+    temporary folder. A log made elsewhere, or a name at the start of a line
+    of tool output, could pass through them unchanged. Nothing is written
+    unless this finds nothing.
+
+    Raises:
+        SystemExit: naming what was found and where.
+    """
+    found = [match.group(0) for match in LEFT_BEHIND.finditer(text)]
+    if getpass.getuser().lower() in text.lower():
+        found.append("this user's name")
+    found += [address for address in EMAIL.findall(text) if address not in KEEP_EMAILS and address != "user@example.invalid"]
+    if found:
+        raise SystemExit(f"{where} still holds {sorted(set(found))}; nothing was written")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Write the fixture and its meta file; return 0."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -85,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     if target == "claude-code" and not project_dir:  # its init event always names the folder, and the session folder is named after it
         raise SystemExit("the stream doesn't name its project folder, so its paths can't be replaced")
     events, skipped = fixture(run, project_dir, target)
-    meta = {
+    meta = clean({
         "case": args.name,
         "about": args.about,
         "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
@@ -97,14 +128,17 @@ def main(argv: list[str] | None = None) -> int:
         "staged_files": sorted(metadata.get("evaluation_assets") or {}),
         "exit_code": run.get("exit_code"),
         "ended_early": run.get("ended_early"),
-        "permission_denials": json.loads(sanitised(json.dumps(run.get("permission_denials")), project_dir, target)),
+        "permission_denials": run.get("permission_denials"),
         "skipped_lines": skipped,
         "trimmed": f"strings over {LONG_TEXT} characters cut; event types kept: all",
         "placeholders": "as the other fixtures in this folder",
-    }
+    }, project_dir, target)
+    meta_text = json.dumps(meta, indent=2) + "\n"
+    check_nothing_left(events, f"{args.name}.jsonl")
+    check_nothing_left(meta_text, f"{args.name}.meta.json")
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / f"{args.name}.jsonl").write_text(events, encoding="utf-8")
-    (args.out / f"{args.name}.meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    (args.out / f"{args.name}.meta.json").write_text(meta_text, encoding="utf-8")
     return 0
 
 

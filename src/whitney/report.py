@@ -230,7 +230,7 @@ def _refusals(sample: object) -> tuple[tuple[str, int, str | None], ...]:
     out = []
     for item in recorded:
         rule, calls, said = (item.get(key) for key in ("rule", "calls", "said")) if isinstance(item, dict) else (None, None, None)
-        if not isinstance(rule, str) or type(calls) is not int:
+        if not isinstance(rule, str) or type(calls) is not int or calls < 0:
             return ()
         out.append((rule, calls, said if isinstance(said, str) else None))
     return tuple(out)
@@ -627,15 +627,16 @@ SAID_LIMIT = 200  # characters of the harness's words kept in a refusal's line
 def _refused_note(rule: str, total: Refused) -> str:
     """What one of the eval file's own deny rules refused, in the harness's words.
 
-    A rule that refused nothing is said to have shown nothing: the model
-    never called what it switches off, so these runs are no proof it works.
+    A rule that refused nothing is said to have shown nothing: no refusal
+    was read, whether or not the model called what it switches off, so
+    these runs are no proof it works.
     """
     name = _escaped(rule).replace("`", "'")
     runs = f"{total.runs} {'run' if total.runs == 1 else 'runs'}"
     if not total.calls:
         shown = "this" if total.runs == 1 else "these"
         verb = "doesn't" if total.runs == 1 else "don't"
-        return f"The eval file switched off `{name}`. No run called it, so {shown} {runs} {verb} show the rule refusing anything."
+        return f"The eval file switched off `{name}`. No call was refused under it, so {shown} {runs} {verb} show the rule refusing anything."
     said = " ".join((total.said or "").split())
     said = said if len(said) <= SAID_LIMIT else said[:SAID_LIMIT] + "…"
     calls = f"{total.calls} {'call' if total.calls == 1 else 'calls'}"

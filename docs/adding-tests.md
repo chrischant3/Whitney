@@ -554,6 +554,40 @@ In the report, a file with trigger tests gets a table for its scenarios, then "T
 
 For any file that tests a skill or an agent, the report also says in how many of the template's scenario runs the skill loaded, or the agent was used. An agent is used when work is handed to it, or when the scenario runs it with `agent`. A scenario that passed in a run where the skill never loaded shows what the model does anyway, not what the skill adds.
 
+### Switching off a built-in skill or agent
+
+Each harness ships skills and agents of its own, and the model can use one in place of yours. In one recorded run, with the project's reviewer agent removed, Haiku called Claude Code's built-in `code-review` skill, and in another its `general-purpose` agent. To test without one, deny it in the eval file's `harness_permissions`:
+
+| Target | Built in | To switch one off |
+|---|---|---|
+| `claude-code` (2.1.322) | 18 skills, among them `code-review`, `debug` and `simplify`; agents `general-purpose`, `Explore`, `Plan`, `claude` and `statusline-setup`. The `init` event at the start of a run's stream lists them | `"deny": ["Skill(code-review)", "Agent(general-purpose)"]` |
+| `kilo` (7.8.27) | One skill, `kilo-config`; subagents `general` and `explore` | `"skill": {"*": "allow", "kilo-config": "deny"}`, `"task": {"*": "allow", "general": "deny"}` |
+
+```json
+"harness_permissions": {
+  "claude-code": {"allow": ["Bash", "Edit", "Write"], "deny": ["Skill(code-review)"]},
+  "kilo": {"bash": "allow", "edit": "allow", "task": {"*": "allow", "general": "deny"}}
+}
+```
+
+Setting `harness_permissions` for a target replaces Whitney's default for it, so keep the `allow` entries the agent needs.
+
+The rule doesn't hide the skill or agent from the model. The model can still call it; the harness refuses the call and the model carries on without it. The report then gives a line for each rule, with the harness's own words:
+
+> The eval file switched off `Skill(code-review)`. The harness refused 2 calls to it, in 1 of 3 runs: "Skill execution blocked by permission rules"
+
+If the rule refused no call, the line says the runs don't show it refusing anything. That isn't a failure. It means these runs can't tell you the rule works.
+
+Things to know:
+
+- **A refused call doesn't make the run inconclusive** when the eval file's own rule asked for it. On Claude Code a refused `Bash`, `Edit` or `Write`, or a refused skill the eval file didn't name, still does, because then the harness, not the agent, may have decided the result. A refused agent never has: Claude Code doesn't list it among its permission denials, whoever set the rule.
+- **Don't deny what the file is testing.** A file that denies `Skill(release-notes)` and expects `skill_not_loaded` for it passes because the harness refused, not because the model left the skill alone.
+- **The same rules work for your own skills and agents,** such as `Skill(release-notes)`.
+- **Denying the whole tool hides less than it seems.** With `"deny": ["Skill"]` Claude Code removes the `Skill` tool, so no call can be refused and the report has no line for it. In a recorded run the model then read the skill's `SKILL.md` with its `Read` tool and followed it anyway.
+- **Only rules in the eval file count.** A deny rule in the project's own `kilo.jsonc` is the project's, and `permission_held` tests those.
+- **`skill_loaded` and `subagent_delegated` read a refused call as nothing loaded and nothing delegated.**
+- **An `Agent` call with no agent named goes to `general-purpose`** on Claude Code, and is refused under its rule.
+
 ### Warnings about skill descriptions
 
 Kilo picks a skill by the `description` in its `SKILL.md`. For the `kilo` target, `whitney validate` reads every skill a run would copy, and warns when:

@@ -46,8 +46,8 @@ def test_claude_codes_named_skill_and_agent_deny_rules_are_the_rules_asked_for()
 def test_kilos_skill_and_task_deny_patterns_are_the_rules_asked_for():
     permissions = {
         "bash": {"*": "allow", "git push *": "deny"},
-        "skill": {"*": "allow", "kilo-config": "deny", "debugging": "ask"},
-        "task": {"general": "deny"},
+        "skill": {"*": "allow", "kilo-config": "deny", "debugging": "ask", "review-*": "deny", "note?": "deny"},
+        "task": {"general": "deny", "*": "deny"},
         "edit": "deny",
     }
 
@@ -126,7 +126,45 @@ def test_an_agent_call_that_failed_for_another_reason_is_no_refusal():
     assert refused("claude-code", [Rule("agent", called, f"Agent({called})")], record)[0]["calls"] == 0
 
 
+def test_a_denial_whose_result_isnt_in_the_stream_is_still_counted():
+    """So the count can't disagree with Claude Code's own list of denials."""
+    record = run("claude-code", "skill-denied-builtin")
+    kept = [line for line in record["events"].splitlines() if '"tool_result"' not in line]
+    no_id = {"tool_name": "Skill", "tool_input": {"skill": "code-review"}}
+    record = {"events": "\n".join(kept), "permission_denials": [*record["permission_denials"], no_id]}
+
+    assert refused("claude-code", [Rule("skill", "code-review", "Skill(code-review)")], record) == [
+        {"rule": "Skill(code-review)", "calls": 3, "said": None},
+    ]
+
+
+def test_an_error_result_with_no_id_is_no_ones_refusal():
+    record = run("claude-code", "skill-denied")
+    events = record["events"] + "\n" + json.dumps({"type": "user", "message": {"content": [
+        {"type": "tool_result", "is_error": True, "content": "Skill execution blocked by permission rules"},
+    ]}})
+
+    assert refused("claude-code", rules("claude-code", "skill-denied"), {**record, "events": events})[0]["calls"] == 1
+
+
+def test_an_agents_refusal_given_as_text_blocks_is_read():
+    """A tool result's content is text, or a list of text blocks, as an Agent call's is when it launches (subagent-description)."""
+    record = run("claude-code", "agent-denied")
+    lines = []
+    for line in record["events"].splitlines():
+        event = json.loads(line)
+        for block in event.get("message", {}).get("content", []) if event.get("type") == "user" else []:
+            if block.get("type") == "tool_result" and block.get("is_error"):
+                block["content"] = [{"type": "text", "text": block["content"]}, "not a block"]
+        lines.append(json.dumps(event))
+
+    [found] = refused("claude-code", rules("claude-code", "agent-denied"), {"events": "\n".join(lines)})
+
+    assert (found["calls"], found["said"][:35]) == (1, "Agent type 'reviewer' has been deni")
+
+
 def test_a_skill_or_agent_that_ran_is_no_refusal():
+    assert refused("claude-code", [Rule("agent", "q7-helper", "Agent(q7-helper)")], run("claude-code", "subagent-description"))[0]["calls"] == 0
     assert refused("claude-code", [Rule("skill", "release-notes", "Skill(release-notes)")], run("claude-code", "skill-named"))[0]["calls"] == 0
     assert refused("kilo", [Rule("skill", "kilo-config", "skill: kilo-config")], run("kilo", "skill-builtin-loaded"))[0]["calls"] == 0
 
@@ -172,3 +210,36 @@ def test_a_denied_skill_the_eval_file_named_is_expected_and_any_other_denial_is_
     assert expected(named, {"tool_name": "Bash", "tool_use_id": "toolu_1", "tool_input": {"command": "release-notes"}}) is False
     assert expected(named, {"tool_name": "Skill", "tool_input": "release-notes"}) is False
     assert expected(named, {"tool_name": "Skill"}) is False
+
+
+# --- The four checks on a refused call -------------------------------------------------------
+
+
+def judged(target: str, name: str, check: str, param: str, value: str) -> str:
+    """The check's word for a recorded run, read as a run that completed."""
+    from whitney.checks import Evidence, registry
+
+    spec = registry()[check]
+    return spec.label(spec.run(Evidence(exit_code=0, events=run(target, name)["events"]), {param: value}).outcome)
+
+
+@pytest.mark.parametrize("target, name, skill", [
+    ("claude-code", "skill-denied", "release-notes"),
+    ("claude-code", "skill-denied-builtin", "code-review"),
+    ("claude-code", "skill-denied-in-subagent", "release-notes"),
+    ("claude-code", "skill-tool-denied", "release-notes"),  # the model read SKILL.md instead; that is no load
+    ("kilo", "skill-denied-overlay", "kilo-config"),
+])
+def test_a_refused_skill_call_loaded_nothing(target, name, skill):
+    assert judged(target, name, "skill_loaded", "skill", skill) == "not_loaded"
+    assert judged(target, name, "skill_not_loaded", "skill", skill) == "not_loaded"
+
+
+@pytest.mark.parametrize("target, name, agent", [
+    ("claude-code", "agent-denied", "reviewer"),
+    ("claude-code", "agent-denied-builtin", "general-purpose"),
+    ("kilo", "task-denied-overlay", "general"),
+])
+def test_a_refused_agent_call_delegated_nothing(target, name, agent):
+    assert judged(target, name, "subagent_delegated", "agent", agent) == "not_delegated"
+    assert judged(target, name, "subagent_not_delegated", "agent", agent) == "not_delegated"
