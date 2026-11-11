@@ -197,6 +197,17 @@ def test_a_skill_the_main_agent_loaded_too_is_not_put_down_to_the_subagent():
     assert verdict.details == {"loaded": [SKILL, SKILL]}
 
 
+@pytest.mark.parametrize("unnamed", ["", 7, None])
+def test_a_subagent_whose_agent_call_doesnt_name_it_is_a_subagent(unnamed):
+    events = lines("subagent-loads-skill")
+    for call in tool_uses(events, "Agent"):
+        call["input"]["subagent_type"] = unnamed
+
+    assert judge("skill_loaded", SKILL, changed("subagent-loads-skill", events)).explanation == (
+        "the skill release-notes was loaded, by a subagent"
+    )
+
+
 def test_a_subagents_skill_call_whose_agent_call_is_unknown_still_counts_as_a_load():
     events = [e for e in lines("subagent-loads-skill") if not tool_uses([e], "Agent")]
 
@@ -204,6 +215,25 @@ def test_a_subagents_skill_call_whose_agent_call_is_unknown_still_counts_as_a_lo
 
     assert verdict.outcome == "fail"
     assert verdict.explanation == "the skill release-notes was loaded, by a subagent"
+
+
+# --- A skill that runs as a forked subagent, and the heartbeat of a long tool call ------------
+
+
+def test_a_tool_progress_heartbeat_is_an_event_the_parser_knows():
+    """The real run of 2026-11-11 printed three, and the check was inconclusive until they were known."""
+    evidence = captured("skill-forked")
+
+    assert sum(event["type"] == "tool_progress" for event in lines("skill-forked")) == 3
+    assert judge("skill_not_loaded", SKILL, evidence).outcome == "pass"
+    assert judge("subagent_not_delegated", "reviewer", evidence).outcome == "pass"
+
+
+def test_a_skill_that_ran_as_a_forked_subagent_is_a_load_by_the_main_agent_and_no_delegation():
+    evidence = captured("skill-forked")
+
+    assert judge("skill_loaded", "code-review", evidence).explanation == "the skill code-review was loaded"
+    assert outcome("subagent_delegated", "general-purpose", evidence) == "not_delegated"  # no Agent call made the hand-off
 
 
 # --- An early end ----------------------------------------------------------------------------
@@ -230,6 +260,10 @@ def test_no_call_in_a_run_that_ended_early_is_inconclusive(check, name, case, en
 # --- A stream that can't be read in full -----------------------------------------------------
 
 
+LINES, MESSAGES = "{} line(s) of the stream couldn't be read as events", "{} tool call(s) or message(s) couldn't be read"
+NO_CONTENT = {"type": "user", "parent_tool_use_id": None, "message": {"content": "text"}}
+
+
 def unreadable_streams() -> dict[str, tuple[str, str]]:
     """Name -> (a stream with no Skill or Agent call that worked, what the explanation says is wrong with it)."""
     events = lines("skill-not-loaded")
@@ -241,41 +275,45 @@ def unreadable_streams() -> dict[str, tuple[str, str]]:
         copy["message"]["content"][0].update(changes)
         return copy
 
-    def swapped(old: dict, new: dict) -> str:
-        return stream([new if e is old else e for e in events])
+    def swapped(old: dict, new: dict, *more: dict) -> str:
+        return stream([*more, *(new if e is old else e for e in events)])
 
     return {
-        "a line that isn't JSON": (stream(events) + "\nnot json", "1 line(s) of the stream couldn't be read as events"),
-        "an event of an unknown type": (stream([*events, {"type": "rate_limit_event"}]), "1 line(s) of the stream couldn't be read as events"),
-        "a Kilo event": (stream([*events, {"type": "step_start"}]), "1 line(s) of the stream couldn't be read as events"),
-        "a line that is JSON but no object": (stream(events) + "\n[1]", "1 line(s) of the stream couldn't be read as events"),
-        "an assistant event with no message": (
-            stream([*events, {"type": "assistant", "parent_tool_use_id": None}]), "1 tool call(s) or message(s) couldn't be read",
-        ),
-        "content that isn't a list": (
-            stream([*events, {"type": "user", "parent_tool_use_id": None, "message": {"content": "text"}}]),
-            "1 tool call(s) or message(s) couldn't be read",
-        ),
+        "a line that isn't JSON": (stream(events) + "\nnot json", LINES.format(1)),
+        "two lines that aren't JSON": ("not json\n" + stream(events) + "\n\n  \nnot json", LINES.format(2)),
+        "an event of an unknown type": (stream([*events, {"type": "rate_limit_event"}]), LINES.format(1)),
+        "a Kilo event": (stream([*events, {"type": "step_start"}]), LINES.format(1)),
+        "a line that is JSON but no object": (stream(events) + "\n[1]", LINES.format(1)),
+        "an assistant event with no message": (stream([*events, {"type": "assistant", "parent_tool_use_id": None}]), MESSAGES.format(1)),
+        "content that isn't a list": (stream([*events, NO_CONTENT]), MESSAGES.format(1)),
+        "two events whose content isn't a list": (stream([NO_CONTENT, *events, NO_CONTENT]), MESSAGES.format(2)),
         "a block that isn't an object": (
-            stream([*events, {"type": "user", "parent_tool_use_id": None, "message": {"content": ["text"]}}]),
-            "1 tool call(s) or message(s) couldn't be read",
+            stream([*events, {"type": "user", "parent_tool_use_id": None, "message": {"content": ["text"]}}]), MESSAGES.format(1),
         ),
-        "a block of an unknown type": (swapped(read, with_block(read, type="server_tool_use")), "couldn't be read"),
-        "a tool_result in an assistant event": (
-            stream([*events, {**result, "type": "assistant"}]), "1 tool call(s) or message(s) couldn't be read",
+        "a block of an unknown type": (swapped(read, with_block(read, type="server_tool_use")), MESSAGES.format(1)),
+        "a tool_result in an assistant event": (stream([*events, {**result, "type": "assistant"}]), MESSAGES.format(1)),
+        "a tool call with no name": (swapped(read, with_block(read, name=None)), MESSAGES.format(1)),
+        "a tool call with no id": (swapped(read, with_block(read, id=None)), MESSAGES.format(1)),
+        "a tool call whose input isn't an object": (swapped(read, with_block(read, input="app.py")), MESSAGES.format(1)),
+        "a tool call with no name after an event that couldn't be read": (
+            swapped(read, with_block(read, name=None), NO_CONTENT), MESSAGES.format(2),
         ),
-        "a tool call with no name": (swapped(read, with_block(read, name=None)), "couldn't be read"),
-        "a tool call with no id": (swapped(read, with_block(read, id=None)), "couldn't be read"),
-        "a tool call whose input isn't an object": (swapped(read, with_block(read, input="app.py")), "couldn't be read"),
-        "a result with no tool_use_id": (swapped(result, with_block(result, tool_use_id=None)), "couldn't be read"),
-        "a result whose is_error isn't true or false": (swapped(result, with_block(result, is_error="no")), "couldn't be read"),
-        "a parent that isn't a tool call's id": (swapped(read, {**read, "parent_tool_use_id": 7}), "couldn't be read"),
-        "a tool call with no result": (stream(without_result_of(events, tool_uses(events, "Read")[0])), "1 tool call(s) have no result in the stream"),
+        "a result with no tool_use_id": (swapped(result, with_block(result, tool_use_id=None)), MESSAGES.format(1)),
+        "a result whose is_error isn't true or false": (swapped(result, with_block(result, is_error="no")), MESSAGES.format(1)),
+        "a result with no tool_use_id after an event that couldn't be read": (
+            swapped(result, with_block(result, tool_use_id=None), NO_CONTENT), MESSAGES.format(2),
+        ),
+        "a parent that isn't a tool call's id": (swapped(read, {**read, "parent_tool_use_id": 7}), MESSAGES.format(1)),
+        "a tool call with no result": (
+            stream(without_result_of(events, tool_uses(events, "Read")[0])), "1 tool call(s) have no result in the stream",
+        ),
         "a result of a call the stream doesn't show": (
             stream([e for e in events if e is not read]), "1 result(s) are of tool calls the stream doesn't show",
         ),
-        "a Skill call that doesn't name a skill": (
-            swapped(read, with_block(read, name="Skill", input={"skill": ""})), "1 tool call(s) or message(s) couldn't be read",
+        "a Skill call that doesn't name a skill": (swapped(read, with_block(read, name="Skill", input={"skill": ""})), MESSAGES.format(1)),
+        "a Skill call whose skill isn't text": (swapped(read, with_block(read, name="Skill", input={"skill": 7})), MESSAGES.format(1)),
+        "a Skill call that doesn't name a skill after an event that couldn't be read": (
+            swapped(read, with_block(read, name="Skill", input={}), NO_CONTENT), MESSAGES.format(2),
         ),
     }
 
@@ -288,8 +326,24 @@ def test_no_load_seen_in_a_stream_that_cant_be_read_in_full_is_inconclusive(chec
     verdict = judge(check, SKILL, captured("skill-not-loaded", events=events))
 
     assert verdict.outcome == "inconclusive"
-    assert says in verdict.explanation
-    assert verdict.explanation.startswith("no call that loaded the skill release-notes was seen, but ")
+    assert verdict.explanation == f"no call that loaded the skill release-notes was seen, but {says}"
+
+
+def test_a_load_after_an_event_that_couldnt_be_read_is_still_read():
+    evidence = changed("skill-named", [NO_CONTENT, *lines("skill-named")])
+
+    assert outcome("skill_loaded", SKILL, evidence) == "loaded"
+
+
+def test_a_skill_call_that_failed_and_names_no_skill_is_still_a_call_that_couldnt_be_read():
+    events = lines("skill-missing")
+    call = next(e for e in events if tool_uses([e], "Skill"))
+    odd = json.loads(json.dumps(call))
+    odd["message"]["content"][0]["input"] = {}
+
+    verdict = judge("skill_not_loaded", SKILL, changed("skill-missing", [odd if e is call else e for e in events]))
+
+    assert verdict.explanation == f"no call that loaded the skill release-notes was seen, but {MESSAGES.format(1)}"
 
 
 def test_a_call_of_the_other_tool_that_doesnt_name_its_target_leaves_this_one_readable():

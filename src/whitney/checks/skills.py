@@ -44,7 +44,10 @@ result in the stream is neither a load nor its absence. A subagent's own
 calls are in this stream, in events whose `parent_tool_use_id` is the `Agent`
 call's id (subagent-loads-skill). So a skill a subagent loaded counts as
 loaded, the explanation says the subagent loaded it, and a run that
-delegated can still show a skill was left alone. As on Kilo, the absence of a
+delegated can still show a skill was left alone. One hand-off isn't counted:
+a skill can run as a forked subagent, with no `Agent` call (skill-forked,
+where the built-in code-review skill did), and the delegation checks read
+only `Agent` calls. As on Kilo, the absence of a
 call settles a verdict only if every line is an event of a captured type and
 every message, call and result is in the captured shape.
 
@@ -69,7 +72,8 @@ TOOL_STATUSES = ("completed", "error")
 USED_BY = {"skill": ("skill", "name"), "agent": ("task", "subagent_type")}
 # The same for Claude Code, and the `type` of every event and content block seen in its captures.
 CLAUDE_USED_BY = {"skill": ("Skill", "skill"), "agent": ("Agent", "subagent_type")}
-CLAUDE_EVENT_TYPES = ("system", "assistant", "user", "result")
+# `tool_progress` is a heartbeat Claude Code prints every 30 seconds of a long tool call (fixture skill-forked).
+CLAUDE_EVENT_TYPES = ("system", "assistant", "user", "result", "tool_progress")
 CLAUDE_BLOCK_TYPES = {"assistant": ("thinking", "text", "tool_use"), "user": ("text", "tool_result")}
 
 
@@ -264,13 +268,11 @@ def _claude_calls(events: str, tool: str, name_key: str) -> _Calls:
     uses: list[tuple[str, str, dict[str, Any], str | None]] = []  # each tool call: id, tool, input, parent call's id
     failed: dict[str, bool] = {}  # a result's tool call id -> True if it is an error
     unparsed = unreadable = 0
-    known = False
     for line in events.splitlines():
         event = _event(line, CLAUDE_EVENT_TYPES)
         if event is None:
             unparsed += bool(line.strip())
             continue
-        known = True
         if event["type"] not in CLAUDE_BLOCK_TYPES:
             continue
         blocks, parent = _blocks(event), event.get("parent_tool_use_id")
@@ -301,7 +303,7 @@ def _claude_calls(events: str, tool: str, name_key: str) -> _Calls:
     pending = sum(use_id not in failed for use_id, *_ in uses)
     orphans = len(failed.keys() - {use_id for use_id, *_ in uses})
     by = {name: who[0] for name, who in callers.items() if None not in who}
-    return _Calls(names, bool(uses), _claude_doubt(known, unparsed, unreadable, pending, orphans), by)
+    return _Calls(names, bool(uses), _claude_doubt(unparsed, unreadable, pending, orphans), by)
 
 
 def _caller(parent: str | None, agents: Mapping[str, object]) -> str | None:
@@ -312,18 +314,17 @@ def _caller(parent: str | None, agents: Mapping[str, object]) -> str | None:
     return f"the subagent {name}" if isinstance(name, str) and name else "a subagent"
 
 
-def _claude_doubt(known: bool, unparsed: int, unreadable: int, pending: int, orphans: int) -> str | None:
+def _claude_doubt(unparsed: int, unreadable: int, pending: int, orphans: int) -> str | None:
     """Why a call might be in a Claude Code run and not among those read, or None.
 
+    The stream holds an event of a known type, or it wouldn't have been read as Claude Code's.
+
     Args:
-        known: True if the stream held an event of a known type.
         unparsed: other lines that aren't blank: not JSON, or an event of a type the captures don't have.
         unreadable: messages, tool calls and results not in the captured shape.
         pending: tool calls with no result in the stream, which may or may not have worked.
         orphans: results whose tool call the stream doesn't show.
     """
-    if not known:
-        return "the stream holds no event the parser knows"
     if unparsed:
         return f"{unparsed} line(s) of the stream couldn't be read as events"
     if unreadable:

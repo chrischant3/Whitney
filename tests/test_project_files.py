@@ -1635,3 +1635,13 @@ def test_a_file_outside_the_two_folders_is_told_what_the_claude_code_loader_stag
         "and the files under .claude/skills/ and .claude/agents/"
     )
     assert not_staged_reason("claude-code", tmp_path, ".claude/skills/x/SKILL.md", staged) == "the project has no such file"
+
+
+def test_a_claude_md_staged_under_another_spelling_has_no_reason_to_be_left_out(tmp_path, case_insensitive):
+    if not case_insensitive:
+        pytest.skip("only a case-insensitive disk stages claude.md as CLAUDE.md")
+    (tmp_path / "claude.md").write_text("rule\n")
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert staged == {"CLAUDE.md": "rule\n"}
+    assert not_staged_reason("claude-code", tmp_path, "claude.md", staged) is None

@@ -215,6 +215,17 @@ def test_a_claude_code_owner_agent_must_be_named_as_its_file_too(project):
     ))]
 
 
+def test_an_owner_is_checked_when_the_agent_under_test_is_not_staged(project):
+    (project / ".claude/agents/planner.md").write_text("---\nname: architect\ndescription: Plans.\n---\n\nPlan.\n")
+    (project / AGENT).unlink()
+    path = write(project, agent_file(variants={}), "agents/q7-helper.json")
+
+    found = validate_project(validate_evals(project / "evals").files, project, "claude-code", evals_path=project / "evals")
+
+    assert [(p.file, p.location) for p in found if "frontmatter" in p.message] == [(path, "trigger.negative[0].owner")]
+    assert [p.location for p in found if "isn't staged" in p.message][0] == "source"
+
+
 def test_a_skills_frontmatter_name_is_not_held_to_its_folder(project):
     """Claude Code 2.1.322 offers a skill under its folder's name, whatever its frontmatter says."""
     (project / SKILL).write_text(skill_md("notes"))

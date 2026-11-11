@@ -451,7 +451,7 @@ def not_staged_reason(
     if not _is_safe_file(full):
         return f".env files are never staged, except {', '.join(sorted(SAFE_ENV_FILES)[:-1])} and {sorted(SAFE_ENV_FILES)[-1]}"
     if target == "claude-code":
-        reasons = files_not_staged_reasons(target, root, evals_path=evals_path)
+        reasons = files_not_staged_reasons(target, root)  # a file under the evals path was answered above
         if relative in reasons:
             return f"the claude-code loader stages only what Claude Code reads, and this file is left out: {reasons[relative]}"
         return (

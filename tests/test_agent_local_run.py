@@ -750,6 +750,19 @@ def test_claude_codes_skills_or_agents_above_a_project_that_is_a_repository_are_
     check_no_inherited_instructions(project, claude_code=True)
 
 
+def test_only_a_dot_git_spelled_so_makes_the_project_a_repository(tmp_path, monkeypatch):
+    """On a case-insensitive disk .GIT would find .git, so the disk is made to tell them apart."""
+    from whitney.agent import check_no_inherited_instructions
+
+    (tmp_path / "above" / ".claude" / "agents").mkdir(parents=True)
+    project = tmp_path / "above" / "project"
+    (project / ".git").mkdir(parents=True)
+    real_exists = Path.exists
+    monkeypatch.setattr(Path, "exists", lambda path, *a, **k: real_exists(path, *a, **k) and path.name in os.listdir(path.parent))
+
+    check_no_inherited_instructions(project, claude_code=True)
+
+
 def test_a_claude_code_run_checks_for_agents_above_the_project(tmp_path, monkeypatch):
     import asyncio
 
