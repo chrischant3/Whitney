@@ -236,9 +236,11 @@ def claude_code_instructions(relative: str, staged: Mapping[str, str]) -> list[s
 
     An eval file about a project's instructions, such as agents-md.json,
     names AGENTS.md, but a claude-code run stages whichever of
-    CLAUDE_CODE_INSTRUCTIONS Claude Code would read. So any of those names
-    stands for all of the instruction files staged: the baseline that
-    removes AGENTS.md removes them all.
+    CLAUDE_CODE_INSTRUCTIONS Claude Code would read. So AGENTS.md stands for
+    all of the instruction files staged: the baseline that removes AGENTS.md
+    removes them all. Every other name means that file only, so a variant
+    can remove one file and an eval file about one is checked against it
+    (tasks/plan-phase5.md, decision 8).
 
     Args:
         relative: a project-relative path, such as an eval file's source.
@@ -246,9 +248,9 @@ def claude_code_instructions(relative: str, staged: Mapping[str, str]) -> list[s
 
     Returns:
         The staged instruction files, in CLAUDE_CODE_INSTRUCTIONS order, or
-        [] if `relative` isn't one of those names.
+        [] if `relative` isn't AGENTS.md.
     """
-    if relative not in CLAUDE_CODE_INSTRUCTIONS:
+    if relative != AGENTS_MD:
         return []
     return [name for name in CLAUDE_CODE_INSTRUCTIONS if name in staged]
 
@@ -383,8 +385,8 @@ def not_staged_reason(
 
     Returns:
         None if the file was staged (for claude-code, also under a name
-        differing only in case, and for any of CLAUDE_CODE_INSTRUCTIONS when
-        one of them was staged: see claude_code_instructions); otherwise the
+        differing only in case, and for AGENTS.md when any instruction file
+        was staged: see claude_code_instructions); otherwise the
         first rule that leaves it out, as a clause such as "it is a symlink, ...".
 
     Raises:

@@ -619,7 +619,7 @@ For `claude-code`, Whitney copies what Claude Code itself reads, as its [memory 
 - **`AGENTS.md` and `.claude/AGENTS.md`** are copied only when neither `CLAUDE.md` exists. Claude Code ignores `AGENTS.md` beside a `CLAUDE.md`, so testing it there would test rules the agent never reads. A `CLAUDE.md` that can't be copied, such as a symlink, still counts, because Claude Code would see it.
 - **`CLAUDE.local.md`** is never copied. It holds one person's own notes and usually isn't committed. On that person's machine it also stops Claude Code reading `AGENTS.md`, which the report says.
 
-Each file keeps its own name. An eval file about the project's instructions is still called `agents-md.json` with `"source": "AGENTS.md"`, on both targets: on `claude-code` that source stands for whichever instruction files were copied, and the default baseline removes all of them. The report's "File Snapshots" show which files each variant copied.
+Each file keeps its own name. An eval file about the project's instructions is still called `agents-md.json` with `"source": "AGENTS.md"`, on both targets: on `claude-code` that source stands for whichever instruction files were copied, and the default baseline removes all of them. Any other instruction file name means that file only: a variant that removes `.claude/CLAUDE.md` removes just that file, and an eval file with `"source": ".claude/AGENTS.md"` is refused unless that file was copied. The report's "File Snapshots" show which files each variant copied.
 
 The rest of `.claude/` isn't copied: not `settings.json`, whose hooks run commands, and not skills, agents or commands. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
 

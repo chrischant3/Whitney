@@ -956,6 +956,16 @@ def test_agents_md_evals_and_their_baseline_are_valid_for_a_claude_md_project(ev
     assert validate_project(validate_evals(evals).files, project, "kilo", evals_path=evals) != []  # Kilo needs its config
 
 
+def test_an_eval_file_about_a_dot_claude_agents_md_is_refused_for_a_claude_md_project(evals, tmp_path):
+    # Only AGENTS.md stands for the project's instructions; .claude/AGENTS.md means that file, which isn't staged.
+    write(evals, eval_file(source=".claude/AGENTS.md"))
+    project = _project(tmp_path / "project", {"CLAUDE.md": "- rule\n"})
+
+    problems = [str(problem) for problem in validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals)]
+
+    assert any(".claude/AGENTS.md" in problem for problem in problems), problems
+
+
 @pytest.mark.parametrize("target, files, message", [
     ("kilo", {"AGENTS.md": "- rule\n"}, "the kilo loader can't stage this project: project has no Kilo config"),
     ("claude-code", {"kilo.jsonc": "{}"}, "the claude-code loader can't stage this project: project has no Claude Code instructions"),

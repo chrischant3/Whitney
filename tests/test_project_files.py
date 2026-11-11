@@ -241,6 +241,24 @@ def test_a_symlinked_dot_claude_folder_is_named_as_what_hides_agents_md(tmp_path
         load_claude_code_project_files(project)
 
 
+def test_both_claude_md_files_that_hide_agents_md_are_named_with_a_reason_each(tmp_path):
+    (tmp_path / "shared.md").write_text("shared rule\n")
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / "AGENTS.md").write_text("agents rule\n")
+    (project / "CLAUDE.md").symlink_to(tmp_path / "shared.md")
+    (project / ".claude/CLAUDE.md").symlink_to(tmp_path / "shared.md")
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(project)
+
+    assert str(raised.value).endswith(
+        ". CLAUDE.md and .claude/CLAUDE.md would be read by Claude Code instead of AGENTS.md, but Whitney doesn't stage "
+        "them (a symlink or outside the project; a symlink or outside the project). "
+        "Replace a link with the file it points to, or remove it."
+    )
+
+
 def test_a_project_without_a_claude_md_is_not_told_one_hides_agents_md(tmp_path):
     (tmp_path / "AGENTS.md").symlink_to(tmp_path / "missing.md")
     with pytest.raises(ValueError) as raised:
@@ -1009,13 +1027,16 @@ def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reas
     assert not_staged_reason("claude-code", tmp_path, source, staged) == reason
 
 
-def test_any_instruction_file_name_has_no_reason_while_one_is_staged(tmp_path):
+def test_agents_md_has_no_reason_while_any_instruction_file_is_staged_and_other_names_are_exact(tmp_path):
     # agents-md.json names AGENTS.md, and stands for the project's instructions on both targets.
+    # Every other instruction name means that file only (tasks/plan-phase5.md, decision 8).
     (tmp_path / "CLAUDE.md").write_text("rule\n")
     staged = load_claude_code_project_files(tmp_path)
 
-    for name in ("CLAUDE.md", ".claude/CLAUDE.md", "AGENTS.md", ".claude/AGENTS.md"):
-        assert not_staged_reason("claude-code", tmp_path, name, staged) is None
+    assert not_staged_reason("claude-code", tmp_path, "AGENTS.md", staged) is None
+    assert not_staged_reason("claude-code", tmp_path, "CLAUDE.md", staged) is None
+    assert not_staged_reason("claude-code", tmp_path, ".claude/CLAUDE.md", staged) is not None
+    assert not_staged_reason("claude-code", tmp_path, ".claude/AGENTS.md", staged) is not None
     assert not_staged_reason("claude-code", tmp_path, "AGENTS.md", {}) == "the project has no such file"
     assert not_staged_reason("kilo", tmp_path, "AGENTS.md", staged) == "the project has no such file"
 

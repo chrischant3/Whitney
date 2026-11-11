@@ -499,6 +499,19 @@ def test_a_remove_of_an_instruction_file_nothing_stands_for_is_kept_for_apply_va
     assert for_claude_code_instructions(variant, {"notes.md": "c\n"}) is variant
 
 
+def test_a_remove_of_one_claude_md_removes_only_that_file():
+    staged = {"CLAUDE.md": "a\n", ".claude/CLAUDE.md": "b\n"}
+    variant = Variant(remove=[".claude/CLAUDE.md"])
+
+    assert for_claude_code_instructions(variant, staged) is variant
+    assert apply_variant(staged, variant) == {"CLAUDE.md": "a\n"}
+
+
+def test_a_remove_of_an_unstaged_dot_claude_agents_md_is_kept_for_apply_variant_to_report():
+    variant = Variant(remove=[".claude/AGENTS.md"])
+    assert for_claude_code_instructions(variant, {"CLAUDE.md": "a\n"}) is variant
+
+
 def test_without_instructions_drops_agents_md_for_kilo_and_every_instruction_file_for_claude_code():
     staged = {"AGENTS.md": "a\n", "CLAUDE.md": "b\n", ".claude/AGENTS.md": "c\n", "kilo.jsonc": "{}"}
 
