@@ -135,7 +135,7 @@ Optional extras, installed the same way (`pip install -e ".[dev,ifevalcode,harbo
 |---|---|
 | `ifevalcode` | the `ifevalcode` eval (inspect_evals' IFEvalCode scorer) |
 | `harbor` | the `bigcodebench_hard_complete` eval (Harbor tasks) |
-| `gateway` | `--execution docker` (Inspect's Kilo Gateway provider, and its bridge's `openai` and `anthropic` formats) |
+| `gateway` | `--execution docker`, for either target (Inspect's Kilo Gateway provider, and its bridge's `openai` and `anthropic` formats) |
 
 For CI, or any run whose results you need to reproduce, install every dependency at the versions and hashes in `requirements.lock` instead, then Whitney itself. If `whitney run` stops with a `ModuleNotFoundError`, the plain install picked a version that doesn't fit; this one fixes it:
 
@@ -251,7 +251,22 @@ Claude Code runs on your machine and calls the Anthropic API with your key.
        --project-path template/claude-code --evals-path evals --epochs 3
    ```
 
-Each run gets an empty temporary home folder and `--setting-sources project`, so your own Claude settings, `CLAUDE.md`, memory, plugins and MCP servers stay out of it; the only instructions it sees are the template's, or the project's with `--project-path`. It runs locally only, without `--dangerously-skip-permissions`.
+Each run gets an empty temporary home folder and `--setting-sources project`, so your own Claude settings, `CLAUDE.md`, memory, plugins and MCP servers stay out of it; the only instructions it sees are the template's, or the project's with `--project-path`. It runs without `--dangerously-skip-permissions`.
+
+That keeps your settings out, but the agent's shell commands still run on your machine: they can read files outside the project, and nothing limits the network. For a run that is isolated from the host, use Docker mode.
+
+#### Docker mode (isolated)
+
+```bash
+whitney run --target claude-code --execution docker --model anthropic/claude-haiku-4-5 \
+    --project-path template/claude-code --evals-path evals --epochs 3
+```
+
+`--execution docker` runs a pinned Claude Code (2.1.322) in a container that has no network and mounts nothing from your machine. Its model calls go to Inspect's bridge inside the container, and Inspect answers each one with `--model`, using the `ANTHROPIC_API_KEY` on the host. The key never enters the container. The same staged files, flags and permissions are used as in a local run, and the report's harness version is the container's.
+
+It needs Docker running, the `gateway` extra (for the `anthropic` package the bridge uses) and `ANTHROPIC_API_KEY`. `--api-key-env` applies only to local mode. If Docker isn't running, the run stops before any model call and says so.
+
+In one recorded run the agent was asked to read a file on the host and fetch a web page. Locally it did both. In Docker both failed ([results](docs/results/2026-11-11-claude-code-docker.md)).
 
 ## Running the evals
 
@@ -277,8 +292,9 @@ whitney run --target claude-code --model anthropic/claude-haiku-4-5 --project-pa
 # One eval file, by eval name or by its path under the evals folder
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path template/kilo --evals-path evals --only agents_md --epochs 3
 
-# Isolated Docker run through the Inspect bridge (kilo target)
+# Isolated Docker run through the Inspect bridge
 whitney run --target kilo --execution docker --model kilo/anthropic/claude-haiku-4.5 --project-path template/kilo --evals-path evals --epochs 3
+whitney run --target claude-code --execution docker --model anthropic/claude-haiku-4-5 --project-path template/claude-code --evals-path evals --epochs 3
 
 # Test a different local project's config and instructions (source is not modified)
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path /path/to/project --evals-path evals --epochs 3
@@ -395,9 +411,9 @@ Both datasets are read from local files after the one-time setup, so runs make n
 
 ## How it works
 
-- Local mode runs the target's CLI on the host. The project files are staged in a temporary local sandbox, but the agent's shell and file tools are not OS-isolated; use Docker mode (kilo) when host isolation is required. Model API calls go directly to the provider and are not captured in Inspect's model transcript.
+- Local mode runs the target's CLI on the host. The project files are staged in a temporary local sandbox, but the agent's shell and file tools are not OS-isolated; use Docker mode, which either target has, when host isolation is required. Model API calls go directly to the provider and are not captured in Inspect's model transcript.
 - Kilo, locally, uses the user's Kilo login and global provider settings, or the key named with `--api-key-env`, in a temporary HOME with only a short list of environment variables (`LOCAL_ENV_PASSTHROUGH` in `src/whitney/agent.py`). Keys a run is given are redacted from the stored run. In Docker mode it runs the CLI version pinned in `src/whitney/sandbox/Dockerfile` in an isolated sandbox, as an unprivileged user with no network and no added capabilities, and Inspect's bridge answers its calls with `--model`, so requests are captured in Inspect logs.
-- Claude Code runs with an empty temporary home, `--setting-sources project` and no MCP servers, and only PATH, the API key and a fixed git identity in its environment, so nothing of the user's own Claude setup reaches the run.
+- Claude Code runs with an empty temporary home, `--setting-sources project` and no MCP servers, and only PATH, the API key and a fixed git identity in its environment, so nothing of the user's own Claude setup reaches the run. In Docker mode it runs in its own image with no network, a placeholder for the key, and Inspect's bridge answering for the model. An agent in the container can call that bridge directly, so a run can make model calls outside Claude Code's own permission rules; they are recorded in Inspect's log.
 - The target's template is what's under test. Harness permissions let the eval tasks run headlessly (Kilo: a temporary config overlay that project-level permissions override; Claude Code: `--settings`). Neither harness runs with a blanket approve-all: Kilo runs without `--auto`, because `--auto` approves every `ask`, and Claude Code without `--dangerously-skip-permissions`.
 - A run that ends before the agent decides (Kilo exiting non-zero, or Claude Code reporting an error or a permission denial) counts as inconclusive (a denied skill that the eval file's own `harness_permissions` switched off aside) in `agents_md`, not as followed.
 - In `agents_md`, a run whose git history may have been erased also counts as inconclusive, unless a committed `.env` or secret was still found. That covers a HEAD reflog that was emptied, has a gap or stops short of HEAD, and a tool call that expires or deletes reflog entries, runs `git filter-repo`, edits `.git/logs` or `.git/objects`, or deletes `.git`.

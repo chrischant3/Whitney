@@ -31,7 +31,7 @@ dev = [
     "pytest-timeout==2.4.0",
 ]
 ifevalcode = ["inspect-evals[ifevalcode]==0.27.0"]  # supplies the IFEvalCode scorer, so pinned like inspect-ai
-gateway = ["openai>=1", "anthropic>=2"]  # Docker mode: Inspect's bridge serves Kilo's OpenAI- or Anthropic-format calls
+gateway = ["openai>=1", "anthropic>=2"]  # Docker mode: Inspect's bridge serves Kilo's OpenAI- or Anthropic-format calls, and Claude Code's
 harbor = ["inspect-harbor==1.0.0"]
 
 [build-system]
@@ -43,7 +43,7 @@ where = ["src"]
 
 # The Docker sandbox: tasks.py hands compose.yaml to Inspect, and it builds the Dockerfile beside it.
 [tool.setuptools.package-data]
-whitney = ["sandbox/compose.yaml", "sandbox/Dockerfile"]
+whitney = ["sandbox/compose.yaml", "sandbox/Dockerfile", "sandbox/claude-code/compose.yaml", "sandbox/claude-code/Dockerfile"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,11 @@
+services:
+  default:
+    build: .
+    # Renamed when the image changes, so a cached build of an older Dockerfile isn't reused.
+    image: claude-code-evals-sandbox:2.1.322-node.1
+    init: true
+    # Claude Code reaches the model only through Inspect's bridge, which listens inside
+    # the container, so the sandbox needs no network. The API key stays on the host.
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

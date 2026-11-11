@@ -11,6 +11,7 @@ What changed in each release, and what anyone who forks Whitney or runs it in CI
 
 ### New
 
+- **Docker mode for the `claude-code` target.** `--execution docker` runs a pinned Claude Code in a container with no network, served by Inspect's bridge, so the agent can't reach the host's files or the internet and the API key stays on the host. It was refused before ("the claude-code target runs locally only"). It needs the `gateway` extra, and the run stops at once if the `anthropic` package is missing. `scripts/run_evals.py` accepts it too.
 - **The report shows each skill or agent an eval file switched off,** on both targets: how many calls the harness refused, in how many runs, and the harness's own words. See `docs/adding-tests.md`, "Switching off a built-in skill or agent".
 
 ## 0.2.0
