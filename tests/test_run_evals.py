@@ -163,6 +163,8 @@ def test_claude_code_can_run_in_docker():
     args = _parse(["--target", "claude-code", "--model", "anthropic/claude-haiku-4-5", "--execution", "docker"])
 
     assert (args.target, args.execution) == ("claude-code", "docker")
+    assert args.model == "anthropic/claude-haiku-4-5"
+    assert args.evals == _parse(["--target", "claude-code", "--model", "anthropic/claude-haiku-4-5"]).evals  # the same evals as a local run
 
 
 def test_the_target_reaches_every_task_it_runs(tmp_path, monkeypatch):
