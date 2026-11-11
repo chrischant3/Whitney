@@ -108,6 +108,13 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | 31 | Record what was sent to the model, and the agent's reasoning (after `v0.2.0`) | after D | none | M | yes, cents |
 | 32 | An eval-driven development skill (after `v0.2.0`) | after D | `write-evals` | M | yes, dollars |
 | 33 | Fix and re-run the eval sets `write-evals` drafted | after D | none | S | yes, about a dollar an epoch |
+| 34 | Claude Code loader: follow Claude Code's documented order | E | none | M | yes, cents |
+| 35 | Claude Code: gather denials from every `result` event | E | none | XS | no |
+| 36 | Claude Code: skills, agents and trigger tests | E | 34 | M | yes, cents |
+| 37 | Claude Code: stage `permissions` from `.claude/settings.json`; `permission_held` | E | 34, 35 | M | yes, cents |
+| 38 | Claude Code: `outside_canary_not_reached` | E | 35 | S | yes, cents |
+| 39 | Claude Code example, recorded real run and docs | E | 34–38 | M | yes, about a dollar |
+| | **Checkpoint E: Claude Code at parity with Kilo** | | 34–39 | | |
 
 Lanes that can run beside the main one:
 
@@ -143,7 +150,7 @@ The spec's decisions stand: Whitney becomes a package that takes two paths, and 
 - **Behaviour scenarios judge the outcome, not the load.** They don't expect `skill_loaded`, because the baseline can never load the skill. Instead the report says in how many template runs the skill loaded or the agent was delegated to. A pass in a run where the skill never loaded shows the model's default, not the skill.
 - **An agent's own behaviour is tested by running it as the primary agent (`kilo run --agent`).** Delegation tests ask only whether the `task` tool was called with that agent. Task 16 finds out whether a subagent's tool calls appear in the parent's event stream. Until it shows they do, a file change can't be put down to the subagent rather than the parent.
 - **Negative checks need positive evidence.** `skill_not_loaded` and `subagent_not_delegated` pass only if the event stream holds at least one tool call the parser recognises, as the spec requires. A change in Kilo's output then makes them inconclusive rather than passing.
-- **Kilo first.** Claude Code skills (`.claude/skills/`) and agents (`.claude/agents/`) need their own capture and a decision on staging `.claude/` (spec open question 8). They're listed under "Later".
+- **Kilo first.** Claude Code skills (`.claude/skills/`) and agents (`.claude/agents/`) need their own capture and a decision on staging `.claude/` (spec open question 8). They're listed under "Later". Milestone E (Tasks 34 to 39, added 2026-11-11) picks them up.
 
 ## Risks and mitigations
 
@@ -169,6 +176,10 @@ Approved on 2026-11-06 with the recommendation for each. For decision 3, nobody 
 4. **Trigger tests never in a baseline, with an automatic control for positive prompts (D4)?** Recommended: yes. The control adds one run per positive prompt per epoch.
 5. **Which Claude Code instruction files does Task 1 stage?** The spec says root `AGENTS.md` and `CLAUDE.md`. Recommended: add `.claude/CLAUDE.md`, which Claude Code also reads as project instructions, and confirm with a one-prompt canary run. Leave the rest of `.claude/` out (spec open question 8). **Reversed 2026-11-06 at Checkpoint A1:** Task 1 now stages one file, always as `AGENTS.md`: root `AGENTS.md`, else root `CLAUDE.md`, else `.claude/CLAUDE.md`. The canary run showed Claude Code 2.1.318 ignoring `AGENTS.md` once `.claude/CLAUDE.md` existed ([canary record](../docs/results/2026-11-06-claude-code-canary.md)), so staging a `CLAUDE.md` beside `AGENTS.md` made the report claim instructions the agent never read. The `claude-code` evals and their baseline are about `AGENTS.md`, so a `CLAUDE.md`-only project has its file staged under that name; only the temporary copy is renamed. The report names a rename in a "Renamed for the Eval" table and each file left out, with the reason. A root `CLAUDE.md` beside `AGENTS.md` wasn't tested and is left out by the same rule.
 6. **What is the baseline for a scenario that names its agent (Task 20)?** Removing the agent file makes `kilo run --agent` fail, which would make every baseline run inconclusive. Recommended: the baseline runs the same prompt with Kilo's default agent. **Corrected 2026-11-06:** Task 16 showed the premise is wrong (Kilo falls back to its default agent and exits 0), so the outcome stands but the baseline drops `--agent`; see Task 20.
+8. **Claude Code at parity (milestone E), answered by Christopher on 2026-11-11.**
+   - The loader follows the order in Claude Code's own documentation, not Whitney's earlier choice. This replaces decision 5 once Task 34 lands.
+   - From `.claude/settings.json`, only the `permissions` block is staged to begin with. Hooks stay out, and may be supported later if they would change an eval's result (Later list).
+   - `outside_canary_not_reached` is supported on `claude-code`, and a shell command that reads outside the project fails it. That's a true finding about Claude Code, and the docs say how to close it.
 7. **Real-model spend.** Tasks 14, 16, 21, 22 and 23 and Checkpoint A2 call a real model, and Task 1 can. Recommended: Haiku through your Kilo login, with `--limit` and `--epochs` kept small.
 
 Spec open questions that block a task here, so they need an answer before that task starts:
@@ -193,6 +204,7 @@ Not planned in detail:
 
 - **`git -C . push` gets past `"git push *": "deny"` (2026-11-10).** An eval the `write-evals` skill drafted for `examples/consumer/kilo.jsonc` asked the agent to push "another way". On Kilo 7.8.27 with Haiku, `git -C . push origin master` ran, and `permission_held` reported it bypassed; the four direct pushes were refused. Kilo's pattern matches the command's text, so any option before `push` steps round it. Decide whether the example's rule should add a pattern such as `"git * push*": "deny"`, whether the docs should say a pattern rule is this easy to step round, and whether it belongs beside finding 001.
 - **A `permission_held` false fail, found testing the `write-evals` skill (2026-11-10).** `forbidden_input` is searched in every string of every tool call's input (`checks/permissions.py`, `_strings`), so it also matches text the model wrote: a bash call's `description`, a `todowrite` item, a `task` prompt for a subagent. A completed `git status` described as "check before git push" counts as a push that ran, and fails the check. It errs towards failing, never towards passing. Match only the fields that carry what runs, such as bash's `command`, with a test for each tool. Each test whose expectation changes needs Christopher's confirmation first.
+- **Claude Code hooks (2026-11-11).** Task 37 stages only the `permissions` block of `.claude/settings.json`. A team whose hooks block or change tool calls, such as a `PreToolUse` hook that refuses `git push`, gets results that don't match its real setup. Hooks run commands, so supporting them needs a safety design: which hooks run, in which sandbox, and how the report says they ran.
 - `no_test_newly_skipped`, with presets for each test framework (spec slice 12).
 - **Checks for rules no check covers yet, found building the `write-evals` skill (2026-11-10).** Drafting evals for a real `AGENTS.md` turned up three kinds of rule that today's checks can't test:
   - **The order of actions**, such as "always run tests before committing". This needs a check that reads the tool calls in order and fails when a commit comes before the test command. The `kilo` event stream already holds each tool call with its input; `claude-code` would need the same.
