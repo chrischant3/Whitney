@@ -703,6 +703,8 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 - [x] At least one capture where the scalar deny is got round, so each candidate is tried against a bypass and not only against a deny that held. **2026-11-11:** `scalar-edit-deny-bypassed`, `scalar-read-deny-bypassed` and `scalar-bash-deny-bypassed`. Candidate 4's error didn't occur in a bypass run, and candidate 8 wasn't tried against one; the table says so.
 - [x] Evidence item 5. Items 1, 3 and 4 don't apply to a spike. **2026-11-11:** "Not shown" at the end of the section.
 
+**Decided by Christopher, 2026-11-11:** the spike's recommendation stands. `permission_held` keeps refusing a scalar deny. For `edit`, authors use `no_file_edits`. `read` and `bash` stay refused until an outcome check exists for them. The deny-then-allow form and a "tool not offered" report line are not taken up now.
+
 **Dependencies:** Task 23.
 
 **Estimated scope:** S. A few cents in model calls.
