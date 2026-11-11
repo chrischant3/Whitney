@@ -48,10 +48,10 @@ def outcome(check: str, name: str, evidence: Evidence) -> str:
 
 
 @pytest.mark.parametrize("name", CHECKS)
-def test_each_check_judges_the_agent_on_kilo_only(name):
+def test_each_check_judges_the_agent_on_both_targets(name):
     spec = registry()[name]
 
-    assert (spec.judges, spec.targets, spec.needs) == ("agent", ("kilo",), ())
+    assert (spec.judges, spec.targets, spec.needs) == ("agent", ("kilo", "claude-code"), ())
 
 
 def test_the_labels_put_each_checks_pass_first():

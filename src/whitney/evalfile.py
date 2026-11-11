@@ -56,8 +56,11 @@ NOT_AN_EVAL_FILE = (
 )
 
 # The two kinds of source a `trigger` block can test, each named by one part of its path.
-SKILL_SOURCE = re.compile(r"\.kilo/skills/([^/]+)/SKILL\.md")
-AGENT_SOURCE = re.compile(r"\.kilo/agents/([^/]+)\.md")
+SKILL_SOURCE = re.compile(r"\.(?:kilo|claude)/skills/([^/]+)/SKILL\.md")
+AGENT_SOURCE = re.compile(r"\.(?:kilo|claude)/agents/([^/]+)\.md")
+# Folders only one target's loader stages, so a file about something in one applies to that target alone
+# (whitney.project_files: the claude-code loader stages nothing of Kilo's, and the Kilo loader no .claude/agents/).
+ONE_TARGETS_FOLDERS = {".kilo/": "kilo", ".kilocode/": "kilo", ".claude/agents/": "claude-code"}
 # The checks a trigger test expects, by kind: (the used one, the unused one, their parameter).
 TRIGGER_CHECKS = {
     "skill": ("skill_loaded", "skill_not_loaded", "skill"),
@@ -145,13 +148,25 @@ class Expectation(BaseModel):
         return dict(self.model_extra or {})
 
 
-def under_test(source: str) -> tuple[str, str] | None:
-    """("skill" or "agent", its name) if `source` is a Kilo skill or agent, else None.
+def source_targets(source: str) -> tuple[str, ...]:
+    """The targets whose loader can stage `source`: one target for a file in a folder only it reads, else every target."""
+    for folder, target in ONE_TARGETS_FOLDERS.items():
+        if source.startswith(folder):
+            return (target,)
+    return TARGETS
 
-    A skill is `.kilo/skills/<name>/SKILL.md` and an agent `.kilo/agents/<name>.md`
+
+def under_test(source: str) -> tuple[str, str] | None:
+    """("skill" or "agent", its name) if `source` is a Kilo or Claude Code skill or agent, else None.
+
+    A skill is `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`,
+    and an agent `.kilo/agents/<name>.md` or `.claude/agents/<name>.md`
     (spec, "Saying which file an eval file tests"). The name is the folder's
     or the file's, which is what Kilo's `skill` and `task` calls give when
-    the skill's own `name` matches its folder.
+    the skill's own `name` matches its folder. Claude Code 2.1.322 names a
+    skill by its folder too, and an agent by the `name` in its frontmatter
+    (docs/spike-findings.md, "Phase 5 Task 36"), which validation holds to
+    the file's name.
     """
     for kind, pattern in (("skill", SKILL_SOURCE), ("agent", AGENT_SOURCE)):
         match = pattern.fullmatch(source)
@@ -350,7 +365,8 @@ class EvalFile(BaseModel):
         source: the file under test, relative to the project root.
         name: the eval name, if not the file stem (see eval_name).
         title: the report's heading for this file.
-        targets: the targets it applies to, each once; None means every target its checks support.
+        targets: the targets it applies to, each once; None means every target its checks support and its
+            source can be staged for (applies_to).
         variants: the variants besides `template`; None means the default
             baseline, which removes `source`.
         harness_permissions: per target, the overlay that lets the agent work
@@ -387,6 +403,10 @@ class EvalFile(BaseModel):
             if targets.count(target) > 1:
                 raise ValueError(f"lists {target} twice; name each target once")
         return targets
+
+    def applies_to(self) -> tuple[str, ...]:
+        """The targets the file applies to, before its checks narrow them: its `targets`, else source_targets."""
+        return tuple(self.targets) if self.targets is not None else source_targets(self.source)
 
     @property
     def path(self) -> Path:
@@ -494,7 +514,8 @@ class EvalFile(BaseModel):
         if tested is None:
             return [("trigger", (
                 "trigger tests ask whether a skill or an agent was used, so source must be "
-                f".kilo/skills/<name>/SKILL.md or .kilo/agents/<name>.md; got '{self.source}'"
+                ".kilo/skills/<name>/SKILL.md or .kilo/agents/<name>.md, or the same under .claude/; "
+                f"got '{self.source}'"
             ))]
         if self.defaults.fixture is None:
             return [("trigger", "trigger tests take their fixture from defaults.fixture, which is missing")]

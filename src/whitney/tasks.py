@@ -236,7 +236,7 @@ def scenario_eval(
         expect=_expectations(parsed),
         harness_permissions={**_default_overlays(left_out), **(parsed.harness_permissions or {})},
         left_out=left_out if "kilo" not in (parsed.harness_permissions or {}) else (),
-        targets=tuple(parsed.targets or TARGETS),
+        targets=parsed.applies_to(),
         adjust=spread_over_kilo_configs if _spread_by_the_wrapper(parsed) else _as_written,
         fixtures_dir=root / FIXTURES_FOLDER,
         has_trigger=parsed.trigger is not None,

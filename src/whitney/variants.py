@@ -33,7 +33,7 @@ from whitney.static_checks import parse_jsonc
 
 # The staged files as supplied. Every eval file runs it, so no declared variant may take the name.
 TEMPLATE = "template"
-SKILL_SOURCE = re.compile(r"^(\.kilo/skills/[^/]+/)SKILL\.md$")
+SKILL_SOURCE = re.compile(r"^(\.(?:kilo|claude)/skills/[^/]+/)SKILL\.md$")
 BAD_ESCAPE = re.compile(r"~(?![01])")
 
 Located = tuple[tuple, str]  # (location within the variant, message)
@@ -61,8 +61,8 @@ class VariantError(ValueError):
 def default_baseline(source: str) -> Variant:
     """The baseline an eval file gets when it leaves out `variants`: `source` removed.
 
-    For a Kilo skill, `.kilo/skills/<name>/SKILL.md`, the skill's whole folder
-    is removed, because files beside SKILL.md belong to the skill too.
+    For a skill, `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`,
+    the skill's whole folder is removed, because files beside SKILL.md belong to the skill too.
     """
     skill = SKILL_SOURCE.fullmatch(source)
     return Variant(remove=[skill.group(1) if skill else source])  # role defaults to "baseline"

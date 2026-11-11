@@ -171,7 +171,7 @@ def test_a_trigger_block_needs_a_skill_or_an_agent_as_its_source(project):
 
     assert problems(raised) == [("trigger", (
         "trigger tests ask whether a skill or an agent was used, so source must be "
-        ".kilo/skills/<name>/SKILL.md or .kilo/agents/<name>.md; got 'AGENTS.md'"
+        ".kilo/skills/<name>/SKILL.md or .kilo/agents/<name>.md, or the same under .claude/; got 'AGENTS.md'"
     ))]
 
 
@@ -418,7 +418,8 @@ def test_the_run_orders_the_control_last_and_leaves_a_skills_file_out_for_claude
 
     assert cli.variant_order(parsed) == ["baseline", "template", TRIGGER_CONTROL]
     assert cli.why_not_run(parsed, "kilo", registry()) is None
-    assert "skill_loaded" in cli.why_not_run(parsed, "claude-code", registry())
+    # Its checks support claude-code since Task 36; its source, under .kilo/, is what keeps it to Kilo.
+    assert cli.why_not_run(parsed, "claude-code", registry()) == "it applies to kilo"
 
 
 def test_an_owner_must_be_a_staged_skill(project):

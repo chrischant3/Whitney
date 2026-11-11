@@ -477,7 +477,7 @@ def validate_project(
         return [Problem(Path(project_path), "", f"the {target} loader can't stage this project: {e}")]
     problems = []
     for eval_file in eval_files:
-        if eval_file.targets is not None and target not in eval_file.targets:
+        if target not in eval_file.applies_to():
             continue
         reason = not_staged_reason(target, project_path, eval_file.source, staged, evals_path=evals_path)
         if reason is not None:
@@ -502,7 +502,7 @@ def staged_names(staged: Mapping[str, str], kind: str) -> dict[str, str]:
 
 def _kilo_only_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec]) -> list[Found]:
     """A scenario's `agent` or `command` in a file that applies to claude-code: only Kilo has `kilo run --agent`."""
-    if "claude-code" not in (eval_file.targets or TARGETS):
+    if "claude-code" not in eval_file.applies_to():
         return []
     scenarios = eval_file.resolved()
     used = [checks[e.check] for scenario in scenarios for e in scenario.expect if e.check in checks]
@@ -890,7 +890,7 @@ def permission_warnings(eval_files: list[EvalFile], project_path: Path, *, evals
         return []
     warnings = []
     for eval_file in eval_files:
-        if eval_file.targets is not None and "kilo" not in eval_file.targets:
+        if "kilo" not in eval_file.applies_to():
             continue
         if PurePosixPath(eval_file.source).name not in KILO_CONFIG_NAMES or eval_file.source not in staged:
             continue
