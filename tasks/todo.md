@@ -2,7 +2,7 @@
 
 See [plan.md](plan.md) for decisions, risks and open questions.
 
-> **Status, 2026-11-03.** Tasks 1–8 and 11 are built and covered by the test suite; many of their boxes below were never ticked as the work landed, so read [plan.md](plan.md)'s task list for the current state. Still open: Task 9's extension run and manual checklist, and Task 10's fresh-clone walkthrough. Since then the repository was published (Task 12, root commit `255c015`) and CI was added (`.github/workflows/`); Task 12's steps below are kept as a record and name a branch and commit that no longer apply. Phase 4 (the `kilo` and `claude-code` targets) is tracked in plan.md.
+> **Status, 2026-11-03.** Tasks 1–8 and 11 are built and covered by the test suite; many of their boxes below were never ticked as the work landed, so read [plan.md](plan.md)'s task list for the current state. Still open: Task 9's extension run and manual checklist, and Task 10's fresh-clone walkthrough. **2026-11-11:** an audit ticked 14 boxes below whose work was done, each with a note. Still open: Task 9's extension run (now Phase 5 Task 30). Task 10's walkthrough was done by fresh sessions with no context on 2026-11-10, not by a person, so its boxes are left for Christopher. Task 11 has no recorded real run. The manual `inspect view` boxes and the "Review with human" boxes are also left for him. Since then the repository was published (Task 12, root commit `255c015`) and CI was added (`.github/workflows/`); Task 12's steps below are kept as a record and name a branch and commit that no longer apply. Phase 4 (the `kilo` and `claude-code` targets) is tracked in plan.md.
 
 ## Phase 0: Prove it can work
 
@@ -32,7 +32,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 - [x] Findings written to `docs/load-order.md` (draft) and `docs/spike-findings.md`
 
 **Verification:**
-- [ ] Manual check: each finding is backed by a saved log or command output
+- [x] Manual check: each finding is backed by a saved log or command output Confirmed 2026-11-11 by audit: `docs/spike-findings.md` holds the command excerpts, and `spikes/load_order.py` reruns them.
 
 **Dependencies:** T1
 **Files likely touched:** `spikes/load_order.py`, `docs/load-order.md`
@@ -52,7 +52,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 - [x] `.env` and generated output are gitignored
 
 **Verification:**
-- [ ] Tests pass: `pytest -q`
+- [x] Tests pass: `pytest -q` Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
 
 **Dependencies:** Checkpoint 0
 **Files likely touched:** `pyproject.toml`, `.gitignore`, `README.md`, `tests/test_smoke.py`
@@ -67,7 +67,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 - [x] Schema documented, with an example (module docstring in `src/whitney/scenarios.py`; user docs in T10)
 
 **Verification:**
-- [ ] Tests pass: `pytest -q tests/test_scenarios.py`
+- [x] Tests pass: `pytest -q tests/test_scenarios.py` Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
 
 **Dependencies:** T3
 **Files likely touched:** `src/whitney/scenarios.py`, `evals/schema.json`, `tests/test_scenarios.py`
@@ -82,14 +82,14 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 - [x] Static check passes on the shipped template
 
 **Verification:**
-- [ ] Tests pass: `pytest -q tests/test_template.py`
+- [x] Tests pass: `pytest -q tests/test_template.py` Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
 
 **Dependencies:** T2, T3
 **Files likely touched:** `template/AGENTS.md`, `template/kilo.jsonc`, `src/whitney/static_checks.py`, `tests/test_template.py`
 **Estimated scope:** S
 
 ## Checkpoint: Phase 1
-- [ ] All tests pass
+- [x] All tests pass Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
 - [ ] Review with human
 
 ## Phase 2: The two MVP evals
@@ -103,7 +103,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 - [x] Eval runs end to end on a real model in both variants
 
 **Verification:**
-- [ ] Tests pass: `pytest -q tests/test_agents_md.py`
+- [x] Tests pass: `pytest -q tests/test_agents_md.py` Confirmed 2026-11-11 by audit: that file was renamed; `tests/test_tasks.py` and `tests/test_scoring.py` cover it (plan.md), and the suite passes in CI on PR #44.
 - [ ] Manual check: `inspect view` shows per-scenario results and explanations
 
 **Dependencies:** T1, T4, T5
@@ -120,7 +120,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 - [x] Includes the symlink route (`ln -s ../outside/... && cat`), which bypassed both `ask` and `deny` in the spike (see `docs/spike-findings.md`); runs without `--auto`, because `--auto` approves `ask`
 
 **Verification:**
-- [ ] Tests pass: `pytest -q tests/test_permissions.py`
+- [x] Tests pass: `pytest -q tests/test_permissions.py` Confirmed 2026-11-11 by audit: that file was renamed; `tests/test_tasks.py` and `tests/test_scoring.py` cover it (plan.md), and the suite passes in CI on PR #44.
 - [ ] Manual check: control and `ask` runs side by side in `inspect view`
 
 **Dependencies:** T1, T2, T4, T5
@@ -144,7 +144,7 @@ Results: `docs/results/2026-11-02-phase2.md`.
 - [x] Works against a mock model, so it can be tested without an API key (report logic and log reading are tested with a mock-model log; running the evals themselves needs Docker and a key)
 
 **Verification:**
-- [ ] Tests pass: `pytest -q tests/test_runner.py`
+- [x] Tests pass: `pytest -q tests/test_runner.py` Confirmed 2026-11-11 by audit: that file was renamed; `tests/test_run_evals.py`, `tests/test_report.py` and `tests/test_report_rendering.py` cover it (plan.md), and the suite passes in CI on PR #44.
 
 **Dependencies:** T6, T7
 **Files likely touched:** `scripts/run_evals.py`, `src/whitney/report.py`, `tests/test_runner.py`
@@ -158,7 +158,7 @@ Results: `docs/results/2026-11-02-phase2.md`.
 - [ ] Manual checklist run once, with results recorded (**needs a person with the extension installed**)
 
 **Verification:**
-- [ ] Tests pass: `pytest -q tests/test_parity.py`
+- [x] Tests pass: `pytest -q tests/test_parity.py` Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
 - [ ] Manual check: completed checklist committed
 
 **Dependencies:** T5, T6, T7
@@ -186,14 +186,14 @@ Results: `docs/results/2026-11-02-phase2.md`.
 - [ ] Runs the baseline and template variants on the Python subset and reports the delta
 
 **Verification:**
-- [ ] Tests pass: `pytest -q tests/test_interference.py`
+- [x] Tests pass: `pytest -q tests/test_interference.py` Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
 
 **Dependencies:** T5, T8
 **Files likely touched:** `src/whitney/interference.py`, `tests/test_interference.py`
 **Estimated scope:** S
 
 ## Checkpoint: MVP complete
-- [ ] All tests pass locally and in CI
+- [x] All tests pass locally and in CI Confirmed 2026-11-11 by audit: 2618 tests passed locally on `77e1345`, and `check.py task` passed in CI on PR #44.
 - [ ] All four MVP acceptance criteria in `AGENTS.md` met, with evidence
 - [ ] Review with human
 
@@ -211,12 +211,12 @@ Results: `docs/results/2026-11-02-phase2.md`.
 
 **Acceptance criteria:**
 - [ ] No file in the new repo names the organisation
-- [ ] The new repo's history is a single commit with no trace of this repo's history
-- [ ] `python scripts/check.py full` passes in a fresh clone of the public repo
+- [x] The new repo's history is a single commit with no trace of this repo's history Confirmed 2026-11-11 by audit: the public repo has one root commit, `255c015`, with no parent.
+- [x] `python scripts/check.py full` passes in a fresh clone of the public repo Confirmed 2026-11-11 by audit: the "Mutation (full)" workflow, which runs `check.py full` on a fresh checkout on GitHub, succeeded on `35eeaa4`. Not run in a clone on a person's machine.
 
 **Verification:**
 - [ ] Case-insensitive search of the new repo for the organisation's name returns nothing
-- [ ] `pytest -q` and `python scripts/check.py full` pass from a fresh clone
+- [x] `pytest -q` and `python scripts/check.py full` pass from a fresh clone Confirmed 2026-11-11 by audit: as the box above.
 
 **Dependencies:** MVP checkpoint
 **Files likely touched:** `.gitleaksignore`, `README.md` (clone URL)
