@@ -203,7 +203,8 @@ def run_case(case: Case, out: Path) -> dict:
 def sanitise_claude(text: str, summary: dict) -> str:
     """`text` sanitised as the Kilo spike does, and of what only Claude Code prints: the project's path as a session folder's name, and the user's id."""
     slug = re.sub(r"[^A-Za-z0-9]", "-", summary["project_dir"])
-    text = text.replace(slug, PROJECT_SLUG_PLACEHOLDER).replace(slug.removeprefix("-private"), PROJECT_SLUG_PLACEHOLDER)
+    bare = slug.removeprefix("-private")  # macOS's /tmp is /private/tmp, and Claude Code names the folder either way
+    text = text.replace("-private" + bare, PROJECT_SLUG_PLACEHOLDER).replace(bare, PROJECT_SLUG_PLACEHOLDER)
     return sanitise(text, summary).replace(f"claude-{os.getuid()}", UID_PLACEHOLDER)
 
 

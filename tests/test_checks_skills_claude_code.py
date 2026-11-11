@@ -233,7 +233,9 @@ def test_a_skill_that_ran_as_a_forked_subagent_is_a_load_by_the_main_agent_and_n
     evidence = captured("skill-forked")
 
     assert judge("skill_loaded", "code-review", evidence).explanation == "the skill code-review was loaded"
-    assert outcome("subagent_delegated", "general-purpose", evidence) == "not_delegated"  # no Agent call made the hand-off
+    # No Agent call made the hand-off, though the stream's task_started event names general-purpose.
+    assert outcome("subagent_delegated", "general-purpose", evidence) == "not_delegated"
+    assert judge("subagent_not_delegated", "general-purpose", evidence).outcome == "pass"
 
 
 # --- An early end ----------------------------------------------------------------------------
@@ -397,10 +399,10 @@ def test_a_stream_that_starts_with_a_claude_code_event_is_read_as_claude_codes()
 
 def test_a_stream_that_starts_with_a_kilo_event_is_read_as_kilos():
     kilo = (KILO_EVENTS / "skill-named.jsonl").read_text()
-    events = kilo + "\n" + (EVENTS / "skill-named.jsonl").read_text()
+    events = kilo + "\n" + (EVENTS / "skill-not-loaded.jsonl").read_text()
 
-    assert judge("skill_loaded", SKILL, Evidence(exit_code=0, events=kilo)).outcome == "pass"
-    assert judge("skill_not_loaded", "debugging", Evidence(exit_code=0, events=events)).outcome == "inconclusive"
+    # Only Kilo's reading sees a load: Claude Code's would find none in a stream it couldn't read in full.
+    assert judge("skill_loaded", SKILL, Evidence(exit_code=0, events=events)).outcome == "pass"
 
 
 def test_blank_lines_and_unreadable_ones_before_the_first_event_dont_decide_whose_stream_it_is():
