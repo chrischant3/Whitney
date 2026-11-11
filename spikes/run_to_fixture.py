@@ -1,0 +1,112 @@
+"""Save one run from a `whitney run` log as a sanitised event fixture.
+
+Some streams worth keeping come from a real `whitney run`, not from a spike
+script: the run that printed `tool_progress`, and Task 36b's runs with a
+skill or an agent switched off by the eval file's own `harness_permissions`.
+This copies one sample's stream out of the Inspect log, sanitises it the way
+the spikes do, and writes `<name>.jsonl` and `<name>.meta.json`.
+
+    python spikes/run_to_fixture.py --logs <log dir> --name skill-denied \\
+        --about "..." --out tests/data/claude-code-events
+
+The log already has the run's key redacted (whitney.agent.redact_run). This
+replaces the machine's paths, user name and email addresses, and for Claude
+Code the request ids. Run gitleaks on the result before committing it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+
+import claude_code_shapes
+from inspect_ai.log import list_eval_logs, read_eval_log
+from skill_agent_shapes import LONG_TEXT, _trim, sanitise, sanitise_emails
+
+# A staged project's folder, as either harness prints it on macOS or Linux.
+PROJECT_DIR = re.compile(r"(?:/private)?(?:/var/folders/[^\"\\ ]+?/T|/tmp)/tmp[A-Za-z0-9_]+/project")
+
+
+def the_run(logs: Path, sample_id: str | None) -> tuple[dict, dict, str]:
+    """The one run in `logs` (its record, the log's metadata and its prompt), or the one for `sample_id`.
+
+    Raises:
+        SystemExit: no run, or more than one, matches.
+    """
+    found = []
+    for info in list_eval_logs(str(logs)):
+        log = read_eval_log(info)
+        for sample in log.samples or []:
+            run = next((v for v in (sample.store or {}).values() if isinstance(v, dict) and "events" in v), None)
+            if run and sample_id in (None, str(sample.id)):
+                prompt = sample.input if isinstance(sample.input, str) else str(sample.input)
+                found.append((run, dict(log.eval.metadata or {}), prompt))
+    if len(found) != 1:
+        raise SystemExit(f"{len(found)} runs match in {logs}; name one with --sample")
+    return found[0]
+
+
+def sanitised(text: str, project_dir: str | None, target: str) -> str:
+    """`text` with this machine's paths and names replaced, as the target's spike does it."""
+    summary = {"project_dir": project_dir}
+    return claude_code_shapes.sanitise_claude(text, summary) if target == "claude-code" else sanitise(text, summary)
+
+
+def fixture(run: dict, project_dir: str | None, target: str) -> tuple[str, int]:
+    """The run's events, sanitised, one JSON object per line, and how many lines weren't JSON."""
+    text = sanitised(run["events"], project_dir, target)
+    lines, skipped = [], 0
+    for line in text.splitlines():
+        try:
+            event = _trim(sanitise_emails(json.loads(line)))
+        except json.JSONDecodeError:
+            skipped += bool(line.strip())
+            continue
+        lines.append(json.dumps(claude_code_shapes._without_request_ids(event) if target == "claude-code" else event))
+    return "\n".join(lines) + "\n", skipped
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Write the fixture and its meta file; return 0."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--logs", type=Path, required=True, help="the run's Inspect log folder")
+    parser.add_argument("--sample", help="the scenario id, if the folder holds more than one run")
+    parser.add_argument("--name", required=True, help="the fixture's name, without an extension")
+    parser.add_argument("--about", required=True, help="one sentence on what the stream holds")
+    parser.add_argument("--out", type=Path, required=True, help="the fixtures folder")
+    args = parser.parse_args(argv)
+
+    run, metadata, prompt = the_run(args.logs, args.sample)
+    target = metadata["target"]
+    found = PROJECT_DIR.search(run["events"])
+    project_dir = found.group(0) if found else None
+    if target == "claude-code" and not project_dir:  # its init event always names the folder, and the session folder is named after it
+        raise SystemExit("the stream doesn't name its project folder, so its paths can't be replaced")
+    events, skipped = fixture(run, project_dir, target)
+    meta = {
+        "case": args.name,
+        "about": args.about,
+        "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+        "target": target,
+        "harness_version": metadata.get("harness_version"),
+        "model": metadata.get("model"),
+        "prompt": prompt,
+        "harness_permissions": metadata.get("harness_permissions"),
+        "staged_files": sorted(metadata.get("evaluation_assets") or {}),
+        "exit_code": run.get("exit_code"),
+        "ended_early": run.get("ended_early"),
+        "permission_denials": json.loads(sanitised(json.dumps(run.get("permission_denials")), project_dir, target)),
+        "skipped_lines": skipped,
+        "trimmed": f"strings over {LONG_TEXT} characters cut; event types kept: all",
+        "placeholders": "as the other fixtures in this folder",
+    }
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / f"{args.name}.jsonl").write_text(events, encoding="utf-8")
+    (args.out / f"{args.name}.meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,46 @@
+{
+  "case": "skill-denied-builtin",
+  "about": "The eval file denies Skill(code-review), a built-in skill; the model calls it twice and both calls are refused",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "Use the code-review skill to review till.py, then tell me what it found. Don't change any file.",
+  "harness_permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read"
+    ],
+    "deny": [
+      "Skill(code-review)"
+    ]
+  },
+  "staged_files": [
+    "AGENTS.md"
+  ],
+  "exit_code": 0,
+  "ended_early": true,
+  "permission_denials": [
+    {
+      "tool_name": "Skill",
+      "tool_use_id": "toolu_011s1BaDCfAcSZv4JSyVuGJH",
+      "tool_input": {
+        "skill": "code-review",
+        "args": "till.py"
+      }
+    },
+    {
+      "tool_name": "Skill",
+      "tool_use_id": "toolu_01PCmufoxPbjrLspETyY2Jbh",
+      "tool_input": {
+        "skill": "code-review",
+        "args": "medium till.py"
+      }
+    }
+  ],
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

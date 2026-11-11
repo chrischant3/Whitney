@@ -1,0 +1,31 @@
+{
+  "case": "agent-denied-builtin",
+  "about": "The eval file denies Agent(general-purpose), a built-in agent; the call is refused and is not in permission_denials",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "Use the general-purpose subagent to count the lines of till.py, then tell me the answer.",
+  "harness_permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read"
+    ],
+    "deny": [
+      "Agent(general-purpose)"
+    ]
+  },
+  "staged_files": [
+    ".claude/agents/reviewer.md",
+    ".claude/skills/release-notes/SKILL.md",
+    "AGENTS.md"
+  ],
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

@@ -1,0 +1,31 @@
+{
+  "case": "agent-denied",
+  "about": "The eval file denies Agent(reviewer), a project agent; the call is refused and is not in permission_denials",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "Call your Agent tool with subagent_type \"reviewer\" and ask it to review refund() in till.py, then tell me what it said. Don't use any skill, and don't review the code yourself.",
+  "harness_permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read"
+    ],
+    "deny": [
+      "Agent(reviewer)"
+    ]
+  },
+  "staged_files": [
+    ".claude/agents/reviewer.md",
+    ".claude/skills/release-notes/SKILL.md",
+    "AGENTS.md"
+  ],
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

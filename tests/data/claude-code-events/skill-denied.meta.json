@@ -1,0 +1,39 @@
+{
+  "case": "skill-denied",
+  "about": "The eval file denies Skill(release-notes), a project skill; the call is refused and the model does the work itself",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "Use the release-notes skill to write the release notes for version 1.4.0 into CHANGELOG.md.",
+  "harness_permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read"
+    ],
+    "deny": [
+      "Skill(release-notes)"
+    ]
+  },
+  "staged_files": [
+    ".claude/agents/reviewer.md",
+    ".claude/skills/release-notes/SKILL.md",
+    "AGENTS.md"
+  ],
+  "exit_code": 0,
+  "ended_early": true,
+  "permission_denials": [
+    {
+      "tool_name": "Skill",
+      "tool_use_id": "toolu_01N2UY1C5DisRSWLLdwc14SZ",
+      "tool_input": {
+        "skill": "release-notes"
+      }
+    }
+  ],
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}
