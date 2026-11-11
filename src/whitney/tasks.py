@@ -39,6 +39,7 @@ from whitney import evalfile, evidence, refusals, setup_steps, shipped_evals, ta
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model, redact
 from whitney.checks import OUTCOMES, CheckSpec, Evidence, FolderSnapshot, Verdict, combine, registry
 from whitney.checks.skills import was_used
+from whitney.claude_code import COMPOSE_FILE as CLAUDE_COMPOSE_FILE
 from whitney.evalfile import DEFAULT_SETUP, FIXTURES_FOLDER, V1_COMMIT_SETUP, EvalFile, EvalFileError, Variant
 from whitney.project_files import (
     CONFIG_PATHS,
@@ -566,7 +567,7 @@ def _scenario_task(
             plan.harness_permissions[target],
         ),
         cleanup=_forget_before,
-        sandbox=_sandbox_config(execution),
+        sandbox=_sandbox_config(execution, target),
         metadata={
             "variant": variant,
             "target": target,
@@ -580,7 +581,7 @@ def _scenario_task(
             "not_staged_reasons": files_not_staged_reasons(target, project_path, evals_path=plan.evals_dir) if project_path else {},
             "harness_permissions": plan.harness_permissions[target],
             "harness_permissions_left_out": list(plan.left_out) if target == "kilo" else [],
-            **_docker_model_names(model, execution),
+            **_docker_model_names(model, execution, target),
             "eval_file": plan.path.relative_to(plan.evals_dir).as_posix(),
             "eval_file_sha256": plan.sha256,
             "whitney_version": _whitney_version(),
@@ -801,6 +802,8 @@ def _scenario_score(
         metadata={
             "checks": [_check_record(spec, verdict, secrets) for spec, verdict in verdicts],
             **used,
+            # A Docker run's harness is the image's, so its version comes from the run, not the host (claude_code).
+            **({"harness_version": redact(run["harness_version"], secrets)} if run.get("harness_version") else {}),
             **({"refusals": [_redacted_refusal(item, secrets) for item in refused]} if refused is not None else {}),
         },
     )
@@ -954,9 +957,12 @@ def _inline(text: str) -> str:
     return "data:text/plain;base64," + base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
-def _docker_model_names(model: str, execution: str) -> dict[str, str]:
-    """In Docker mode, the name Kilo was told alongside the answering --model, so reports show the pairing."""
-    return {"kilo_cli_model": bridge_kilo_model(model)} if execution == "docker" else {}
+def _docker_model_names(model: str, execution: str, target: str = "kilo") -> dict[str, str]:
+    """In Kilo's Docker mode, the name Kilo was told alongside the answering --model, so reports show the pairing.
+
+    Claude Code is told the model's own name, so it has no second name to record.
+    """
+    return {"kilo_cli_model": bridge_kilo_model(model)} if execution == "docker" and target == "kilo" else {}
 
 
 def _source_files(project_path: str | None, target: str, evals_dir: Path | None = None) -> dict[str, str]:
@@ -1001,9 +1007,10 @@ def _check_variant(variant: str, allowed: set[str]) -> None:
         raise ValueError(f"variant must be one of {sorted(allowed)}, got {variant!r}")
 
 
-def _sandbox_config(execution: str) -> str | tuple[str, str]:
+def _sandbox_config(execution: str, target: str = "kilo") -> str | tuple[str, str]:
+    """Inspect's sandbox for a run: the host, or the target's own image."""
     if execution == "local":
         return "local"
     if execution == "docker":
-        return ("docker", str(COMPOSE_FILE))
+        return ("docker", str(CLAUDE_COMPOSE_FILE if target == "claude-code" else COMPOSE_FILE))
     raise ValueError("execution must be 'local' or 'docker'")

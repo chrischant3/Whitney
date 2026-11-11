@@ -20,7 +20,7 @@ from inspect_ai.util import sandbox, store
 
 PROJECT = "/workspace/project"
 HOME = "/tmp/claude-eval-home"
-COMPOSE = __file__.replace("claude_code_docker.py", "claude_docker/compose.yaml")
+COMPOSE = __file__.replace("spikes/claude_code_docker.py", "src/whitney/sandbox/claude-code/compose.yaml")  # the image Whitney now ships
 PERMISSIONS = {"allow": ["Bash", "Edit", "Write", "Read"]}
 
 

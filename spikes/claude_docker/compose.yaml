@@ -1,9 +1,0 @@
-services:
-  default:
-    build: .
-    image: claude-code-evals-spike:2.1.322-node.1
-    init: true
-    # The only route out is Inspect's bridge, which listens inside the container.
-    network_mode: none
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]

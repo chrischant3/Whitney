@@ -43,7 +43,7 @@ where = ["src"]
 
 # The Docker sandbox: tasks.py hands compose.yaml to Inspect, and it builds the Dockerfile beside it.
 [tool.setuptools.package-data]
-whitney = ["sandbox/compose.yaml", "sandbox/Dockerfile"]
+whitney = ["sandbox/compose.yaml", "sandbox/Dockerfile", "sandbox/claude-code/compose.yaml", "sandbox/claude-code/Dockerfile"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

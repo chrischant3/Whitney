@@ -11,13 +11,14 @@ eval grants only the permissions the task needs, through --settings.
 """
 
 import asyncio
+import importlib.resources
 import json
 import os
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-from inspect_ai.agent import Agent, AgentState, agent
+from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
@@ -34,6 +35,11 @@ from whitney.git_env import isolated_git_env
 from whitney.refusals import Rule, asked, expected
 
 MODEL_PREFIX = "anthropic/"
+# The Docker sandbox for this target: Claude Code pinned, no network (docs/spike-findings.md, "Phase 5 Task 36a").
+COMPOSE_FILE = Path(str(importlib.resources.files("whitney") / "sandbox" / "claude-code" / "compose.yaml"))
+DOCKER_HOME = "/tmp/claude-eval-home"  # empty, and made for each run: the container's own HOME holds nothing either
+# The key Claude Code is given in the container. The real one stays with Inspect, on the host.
+BRIDGE_KEY = "sk-none"
 
 
 @agent
@@ -43,9 +49,16 @@ def claude_code(
     local_project_files: dict[str, str] | None = None,
     local_output_targets: dict[str, str] | None = None,
     timeout: int = 300,
-    api_key_env: str = "ANTHROPIC_API_KEY",
+    api_key_env: str | None = "ANTHROPIC_API_KEY",
+    execution: str = "local",
 ) -> Agent:
     """Run `claude -p` once on the sample's prompt, in the project folder.
+
+    A local run starts the host's Claude Code with the API key. A Docker run
+    starts the image's Claude Code in the sandbox, which has no network: its
+    model calls go to Inspect's bridge inside the container, and Inspect
+    answers each with the eval's --model, so the key never enters the
+    container. Both use the same command line.
 
     Args:
         model: the model under evaluation, as anthropic/<model>.
@@ -57,23 +70,55 @@ def claude_code(
         local_output_targets: files to copy from that staged project into the
             active Inspect sandbox after the run.
         timeout: seconds before the run is killed.
-        api_key_env: environment variable holding the Anthropic API key; it
-            reaches Claude Code as ANTHROPIC_API_KEY.
+        api_key_env: local mode: the environment variable holding the
+            Anthropic API key; it reaches Claude Code as ANTHROPIC_API_KEY.
+            Must be None in Docker mode.
+        execution: "local" or "docker".
 
     Side effects: stores exit_code, the stream-json events, stderr,
     ended_early, permission_denials and api_key_source under RUN_STORE_KEY,
     with the API key's value redacted. A denied skill that a
     `Skill(<name>)` rule in harness_permissions' `deny` list switched off
-    doesn't make ended_early true (see _outcome).
+    doesn't make ended_early true (see _outcome). A Docker run also stores
+    harness_version, what the container's `claude --version` printed.
 
     Raises:
-        ValueError: model isn't anthropic/<model> (at construction), or
-            api_key_env isn't set (when the run starts).
+        ValueError: model isn't anthropic/<model>, execution is neither, or
+            Docker mode is given api_key_env or local_project_files (all at
+            construction); or, in local mode, api_key_env isn't set (when
+            the run starts).
     """
     if not model.startswith(MODEL_PREFIX):
         raise ValueError(f"the claude-code target runs Anthropic models: use --model anthropic/<model>, got {model!r}")
+    if execution not in ("local", "docker"):
+        raise ValueError("execution must be 'local' or 'docker'")
+    if execution == "docker" and api_key_env:
+        raise ValueError(
+            "api_key_env applies to local execution; in Docker mode Inspect serves --model through the bridge with its own credentials"
+        )
+    if execution == "docker" and local_project_files is not None:
+        raise ValueError("files staged on the host can't be used in Docker mode, where the project is the container's")
     command = _claude_command(model.removeprefix(MODEL_PREFIX), harness_permissions or {})
     asked_for = asked("claude-code", harness_permissions or {})
+
+    async def execute_in_docker(state: AgentState) -> AgentState:
+        # The model is named as a local run names it. The bridge answers any name with the eval's --model,
+        # and a name Claude Code doesn't know ("inspect") makes it misprice the run (spike, 2026-11-11).
+        async with sandbox_agent_bridge(state, model="inspect") as bridge:
+            sbox = sandbox()
+            env = {
+                "HOME": DOCKER_HOME,
+                "ANTHROPIC_BASE_URL": f"http://localhost:{bridge.port}",
+                "ANTHROPIC_API_KEY": BRIDGE_KEY,
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",  # there is no network for it to reach
+            }
+            await sbox.exec(["mkdir", "-p", DOCKER_HOME])
+            version = await sbox.exec(["claude", "--version"])
+            result = await sbox.exec([*command, "--", state.messages[-1].text], cwd=PROJECT_DIR, env=env, timeout=timeout)
+            run = {"exit_code": result.returncode, "events": result.stdout, "stderr": result.stderr}
+            run = {**run, **_outcome(run["events"], asked_for), "harness_version": version.stdout.strip()}
+            store().set(RUN_STORE_KEY, run)
+        return bridge.state
 
     async def execute(state: AgentState) -> AgentState:
         key = os.environ.get(api_key_env)
@@ -96,7 +141,7 @@ def claude_code(
             state.messages.append(ChatMessageAssistant(content=run["final_text"], model=model))
         return state
 
-    return execute
+    return execute_in_docker if execution == "docker" else execute
 
 
 def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) -> list[str]:

@@ -94,7 +94,7 @@ HELP = {
     "--evals-path": "the evals root: the eval files, plus their fixtures in fixtures/",
     "--only": "run only these eval files: paths relative to the evals root, or eval names",
     "--constraints": "a CONSTRAINTS.md-style file; each known_gap's ID must be a row in its Exceptions table",
-    "--execution": "kilo only: local, or docker through Inspect's model bridge",
+    "--execution": "local, or docker: the harness in a container with no network, served by Inspect's model bridge",
     "--api-key-env": "local mode: the variable (shell or .env) holding the API key for --model's provider; "
     "kilo without it uses your global Kilo config, claude-code defaults to ANTHROPIC_API_KEY",
     "--base-url": "kilo local mode: base URL for --model's provider (e.g. a proxy)",
@@ -488,7 +488,7 @@ def missing_credential(
 ) -> str | None:
     """Why the run's credentials aren't usable, or None.
 
-    claude-code needs its key variable (api_key_env, default
+    A local claude-code run needs its key variable (api_key_env, default
     ANTHROPIC_API_KEY); a local kilo run needs api_key_env if it names one.
     A local kilo run without one uses the global Kilo config, which Whitney
     can't check without calling the model. In Docker mode Inspect answers
@@ -498,7 +498,7 @@ def missing_credential(
     variable (DOCKER_KEY_VARIABLES). A model the bridge can't serve, and
     api_key_env, are refused when the task is built.
     """
-    if target == "claude-code":
+    if target == "claude-code" and execution == "local":
         name = api_key_env or "ANTHROPIC_API_KEY"
     elif execution == "local":
         name = api_key_env
