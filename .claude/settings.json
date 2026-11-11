@@ -1,0 +1,68 @@
+{
+  "extraKnownMarketplaces": {
+    "addy-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "addyosmani/agent-skills",
+        "ref": "0.6.9",
+        "sha": "84ee50673804b95c287d1e4eb4f1c1dad7c5188a"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agent-skills@addy-agent-skills": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git switch -c *)",
+      "Bash(git checkout -b *)",
+      "Bash(git push -u origin feature/*)",
+      "Bash(git push -u origin fix/*)",
+      "Bash(git push -u origin chore/*)",
+      "Bash(git push -u origin refactor/*)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr status *)",
+      "Bash(gh pr checks *)"
+    ],
+    "deny": [
+      "Bash(git push *--force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push -f *)",
+      "Bash(git push -uf *)",
+      "Bash(git push -fu *)",
+      "Bash(git push *--all*)",
+      "Bash(git push *--mirror*)",
+      "Bash(git push *--tags*)",
+      "Bash(git push * main*)",
+      "Bash(git push * master*)",
+      "Bash(git push *:*main*)",
+      "Bash(git push *:*master*)",
+      "Bash(git push *+*)",
+      "Bash(git add *.env*)",
+      "Bash(git add -f *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh api *merge*)",
+      "Bash(gh api *protection*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/git-workflow-gate.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
