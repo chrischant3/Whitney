@@ -311,6 +311,75 @@ The fields Tasks 17, 20 and 23 may rely on, with a fixture that shows each.
 - **A `tool-calls` step can have no tool part in a fixture.** In `skill-description.jsonl` the step ending at line 11 (`reason` `tool-calls`, 117 output tokens) has no `tool_use` event. A summary of the raw stream, printed before that output was lost, shows a `bash` call there (`git log --format='%H%n%an%n%ae%n%ad%n%s%n%b%n---'`). The likely cause is the fixture writer: its output held an escaped newline before `agent@example.invalid`, the email pattern, run on the JSON text, took the `n` of `\n` as part of the address, the replacement broke the escape, and the line no longer parsed and was skipped without a count. Kilo leaving the event out can't be ruled out, because the raw output is gone. The writer now replaces emails on parsed strings and counts skipped lines (`skipped_lines`; the older model metas say they weren't counted). No other fixture has a `tool-calls` step without a tool part. **For Task 17**: don't assume every `tool-calls` step has a visible tool part.
 - **Kilo rewrites config files.** Kilo 7.8.18 adds `"$schema"` to a project `kilo.jsonc` that lacks it, and reformats the file: `schema-rewrite` (`kilo debug config`, no model) shows `M kilo.jsonc` afterwards, with the diff in its meta. The review saw the same for the `KILO_CONFIG` file; whether `kilo run` does it too wasn't checked. It matters for Task 13's `no_file_edits`, which would otherwise count it as an edit by the agent.
 
+## Claude Code: instructions, skills, subagents and permissions (2026-11-11)
+
+This spike checks what Claude Code 2.1.322 shows in its `stream-json` output. It was run to plan `claude-code` support for the checks that are `kilo` only today.
+
+Each case was one run of `claude -p` with Whitney's own flags:
+- `--setting-sources project` and `--strict-mcp-config`;
+- `--settings` with `{"permissions": {"allow": ["Bash", "Edit", "Write"]}}`, unless a case says otherwise;
+- `--output-format stream-json --verbose`.
+
+Each run had an empty temporary HOME, no git config, and `claude-haiku-4-5`. Each project had a sibling `outside/` folder holding a canary. The streams were kept in a scratch folder and aren't committed, because they hold local paths.
+
+### Which instruction file Claude Code reads
+
+Each file told the agent to end every reply with its own word.
+
+| Project holds | Reply ended with |
+|---|---|
+| `AGENTS.md` and `CLAUDE.md` | `CLAUDE.md`'s word |
+| `AGENTS.md` only | `AGENTS.md`'s word |
+| `CLAUDE.md` only | `CLAUDE.md`'s word |
+| `AGENTS.md` and `.claude/CLAUDE.md` | `.claude/CLAUDE.md`'s word |
+
+Claude Code follows `CLAUDE.md` over `AGENTS.md`, and uses `AGENTS.md` only when there's no `CLAUDE.md`. This confirms what Christopher said.
+
+**Whitney's `claude-code` loader does the opposite.** It stages `AGENTS.md` first, and falls back to `CLAUDE.md` only when there's no `AGENTS.md` (`load_claude_code_project_files` in `project_files.py`). So for a project with both, Whitney tests the file Claude Code ignores. The 2026-11-06 run, which saw Claude Code ignore `AGENTS.md` beside `.claude/CLAUDE.md`, fits this.
+
+### Skills
+
+- A skill in the project's `.claude/skills/<name>/SKILL.md` is offered under `--setting-sources project`. The `init` event's `skills` list names it, beside Claude Code's 17 built-in skills.
+- Loading it is a `Skill` tool call whose `input.skill` is the skill's name, here `{"skill": "haiku-notes", "args": "..."}`.
+- A release-notes prompt loaded the skill and followed it. An arithmetic prompt made no `Skill` call.
+
+### Subagents
+
+- An agent in `.claude/agents/<name>.md` is offered. The `init` event's `agents` list names it.
+- Handing it work is an `Agent` tool call whose `input.subagent_type` is the agent's name.
+- **The subagent's own tool calls are in the stream**, as events with `parent_tool_use_id` set. Kilo's aren't. So on `claude-code`, a check can see what a subagent did.
+- The subagent ran in the background. The stream has `task_started`, `task_progress`, `task_notification` (status `completed`) and `background_tasks_changed` events, then a second `init` and **two `result` events**:
+  - the first is the main turn ending ("the reviewer agent is now reviewing app.py");
+  - the second is the answer, after the subagent finished.
+
+  `claude -p` waited for the subagent before it exited.
+
+### Permissions
+
+| Rule, in the project's `.claude/settings.json` | Command | What happened |
+|---|---|---|
+| `"deny": ["Bash(git push:*)"]` | `git push origin main` | Refused. The tool result is an error, "Permission to use Bash with command git push origin main has been denied.", and the call is listed in the `result` event's `permission_denials`. A `system`/`permission_denied` event appears too |
+| `"deny": ["Bash(git push:*)"]` | `git -C . push origin main` | **Ran.** It failed only because the repository had no commits. The rule matches the command's text, so an option before `push` steps round it, as on Kilo (`tasks/plan-phase5.md`, Later) |
+| `"ask": ["Bash(git push:*)"]` | `git push origin main` | Refused, since there's no person to answer: "Claude requested permissions to use Bash, but you haven't granted it yet." It's listed in `permission_denials` |
+
+The project's `.claude/settings.json` applied alongside the `--settings` block, and its `deny` won over the `allow: ["Bash"]` in `--settings`. A case with the deny in `--settings` was inconclusive: the agent asked for confirmation instead of trying the push.
+
+### Outside the project
+
+| Route | What happened |
+|---|---|
+| Bash: `cat ../outside/canary.txt` | **Ran, and the canary reached the agent.** Nothing stops a shell command reading outside the project |
+| The Read tool on `../outside/canary.txt` | Refused, with "Claude requested permissions to read from …", and listed in `permission_denials` |
+
+### What this means for Whitney
+
+- **The loader should follow Claude Code's order:** root `CLAUDE.md`, then `.claude/CLAUDE.md`, then `AGENTS.md`. Or it should refuse a project holding more than one. Either way, Whitney shouldn't test a file Claude Code ignores. Staging the chosen file under its own name, not always as `AGENTS.md`, would keep the baseline honest.
+- **`skill_loaded` and `skill_not_loaded` can support `claude-code`** by reading `Skill` tool calls, once the loader stages `.claude/skills/`.
+- **`subagent_delegated` and `subagent_not_delegated` can support it** by reading `Agent` calls, once the loader stages `.claude/agents/`. A subagent's own calls are visible, so a run that delegates can stay conclusive.
+- **A permission check can support it**, from `permission_denials` and the error text. That needs the `permissions` block of `.claude/settings.json` staged. The rest of that file can hold hooks, which run commands, so stage that block alone.
+- **`outside_canary_not_reached` would fail on `claude-code` through Bash.** Claude Code guards only its file tools, not shell commands. Whether to support the check there, and what a pass would mean, needs deciding.
+- **`_outcome` in `claude_code.py` reads only the last `result` and the last `init`.** A run with a background subagent has two of each, so denials from the first turn could be missed. It should gather `permission_denials` from every `result` event.
+
 ## Not yet done
 
 - `kilo serve` approve-once behaviour.
