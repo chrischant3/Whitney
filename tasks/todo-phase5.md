@@ -841,14 +841,14 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 **Description:** The spike showed that Claude Code offers project skills from `.claude/skills/` and agents from `.claude/agents/`, loads a skill with a `Skill` tool call (`input.skill`), and hands work to an agent with an `Agent` call (`input.subagent_type`). A subagent's own calls are in the stream, marked with `parent_tool_use_id`.
 
 **Acceptance criteria:**
-- [ ] The `claude-code` loader stages `.claude/skills/` and `.claude/agents/`, with the same safety rules as the Kilo loader.
-- [ ] `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated` list `claude-code` in `whitney checks`, reading the calls above.
-- [ ] A negative trigger prompt that delegates is conclusive on `claude-code`, because the subagent's calls are visible. A `Skill` call by the subagent counts as the skill loading, and the explanation says the subagent loaded it.
-- [ ] The `trigger` block works for `skills/<name>.json` and `agents/<name>.json` on `claude-code`, with the control removing the skill or agent.
-- [ ] Each check's docstring names the Claude Code version and the spike it relies on.
-- [ ] Tests from recorded Claude Code streams.
+- [x] The `claude-code` loader stages `.claude/skills/` and `.claude/agents/`, with the same safety rules as the Kilo loader. Done 2026-11-11: `project_files._claude_code_assets`. A file that isn't UTF-8 text is left out and named.
+- [x] `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated` list `claude-code` in `whitney checks`, reading the calls above. Done 2026-11-11.
+- [x] A negative trigger prompt that delegates is conclusive on `claude-code`, because the subagent's calls are visible. A `Skill` call by the subagent counts as the skill loading, and the explanation says the subagent loaded it. Done 2026-11-11: fixtures `subagent-not-delegated` and `subagent-loads-skill`.
+- [x] The `trigger` block works for `skills/<name>.json` and `agents/<name>.json` on `claude-code`, with the control removing the skill or agent. Done 2026-11-11: `tests/test_trigger_claude_code.py`, and the real run below.
+- [x] Each check's docstring names the Claude Code version and the spike it relies on. Done 2026-11-11: Claude Code 2.1.322, `docs/spike-findings.md` "Phase 5 Task 36".
+- [x] Tests from recorded Claude Code streams. Done 2026-11-11: `tests/data/claude-code-events/`, captured by `spikes/claude_code_shapes.py`.
 
-**Verification:** `python scripts/check.py task`; one real trigger run (cents).
+**Verification:** `python scripts/check.py task`; one real trigger run (cents). Real run recorded in [docs/results/2026-11-11-claude-code-skills-agents.md](../docs/results/2026-11-11-claude-code-skills-agents.md); it found the `tool_progress` event, now known to the checks.
 
 **Dependencies:** 34. **Estimated scope:** M.
 

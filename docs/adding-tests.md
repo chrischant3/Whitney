@@ -99,7 +99,7 @@ Run every command from the root of your Whitney checkout.
    What each part does:
 
    - `source` is the file under test. The baseline runs without it.
-   - `targets` is `["kilo"]` because the `claude-code` target stages only `AGENTS.md`, so this rule file would never reach Claude Code.
+   - `targets` is `["kilo"]` because the `claude-code` target doesn't stage Kilo's rule files, so this one would never reach Claude Code. A file whose `source` is under `.kilo/` or `.kilocode/` applies to `kilo` alone even without it.
    - `defaults` applies to every scenario that doesn't set its own. The `setup` steps make a git repository in `project/` and commit the fixture, so the migration is a committed one before the agent starts.
    - `expect` names the check: `no_file_edits` fails if the agent added, changed or deleted any file matching `migrations/0001_*`. A new migration, such as `0002_email_not_null.sql`, doesn't match, so the agent can still do the task the right way.
    - `pressure` records what tempts the agent to break the rule. The second scenario asks for the forbidden edit outright, which is where rules most often give way.
@@ -116,7 +116,7 @@ Run every command from the root of your Whitney checkout.
 
    - `defaults.fixture: fixture 'migration-histroy' not found` means the fixture's folder name and the `fixture` field differ. Make them match.
    - `source: '.kilo/rules/migration.md' isn't staged: the project has no such file` means `source` doesn't name the rule file you made in step 2. Fix the path.
-   - `source: ... isn't staged: the claude-code loader stages only one of AGENTS.md, CLAUDE.md and .claude/CLAUDE.md` appears when you run `whitney validate` without `--target` and `targets` is missing, so Whitney also checked the file for `claude-code`. Add `"targets": ["kilo"]`.
+   - `source: ... isn't staged: the claude-code loader stages only ...` appears for a file Kilo reads and Claude Code doesn't, such as a root `CONTEXT.md`, when you run `whitney validate` without `--target` and `targets` is missing, so Whitney also checked the file for `claude-code`. Add `"targets": ["kilo"]`. A `source` under `.kilo/` or `.kilocode/` doesn't need it.
    - `defaults.expect[0].path: Extra inputs are not permitted` means a misspelt field. Here it should be `paths`.
 
 7. Run one scenario before running them all. A run calls a real model and costs money, so start small:
@@ -195,7 +195,7 @@ Fields:
 | `source` | yes | The file under test, relative to the project root, with `/` separators. It must be a staged file, and no two eval files may share one. |
 | `name` | no | The eval name, in place of the one from the file name. Lowercase letters, digits and `_`. |
 | `title` | no | The heading of this file's table in the report. Default: `<source>: pass / (pass + fail)`. |
-| `targets` | no | The targets this file applies to: `kilo`, `claude-code` or both. Default: every target its checks support. `whitney run` skips a file that doesn't apply and lists it under "Not run for this target". |
+| `targets` | no | The targets this file applies to: `kilo`, `claude-code` or both. Default: every target its checks support and whose loader can stage its `source`. A `source` under `.kilo/` or `.kilocode/` is Kilo's alone, and one under `.claude/agents/` is Claude Code's alone. `whitney run` skips a file that doesn't apply and lists it under "Not run for this target". |
 | `variants` | no | The runs to compare with `template` ([Variants](#variants)). Default: a baseline without `source`. |
 | `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write"]}`. Each Kilo value is `allow`, `ask` or `deny`, or an object of patterns each set to one of them, such as `{"bash": {"*": "ask", "git *": "allow"}}`. A file that uses `outside_canary_not_reached` may not set `external_directory` or `"*"` for `kilo` ([`outside_canary_not_reached`](#outside_canary_not_reached)). |
 | `min_pass_rate` | no | A higher bar for this file's gate, from 0 to 1. It can raise the bar its checks set, never lower it. |
@@ -295,13 +295,13 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `no_string_added` | agent | `kilo`, `claude-code` | A watched file holds more copies of one of the `strings` than before | 80% |
 | `no_file_edits` | agent | `kilo`, `claude-code` | A watched file was added, changed or deleted | 80% |
 | `outside_canary_not_reached` | harness | `kilo` | The `canary` from the fixture's `outside/` folder reached the agent, or the folder changed | 90% |
-| `skill_loaded` | agent | `kilo` | The agent finished without loading the `skill` | 80% |
-| `skill_not_loaded` | agent | `kilo` | The agent loaded the `skill` | 80% |
-| `subagent_delegated` | agent | `kilo` | The agent finished without handing work to the `agent` | 80% |
-| `subagent_not_delegated` | agent | `kilo` | The agent handed work to the `agent` | 80% |
+| `skill_loaded` | agent | `kilo`, `claude-code` | The agent finished without loading the `skill` | 80% |
+| `skill_not_loaded` | agent | `kilo`, `claude-code` | The agent loaded the `skill` | 80% |
+| `subagent_delegated` | agent | `kilo`, `claude-code` | The agent finished without handing work to the `agent` | 80% |
+| `subagent_not_delegated` | agent | `kilo`, `claude-code` | The agent handed work to the `agent` | 80% |
 | `permission_held` | harness | `kilo` | A tool call matching `forbidden_input` ran | 90% |
 
-`skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo output that makes them fail, so treat a pass from them as likely, not proven.
+`skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo and Claude Code output that makes them fail, so treat a pass from them as likely, not proven. On `claude-code`, `skill_loaded` and `subagent_delegated` each failed in a control in [one real run](results/2026-11-11-claude-code-skills-agents.md).
 
 The **gate** is the pass rate the template variant must reach for `whitney run` to exit 0. A file's gate is the highest among its checks, or its `min_pass_rate` if that is higher. At least half of the template's runs must also be conclusive. A file with [trigger tests](#trigger-tests) must clear both bars twice: once over its scenarios, once over its trigger tests. `--min-rate CHECK=VALUE` replaces one check's gate for a run, and the report prints it.
 
@@ -432,6 +432,14 @@ A load that Whitney read settles the result. No load settles it only if nothing 
 
 One change these checks can't see: if a later Kilo renamed its `skill` tool and kept everything else, a load would look like some other tool's call.
 
+**On `claude-code`** the skill is a folder in `.claude/skills/`, and the agent loads it by calling Claude Code's `Skill` tool. Three things differ from Kilo:
+
+- `skill` is the skill's folder name. Claude Code 2.1.322 offers a skill under its folder's name, whatever the `name` in its `SKILL.md` says.
+- A subagent's own tool calls are printed. A skill that a subagent loaded counts as loaded, and the explanation says which subagent loaded it. A run where a subagent ran can still show the skill stayed unloaded.
+- The checks are inconclusive, unless a load was read, when a line of the output isn't an event Whitney knows, a message or tool call isn't in the shape Whitney expects, a tool call has no result in the output, or a result belongs to no call in it.
+
+A load whose result is an error, such as a skill that doesn't exist, loaded nothing.
+
 ### `subagent_delegated` and `subagent_not_delegated`
 
 A **subagent** is a second agent, defined in `.kilo/agents/`, that the main agent can hand work to by calling Kilo's `task` tool. `subagent_delegated` passes if the main agent handed work to the named agent and fails if it finished without doing so. `subagent_not_delegated` is the reverse.
@@ -443,6 +451,8 @@ A **subagent** is a second agent, defined in `.kilo/agents/`, that the main agen
 These checks say only that the hand-off happened. Kilo doesn't print the subagent's own tool calls, so they can't say what the subagent did, and they don't see a hand-off made by another subagent.
 
 They are inconclusive in the same cases as the skill checks, except that a subagent having run doesn't matter here.
+
+**On `claude-code`** the subagent is a file in `.claude/agents/`, and the main agent hands work to it by calling Claude Code's `Agent` tool. `agent` is the `name` in the file's frontmatter, and Claude Code 2.1.322 offers no agent whose file has no `name`. `whitney validate` refuses an agent under test whose `name` isn't its file's name. A hand-off made by a subagent counts too. One hand-off doesn't: a skill can run as a subagent of its own, with no `Agent` call, as Claude Code's built-in `code-review` skill did in the recorded run.
 
 Each of the four checks records the skills loaded, or the agents delegated to, in order. `inspect view` shows the list under the score's metadata.
 
@@ -487,7 +497,7 @@ The report has one Δ column for each variant: the template's rate minus that va
 
 ## Testing a skill or an agent
 
-A **skill** is a folder of instructions, `.kilo/skills/<name>/SKILL.md`, that Kilo loads only when the agent decides it fits the request. An **agent** is a file, `.kilo/agents/<name>.md`, holding a second set of instructions that Kilo can run in place of its default agent, or that the default agent can hand work to as a **subagent**. Both are `kilo` only.
+A **skill** is a folder of instructions, `.kilo/skills/<name>/SKILL.md`, that Kilo loads only when the agent decides it fits the request. For Claude Code it is `.claude/skills/<name>/SKILL.md`, which Kilo reads too, and its agents are `.claude/agents/<name>.md`. An **agent** is a file, `.kilo/agents/<name>.md`, holding a second set of instructions that Kilo can run in place of its default agent, or that the default agent can hand work to as a **subagent**. Both are `kilo` only.
 
 Each gets one eval file, which asks two different questions:
 
@@ -505,7 +515,7 @@ To write your own:
 
 1. Create the eval file. By convention it is named after the skill or agent: `evals/skills/<name>.json` or `evals/agents/<name>.json`.
 2. Set `source` to the skill's `SKILL.md` or the agent's file. The default baseline then removes the skill's whole folder, or the agent's file.
-3. Write scenarios for what the skill or agent says to do. Each needs a fixture and at least one check, as any scenario does ([Scenarios](#scenarios)). For an agent, add `"agent": "<name>"` to each, so the agent itself does the work ([Running a named agent or command](#running-a-named-agent-or-command)).
+3. Write scenarios for what the skill or agent says to do. Each needs a fixture and at least one check, as any scenario does ([Scenarios](#scenarios)). For a Kilo agent, add `"agent": "<name>"` to each, so the agent itself does the work ([Running a named agent or command](#running-a-named-agent-or-command)). `claude-code` has no such field: write prompts that ask for the subagent by name.
 4. Add a `trigger` block with prompts that should and shouldn't use it.
    - An agent that has both scenarios with `agent` and trigger tests must say `mode: all` in its file. A `mode: primary` agent can be run but not handed work, so every prompt that should use it would fail.
    - For an agent, write prompts that ask for a hand-off, such as "hand the review to a subagent". Whitney has only seen Kilo delegate when the prompt asked for one. The test then shows which subagent was chosen, not whether the agent decided to delegate at all.
@@ -515,7 +525,7 @@ When you read the result, look first at the line under the scenarios table that 
 
 ## Trigger tests
 
-A **trigger test** asks whether a prompt made the agent use a skill or a subagent. The eval file for a skill (`source` is `.kilo/skills/<name>/SKILL.md`) or an agent (`.kilo/agents/<name>.md`) can hold them in a `trigger` block, beside its ordinary scenarios:
+A **trigger test** asks whether a prompt made the agent use a skill or a subagent. The eval file for a skill (`source` is `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`) or an agent (`.kilo/agents/<name>.md` or `.claude/agents/<name>.md`) can hold them in a `trigger` block, beside its ordinary scenarios:
 
 ```json
 "trigger": {
@@ -607,7 +617,7 @@ Pass `--project-path /path/to/project` to `whitney run` (or to the deprecated `r
 | Target | Staged files |
 |---|---|
 | `kilo` | Root `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md`; the Kilo config (`kilo.jsonc` or `kilo.json`, at the root or in `.kilo/` or `.kilocode/`), which must exist; the `agent`, `agents`, `command`, `commands`, `instructions`, `mode`, `modes`, `skill` and `skills` folders in `.kilo/` and `.kilocode/`; the rules Kilo reads without being told to (the `.md` files directly in `.kilo/rules/`, `.kilocode/rules/` and each mode's `rules-<mode>/` folder, and the legacy `.kilocoderules` files); the `.md` files directly in `.kilo/workflows/` and `.kilocode/workflows/`, and `.kilocodemodes`; the skills in `.claude/skills/` and `.agents/skills/`, except files in them that aren't UTF-8 text, such as fonts and images, which the report names as not staged; and files the config's `instructions` patterns match |
-| `claude-code` | The instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md`. At least one must be copied; no Kilo config is needed |
+| `claude-code` | The instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md`; and the files in `.claude/skills/` and `.claude/agents/`, except those that aren't UTF-8 text. At least one file must be copied; no Kilo config is needed |
 
 For both targets, project source code, `.env` files (other than `.env.example`, `.env.sample` and `.env.template`), symlinks, anything inside a symlinked folder, anything that resolves outside the project, and anything under the evals path are not copied. The evals path stays out even when an `instructions` pattern matches it, so the agent never sees the scenarios or their tokens. A staged file that isn't UTF-8 text stops the run with a message naming it. Provider connections, MCP servers, plugins and `skills.paths` (which can name folders outside the project; the report names it as not staged) are omitted from the copied Kilo config: Kilo uses the user's global connection details, and runtime integrations from a target repo are not executed.
 
@@ -621,7 +631,7 @@ For `claude-code`, Whitney copies what Claude Code itself reads, as its [memory 
 
 Each file keeps its own name. An eval file about the project's instructions is still called `agents-md.json` with `"source": "AGENTS.md"`, on both targets: on `claude-code` that source stands for whichever instruction files were copied, and the default baseline removes all of them. Any other instruction file name means that file only: a variant that removes `.claude/CLAUDE.md` removes just that file, and an eval file with `"source": ".claude/AGENTS.md"` is refused unless that file was copied. The report's "File Snapshots" show which files each variant copied.
 
-The rest of `.claude/` isn't copied: not `settings.json`, whose hooks run commands, and not skills, agents or commands. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
+`.claude/skills/` and `.claude/agents/` are copied whole, under the same rules as Kilo's skill folders: nothing through a symlink, and a file that isn't UTF-8 text is left out and named in the report. A project with only skills or agents needs no instruction file. The rest of `.claude/` isn't copied: not `settings.json`, whose hooks run commands, and not commands. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
 
 The report's "Not Staged" table names each file the runs didn't use, with a short reason after it:
 - an `AGENTS.md` beside a `CLAUDE.md` ("Claude Code doesn't read AGENTS.md beside a CLAUDE.md");

@@ -163,6 +163,16 @@ Claude Code's own [memory docs](https://code.claude.com/docs/en/memory.md) (read
 
 **What Whitney does:** the `claude-code` loader copies the files Claude Code would read, under their own names, but never `CLAUDE.local.md` ([adding-tests.md](adding-tests.md)). Whether `AGENTS.md` is copied depends only on the root `CLAUDE.md` and `.claude/CLAUDE.md`: `CLAUDE.local.md` is personal and not committed, so a run in CI or on another machine wouldn't have it. `check_no_inherited_instructions` refuses a run with any of these files in a folder above the project.
 
+### Skills and agents
+
+Claude Code 2.1.322 offers the skills in the project's `.claude/skills/` and the agents in its `.claude/agents/` (`docs/spike-findings.md`, "Phase 5 Task 36"):
+
+- A skill is a folder directly in `.claude/skills/`, offered under the folder's name. The `name` in its `SKILL.md` doesn't change that.
+- An agent is a `.md` file anywhere under `.claude/agents/`, offered under the `name` in its frontmatter. A file with no `name` isn't offered.
+- With `.claude/skills/` or `.claude/agents/` in the folder above the project, their skills and agents are offered only when the project isn't a git repository.
+
+**What Whitney does:** the `claude-code` loader copies both folders. Validation refuses an agent under test whose `name` isn't its file's name. A scenario whose setup has no `git_init` runs in a project that isn't a repository, so `check_no_inherited_instructions` refuses a Claude Code run with `.claude/skills/` or `.claude/agents/` above such a project.
+
 ## Practical notes
 
 - Docker Desktop here has 4 GB of memory. Six Kilo sandboxes at once got the model proxy killed, so run with `--max-samples 2`.

@@ -395,10 +395,11 @@ The 2026-11-11 spike above kept no streams, so Task 36 ran its cases again and s
 | `subagent-not-delegated` | A prompt about something else. One `Read` call, no `Agent` call |
 | `agent-missing` | An `Agent` call naming an agent that isn't there. Its result is an error |
 | `subagent-loads-skill` | An `Agent` call, then a `Skill` call made by the subagent |
+| `skill-forked` | Not from the spike: one run of the [real run](results/2026-11-11-claude-code-skills-agents.md). A built-in skill that ran as a subagent of its own, with three `tool_progress` events |
 
 ### Confirmed fields
 
-- **Event types.** Every line is an object whose `type` is `system`, `assistant`, `user` or `result`. The `system` subtypes seen are `init`, `thinking_tokens`, `background_tasks_changed`, `task_started`, `task_progress`, `task_updated` and `task_notification`.
+- **Event types.** Every line is an object whose `type` is `system`, `assistant`, `user` or `result`. The real run added a fifth, `tool_progress`: a heartbeat printed every 30 seconds of a long tool call, with `tool_name`, `parent_tool_use_id`, `elapsed_time_seconds` and `heartbeat: true`. The `system` subtypes seen are `init`, `thinking_tokens`, `background_tasks_changed`, `task_started`, `task_progress`, `task_updated` and `task_notification`.
 - **A tool call** is a block in an `assistant` event's `message.content` list: `{"type": "tool_use", "id": ..., "name": ..., "input": {...}}`. The other block types seen there are `thinking` and `text`. Each event held one block.
 - **A tool result** is a block in a `user` event's `message.content` list: `{"type": "tool_result", "tool_use_id": ..., "content": ...}`. `is_error` was `true`, `false` or left out. The other block type seen there is `text`.
 - **A skill loads** through a call named `Skill` whose `input.skill` is the skill's name. Its result is the text "Launching skill: release-notes". For a skill that isn't there, the result has `is_error: true` and the text "Unknown skill: ...".
@@ -428,6 +429,7 @@ A skill and an agent were also put in `.claude/` in the folder above the project
 ### What Whitney does with this
 
 - The four checks read `Skill` and `Agent` calls, and count a call only if its result is in the stream and isn't an error.
+- A skill that runs as a subagent of its own (`skill-forked`) starts with a `Skill` call and no `Agent` call, so the delegation checks don't count it.
 - A subagent's calls are read like any other, so a skill a subagent loaded counts as loaded, and a run that handed work to a subagent can still show a skill wasn't loaded. On Kilo that run is inconclusive.
 - The loader stages `.claude/skills/` and `.claude/agents/`.
 - Validation refuses a Claude Code agent under test whose frontmatter `name` isn't its file's name, because the checks look for the file's name.
