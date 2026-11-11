@@ -161,7 +161,7 @@ On Linux, node-glob matches case-sensitively. **What Whitney does:** it expands 
 
 Claude Code's own [memory docs](https://code.claude.com/docs/en/memory.md) (read 2026-11-11) give its order. It loads the root `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` together, from the working folder and every folder above it. It reads `AGENTS.md` and `.claude/AGENTS.md` only when none of those three is there. A spike on 2026-11-11 with Claude Code 2.1.322 agreed (`docs/spike-findings.md`).
 
-**What Whitney does:** the `claude-code` loader copies the files Claude Code would read, under their own names, but never `CLAUDE.local.md` ([adding-tests.md](adding-tests.md)). `check_no_inherited_instructions` refuses a run with any of these files in a folder above the project.
+**What Whitney does:** the `claude-code` loader copies the files Claude Code would read, under their own names, but never `CLAUDE.local.md` ([adding-tests.md](adding-tests.md)). Whether `AGENTS.md` is copied depends only on the root `CLAUDE.md` and `.claude/CLAUDE.md`: `CLAUDE.local.md` is personal and not committed, so a run in CI or on another machine wouldn't have it. `check_no_inherited_instructions` refuses a run with any of these files in a folder above the project.
 
 ## Practical notes
 

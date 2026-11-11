@@ -58,14 +58,16 @@ ENV_REFERENCE = re.compile(r"\{env:([A-Za-z_][A-Za-z0-9_]*)\}")
 REDACTED = "[redacted]"
 
 # Files the harnesses read from folders above the project: Claude Code loads
-# CLAUDE.md and .claude/CLAUDE.md from every parent folder (the second seen in a
-# canary run, docs/results/2026-11-06-claude-code-canary.md), and Kilo looks for
+# CLAUDE.md, .claude/CLAUDE.md and CLAUDE.local.md from every parent folder, and
+# AGENTS.md and .claude/AGENTS.md when none of those is there (its memory docs,
+# docs/load-order.md; .claude/CLAUDE.md was seen in a canary run,
+# docs/results/2026-11-06-claude-code-canary.md), and Kilo looks for
 # AGENTS.md and config up to the repository root, which a staged project doesn't
 # have. Kilo also reads skills from .claude/skills/ and .agents/skills/ in each
 # folder up to that root (KILO_SKILL_DIRS; seen with `kilo debug skill`,
 # docs/load-order.md), and setting GIT_CEILING_DIRECTORIES doesn't stop it; with no
 # .git there or above, Kilo reads none, so those are refused only then. The
-# .claude/CLAUDE.md file and .claude/skills/ are named, not the .claude folder: a
+# .claude/ instruction files and .claude/skills/ are named, not the .claude folder: a
 # real HOME always has ~/.claude/, and a temp folder under HOME would be refused for nothing.
 INHERITED_INSTRUCTION_NAMES = (
     *ROOT_INSTRUCTIONS, "CLAUDE.local.md", ".claude/CLAUDE.md", ".claude/AGENTS.md", "kilo.jsonc", "kilo.json", *KILO_CONFIG_DIRS,

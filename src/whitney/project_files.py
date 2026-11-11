@@ -208,7 +208,9 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
         FileNotFoundError: project_dir doesn't exist.
         ValueError: project_dir isn't a folder or is inside evals_path, has
             nothing to stage (the message names the files and says what is
-            skipped), a file to stage is under evals_path, or isn't UTF-8.
+            skipped, and names a CLAUDE.md that hides AGENTS.md but can't be
+            staged), a file to stage is under evals_path, can't be read, or
+            isn't UTF-8.
     """
     root = _project_root(project_dir)
     evals = _evals_root(root, evals_path)
@@ -217,7 +219,7 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
         raise ValueError(
             f"project has no Claude Code instructions to stage ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}; "
             "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped): "
-            f"{root}"
+            f"{root}{_hidden_by_claude_md(root)}"
         )
     for source in sources:
         if _under(root / source, evals):
@@ -226,7 +228,7 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
                 f"{root / source} is an instruction file to stage, but it is under the evals path {evals.path}, "
                 "whose files are never staged"
             )
-    return {source: _read_text(root / source) for source in sources}
+    return {source: _read_instruction(root / source) for source in sources}
 
 
 def claude_code_instructions(relative: str, staged: Mapping[str, str]) -> list[str]:
@@ -646,6 +648,30 @@ def _claude_code_sources(root: Path) -> list[str]:
 def _claude_code_group(root: Path) -> tuple[str, ...]:
     """CLAUDE_MD_FILES if either is there, even one that can't be staged, as Claude Code would see it; else AGENTS_MD_FILES."""
     return CLAUDE_MD_FILES if any(_is_there(root / relative) for relative in CLAUDE_MD_FILES) else AGENTS_MD_FILES
+
+
+def _hidden_by_claude_md(root: Path) -> str:
+    """For the no-instructions error: the CLAUDE.md files that hide AGENTS.md but can't be staged, or ""."""
+    if _claude_code_group(root) != CLAUDE_MD_FILES:
+        return ""
+    linked = (root / CLAUDE_CODE_DIR).is_symlink()
+    hidden = [relative for relative in CLAUDE_MD_FILES if _is_there(root / relative)]
+    names = " and ".join(_spelled(root, relative) for relative in hidden)
+    reasons = "; ".join(
+        f"{CLAUDE_CODE_DIR}/ is a symlink" if linked and relative == DOT_CLAUDE_MD else UNSAFE_REASON
+        for relative in hidden
+    )
+    return (
+        f". {names} would be read by Claude Code instead of AGENTS.md, but Whitney doesn't stage "
+        f"{'it' if len(hidden) == 1 else 'them'} ({reasons}). Replace a link with the file it points to, or remove it."
+    )
+
+
+def _read_instruction(path: Path) -> str:
+    try:
+        return _read_text(path)
+    except OSError as error:  # an unreadable file would otherwise stop the run with a bare PermissionError
+        raise ValueError(f"{path} is an instruction file to stage, but it can't be read: {error.strerror}") from error
 
 
 def _is_there(path: Path) -> bool:

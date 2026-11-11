@@ -629,9 +629,9 @@ The report's "Not Staged" table names each file the runs didn't use, with a shor
 - `CLAUDE.local.md`;
 - up to 50 other `.claude/` entries ("rest of .claude/").
 
-A project with nothing to copy stops with a message that names the files. Names are matched as the filesystem does, so results can differ between macOS and Linux: on macOS's default case-insensitive disk a `claude.md` counts as `CLAUDE.md`. The report's "Renamed for the Eval" table names it as spelled on disk.
+A project with nothing to copy stops with a message that names the files. If a `CLAUDE.md` would hide `AGENTS.md` but can't be copied, the message names it too. A common case is a `CLAUDE.md` that is a symlink to `AGENTS.md`: replace the link with a copy of the file, or remove it. Names are matched as the filesystem does, so results can differ between macOS and Linux: on macOS's default case-insensitive disk a `claude.md` counts as `CLAUDE.md`. The report's "Renamed for the Eval" table names it as spelled on disk.
 
-The `agents_md` baseline removes the copied `AGENTS.md`, so its Δ (template rate minus baseline rate) measures the rules in that one file. Both variants hold the same files apart from it, so the Δ shows what those rules change. This is how the shipped `template/claude-code/` is set up ([docs/template.md](template.md)).
+The `agents_md` baseline removes every instruction file the loader copied, so its Δ (template rate minus baseline rate) measures the rules in those files. Both variants hold the same files apart from them, so the Δ shows what those rules change. This is how the shipped `template/claude-code/` is set up ([docs/template.md](template.md)).
 
 `kilo_jsonc`'s allow-control changes the copied external-directory permission to `allow`.
 

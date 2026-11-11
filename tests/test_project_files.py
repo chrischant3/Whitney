@@ -212,6 +212,59 @@ def test_a_claude_md_that_cannot_be_staged_still_hides_agents_md(tmp_path):
     }
 
 
+def test_a_claude_md_linked_to_agents_md_is_named_as_what_hides_it(tmp_path):
+    # A common layout: CLAUDE.md is a symlink to AGENTS.md. Whitney never stages a link, so the error names it.
+    (tmp_path / "AGENTS.md").write_text("agents rule\n")
+    (tmp_path / "CLAUDE.md").symlink_to("AGENTS.md")
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(tmp_path)
+
+    message = str(raised.value)
+    assert message.startswith("project has no Claude Code instructions to stage")
+    assert message.endswith(
+        ". CLAUDE.md would be read by Claude Code instead of AGENTS.md, but Whitney doesn't stage it "
+        "(a symlink or outside the project). Replace a link with the file it points to, or remove it."
+    )
+
+
+def test_a_symlinked_dot_claude_folder_is_named_as_what_hides_agents_md(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("agents rule\n")
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "elsewhere/CLAUDE.md").write_text("folder rule\n")
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "AGENTS.md").write_text("agents rule\n")
+    (project / ".claude").symlink_to(tmp_path / "elsewhere")
+
+    with pytest.raises(ValueError, match=r"\.claude/CLAUDE\.md would be read .* stage it \(\.claude/ is a symlink\)"):
+        load_claude_code_project_files(project)
+
+
+def test_a_project_without_a_claude_md_is_not_told_one_hides_agents_md(tmp_path):
+    (tmp_path / "AGENTS.md").symlink_to(tmp_path / "missing.md")
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(tmp_path)
+    assert "would be read by Claude Code" not in str(raised.value)
+
+
+def test_an_instruction_file_that_cannot_be_read_stops_the_run_with_a_value_error(tmp_path, monkeypatch):
+    (tmp_path / "AGENTS.md").write_text("agents rule\n")
+    (tmp_path / "CLAUDE.md").write_text("claude rule\n")
+    read_text = Path.read_text
+
+    def unreadable_claude_md(path, *args, **kwargs):
+        # A file with mode 000 does this; root could still read it, so the test doesn't rely on chmod.
+        if path.name == "CLAUDE.md":
+            raise PermissionError(13, "Permission denied", str(path))
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unreadable_claude_md)
+
+    with pytest.raises(ValueError, match=r"CLAUDE\.md is an instruction file to stage, but it can't be read: Permission denied"):
+        load_claude_code_project_files(tmp_path)
+
+
 def test_a_claude_code_project_without_instructions_is_told_which_files_were_looked_for(tmp_path):
     (tmp_path / "kilo.jsonc").write_text("{}")
     with pytest.raises(ValueError) as raised:
