@@ -4,7 +4,7 @@ What changed in each release, and what anyone who forks Whitney or runs it in CI
 
 ## Unreleased
 
-The next release is 0.3.0. It changes how some runs are graded, which before 1.0.0 bumps the minor part ([release checklist](docs/release-checklist.md), step 5).
+This release changes how some runs are graded. Before 1.0.0 that bumps the minor part, not the major ([release checklist](docs/release-checklist.md), step 5).
 
 ### Changed
 
