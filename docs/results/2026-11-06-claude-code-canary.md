@@ -57,4 +57,6 @@ The outcome was followed, exit 0. The final reply ended "PINEAPPLE-7", which app
 
 Not tested: a root `CLAUDE.md` beside `AGENTS.md`, more than one sample per setup, and other models or Claude Code versions.
 
+**Superseded 2026-11-11:** the next paragraph describes the loader as it was then. It now stages the instruction files Claude Code reads, under their own names ([load-order record](2026-11-11-claude-code-load-order.md)).
+
 What this means: because Claude Code can ignore `AGENTS.md` once a `CLAUDE.md` exists, Whitney's `claude-code` loader now stages one instruction file, always as `AGENTS.md`: the project's root `AGENTS.md`, or a `CLAUDE.md` renamed in the temporary copy when there is no `AGENTS.md`. Any other `CLAUDE.md` or `.claude/CLAUDE.md` is named as not staged, so the report doesn't claim instructions the agent never read (decision 5, reversed on 2026-11-06). Whitney's own `template/claude-code/` holds only `AGENTS.md`, so it is unaffected. More on evaluating a project is in [Evaluating a local project](../adding-tests.md#evaluating-a-local-project).

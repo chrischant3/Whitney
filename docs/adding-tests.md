@@ -619,7 +619,7 @@ For `claude-code`, Whitney copies what Claude Code itself reads, as its [memory 
 - **`AGENTS.md` and `.claude/AGENTS.md`** are copied only when neither `CLAUDE.md` exists. Claude Code ignores `AGENTS.md` beside a `CLAUDE.md`, so testing it there would test rules the agent never reads. A `CLAUDE.md` that can't be copied, such as a symlink, still counts, because Claude Code would see it.
 - **`CLAUDE.local.md`** is never copied. It holds one person's own notes and usually isn't committed. On that person's machine it also stops Claude Code reading `AGENTS.md`, which the report says.
 
-Each file keeps its own name. An eval file about the project's instructions is still called `agents-md.json` with `"source": "AGENTS.md"`, on both targets: on `claude-code` that source stands for whichever instruction files were copied, and the default baseline removes all of them. The report's "File Snapshots" show which files each variant copied.
+Each file keeps its own name. An eval file about the project's instructions is still called `agents-md.json` with `"source": "AGENTS.md"`, on both targets: on `claude-code` that source stands for whichever instruction files were copied, and the default baseline removes all of them. Any other instruction file name means that file only: a variant that removes `.claude/CLAUDE.md` removes just that file, and an eval file with `"source": ".claude/AGENTS.md"` is refused unless that file was copied. The report's "File Snapshots" show which files each variant copied.
 
 The rest of `.claude/` isn't copied: not `settings.json`, whose hooks run commands, and not skills, agents or commands. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
 
@@ -629,9 +629,9 @@ The report's "Not Staged" table names each file the runs didn't use, with a shor
 - `CLAUDE.local.md`;
 - up to 50 other `.claude/` entries ("rest of .claude/").
 
-A project with nothing to copy stops with a message that names the files. Names are matched as the filesystem does, so results can differ between macOS and Linux: on macOS's default case-insensitive disk a `claude.md` counts as `CLAUDE.md`. The report's "Renamed for the Eval" table names it as spelled on disk.
+A project with nothing to copy stops with a message that names the files. If a `CLAUDE.md` would hide `AGENTS.md` but can't be copied, the message names it too. A common case is a `CLAUDE.md` that is a symlink to `AGENTS.md`: replace the link with a copy of the file, or remove it. Names are matched as the filesystem does, so results can differ between macOS and Linux: on macOS's default case-insensitive disk a `claude.md` counts as `CLAUDE.md`. The report's "Renamed for the Eval" table names it as spelled on disk.
 
-The `agents_md` baseline removes the copied `AGENTS.md`, so its Δ (template rate minus baseline rate) measures the rules in that one file. Both variants hold the same files apart from it, so the Δ shows what those rules change. This is how the shipped `template/claude-code/` is set up ([docs/template.md](template.md)).
+The `agents_md` baseline removes every instruction file the loader copied, so its Δ (template rate minus baseline rate) measures the rules in those files. Both variants hold the same files apart from them, so the Δ shows what those rules change. This is how the shipped `template/claude-code/` is set up ([docs/template.md](template.md)).
 
 `kilo_jsonc`'s allow-control changes the copied external-directory permission to `allow`.
 

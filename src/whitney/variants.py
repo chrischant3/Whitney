@@ -308,17 +308,18 @@ def _covers(entry: str, path: str) -> bool:
 
 
 def for_claude_code_instructions(variant: Variant, files: Mapping[str, str]) -> Variant:
-    """`variant` with each `remove` of a Claude Code instruction file widened to every one staged, for the claude-code target.
+    """`variant` with a `remove` of AGENTS.md widened to every Claude Code instruction file staged, for the claude-code target.
 
     The claude-code loader stages whichever of CLAUDE.md, .claude/CLAUDE.md,
     AGENTS.md and .claude/AGENTS.md Claude Code would read, under their own
     names, so the default baseline of agents-md.json, which removes
     AGENTS.md, has to remove them all to run with no project instructions
-    (project_files.claude_code_instructions). Other entries are kept, and a
-    path is listed once.
+    (project_files.claude_code_instructions). A remove of any other name,
+    such as .claude/CLAUDE.md, removes that file only. Other entries are
+    kept, and a path is listed once.
 
     Returns:
-        `variant` itself if no `remove` entry names an instruction file that's staged under that name or another.
+        `variant` itself if it doesn't remove AGENTS.md while instruction files are staged.
     """
     widened = [name for path in variant.remove for name in (claude_code_instructions(path, files) or [path])]
     unique = list(dict.fromkeys(widened))

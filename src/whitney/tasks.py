@@ -264,8 +264,10 @@ def agents_md(
 
     Args:
         variant: "template" copies the target's AGENTS.md into the project;
-            "baseline" leaves root AGENTS.md out. Both get the same config
-            and other instruction assets, so AGENTS.md is the only difference.
+            "baseline" leaves root AGENTS.md out, and for claude-code every
+            instruction file staged (variants.for_claude_code_instructions).
+            Both get the same config and other assets, so the instructions
+            are the only difference.
             The variants come from evals/agents-md.json (whitney.variants).
         target: the harness under test, "kilo" or "claude-code" (see whitney.targets).
         model: the model under evaluation, as provider/model.
@@ -955,10 +957,10 @@ def model_access(api_key_env: str | None, base_url: str | None) -> dict:
 def _staged_removes_only(variant: Variant, files: dict[str, str]) -> Variant:
     """`variant` without the removes of paths that aren't staged.
 
-    Today's agents_md baseline left AGENTS.md out only if it was there, so a
-    Claude Code project with only CLAUDE.md still runs both variants (they
-    stage the same files). Validation of a project path (plan Task 8) is
-    where such a baseline will be refused.
+    The agents_md baseline leaves AGENTS.md out only if it was staged. For
+    claude-code, the remove has already been widened to the instruction
+    files staged (variants.for_claude_code_instructions), so a project with
+    only CLAUDE.md runs a baseline without it.
     """
     return variant.model_copy(update={"remove": [path for path in variant.remove if staged_matches(files, path)]})
 
