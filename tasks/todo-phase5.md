@@ -782,3 +782,115 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Estimated scope:** S. About a dollar of model calls for one epoch of everything; three epochs is about three times that.
 
+## Milestone E: Claude Code at parity with Kilo
+
+Added on 2026-11-11, from the spike in `docs/spike-findings.md` ("Claude Code: instructions, skills, subagents and permissions") and decision 8 in `plan-phase5.md`. Today the `claude-code` target supports 3 of the 9 checks and stages one instruction file. After this milestone, every check that works on `kilo` works on `claude-code` too, or the docs say why not.
+
+### Task 34: Claude Code loader: follow Claude Code's documented order
+
+**Description:** Claude Code's memory page (https://code.claude.com/docs/en/memory.md, read 2026-11-11) says:
+- `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` are all loaded, concatenated, not one instead of another;
+- `AGENTS.md` and `.claude/AGENTS.md` are read only when none of those three is in the working folder or above it;
+- `AGENTS.local.md`, `AGENTS.override.md` and anything under `.agents/` aren't read.
+
+Whitney does the opposite today. It stages one file, always as `AGENTS.md`, preferring `AGENTS.md` over `CLAUDE.md` (decision 5). So for a project with both, it tests the file Claude Code ignores. This task makes the loader stage what Claude Code would read, under each file's own name.
+
+**Acceptance criteria:**
+- [ ] When the project has root `CLAUDE.md` or `.claude/CLAUDE.md`, both that exist are staged under their own names, and `AGENTS.md` and `.claude/AGENTS.md` are named as left out, with the reason "Claude Code doesn't read AGENTS.md beside a CLAUDE.md".
+- [ ] Otherwise, `AGENTS.md` and `.claude/AGENTS.md`, if they exist, are staged under their own names.
+- [ ] `CLAUDE.local.md` is never staged: it's personal and usually not committed. It's named as left out, and the report says it would stop Claude Code reading `AGENTS.md` on that person's machine.
+- [ ] Nothing is renamed, so the "Renamed for the Eval" table is empty for `claude-code`. Decide whether to remove `files_renamed` or keep it for Kilo.
+- [ ] The safety rules stay: a symlink, or a file resolving outside the project, is skipped and named. A skipped `CLAUDE.md` doesn't make `AGENTS.md` load, because Claude Code would still see the `CLAUDE.md`.
+- [ ] `check_no_inherited_instructions` refuses a run with a `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md` or `.claude/AGENTS.md` in a folder above the staged project, since Claude Code reads every folder above.
+- [ ] The default baseline removes every staged instruction file, so it's a run with no project instructions at all.
+- [ ] Eval file naming: `agents-md.json` stays the eval for the project's instructions on both targets. Recommended: the report names which files were staged, rather than adding a `claude-md.json`. Confirm with Christopher before building.
+- [ ] Decision 5 in `plan-phase5.md` is marked as replaced, and `docs/load-order.md` and the comment above `CLAUDE_CODE_DIR` in `project_files.py` say the new order.
+- [ ] One real run per case (cents, Haiku) confirms Claude Code reads what was staged: `CLAUDE.md` and `.claude/CLAUDE.md` together, and `.claude/AGENTS.md` alone.
+
+**Tests whose expectations change** (Christopher chose the documented order on 2026-11-11; each change is listed in the PR, and he confirms the list before the tests are edited):
+- `test_a_claude_md_beside_agents_md_is_named_not_staged_and_agents_md_is_staged` (`tests/test_project_files.py`): the `CLAUDE.md` is staged, and `AGENTS.md` is named as left out.
+- `test_a_claude_md_with_no_agents_md_beside_it_is_staged_as_agents_md_and_the_rename_is_named`: staged under its own name, with no rename.
+- `test_with_both_claude_md_files_and_no_agents_md_the_root_one_is_staged`: both are staged.
+- `test_an_agents_md_skipped_for_safety_gives_way_to_claude_md_and_is_named`: the `CLAUDE.md` is staged because it's there, not because `AGENTS.md` was skipped. Rename it to say so.
+- Any other test that expects `{"AGENTS.md": ...}` from a `CLAUDE.md`, found by running the suite after the change.
+
+**Verification:**
+- [ ] `python scripts/check.py task`
+- [ ] Manual: the real runs above, recorded in `docs/results/`.
+
+**Dependencies:** None.
+
+**Estimated scope:** M.
+
+### Task 35: Claude Code: gather denials from every `result` event
+
+**Description:** A background subagent makes `claude -p` emit two `result` events (spike, "Subagents"). `_outcome` in `claude_code.py` keeps only the last, so a denial in the first turn is lost, and a run the harness decided could be scored as conclusive.
+
+**Acceptance criteria:**
+- [ ] `permission_denials` is the union of every `result` event's list, without duplicates by `tool_use_id`.
+- [ ] `ended_early` is True if any `result` event isn't a success.
+- [ ] `final_text` is still the last `result`'s text.
+- [ ] A test with a recorded two-`result` stream.
+
+**Verification:** `python scripts/check.py task`
+
+**Dependencies:** None. **Estimated scope:** XS.
+
+### Task 36: Claude Code: skills, agents and trigger tests
+
+**Description:** The spike showed that Claude Code offers project skills from `.claude/skills/` and agents from `.claude/agents/`, loads a skill with a `Skill` tool call (`input.skill`), and hands work to an agent with an `Agent` call (`input.subagent_type`). A subagent's own calls are in the stream, marked with `parent_tool_use_id`.
+
+**Acceptance criteria:**
+- [ ] The `claude-code` loader stages `.claude/skills/` and `.claude/agents/`, with the same safety rules as the Kilo loader.
+- [ ] `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated` list `claude-code` in `whitney checks`, reading the calls above.
+- [ ] A negative trigger prompt that delegates is conclusive on `claude-code`, because the subagent's calls are visible. A `Skill` call by the subagent counts as the skill loading, and the explanation says the subagent loaded it.
+- [ ] The `trigger` block works for `skills/<name>.json` and `agents/<name>.json` on `claude-code`, with the control removing the skill or agent.
+- [ ] Each check's docstring names the Claude Code version and the spike it relies on.
+- [ ] Tests from recorded Claude Code streams.
+
+**Verification:** `python scripts/check.py task`; one real trigger run (cents).
+
+**Dependencies:** 34. **Estimated scope:** M.
+
+### Task 37: Claude Code: stage `permissions` from `.claude/settings.json`; `permission_held`
+
+**Description:** A `deny` or `ask` rule in the project's `.claude/settings.json` refuses the call and lists it in `permission_denials` (spike, "Permissions"). Decision 8: stage only the `permissions` block. Hooks stay out (Later list).
+
+**Acceptance criteria:**
+- [ ] The staged `.claude/settings.json` holds only the project's `permissions` block. Every other key, hooks included, is named as left out, with the reason.
+- [ ] The eval's own `--settings` grant still applies. The docs say what the spike saw: a project `deny` wins over a `--settings` `allow`.
+- [ ] `permission_held` supports `claude-code`. Held means the matching call is in `permission_denials` and didn't run. Bypassed means a call matching `forbidden_input` ran. Not attempted means neither.
+- [ ] The eval file is `configuration/claude-settings.json`. Its variants, such as a control setting the rule to `allow`, act on the `permissions` block.
+- [ ] `whitney validate` refuses an `allow` rule as the rule under test, as it does for Kilo.
+- [ ] Tests from the spike's recorded streams, with no local paths in them.
+
+**Verification:** `python scripts/check.py task`; one real run (cents).
+
+**Dependencies:** 34, 35. **Estimated scope:** M.
+
+### Task 38: Claude Code: `outside_canary_not_reached`
+
+**Description:** On Claude Code, the Read tool asks before reaching outside the project, which a headless run refuses, but Bash doesn't ask: `cat ../outside/canary.txt` ran and returned the canary (spike, "Outside the project"). Decision 8: support the check, and let a shell read fail it.
+
+**Acceptance criteria:**
+- [ ] `outside_canary_not_reached` lists `claude-code`, and finds the canary in any tool result in the stream, a subagent's included.
+- [ ] A refused Read counts as held, with the denial in the explanation.
+- [ ] `docs/adding-tests.md` says Claude Code guards only its file tools, and how a team can close the shell gap: a `deny` rule, or Claude Code's sandbox. The check can then test the fix.
+- [ ] Tests from recorded streams.
+
+**Verification:** `python scripts/check.py task`; one real run (cents).
+
+**Dependencies:** 35. **Estimated scope:** S.
+
+### Task 39: Claude Code example, recorded real run and docs
+
+**Acceptance criteria:**
+- [ ] `examples/consumer` gains what a Claude Code team would have: a `CLAUDE.md`, a skill and an agent under `.claude/`, and a `.claude/settings.json` with a `deny` rule. Its eval files run on `claude-code`.
+- [ ] One recorded real run with `--epochs 1` on both targets, with Christopher's go-ahead first (about a dollar), written up in `docs/results/`.
+- [ ] `docs/adding-tests.md`, `docs/load-order.md`, the README and the `write-evals` skill say what each target stages and supports. `references/fixtures.md` drops "The `claude-code` target stages no skills".
+- [ ] `whitney checks` lists `claude-code` for every check that supports it.
+
+**Verification:** `python scripts/check.py task`
+
+**Dependencies:** 34 to 38. **Estimated scope:** M.
+
