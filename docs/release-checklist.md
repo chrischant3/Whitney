@@ -66,7 +66,7 @@ Before a release with large changes, have a reviewer that didn't write them audi
 
 ## 7. Tag and publish
 
-Sign the tag with your own key, as for approvals in CONSTRAINTS.md:
+Sign the tag with your own key, as for approvals in CONSTRAINTS.md. Run this step in your own terminal: the Claude Code git workflow gate refuses every push from main, tags included.
 
 ```bash
 VERSION=0.2.0
