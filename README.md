@@ -25,6 +25,16 @@ Either way, a run needs two folders. The **project path** holds the configuratio
 4. Write an **eval file** for each instruction file you want to test, such as `evals/agents-md.json` for `AGENTS.md`, or add scenarios to one that exists. An eval file is a JSON file of **scenarios**. A scenario is a prompt, the starting project the agent works in, the pressure it puts on the rule, such as a deadline or a direct request to break it, and the checks that judge the run. [Writing your own evals](docs/adding-tests.md) walks through adding one to the example project in [`examples/consumer`](examples/consumer/).
 
    A scenario can only use a check Whitney already has. [What you can test today](#what-you-can-test-today) lists them.
+
+   An agent can draft the eval file for you. The `write-evals` skill, in [`.claude/skills/write-evals/`](.claude/skills/write-evals/SKILL.md), maps each rule to a check, says which rules can't be tested yet, builds a fixture, writes the scenarios, and runs `whitney validate` until it's clean. It stops before `whitney run`, which calls a model. Claude Code and Kilo both load it in a Whitney checkout. Ask for it with a request such as "write evals for AGENTS.md".
+
+   To use it from your own project, copy the folder into that project's `.claude/skills/`, or into `~/.claude/skills/` for every project:
+
+   ```bash
+   cp -R .claude/skills/write-evals ~/.claude/skills/
+   ```
+
+   The skill reads Whitney's docs as it works. Outside a Whitney checkout, give the agent the checkout's path when you ask. Copy the folder again after you update Whitney, so the skill matches the checks your version has.
 5. Run the evals. `--target` names the harness and `--model` the model; neither has a default. `--epochs 3` runs each scenario three times. One run of a model proves little.
 
    ```bash

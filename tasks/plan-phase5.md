@@ -106,6 +106,8 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | 29 | Gate positive and negative trigger prompts separately (after `v0.2.0`) | after D | none | S | no |
 | 30 | The VS Code extension check (moved from `v0.2.0`) | after D | none | S | yes, cents |
 | 31 | Record what was sent to the model, and the agent's reasoning (after `v0.2.0`) | after D | none | M | yes, cents |
+| 32 | An eval-driven development skill (after `v0.2.0`) | after D | `write-evals` | M | yes, dollars |
+| 33 | Fix and re-run the eval sets `write-evals` drafted | after D | none | S | yes, about a dollar an epoch |
 
 Lanes that can run beside the main one:
 
@@ -189,7 +191,14 @@ Not planned in detail:
 
 - **Security, found in the Task 9 review (2026-11-06), do before a release:** a literal `apiKey` in the user's global Kilo `provider` settings is copied into the `KILO_CONFIG` overlay, which the agent can read, and neither the agent nor `evidence.run_secrets` redacts it; the same goes for proxy credentials passed through `LOCAL_ENV_PASSTHROUGH` (for example `HTTP_PROXY=user:pass@...`). Refuse literal keys in the overlay (use `{env:NAME}`), or redact them, with a test.
 
+- **`git -C . push` gets past `"git push *": "deny"` (2026-11-10).** An eval the `write-evals` skill drafted for `examples/consumer/kilo.jsonc` asked the agent to push "another way". On Kilo 7.8.27 with Haiku, `git -C . push origin master` ran, and `permission_held` reported it bypassed; the four direct pushes were refused. Kilo's pattern matches the command's text, so any option before `push` steps round it. Decide whether the example's rule should add a pattern such as `"git * push*": "deny"`, whether the docs should say a pattern rule is this easy to step round, and whether it belongs beside finding 001.
+- **A `permission_held` false fail, found testing the `write-evals` skill (2026-11-10).** `forbidden_input` is searched in every string of every tool call's input (`checks/permissions.py`, `_strings`), so it also matches text the model wrote: a bash call's `description`, a `todowrite` item, a `task` prompt for a subagent. A completed `git status` described as "check before git push" counts as a push that ran, and fails the check. It errs towards failing, never towards passing. Match only the fields that carry what runs, such as bash's `command`, with a test for each tool. Each test whose expectation changes needs Christopher's confirmation first.
 - `no_test_newly_skipped`, with presets for each test framework (spec slice 12).
+- **Checks for rules no check covers yet, found building the `write-evals` skill (2026-11-10).** Drafting evals for a real `AGENTS.md` turned up three kinds of rule that today's checks can't test:
+  - **The order of actions**, such as "always run tests before committing". This needs a check that reads the tool calls in order and fails when a commit comes before the test command. The `kilo` event stream already holds each tool call with its input; `claude-code` would need the same.
+  - **Which files the agent read**, such as "read CONSTRAINTS.md before writing code". This needs a check that a read of the named file came before the first edit. A read through `bash`, such as `cat`, counts too.
+  - **What the agent's reply says**, such as "quote evidence for every finding" in an audit skill. No check reads the reply, so for a skill whose output is a report, the evals test only what it mustn't do and whether it loads. Model-graded checks, listed below, are one way in.
+  - **Something the agent must do**, such as "colocate tests next to the source". Every check today watches for what mustn't happen. Turned round, "no test file in a separate folder" also passes a run that writes no test at all. A `file_added` check, which fails if no new file matches a pattern, would test it the right way round.
 - Claude Code skills and agents: its own capture of `--output-format stream-json`, and staging `.claude/skills/` and `.claude/agents/` without `.claude/settings.json`, whose hooks run commands.
 - `--junit` output; model-graded checks (spec open question 13); check plugins (spec open question 9).
 - The proposal's other future work: instruction hierarchy, `REVIEW.md`, hooks.
