@@ -369,3 +369,64 @@ def test_a_name_above_the_project_that_cannot_be_checked_stops_the_run(fake_clau
         "Set TMPDIR to a folder you can read, with none of these files above it."
     )
     assert not (fake_claude.project / "args.txt").exists()
+
+
+# --- A denial the eval file asked for (Task 36b) ---------------------------------------------
+
+EVENTS = Path(__file__).parent / "data" / "claude-code-events"
+
+
+def _recorded_results(name: str) -> str:
+    """The result events of a recorded Claude Code stream, one per line, for the fake claude to print."""
+    lines = (EVENTS / f"{name}.jsonl").read_text().splitlines()
+    return "\n".join(line for line in lines if json.loads(line).get("type") == "result")
+
+
+@pytest.mark.parametrize("name, skill", [
+    ("skill-denied", "release-notes"), ("skill-denied-builtin", "code-review"), ("skill-denied-in-subagent", "release-notes"),
+])
+def test_a_denied_skill_the_eval_file_switched_off_doesnt_end_the_run_early(fake_claude, name, skill):
+    """Recorded streams: the eval file's own deny rule refused the skill, and the agent carried on."""
+    fake_claude.control(FAKE_RESULT=_recorded_results(name))
+
+    _run(claude_code(model=MODEL, harness_permissions={"allow": ["Bash"], "deny": [f"Skill({skill})"]}))
+
+    run = fake_claude.stored[RUN_STORE_KEY]
+    assert {denial["tool_input"]["skill"] for denial in run["permission_denials"]} == {skill}  # still recorded
+    assert run["ended_early"] is False
+    assert run_completed(run)
+
+
+@pytest.mark.parametrize("permissions", [
+    None,
+    {"allow": ["Bash"]},
+    {"deny": ["Skill(code-review)"]},  # another skill
+    {"deny": ["Skill"]},  # the whole tool: no named skill was asked for
+    {"deny": ["Agent(release-notes)"]},
+])
+def test_a_denied_skill_the_eval_file_didnt_name_still_ends_the_run_early(fake_claude, permissions):
+    fake_claude.control(FAKE_RESULT=_recorded_results("skill-denied"))
+
+    _run(claude_code(model=MODEL, harness_permissions=permissions))
+
+    assert fake_claude.stored[RUN_STORE_KEY]["ended_early"] is True
+
+
+def test_another_denial_beside_the_one_asked_for_still_ends_the_run_early(fake_claude):
+    asked_for = json.loads(_recorded_results("skill-denied").splitlines()[0])["permission_denials"]
+    fake_claude.control(FAKE_RESULT=json.dumps(_result("Done.", [*asked_for, DENIAL])))
+
+    _run(claude_code(model=MODEL, harness_permissions={"deny": ["Skill(release-notes)"]}))
+
+    run = fake_claude.stored[RUN_STORE_KEY]
+    assert run["permission_denials"] == [*asked_for, DENIAL]
+    assert run["ended_early"] is True
+
+
+def test_a_run_that_failed_ends_early_whatever_was_asked_for(fake_claude):
+    asked_for = json.loads(_recorded_results("skill-denied").splitlines()[0])["permission_denials"]
+    fake_claude.control(FAKE_RESULT=json.dumps(_result("", asked_for, subtype="error_max_turns")))
+
+    _run(claude_code(model=MODEL, harness_permissions={"deny": ["Skill(release-notes)"]}))
+
+    assert fake_claude.stored[RUN_STORE_KEY]["ended_early"] is True
