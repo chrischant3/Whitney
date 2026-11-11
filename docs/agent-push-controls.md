@@ -4,6 +4,8 @@ Checked against GitHub's and Claude Code's documentation on 2026-11-06.
 
 This guide is for platform, security and engineering-enablement teams whose organisation lets developers use AI coding agents, such as Claude Code or the Kilo CLI. The goal it serves: agents commit locally, but never push to GitHub and never act on GitHub through the `gh` CLI. A person reviews the work and pushes it.
 
+Whitney's own repository is set up less strictly: there, a Claude Code agent may push feature branches over SSH and open pull requests, through the git workflow gate in `.claude/hooks/`, and only the maintainer merges. This guide describes the stricter organisation setup.
+
 It complements [signed-approvals.md](signed-approvals.md), which sets up one maintainer's repository so that an agent can't approve its own changes. That guide leaves one gap open: agents can still push with the user's SSH key. This guide covers that gap, for a whole organisation.
 
 There are four layers. Only the first two are boundaries. The third is a guardrail, and the fourth is how people work.

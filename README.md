@@ -410,7 +410,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 ## Docs
 
 - [docs/template.md](docs/template.md): what's in each target's template and how to change it
-- [CONSTRAINTS.md](CONSTRAINTS.md): the bar a change must meet (floor, coverage, mutation testing, secrets, dependencies) and `scripts/check.py`, which runs it. `check.py` needs [gitleaks](https://github.com/gitleaks/gitleaks) and [osv-scanner](https://github.com/google/osv-scanner) on PATH, such as `brew install gitleaks osv-scanner`; CI uses gitleaks 8.30.1
+- [CONSTRAINTS.md](CONSTRAINTS.md): the bar a change must meet (floor, coverage, mutation testing, secrets, dependencies) and `scripts/check.py`, which runs it. `check.py` needs [gitleaks](https://github.com/gitleaks/gitleaks) and [osv-scanner](https://github.com/google/osv-scanner) on PATH, such as `brew install gitleaks osv-scanner`; CI uses gitleaks 8.30.1. Claude Code sessions in this repo also need [jq](https://jqlang.org): the git workflow gate in `.claude/hooks/`, from [chrischant3/standards](https://github.com/chrischant3/standards) rule 13, uses it and blocks every Bash call without it
 - [docs/signed-approvals.md](docs/signed-approvals.md): making approvals something only a human can give: a signing key an agent can't use, `floor-guard` as a required check, and an agent token without admin rights
 - [docs/agent-push-controls.md](docs/agent-push-controls.md): the credentials, GitHub organisation settings, agent configuration and review process that keep AI coding agents from pushing to GitHub or acting through `gh`
 - [docs/adding-tests.md](docs/adding-tests.md): writing your own evals: a walkthrough, the eval file format, the checks, and what each result means
