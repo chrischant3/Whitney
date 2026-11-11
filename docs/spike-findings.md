@@ -647,8 +647,8 @@ Can `claude -p` run in a container with no network, its model calls served by In
 
 ### What was set
 
-- **Image** (`spikes/claude_docker/Dockerfile`): the same pinned `node:22-bookworm-slim` as Kilo's sandbox, with `npm install -g @anthropic-ai/claude-code@2.1.322`, run as the unprivileged `node` user.
-- **Container** (`spikes/claude_docker/compose.yaml`): `network_mode: none`, `cap_drop: [ALL]`, `no-new-privileges`. The same as Kilo's.
+- **Image** (then `spikes/claude_docker/Dockerfile`, now `src/whitney/sandbox/claude-code/Dockerfile`): the same pinned `node:22-bookworm-slim` as Kilo's sandbox, with `npm install -g @anthropic-ai/claude-code@2.1.322`, run as the unprivileged `node` user.
+- **Container** (`compose.yaml` beside it): `network_mode: none`, `cap_drop: [ALL]`, `no-new-privileges`. The same as Kilo's.
 - **Environment for `claude -p`:** `HOME` an empty folder, `ANTHROPIC_BASE_URL=http://localhost:13131` (the bridge, no `/v1`), `ANTHROPIC_API_KEY=sk-none`, and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. The real key stays with Inspect on the host. The container never has it.
 - **Command:** the one a local run uses: `--setting-sources project --strict-mcp-config --settings <the grant> --model <name> --output-format stream-json --verbose`, with the prompt on stdin.
 
@@ -667,7 +667,7 @@ Can `claude -p` run in a container with no network, its model calls served by In
 
 ### Recommendation
 
-Use the bridge. The fallback in the plan (the real key passed into the container, with the network limited to Anthropic's API) isn't needed.
+Use the bridge. The fallback in the plan (the real key passed into the container, with the network limited to Anthropic's API) isn't needed. Christopher agreed on 2026-11-11, and `--execution docker` for `claude-code` is built on it. The image moved to `src/whitney/sandbox/claude-code/`; the first real `whitney run` is in [results/2026-11-11-claude-code-docker.md](results/2026-11-11-claude-code-docker.md).
 
 ### Not shown
 

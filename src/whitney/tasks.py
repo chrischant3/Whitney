@@ -196,7 +196,7 @@ def scenario_eval(
             and nothing under it is ever staged.
         target: the harness under test, "kilo" or "claude-code" (see whitney.targets).
         model: the model under evaluation, as provider/model.
-        execution: kilo only: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
+        execution: "local" runs the harness on the host; "docker" runs it in a container, served by Inspect's model bridge.
         project_path: the project supplying config and instruction files, read
             by the target's loader (whitney.project_files); unset, Whitney's
             own template for the target.
@@ -272,7 +272,7 @@ def agents_md(
             The variants come from evals/agents-md.json (whitney.variants).
         target: the harness under test, "kilo" or "claude-code" (see whitney.targets).
         model: the model under evaluation, as provider/model.
-        execution: kilo only: "local" uses the user's Kilo config; "docker" uses Inspect's model bridge.
+        execution: "local" runs the harness on the host; "docker" runs it in a container, served by Inspect's model bridge.
         project_path: optional local project supplying config and instruction
             assets, read by the target's loader (whitney.project_files).
             Nothing under EVALS_DIR is staged, even if it is inside the project.
