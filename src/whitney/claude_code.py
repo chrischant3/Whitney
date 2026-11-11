@@ -1,10 +1,14 @@
-"""Claude Code CLI as an Inspect agent, for the claude-code target (local execution).
+"""Claude Code CLI as an Inspect agent, for the claude-code target, run locally or in the Docker sandbox.
 
 The run sees only the project: an empty temporary HOME and
 `--setting-sources project` keep the user's own Claude settings, CLAUDE.md,
 memory, plugins and MCP servers out of it, and the environment carries
 nothing but PATH, the API key and a fixed git identity with none of the
 user's git config. Model calls go to the Anthropic API with that key.
+
+That is a local run. In Docker mode Claude Code runs in a container with no
+network and nothing of the host's mounted, and Inspect's bridge answers its
+model calls, so the key stays on the host (execute_in_docker).
 
 Like the Kilo agent, it runs without --dangerously-skip-permissions: the
 eval grants only the permissions the task needs, through --settings.
@@ -40,6 +44,8 @@ COMPOSE_FILE = Path(str(importlib.resources.files("whitney") / "sandbox" / "clau
 DOCKER_HOME = "/tmp/claude-eval-home"  # empty, and made for each run: the container's own HOME holds nothing either
 # The key Claude Code is given in the container. The real one stays with Inspect, on the host.
 BRIDGE_KEY = "sk-none"
+VERSION_TIMEOUT = 30  # seconds; as cli.VERSION_TIMEOUT: `--version` answers at once
+MAX_VERSION_LENGTH = 200  # as cli.MAX_VERSION_LENGTH: a long first line is something else
 
 
 @agent
@@ -77,7 +83,8 @@ def claude_code(
 
     Side effects: stores exit_code, the stream-json events, stderr,
     ended_early, permission_denials and api_key_source under RUN_STORE_KEY,
-    with the API key's value redacted. A denied skill that a
+    with the API key's value redacted (in Docker mode the container never
+    has it, and the host's is redacted all the same). A denied skill that a
     `Skill(<name>)` rule in harness_permissions' `deny` list switched off
     doesn't make ended_early true (see _outcome). A Docker run also stores
     harness_version, what the container's `claude --version` printed.
@@ -102,8 +109,9 @@ def claude_code(
     asked_for = asked("claude-code", harness_permissions or {})
 
     async def execute_in_docker(state: AgentState) -> AgentState:
-        # The model is named as a local run names it. The bridge answers any name with the eval's --model,
-        # and a name Claude Code doesn't know ("inspect") makes it misprice the run (spike, 2026-11-11).
+        # "inspect" is the bridge's own name for the eval's --model. Claude Code is told the model's real
+        # name, as in a local run: the bridge answers any name with the eval's model, and a name Claude
+        # Code doesn't know makes it misprice the run (spike, 2026-11-11).
         async with sandbox_agent_bridge(state, model="inspect") as bridge:
             sbox = sandbox()
             env = {
@@ -113,11 +121,16 @@ def claude_code(
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",  # there is no network for it to reach
             }
             await sbox.exec(["mkdir", "-p", DOCKER_HOME])
-            version = await sbox.exec(["claude", "--version"])
-            result = await sbox.exec([*command, "--", state.messages[-1].text], cwd=PROJECT_DIR, env=env, timeout=timeout)
-            run = {"exit_code": result.returncode, "events": result.stdout, "stderr": result.stderr}
-            run = {**run, **_outcome(run["events"], asked_for), "harness_version": version.stdout.strip()}
-            store().set(RUN_STORE_KEY, run)
+            version = await _container_version(sbox)
+            try:
+                result = await sbox.exec([*command, "--", state.messages[-1].text], cwd=PROJECT_DIR, env=env, timeout=timeout)
+                run = {"exit_code": result.returncode, "events": result.stdout, "stderr": result.stderr}
+            except TimeoutError:  # Inspect's Docker exec raises; a local run records 124 (agent.run_process)
+                run = {"exit_code": 124, "events": "", "stderr": f"claude -p timed out after {timeout}s"}
+            # The container was never given the host's key, so this should find nothing. The record goes
+            # into the eval log, so it is redacted as a local run's is.
+            run = redact_run(run, list(filter(None, [os.environ.get("ANTHROPIC_API_KEY")])))
+            store().set(RUN_STORE_KEY, {**run, **_outcome(run["events"], asked_for), **({"harness_version": version} if version else {})})
         return bridge.state
 
     async def execute(state: AgentState) -> AgentState:
@@ -142,6 +155,16 @@ def claude_code(
         return state
 
     return execute_in_docker if execution == "docker" else execute
+
+
+async def _container_version(sbox) -> str | None:
+    """The first line the container's `claude --version` prints, cut as cli.harness_version cuts the host's; None if it fails."""
+    try:
+        done = await sbox.exec(["claude", "--version"], timeout=VERSION_TIMEOUT)
+    except TimeoutError:
+        return None
+    lines = done.stdout.strip().splitlines() if done.returncode == 0 else []
+    return lines[0].strip()[:MAX_VERSION_LENGTH] or None if lines else None
 
 
 def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) -> list[str]:

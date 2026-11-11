@@ -30,6 +30,7 @@ and gate (write_report) and its option parsing (rate, min_rates).
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -350,6 +351,9 @@ def _run(args: argparse.Namespace) -> int:
     missing = missing_credential(args.target, args.execution, args.api_key_env, model=args.model)
     if missing:
         raise CannotRun(missing)
+    no_package = missing_package(args.target, args.execution)
+    if no_package:
+        raise CannotRun(no_package)
     # In Docker mode the harness is the image's, not the host's, so the host has nothing to check.
     secrets = run_secrets(args.target, args.execution, args.api_key_env)
     version = harness_version(args.target, secrets=secrets) if args.execution == "local" else None
@@ -513,6 +517,21 @@ def missing_credential(
     if name is None:
         return None
     return None if environ.get(name) else f"{name} is not set; put it in .env or the environment"
+
+
+def missing_package(target: str, execution: str) -> str | None:
+    """Why a Docker run of claude-code can't start for want of a package, or None.
+
+    Inspect's bridge answers Claude Code with the `anthropic` package, which
+    only the `gateway` extra installs. Without it the run would fail inside
+    Inspect, after the image was built. A local run never needs it.
+    """
+    if target == "claude-code" and execution == "docker" and importlib.util.find_spec("anthropic") is None:
+        return (
+            "Docker mode for claude-code needs the `anthropic` package, which Inspect's bridge uses; "
+            'install it with the gateway extra: pip install "whitney[gateway]"'
+        )
+    return None
 
 
 def harness_version(target: str, secrets: Iterable[str] = ()) -> str:

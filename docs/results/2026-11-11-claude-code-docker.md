@@ -59,5 +59,6 @@ A stream recorded in the container (fixture `docker-bridge-tools`) has the same 
 - **A skill, a subagent or a permission denial in the container.** The Docker runs called only `Bash` and `Read`. The checks for those are tested on local streams, and on the container's stream only for "nothing was loaded".
 - **That nothing on the host is reachable.** One path was tried. The container mounts nothing from the host, which is the compose file's doing; one failed `cat` doesn't prove it.
 - **A real Docker daemon that is stopped.** The "not reachable" case pointed `DOCKER_HOST` at a missing socket.
-- **`scripts/run_evals.py`.** It still refuses `--execution docker` for `claude-code`. `whitney run` is the supported command.
+- **`scripts/run_evals.py` in Docker.** It now accepts `--execution docker` for `claude-code`, but only `whitney run` was run for real.
+- **A timeout in the container.** It is recorded as exit 124, as a local one is; that is tested with a stand-in for the container, not seen in a real run.
 - **CI.** No pipeline has built the image yet.

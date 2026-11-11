@@ -158,13 +158,11 @@ def test_claude_code_cannot_run_the_kilo_permission_eval(capsys):
     assert "kilo_jsonc runs only for --target kilo" in capsys.readouterr().err
 
 
-def test_claude_code_cannot_run_in_docker(capsys):
-    import pytest
+def test_claude_code_can_run_in_docker():
+    """Until Phase 5 Task 36a this was refused: "--target claude-code runs locally only"."""
+    args = _parse(["--target", "claude-code", "--model", "anthropic/claude-haiku-4-5", "--execution", "docker"])
 
-    with pytest.raises(SystemExit):
-        _parse(["--target", "claude-code", "--model", "anthropic/claude-haiku-4-5", "--execution", "docker"])
-
-    assert "--target claude-code runs locally only" in capsys.readouterr().err
+    assert (args.target, args.execution) == ("claude-code", "docker")
 
 
 def test_the_target_reaches_every_task_it_runs(tmp_path, monkeypatch):

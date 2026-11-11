@@ -5,6 +5,8 @@ FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3
 
 ARG CLAUDE_CODE_VERSION=2.1.322
 
+# curl isn't needed by Claude Code. It is here so an agent asked to fetch a page gets curl's own
+# "Could not resolve host", which shows the missing network, and not "command not found".
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates python3 curl \
  && rm -rf /var/lib/apt/lists/*

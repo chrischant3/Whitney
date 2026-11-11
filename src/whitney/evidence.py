@@ -351,7 +351,9 @@ def run_secrets(target: str, execution: str, api_key_env: str | None, environ: M
     """The secret values a run of `target` is given, which nothing Whitney stores may hold (see agent.redact).
 
     The same values the agents redact from their own run records: for
-    claude-code, its API key (api_key_env, default ANTHROPIC_API_KEY); for a
+    claude-code, its API key (api_key_env, default ANTHROPIC_API_KEY; in
+    Docker mode that is Inspect's key on the host, which the container never
+    has, redacted all the same); for a
     local kilo run, the variables its config overlay names as {env:NAME}
     (those in the global Kilo config's provider settings, and api_key_env)
     and the values in the copy of the user's Kilo login. A Docker kilo run is

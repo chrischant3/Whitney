@@ -56,7 +56,7 @@ def build_agent(
             each in its own harness's format; only `target`'s is used.
         api_key_env: kilo: optional provider key variable (else the global
             Kilo config); claude-code: the Anthropic key variable, default
-            ANTHROPIC_API_KEY.
+            ANTHROPIC_API_KEY. Refused in Docker mode by either agent.
         kilo_agent, kilo_command: kilo only: run with `kilo run --agent NAME`
             or `--command NAME` (the kilo agent's agent_name and command_name).
         Other arguments are passed through to the kilo or claude_code agent.

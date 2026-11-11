@@ -36,14 +36,20 @@ def container(monkeypatch):
     ran: list[dict] = []
     stored: dict = {}
     reply = {"stdout": recorded(), "stderr": "", "returncode": 0}
+    version = {"stdout": "2.1.322 (Claude Code)\n", "returncode": 0, "raises": None}
+    raises: list[BaseException] = []  # what the `claude -p` call raises, if anything
     bridge_state = AgentState(messages=[ChatMessageUser(content="from the bridge")])
 
     class Sandbox:
         async def exec(self, cmd, **kwargs):
             ran.append({"cmd": cmd, **kwargs})
             if cmd == ["claude", "--version"]:
-                return SimpleNamespace(stdout="2.1.322 (Claude Code)\n", stderr="", returncode=0, success=True)
+                if version["raises"]:
+                    raise version["raises"]
+                return SimpleNamespace(stdout=version["stdout"], stderr="", returncode=version["returncode"], success=version["returncode"] == 0)
             if cmd[0] == "claude":
+                if raises:
+                    raise raises[0]
                 return SimpleNamespace(success=reply["returncode"] == 0, **reply)
             return SimpleNamespace(stdout="", stderr="", returncode=0, success=True)
 
@@ -61,7 +67,7 @@ def container(monkeypatch):
     monkeypatch.setattr(claude_module, "sandbox", lambda: Sandbox())
     monkeypatch.setattr(claude_module, "store", lambda: SimpleNamespace(set=stored.__setitem__))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    return SimpleNamespace(ran=ran, stored=stored, reply=reply, bridge_state=bridge_state)
+    return SimpleNamespace(ran=ran, stored=stored, reply=reply, bridge_state=bridge_state, version=version, raises=raises)
 
 
 def run(agent, prompt="count the lines"):
@@ -150,6 +156,55 @@ def test_a_claude_that_fails_in_the_container_is_recorded_as_ended_early(contain
     assert (record["exit_code"], record["stderr"], record["ended_early"]) == (1, "boom", True)
 
 
+def test_a_run_that_times_out_in_the_container_is_recorded_as_a_local_one_is(container):
+    """Inspect's Docker exec raises on a timeout; a local run records exit 124, so this must too."""
+    container.raises.append(TimeoutError())
+
+    run(claude_code(model=MODEL, execution="docker", api_key_env=None, timeout=7))
+
+    record = container.stored[RUN_STORE_KEY]
+    assert (record["exit_code"], record["events"], record["stderr"]) == (124, "", "claude -p timed out after 7s")
+    assert record["ended_early"] is True and not run_completed(record)
+    assert record["harness_version"] == "2.1.322 (Claude Code)"
+    assert {"bridge": "closed"} in container.ran
+
+
+@pytest.mark.parametrize("change, expected", [
+    ({"stdout": "2.1.400 (Claude Code)\nand a second line\n"}, "2.1.400 (Claude Code)"),
+    ({"stdout": "v" * 300 + "\n"}, "v" * 200),
+    ({"stdout": "\n"}, None),
+    ({"stdout": "broken", "returncode": 1}, None),
+    ({"raises": TimeoutError()}, None),
+])
+def test_the_containers_version_is_its_first_line_or_nothing(container, change, expected):
+    container.version.update(change)
+
+    run(claude_code(model=MODEL, execution="docker", api_key_env=None))
+
+    record = container.stored[RUN_STORE_KEY]
+    assert record.get("harness_version") == expected
+    assert record["exit_code"] == 0  # the run itself went ahead
+
+
+def test_the_version_check_cant_hang_the_run(container):
+    run(claude_code(model=MODEL, execution="docker", api_key_env=None))
+
+    version_call = next(call for call in container.ran if call.get("cmd") == ["claude", "--version"])
+    assert version_call["timeout"] == 30
+
+
+def test_the_hosts_key_is_redacted_from_a_docker_runs_record_should_it_ever_appear(container, monkeypatch):
+    """The container is never given the key. This is a second line of defence: the record goes into the log."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-real-key-on-the-host")
+    container.reply.update(stdout='{"type": "x", "text": "sk-real-key-on-the-host"}\n', stderr="saw sk-real-key-on-the-host")
+
+    run(claude_code(model=MODEL, execution="docker", api_key_env=None))
+
+    record = container.stored[RUN_STORE_KEY]
+    assert "sk-real-key-on-the-host" not in json.dumps(record)
+    assert record["stderr"] == "saw [redacted]"
+
+
 @pytest.mark.parametrize("options, message", [
     ({"api_key_env": "TEAM_KEY"}, "api_key_env applies to local execution; in Docker mode Inspect serves --model through the bridge with its own credentials"),
     ({"api_key_env": None, "local_project_files": {"a.py": ""}}, "files staged on the host can't be used in Docker mode, where the project is the container's"),
@@ -200,7 +255,9 @@ def test_the_claude_code_image_pins_claude_code_and_has_no_network():
     assert "ARG CLAUDE_CODE_VERSION=2.1.322" in dockerfile
     assert '"@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"' in dockerfile
     assert "image: claude-code-evals-sandbox:2.1.322-" in compose
-    assert dockerfile.rstrip().splitlines()[-3].strip() == "USER node"  # the agent doesn't run as root
+    users = [line.split()[1] for line in dockerfile.splitlines() if line.startswith("USER ")]
+    assert users[-1] == "node"  # the agent doesn't run as root
+    assert "FROM node:22-bookworm-slim@sha256:" in dockerfile  # the base image is pinned by digest
     assert "ANTHROPIC" not in dockerfile and "ANTHROPIC" not in compose  # no key is built into the image
 
 
@@ -219,6 +276,38 @@ def test_a_claude_code_docker_task_records_no_kilo_model_name():
 ])
 def test_a_claude_code_docker_run_needs_inspects_own_anthropic_key(api_key_env, environ, expected):
     assert cli.missing_credential("claude-code", "docker", api_key_env, environ, model=MODEL) == expected
+
+
+def test_a_docker_run_without_the_anthropic_package_stops_before_anything_runs(monkeypatch):
+    """Inspect's bridge needs it to serve Claude Code, and only the `gateway` extra installs it."""
+    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda name: None if name == "anthropic" else object())
+
+    assert cli.missing_package("claude-code", "docker") == (
+        "Docker mode for claude-code needs the `anthropic` package, which Inspect's bridge uses; "
+        'install it with the gateway extra: pip install "whitney[gateway]"'
+    )
+    assert cli.missing_package("claude-code", "local") is None
+    assert cli.missing_package("kilo", "docker") is None
+
+
+def test_a_docker_run_with_the_anthropic_package_has_no_package_problem():
+    assert cli.missing_package("claude-code", "docker") is None
+
+
+def test_whitney_run_exits_2_when_the_package_is_missing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "missing_package", lambda target, execution: "needs the package")
+    monkeypatch.setattr(cli, "inspect_eval", lambda *a, **k: pytest.fail("ran a task"))
+    (tmp_path / "AGENTS.md").write_text("- rule\n")
+
+    code = cli.main([
+        "run", "--target", "claude-code", "--execution", "docker", "--model", MODEL,
+        "--project-path", str(tmp_path), "--evals-path", str(EVALS), "--only", "agents_md",
+        "--log-dir", str(tmp_path / "logs"), "--results-dir", str(tmp_path / "results"),
+    ])
+
+    assert code == 2
+    assert "whitney: error: needs the package" in capsys.readouterr().err
 
 
 # --- The checks read a container's stream as they read a local one ---------------------------

@@ -15,7 +15,8 @@ only the evidence it declares (whitney.evidence). agents_md and kilo_jsonc
 are the tasks for Whitney's own two eval files, kept with their names,
 labels and metadata as wrappers around the same builder. For the kilo
 target, local execution uses the user's Kilo config and Docker execution
-routes calls through Inspect's model bridge; claude-code runs locally.
+routes calls through Inspect's model bridge. claude-code runs locally with
+its API key, or in Docker through the same bridge.
 """
 
 import base64

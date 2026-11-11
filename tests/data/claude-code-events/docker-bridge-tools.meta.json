@@ -16,5 +16,6 @@
   "stderr": "",
   "ended_early": false,
   "permission_denials": [],
-  "skipped_lines": 0
+  "skipped_lines": 0,
+  "placeholders": "as the other fixtures in this folder. `cwd` reads /tmp/kilo-eval-XXXXXXXX/project because the sanitiser writes every project folder that way; in the container it was /workspace/project"
 }
