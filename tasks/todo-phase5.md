@@ -873,6 +873,41 @@ Added 2026-11-11 at Christopher's request, ahead of Task 37. Numbered 36a so the
 
 **Dependencies:** 36. **Estimated scope:** M. Task 38 (`outside_canary_not_reached`) should say what a pass means in each execution mode once this is in.
 
+### Task 36b: Switching off a built-in skill or agent, and showing it was refused
+
+Added 2026-11-11 at Christopher's request. A team may want to test without a harness's built-in skills and agents, which can be used in place of their own: in Task 36's real run, Haiku called Claude Code's built-in `code-review` skill and its `general-purpose` agent when the project's reviewer was missing.
+
+**Captured 2026-11-11** (Haiku; streams in the session's scratch folder, to be saved as fixtures by this task). The deny rules were set in the eval file's `harness_permissions`, which `whitney validate` accepts today.
+
+| Harness | Rule | What happened | Run scored |
+|---|---|---|---|
+| Claude Code 2.1.322 | `deny: ["Skill(code-review)"]` (built-in) | The call's result is an error, "Skill execution blocked by permission rules", and it is listed in `permission_denials`. The skill stays in the `init` event's `skills` | inconclusive |
+| Claude Code | `deny: ["Skill(release-notes)"]` (project skill) | The same | inconclusive |
+| Claude Code | the same rule, the call made by a subagent | The same, on the subagent's call | inconclusive |
+| Claude Code | `deny: ["Skill"]` | The `Skill` tool is gone from `init`'s `tools`, so no call is made. The model read the skill's `SKILL.md` with `Read` and followed it | conclusive |
+| Claude Code | `deny: ["Agent(general-purpose)"]` (built-in) | The call's result is an error, "Agent type 'general-purpose' has been denied by permission rule 'Agent(general-purpose)' from flagSettings.". It is **not** in `permission_denials`. The agent stays in `init`'s `agents` | conclusive |
+| Claude Code | `deny: ["Agent(reviewer)"]` (project agent) | The model made no `Agent` call, so the refusal wasn't seen. Capture it again with a prompt that makes the call | conclusive |
+| Kilo 7.8.27 | none | The built-in skill `kilo-config` loaded when asked for | conclusive |
+| Kilo | `"skill": {"*": "allow", "kilo-config": "deny"}` | The `skill` call's state is `error`, and names the rule: `{"permission":"skill","pattern":"kilo-config","action":"deny"}` | conclusive |
+| Kilo | `"task": {"*": "allow", "general": "deny"}` | The `task` call is refused the same way | conclusive |
+
+Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `general` and `explore`; primary agents `code`, `ask`, `debug`, `orchestrator`, `plan` and `build`. Kilo lists none of Claude Code's built-in skills or agents: they belong to the harness, not the model. `"agent": {"explore": {"disable": true}}` removes an agent altogether.
+
+**Description:** Only one case is scored wrongly. On Claude Code a refused `Skill(<name>)` call is a permission denial, and `claude_code._outcome` marks any run with a denial as ended early, so every check is inconclusive. But the eval file asked for that refusal, and the agent carried on. A refused `Bash`, `Edit` or `Write` is different: there the harness may have decided the result, so it stays inconclusive.
+
+**Acceptance criteria:**
+- [ ] On `claude-code`, a denial of a `Skill` call whose skill matches a `Skill(<name>)` rule in the eval file's own `harness_permissions` `deny` list doesn't mark the run as ended early. Every other denial still does, including one of a skill the eval file didn't name.
+- [ ] The report shows each refusal the eval file asked for, on both targets: the rule, how many calls it refused, and the harness's own words. A deny rule that refused nothing is shown as such, so a reader can't take silence for proof.
+- [ ] `skill_loaded`, `skill_not_loaded`, `subagent_delegated` and `subagent_not_delegated` read a refused call as loading or delegating nothing, on both targets. Tests from the captured streams say so.
+- [ ] The project-agent case is captured again with a prompt that makes the call.
+- [ ] `docs/adding-tests.md` says how to switch off a built-in skill or agent on each target, with the rules above, and what each harness's built-ins are. It says a bare `Skill` rule removes the tool but doesn't stop the model reading the skill's file.
+- [ ] `docs/spike-findings.md` records the captures, and that Kilo 7.8.27 was used where the earlier spikes used 7.8.18.
+- [ ] Fixtures are sanitised as the others are, and gitleaks passes.
+
+**Verification:** `python scripts/check.py task`; the captures above are the real runs.
+
+**Dependencies:** 36. **Estimated scope:** M.
+
 ### Task 37: Claude Code: stage `permissions` from `.claude/settings.json`; `permission_held`
 
 **Description:** A `deny` or `ask` rule in the project's `.claude/settings.json` refuses the call and lists it in `permission_denials` (spike, "Permissions"). Decision 8: stage only the `permissions` block. Hooks stay out (Later list).
