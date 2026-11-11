@@ -273,7 +273,7 @@ From these captures and, for `external_directory`, the T1 and T2 spikes above. "
 | `external_directory` | `ask` | yes, and the run ends | `read`, `error` | "The user rejected permission to use this specific tool call." | (not recorded in 2026-11-02) | 1 | `permission requested: external_directory (<path>/outside/*); auto-rejecting` |
 | `external_directory` | `deny` | yes | `read`, `error` | cites `{"permission":"external_directory","action":"deny","pattern":"*","source":"project"}` | (not recorded in 2026-11-02) | 0 | none (that run used `--auto`; not captured without it) |
 
-Not captured: `read` under `ask` with a pattern other than Kilo's own `.env` rule ([W-results] in the spec's sources: [results/2026-11-02-phase2.md](results/2026-11-02-phase2.md)), `edit` with a pattern, and any rule on `glob`, `grep`, `webfetch` or `skill`.
+Not captured: `read` under `ask` with a pattern other than Kilo's own `.env` rule ([W-results] in the spec's sources: [results/2026-11-02-phase2.md](results/2026-11-02-phase2.md)), and any rule on `glob`, `grep` or `webfetch`. Since then: a `deny` refusal for `read` and for `edit` with a pattern is in "Phase 5 Task 28" (`scalar-read-star-then-allow`, `scalar-edit-star-then-allow`), and one for `skill` and `task` in "Phase 5 Task 36b".
 
 ## Phase 5: confirmed fields
 
@@ -285,7 +285,7 @@ The fields Tasks 17, 20 and 23 may rely on, with a fixture that shows each.
 | `sessionID` (top level and `part.sessionID`) | one id per run | the session; a subagent's own events don't appear | `subagent-description` |
 | `part.type` | `step-start`, `text`, `tool`, `step-finish` | the part's kind | every `.jsonl` |
 | `part.tool` | `bash`, `read`, `write`, `skill`, `task` | the tool called | `skill-named`, `subagent-description`, `edit-ask`, `agent-option-subagent` |
-| `part.state.status` | `completed`, `error` | ran, or was refused (failed for another reason only in a lost run) | every `tool_use` |
+| `part.state.status` | `completed`, `error` | ran, or was refused. One other error is captured: "Model tried to call unavailable tool '<name>'", when the model calls a tool a scalar deny removed. It has no `metadata.approval`, so it isn't a refusal (`scalar-edit-deny-called-anyway-2`, Phase 5 Task 28) | every `tool_use` |
 | `part.state.input.name` | the skill's name | which skill a `skill` call loaded | `skill-named`, `skill-folders-run` |
 | `part.state.metadata.name`, `.dir` | the skill's name and folder | the same skill, and where it was found | `skill-named` |
 | `part.state.title` | `Loaded skill: <name>` for `skill` | a label | `skill-named` |
@@ -776,6 +776,8 @@ These are the first captures of a visible `deny` refusal for `read` and for `edi
 - The VS Code extension, and `kilo run` without `--pure`.
 - Any change to `permission_held` or to validation. This was a spike.
 
+- The allow rule before the deny (`{"app.py": "allow", "*": "deny"}`). "Kilo removes a tool when the last rule for its permission is `*` deny" fits every capture, but the reverse order wasn't run.
+- The debug-log fixture (`scalar-edit-deny-logs`) keeps Kilo's random per-run values: `run=`, `projectID=`, session ids and a temporary file's name. None is the user's.
 ## Not yet done
 
 - **Hooks and plugins (Task 40).** A `Stop` hook making a skill load; a hook's effect with a model other than Haiku or a skill other than `release-notes`; why silent hooks went with more `Skill` calls; a Kilo plugin's effect apart from chance; plugins in the VS Code extension.
