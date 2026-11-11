@@ -107,6 +107,7 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | 30 | The VS Code extension check (moved from `v0.2.0`) | after D | none | S | yes, cents |
 | 31 | Record what was sent to the model, and the agent's reasoning (after `v0.2.0`) | after D | none | M | yes, cents |
 | 32 | An eval-driven development skill (after `v0.2.0`) | after D | `write-evals` | M | yes, dollars |
+| 33 | Fix and re-run the eval sets `write-evals` drafted | after D | none | S | yes, about a dollar an epoch |
 
 Lanes that can run beside the main one:
 

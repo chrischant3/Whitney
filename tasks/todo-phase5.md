@@ -762,3 +762,23 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 
 **Estimated scope:** M. A few dollars of model calls for the real rounds.
 
+### Task 33: Fix and re-run the eval sets `write-evals` drafted
+
+**Description:** Added on 2026-11-11. On 2026-11-10 fresh sessions used `write-evals` to draft five eval sets: the example's data-handling rules, its `kilo.jsonc`, its release-notes skill, the rules-audit skill, and `write-evals` itself. All five were run once on Kilo 7.8.27 with Haiku. Most failures were real rules breaking, but half the self-test's runs were inconclusive. The cause was Kilo's defaults: it asks before reading `*.env`, before reaching outside the project, and before editing some instruction files, and a headless run ends there. The skill now says how to avoid that (`references/fixtures.md`, "What makes a Kilo run end early"), and states its three rules that Haiku broke where the agent acts. Neither change has been tested by a run. The eval sets and their first run are copied to `~/workspace/inspect/write-evals-skilltest/`, outside the repo.
+
+**Acceptance criteria:**
+- [x] The five eval sets are copied out of the session scratchpad, to a folder that will last (2026-11-11).
+- [ ] A fresh session following the updated skill fixes the self-test's fixture and prompts: no task needs the `.env` read, every place to build is inside the fixture, and no task's right answer is editing a protected instruction file.
+- [ ] The self-test is run again for one epoch (about 45 agent runs), with Christopher's go-ahead, and at most two runs are inconclusive.
+- [ ] The three rules that broke in the first run (writing into an evals folder holding other JSON, writing inside a given skill folder, copying another tool's `evals/`) are compared run against run, and the result is recorded.
+- [ ] Each set that shows weak rules is run with `--epochs 3` before anything is concluded from it.
+- [ ] The results are written up in `docs/results/`, with the template and baseline rates and what each failure was.
+
+**Verification:**
+- [ ] `python scripts/check.py task`, if any file in the repo changes.
+- [ ] Manual: every inconclusive run's explanation is read and its cause named.
+
+**Dependencies:** None.
+
+**Estimated scope:** S. About a dollar of model calls for one epoch of everything; three epochs is about three times that.
+
