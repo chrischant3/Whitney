@@ -1052,15 +1052,28 @@ The runs already hold most of what it needs:
 - **A scenario at fault, not the rule.** Inconclusive runs, and failures whose explanation shows the fixture caused them.
 - **Warnings `whitney validate` already gives,** such as a skill description that doesn't say when to use it.
 
-**Decide first, with Christopher:** whether the advice is written by fixed rules from the run's own numbers, by a model that reads the failures, or both. Fixed rules cost nothing, give the same advice for the same run, and can only say what was coded. A model can read an explanation and suggest a rewording, but it costs money, can be wrong, and its advice must be marked as a suggestion and never as a result.
+**Decided by Christopher, 2026-11-11:** start with fixed rules. No model writes any of the report in this task. The rules cover three things:
+
+1. **Prompt engineering practice.** What the file's own text shows, such as a rule that says what not to do and never what to do instead, a rule with no reason given, or a skill `description` that doesn't say when to use it. The 2026-11-10 loop showed one: "Ask before modifying database schema" went from 0 of 6 to 6 of 6 once it said what to do instead.
+2. **Progressive disclosure.** Whether detail sits where it is loaded only when needed: an instruction file that has grown long and holds task-specific detail that belongs in a skill or a rules file, or a `SKILL.md` that holds everything and has no `references/`.
+3. **Hooks to enforce a skill.** When a skill's description is sound and the model still doesn't load it, a description can't be relied on, and a hook can make the harness do it. The report says so, and gives the hook to add.
+
+Each rule's advice is of two kinds, and the report keeps them apart: what the **run** showed (counts and explanations), and what the **file's text** shows (a static reading). A static finding with no failing run behind it is a suggestion, and is labelled as one.
+
+**Two things to settle before building rule 3:**
+- **Whitney doesn't stage hooks.** Decision 8 keeps `.claude/settings.json`'s hooks out of a run, because a hook runs commands. So the report could advise a hook that Whitney then can't test, and "how to tell whether it worked" would have no answer. Either hooks are staged for a run that opts in (safest in Docker, Task 36a), or the report says plainly that this advice can't be checked by Whitney yet.
+- **Kilo.** Whether Kilo has anything like a hook that can force a skill to load isn't known. Its plugins don't load under `--pure`. A short spike answers it; until then rule 3 is Claude Code's alone.
 
 **Acceptance criteria:**
-- [ ] The decision above is recorded, with its reason.
+- [x] The decision above is recorded (2026-11-11: fixed rules; a model is a later task).
+- [ ] Each fixed rule names its source: the harness's or the model provider's own published guidance, read on a stated date and linked, or a recorded Whitney run. No rule rests on memory or on general belief.
+- [ ] The rules for prompt engineering practice, progressive disclosure and hooks are each listed in `docs/`, with what triggers the rule, what it advises and its source.
+- [ ] The two questions about hooks above are answered, with Christopher, before rule 3 is built.
 - [ ] `whitney run` and `whitney report` write an improvement report beside the results, with a section for each file under test. Each finding names the evidence it rests on: the scenario ids, the counts and the checks' explanations.
 - [ ] Each finding says what to try, and how to tell whether it worked: which scenarios or trigger prompts should change on the next run.
 - [ ] A finding is never given on evidence that can't bear it. One epoch, or fewer conclusive runs than `min_conclusive`, is reported as "not enough runs to say".
 - [ ] A file whose rules all held, with a baseline that failed, gets "nothing to change", not invented advice.
-- [ ] If a model writes any of it: that is opt-in, the report says which model, no key or token reaches it, and the model's text is set apart from what the run measured.
+- [ ] The report keeps what the run measured apart from what the file's text suggests, and labels the second as a suggestion.
 - [ ] It works for an `AGENTS.md`, a rules file, a config's permission rule, a skill and an agent, on both targets.
 - [ ] The README and `docs/adding-tests.md` say how to read it, and Task 32's skill uses it for each round if that task is built.
 
@@ -1069,6 +1082,8 @@ The runs already hold most of what it needs:
 - [ ] One finding followed through for real (cents to a dollar, with Christopher's go-ahead): the report's advice is applied, the evals are run again, and the before and after rates are recorded. If the advice didn't help, the write-up says so.
 - [ ] A run with nothing wrong, and a one-epoch run, each with the report they produce.
 - [ ] Each kind of finding has a test built from a saved log, and a test that the finding is absent when its evidence is.
+- [ ] For each of the three kinds of rule, one case shown for real: the file as it was, the report's advice, the file changed as advised, and the rates before and after. A rule whose advice made no difference in its case is dropped or reworded, and the write-up says which.
+- [ ] For rule 3, a real run where a sound description didn't load the skill and a hook did, or a statement that this couldn't be shown and why.
 - [ ] Evidence items 1 and 5 to 7.
 
-**Dependencies:** None. Task 31 (what the model was sent) would let it say whether a rule reached the model. Task 36b adds the built-in clash. **Estimated scope:** M with fixed rules; L with a model.
+**Dependencies:** None. Task 31 (what the model was sent) would let it say whether a rule reached the model. Task 36b adds the built-in clash. **Estimated scope:** M. Rule 3 may wait on Task 36a if hooks are only staged in Docker.
