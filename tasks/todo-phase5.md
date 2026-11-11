@@ -1039,3 +1039,36 @@ Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `genera
 
 **Dependencies:** 34 to 38. **Estimated scope:** M.
 
+### Task 40: A report on how to improve the instructions, skills and agents under test
+
+**Description:** Added 2026-11-11 at Christopher's request. Today's report says how often each rule held. It doesn't say what to change. A team reading "template 1/2" has to open the logs to learn that the skill never loaded, or that the rule was read and ignored under time pressure. This task adds an improvement report to a run's results: for each file under test, what the runs show is wrong with it and what to try.
+
+The runs already hold most of what it needs:
+
+- **A skill or agent that wasn't used.** The line "the skill was loaded in 1, wasn't in 1" and the trigger tests point at its `description`. This happened in the 2026-11-10 run, where rewording the description fixed it.
+- **A rule that makes no difference.** A baseline that passes as often as the template means the rule isn't doing anything, or the scenario doesn't need it.
+- **A rule that breaks under pressure.** The scenarios' `pressure` field shows which kind.
+- **A clash with a built-in.** The agent used a harness's own skill or agent in place of the project's (Task 36b).
+- **A scenario at fault, not the rule.** Inconclusive runs, and failures whose explanation shows the fixture caused them.
+- **Warnings `whitney validate` already gives,** such as a skill description that doesn't say when to use it.
+
+**Decide first, with Christopher:** whether the advice is written by fixed rules from the run's own numbers, by a model that reads the failures, or both. Fixed rules cost nothing, give the same advice for the same run, and can only say what was coded. A model can read an explanation and suggest a rewording, but it costs money, can be wrong, and its advice must be marked as a suggestion and never as a result.
+
+**Acceptance criteria:**
+- [ ] The decision above is recorded, with its reason.
+- [ ] `whitney run` and `whitney report` write an improvement report beside the results, with a section for each file under test. Each finding names the evidence it rests on: the scenario ids, the counts and the checks' explanations.
+- [ ] Each finding says what to try, and how to tell whether it worked: which scenarios or trigger prompts should change on the next run.
+- [ ] A finding is never given on evidence that can't bear it. One epoch, or fewer conclusive runs than `min_conclusive`, is reported as "not enough runs to say".
+- [ ] A file whose rules all held, with a baseline that failed, gets "nothing to change", not invented advice.
+- [ ] If a model writes any of it: that is opt-in, the report says which model, no key or token reaches it, and the model's text is set apart from what the run measured.
+- [ ] It works for an `AGENTS.md`, a rules file, a config's permission rule, a skill and an agent, on both targets.
+- [ ] The README and `docs/adding-tests.md` say how to read it, and Task 32's skill uses it for each round if that task is built.
+
+**Evidence:**
+- [ ] The improvement report for each recorded real run whose logs are still kept, added to that run's write-up. For the 2026-11-10 skills run it must find what was found by hand then: the skill's description was why it didn't load.
+- [ ] One finding followed through for real (cents to a dollar, with Christopher's go-ahead): the report's advice is applied, the evals are run again, and the before and after rates are recorded. If the advice didn't help, the write-up says so.
+- [ ] A run with nothing wrong, and a one-epoch run, each with the report they produce.
+- [ ] Each kind of finding has a test built from a saved log, and a test that the finding is absent when its evidence is.
+- [ ] Evidence items 1 and 5 to 7.
+
+**Dependencies:** None. Task 31 (what the model was sent) would let it say whether a rule reached the model. Task 36b adds the built-in clash. **Estimated scope:** M with fixed rules; L with a model.

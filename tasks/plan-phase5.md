@@ -14,7 +14,7 @@ The spec in `docs/specs/` is an unchanged copy of `~/workspace/package-and-expec
 
 Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
 
-- **Status, 2026-11-11:** `v0.2.0` is tagged and released (2026-11-10). In `main`: Tasks 1 to 26 and Checkpoint C, and from Milestone E Tasks 34, 35 and 36 (PRs #40 to #44). Open on Task 26: the install from the tag, and a person's walkthrough. Not started: Tasks 27 to 32, 36a, 36b and 37 to 39; Task 33 has one box done. **Next:** 36b, then 36a, then 37. Each task not yet started now has an Evidence list (todo-phase5.md, "Evidence for every task not yet started"). The two bullets below marked 2026-11-10 are kept as a record.
+- **Status, 2026-11-11:** `v0.2.0` is tagged and released (2026-11-10). In `main`: Tasks 1 to 26 and Checkpoint C, and from Milestone E Tasks 34, 35 and 36 (PRs #40 to #44). Open on Task 26: the install from the tag, and a person's walkthrough. Not started: Tasks 27 to 32, 36a, 36b and 37 to 40; Task 33 has one box done. **Next:** 36b, then 36a, then 37. Each task not yet started now has an Evidence list (todo-phase5.md, "Evidence for every task not yet started"). The two bullets below marked 2026-11-10 are kept as a record.
 - **In `main` (2026-11-10):** Tasks 1 to 22 and 25, Checkpoints A and B, validation rule 8 (PR #25), the release checklist, and the push-controls guide. Tasks 17 to 21 and 25 came in as PR #26.
 - **Decided by Christopher on 2026-11-10 (Checkpoint B):**
   1. The four tests PR #26 changed, and the choices recorded beside Tasks 17 to 21 and 25, stand. One choice is reversed: the gate reads a file's scenarios and its trigger tests separately.
