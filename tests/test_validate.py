@@ -961,9 +961,12 @@ def test_an_eval_file_about_a_dot_claude_agents_md_is_refused_for_a_claude_md_pr
     write(evals, eval_file(source=".claude/AGENTS.md"))
     project = _project(tmp_path / "project", {"CLAUDE.md": "- rule\n"})
 
-    problems = [str(problem) for problem in validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals)]
+    problems = validate_project(validate_evals(evals).files, project, "claude-code", evals_path=evals)
 
-    assert any(".claude/AGENTS.md" in problem for problem in problems), problems
+    assert [(problem.location, problem.message.split(":")[0]) for problem in problems] == [
+        ("source", "'.claude/AGENTS.md' isn't staged"),
+        ("source", "the default baseline removes the source"),
+    ]
 
 
 @pytest.mark.parametrize("target, files, message", [
