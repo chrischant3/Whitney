@@ -1,0 +1,53 @@
+{
+  "case": "skill-not-loaded",
+  "about": "The same skill, and a prompt that has nothing to do with it but needs a tool call",
+  "date": "2026-11-11",
+  "claude_code_version": "2.1.322 (Claude Code)",
+  "model": "claude-haiku-4-5",
+  "argv": [
+    "claude",
+    "-p",
+    "--setting-sources",
+    "project",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"permissions\": {\"allow\": [\"Bash\", \"Edit\", \"Write\"]}}",
+    "--model",
+    "claude-haiku-4-5",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--",
+    "Read app.py, then say in one sentence what it does. Reply in chat only; don't create or change files."
+  ],
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    ".claude/skills/release-notes/SKILL.md": "---\nname: release-notes\ndescription: Write release notes for this project. Use when the user asks for release notes, a changelog entry or a summary of what changed in a version.\n---\n\n# Release notes\n\nMarker: CANARY-SKILL-RN-4821\n\nWrite the notes as a bulleted list under the heading \"## What changed\". Start the reply with the line \"RN-FORMAT-4821\".\n"
+  },
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "stderr": "",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "as tests/data/kilo-events": "the project folder, temporary paths, the user's home folder and name, email addresses",
+    "the project's path as a session folder's name": "-tmp-kilo-eval-XXXXXXXX-project",
+    "Claude Code's temporary folder, claude-<user id>": "claude-UID",
+    "request_id": "REQUEST-ID-PLACEHOLDER",
+    "the API key": "[redacted]"
+  }
+}
