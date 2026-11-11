@@ -70,9 +70,12 @@ def test_the_permission_eval_is_kilo_only():
         kilo_jsonc(target="claude-code", model=CLAUDE_MODEL)
 
 
-def test_claude_code_runs_locally_only():
-    with pytest.raises(ValueError, match="the claude-code target runs locally only"):
-        agents_md(target="claude-code", model=CLAUDE_MODEL, execution="docker")
+def test_claude_code_runs_in_docker_too():
+    """Until Phase 5 Task 36a this was refused: "the claude-code target runs locally only"."""
+    task = agents_md(target="claude-code", model=CLAUDE_MODEL, execution="docker")
+
+    assert task.sandbox.type == "docker" and task.sandbox.config.endswith("sandbox/claude-code/compose.yaml")
+    assert task.metadata["execution"] == "docker"
 
 
 def test_claude_code_has_no_base_url_option():
@@ -101,8 +104,9 @@ def test_docker_runs_record_the_model_name_kilo_was_given():
 def test_options_a_target_cant_use_are_refused_with_a_reason():
     from whitney import targets
 
-    with pytest.raises(ValueError, match="^the claude-code target runs locally only$"):
-        targets.check_target("claude-code", execution="docker")
+    targets.check_target("claude-code", execution="docker")  # accepted since Phase 5 Task 36a
+    with pytest.raises(ValueError, match="^api_key_env applies to local execution; in Docker mode Inspect serves"):
+        targets.build_agent("claude-code", CLAUDE_MODEL, {"claude-code": {}}, execution="docker", api_key_env="TEAM_KEY")
     with pytest.raises(ValueError, match="^base_url applies to the kilo target only$"):
         targets.check_target("claude-code", base_url="https://x.example")
     with pytest.raises(ValueError, match="^base_url applies to the kilo target only$"):

@@ -1,0 +1,21 @@
+{
+  "case": "docker-bridge-tools",
+  "about": "claude -p in a Docker container with no network, its model calls served by Inspect's sandbox_agent_bridge; one Bash call and one Read call",
+  "from": "spikes/claude_code_docker.py, 2026-11-11",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5, asked for in the container as claude-haiku-4-5",
+  "prompt": "Use your Bash tool to run `wc -l till.py`, then use Read to read till.py, and tell me the line count.",
+  "env_names": [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+    "HOME"
+  ],
+  "exit_code": 0,
+  "stderr": "",
+  "ended_early": false,
+  "permission_denials": [],
+  "skipped_lines": 0,
+  "placeholders": "as the other fixtures in this folder. `cwd` reads /tmp/kilo-eval-XXXXXXXX/project because the sanitiser writes every project folder that way; in the container it was /workspace/project"
+}
