@@ -1060,15 +1060,42 @@ The runs already hold most of what it needs:
 
 Each rule's advice is of two kinds, and the report keeps them apart: what the **run** showed (counts and explanations), and what the **file's text** shows (a static reading). A static finding with no failing run behind it is a suggestion, and is labelled as one.
 
-**Two things to settle before building rule 3:**
-- **Whitney doesn't stage hooks.** Decision 8 keeps `.claude/settings.json`'s hooks out of a run, because a hook runs commands. So the report could advise a hook that Whitney then can't test, and "how to tell whether it worked" would have no answer. Either hooks are staged for a run that opts in (safest in Docker, Task 36a), or the report says plainly that this advice can't be checked by Whitney yet.
-- **Kilo.** Whether Kilo has anything like a hook that can force a skill to load isn't known. Its plugins don't load under `--pure`. A short spike answers it; until then rule 3 is Claude Code's alone.
+**Rule 3, after the spike of 2026-11-11** ([spike-findings.md](../docs/spike-findings.md), "Phase 5 Task 40: hooks to enforce a skill"):
+
+- **Decided by Christopher, 2026-11-11:** for now the report advises a hook even where Whitney can't test it, and labels that advice "not tested by Whitney". Whitney stages no hooks (decision 8) and no Kilo plugins, so today that label goes on every piece of rule 3's advice, on both targets.
+- **What the spike found on Claude Code** (2.1.322, Haiku, one skill and one prompt). No hook event loads a skill; a hook can tell the model to load it, or refuse other tools until it does.
+  - No hook: the skill loaded in 1 of 6 runs.
+  - A `UserPromptSubmit` or `SessionStart` hook that prints a reminder: 7 of 7.
+  - A `PreToolUse` hook that refuses other tools until `Skill` is called: 3 of 3. It had to refuse in one run, and the next call was `Skill`.
+  - A `Stop` hook that blocks when the skill was never called: not shown, because the skill loaded first in all 4 runs.
+- **What it found on Kilo** (7.8.27, Haiku). Kilo's hook is a **plugin**: a `.ts` or `.js` file in the project's `.kilo/plugin/`, or an entry in `kilo.jsonc`'s `plugin` list. It doesn't run under `--pure`, which Whitney always passes.
+  - A plugin's `tool.execute.before` refused three calls in one run, and the next call was `skill`.
+  - A reminder plugin: the skill loaded in 3 of 3 runs, and in 0 of 2 with no plugin. It also loaded in the one `--pure` run, where the plugin didn't run, so the reminder isn't shown to be the cause.
+  - The description had to be weakened to get a skill that didn't load: the sound one loaded on Kilo.
+- **The hook the report advises on `claude-code`:** a `UserPromptSubmit` command hook in the project's `.claude/settings.json`, which prints one line naming the skill when the prompt is one the skill covers:
+  ```json
+  {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/<skill>-reminder.sh"}]}]}}
+  ```
+  ```sh
+  #!/bin/sh
+  if grep -qiE '<words from the trigger prompts>'; then
+    echo "This project has a <skill> skill, and this request is one it covers. Load it with the Skill tool (skill: <skill>) before you answer, and follow it."
+  fi
+  ```
+  The report also names the stricter step, without writing it out: a `PreToolUse` hook that refuses other tools until the skill is called.
+- **The hook the report advises on `kilo`:** a plugin file, `.kilo/plugin/<skill>-reminder.ts`, whose `chat.message` hook notes that the prompt is one the skill covers and whose `experimental.chat.system.transform` hook then adds the same line to the system prompt (the spike's plugin is in the findings). The report says three things beside it: Kilo marks that hook experimental; the spike didn't show the reminder raising how often a skill loads; and the stricter step is a `tool.execute.before` hook that refuses other tools until `skill` is called, which the spike did see refuse.
+- **The report says what a hook is.** A Claude Code hook is a shell command run as the user, with the API key in its environment, and a `claude -p` run starts it without asking. A Kilo plugin is code inside Kilo's own process. The report says so wherever it advises one.
+- **"How to tell whether it worked" has no Whitney answer yet.** The report says: add the hook, then run the skill's trigger prompts in the harness itself, since a Whitney run leaves the hook out.
+- **To test a hook, Whitney would need** (not part of this task): an opt-in that names what runs; Docker (Task 36a); `--include-hook-events`, since only `SessionStart` hooks are in the stream without it; a way to tell a hook's refusal from a permission rule's, since both are listed in `permission_denials`; and on Kilo a run without `--pure`.
 
 **Acceptance criteria:**
 - [x] The decision above is recorded (2026-11-11: fixed rules; a model is a later task).
 - [ ] Each fixed rule names its source: the harness's or the model provider's own published guidance, read on a stated date and linked, or a recorded Whitney run. No rule rests on memory or on general belief.
 - [ ] The rules for prompt engineering practice, progressive disclosure and hooks are each listed in `docs/`, with what triggers the rule, what it advises and its source.
-- [ ] The two questions about hooks above are answered, with Christopher, before rule 3 is built.
+- [ ] Rule 3 fires only on a run's evidence: the skill's description passes `whitney validate`'s checks, and the skill still wasn't loaded in enough conclusive runs to say so. It never fires on the file's text alone.
+- [ ] Rule 3's advice is the hook named above for the run's target, with the skill's name filled in, and is labelled "not tested by Whitney". It says what a hook is and can do, and that the hook isn't part of a Whitney run.
+- [ ] Rule 3's sources are named: Claude Code's hooks reference and Kilo's plugins page, each read 2026-11-11, and the spike's counts. Where the spike showed nothing, as for the Kilo reminder, the report says so.
+- [ ] Christopher confirms the hook advised for each target before rule 3 is built.
 - [ ] `whitney run` and `whitney report` write an improvement report beside the results, with a section for each file under test. Each finding names the evidence it rests on: the scenario ids, the counts and the checks' explanations.
 - [ ] Each finding says what to try, and how to tell whether it worked: which scenarios or trigger prompts should change on the next run.
 - [ ] A finding is never given on evidence that can't bear it. One epoch, or fewer conclusive runs than `min_conclusive`, is reported as "not enough runs to say".
@@ -1083,7 +1110,8 @@ Each rule's advice is of two kinds, and the report keeps them apart: what the **
 - [ ] A run with nothing wrong, and a one-epoch run, each with the report they produce.
 - [ ] Each kind of finding has a test built from a saved log, and a test that the finding is absent when its evidence is.
 - [ ] For each of the three kinds of rule, one case shown for real: the file as it was, the report's advice, the file changed as advised, and the rates before and after. A rule whose advice made no difference in its case is dropped or reworded, and the write-up says which.
-- [ ] For rule 3, a real run where a sound description didn't load the skill and a hook did, or a statement that this couldn't be shown and why.
+- [ ] For rule 3, the report from a recorded run where a sound description didn't load the skill, showing the advice and its "not tested by Whitney" label. The "rates before and after" of the item above can't come from Whitney for rule 3, since Whitney stages no hooks. On `claude-code` the spike's counts stand in for them (1 of 6 without a hook, 7 of 7 with a reminder), and the write-up says they came from the spike, with Haiku and one skill. On `kilo` the write-up says a hook's effect wasn't shown, and why.
+- [ ] A test that rule 3's finding is absent when the description fails `whitney validate`'s checks (rule 1 speaks instead), and when the skill loaded.
 - [ ] Evidence items 1 and 5 to 7.
 
-**Dependencies:** None. Task 31 (what the model was sent) would let it say whether a rule reached the model. Task 36b adds the built-in clash. **Estimated scope:** M. Rule 3 may wait on Task 36a if hooks are only staged in Docker.
+**Dependencies:** None. Task 31 (what the model was sent) would let it say whether a rule reached the model. Task 36b adds the built-in clash. **Estimated scope:** M. Rule 3 no longer waits on Task 36a: it advises without testing. Testing a hook would be a later task, and that one needs Task 36a.
