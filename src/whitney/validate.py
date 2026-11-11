@@ -410,9 +410,10 @@ def validate_variants(eval_file: EvalFile, staged: Mapping[str, str], *, target:
     Args:
         eval_file: a loaded eval file.
         staged: the files the project loader staged, project-relative path to text.
-        target: the target staged for. For claude-code, a `remove` of an
-            instruction file removes every one staged, as a run does
-            (variants.for_claude_code_instructions).
+        target: the target staged for. For claude-code, a `remove` of
+            AGENTS.md removes every instruction file staged, as a run does
+            (variants.for_claude_code_instructions); any other name
+            removes that file only.
 
     Returns:
         One Problem per finding. A variant the file declares is named at
@@ -452,8 +453,9 @@ def validate_project(
 
     The project is loaded with `target`'s loader, leaving out evals_path.
     Each eval file that applies to the target must have its `source` staged
-    (for claude-code, any staged instruction file counts for an instruction
-    file's name: see project_files.claude_code_instructions); if it isn't, the problem
+    (for claude-code, AGENTS.md counts as staged while any instruction file
+    is, and any other name must be staged itself: see
+    project_files.claude_code_instructions); if it isn't, the problem
     says which rule left it out (project_files.not_staged_reason). Then its
     variants are checked against the staged files (validate_variants), so a
     `remove` of a file that isn't staged is reported, though a run of the

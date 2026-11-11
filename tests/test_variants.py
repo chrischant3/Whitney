@@ -238,7 +238,7 @@ def test_the_spread_leaves_an_unreadable_config_for_set_to_refuse():
 
 
 def test_the_agents_md_baseline_of_a_claude_md_only_project_runs_with_nothing_staged(tmp_path):
-    # The CLAUDE.md is staged as AGENTS.md (Checkpoint A1), which the baseline removes.
+    # The CLAUDE.md is staged under its own name, and the baseline's remove of AGENTS.md removes it.
     project = _project(tmp_path, {"CLAUDE.md": "- rule\n"})
 
     task = agents_md(target="claude-code", model=MODEL, variant="baseline", project_path=str(project))
@@ -473,7 +473,8 @@ def test_a_set_on_a_file_kilo_does_not_read_as_config_is_never_shadowed():
 
 
 # The claude-code target stages CLAUDE.md, .claude/CLAUDE.md, AGENTS.md or .claude/AGENTS.md under their own
-# names, so a remove of any of them removes every one staged (tasks/todo-phase5.md, Task 34).
+# names, so a remove of AGENTS.md removes every one staged and a remove of any other name removes that file only
+# (tasks/plan-phase5.md, decision 8).
 
 
 def test_a_remove_of_an_instruction_file_widens_to_every_one_claude_code_was_given():
