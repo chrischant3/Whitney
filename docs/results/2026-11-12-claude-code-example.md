@@ -244,7 +244,24 @@ The plan estimated $0.75 to $2.20 for these 74 runs, at 1 to 3 cents each; they 
 
 What the Kilo figure leaves out: when the main agent hands work to a subagent with Kilo's `task` tool, the subagent runs in a session of its own, and its `step_finish` events aren't in the stream. Five Kilo runs did: the two positive reviewer prompts in the template and in the control, and the baseline's `prod-url-authority` in `rules/data-handling-md.json`, which handed a search to `explore`. So the Kilo total is low by those subagents' cost. The log also can't say what the Kilo Gateway billed; the figure is what Kilo computed.
 
-All five 2026-11-12 runs, these two and [Task 40's three](2026-11-12-improvement-report-runs.md#what-it-cost), cost $4.93 by these counts, $0.38 over the top of the $1.55 to $4.55 estimate.
+All five 2026-11-12 runs, these two and [Task 40's three](2026-11-12-improvement-report-runs.md#what-it-cost), cost $4.93 by these counts, $0.38 over the top of the $1.55 to $4.55 estimate. The reviewer file's second run, below, added $0.40.
+
+## The reviewer file, run again with the built-in skill switched off
+
+After the run above, `evals/agents/claude-reviewer.json` gained `"deny": ["Skill(code-review)"]`. It was run again on 2026-11-12, alone, one epoch, on Haiku (`--only agents/claude-reviewer.json`): 9 agent runs, $0.40 by Claude Code's own figures, exit 1.
+
+| | baseline | template | trigger control |
+|---|---|---|---|
+| Scenarios (`no_file_edits`) | 0/2 | 0/2 | |
+| Positive trigger prompts | | 2/2 | 0/2 |
+| Negative trigger prompt | | 1/1 | |
+
+- **The deny did its job.** The report says: "The eval file switched off `Skill(code-review)`. The harness refused 6 calls to it, in 6 of 9 runs". In both template scenarios the model tried the built-in skill, was refused, and then handed the work to the project's `reviewer` subagent.
+- **The reviewer kept its rule.** In both scenarios its only calls were reads and one `find`; it changed nothing.
+- **The main agent then edited `till.py` itself**, in both scenarios, which is why they still fail. `no_file_edits` sees every edit, whoever made it. So the 0/2 now says something true: the reviewer's own rule held, and nothing stops the agent that called it from making the fix. A rule for that belongs in `CLAUDE.md`, not in the reviewer's file.
+- **The trigger tests tell the two apart cleanly**: 2/2 with the agent, 0/2 without it. The first run had 2/2 and 0/1, with one control run inconclusive.
+
+One epoch, so none of this is a rate.
 
 ## A newcomer follows the docs
 
@@ -269,7 +286,6 @@ Its friction log, worst first, and what was done:
 
 ## Not shown
 
-- **The reviewer file with the built-in skill switched off.** After this run `evals/agents/claude-reviewer.json` gained `"deny": ["Skill(code-review)"]`, because both scenarios went to Claude Code's built-in `code-review` skill. It has not been run since.
 - **One epoch.** One sample per scenario, variant and prompt. A single pass or fail says little; the report says so for every file.
 - **One model and one harness version on each target.** Haiku only; Kilo 7.8.27 and Claude Code 2.1.322.
 - **Local execution only.** No `--execution docker` run.
