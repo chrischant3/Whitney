@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "source": ".kilo/skills/release-notes/SKILL.md",
+  "source": ".claude/skills/release-notes/SKILL.md",
   "title": "release-notes skill followed: no ticket ids in CHANGELOG.md",
   "defaults": {
     "fixture": "till",
