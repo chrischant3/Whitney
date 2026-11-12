@@ -87,6 +87,20 @@ After the pre-PR review fixes (2026-11-12), `whitney report` on these logs can't
 
 This shows the fixed matcher gives the right answer on the requests the real harnesses sent, on both targets. It is not a run: the model-call check was given the model each body named, the later requests' bodies weren't kept, so "only in a later request" couldn't be tried, and the scores in the logs still say what the code of the day said. A new one-epoch run per target (about $0.08, as runs 1 and 2) would show the lines from `whitney run` itself.
 
+### Run 2 again on the fixed code (2026-11-12, `claude-code`)
+
+Command 2 from the table was run again on the branch's final code (two agent runs, Haiku, exit 0). The report `whitney run` wrote says:
+
+```
+## What was sent to the model
+
+- `capture-rules.json` on claude-code: `AGENTS.md` stands for the instruction files staged and the files they import, each looked for as its exact text after removing block-level HTML comments, as Claude Code does, and normalising line endings and trailing spaces. Only what the first model call held counts as sent as an instruction.
+  - baseline: `AGENTS.md` not in the first model call in 1 of 1 runs; 1 other request wasn't the run's model call and wasn't searched.
+  - template: `AGENTS.md` in the first model call in 1 of 1 runs (messages, under `Contents of …/AGENTS.md (project instructions, checked into the codebase):`); 1 other request wasn't the run's model call and wasn't searched.
+```
+
+So on `claude-code` the template's rules are found and the baseline's aren't, from a real run. The `kilo` lines above this section are still the offline re-match: run 1 has not been made again on the fixed code.
+
 ## What each log holds
 
 Each run's record is under `kilo_run` in the sample's store. Excerpts are from `sent.first_body` and the run's `events`. Temporary paths are shown as `<tmp>`.
