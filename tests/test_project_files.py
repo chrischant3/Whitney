@@ -1789,3 +1789,10 @@ def test_only_the_rule_lists_of_the_permissions_block_are_staged(tmp_path):
         ".claude/settings.json (permissions.disableBypassPermissionsMode)": reason,
     }
 
+
+
+def test_settings_under_the_evals_path_are_named_with_the_rest_of_dot_claude(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"permissions": PUSH_DENIED, "hooks": {}}))
+
+    assert files_not_staged("claude-code", project, evals_path=project / ".claude") == [".claude/settings.json"]
+    assert files_not_staged_reasons("claude-code", project, evals_path=project / ".claude") == {".claude/settings.json": project_files.REST_REASON}

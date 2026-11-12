@@ -163,6 +163,20 @@ Claude Code's own [memory docs](https://code.claude.com/docs/en/memory.md) (read
 
 **What Whitney does:** the `claude-code` loader copies the files Claude Code would read, under their own names, but never `CLAUDE.local.md` ([adding-tests.md](adding-tests.md)). Whether `AGENTS.md` is copied depends only on the root `CLAUDE.md` and `.claude/CLAUDE.md`: `CLAUDE.local.md` is personal and not committed, so a run in CI or on another machine wouldn't have it. `check_no_inherited_instructions` refuses a run with any of these files in a folder above the project.
 
+### Imports
+
+A `CLAUDE.md`, `.claude/CLAUDE.md` or `AGENTS.md` can import other files with `@path`. Claude Code's memory docs (read 2026-11-12) and a run on 2.1.322 agree ([spike-findings.md](spike-findings.md#phase-5-task-31-follow-up-gateway-base-url-and-claudemd-imports-2026-11-12)):
+
+- A relative path is read from the folder of the file holding the import: `@../docs/x.md` in `.claude/CLAUDE.md` is `docs/x.md`. An absolute path is allowed.
+- An imported file's own imports are followed, to four hops; the fifth isn't sent.
+- An `@path` in a code span or a fenced block isn't followed. A backslash escapes a space in the path; a quoted path isn't an import.
+- An import outside the project (`@~/…`, `@../…` past the project, an absolute path elsewhere) is external, and loads only once a person approves it. `claude -p` in a fresh HOME, as Whitney runs it, never has, so it isn't sent.
+- In the run, an imported `.env` file wasn't sent, and a symlink inside the project was.
+
+**What Whitney does:** the `claude-code` loader stages each file an instruction file imports, and their imports, to four hops, under their own names, so a `CLAUDE.md` that is just `@AGENTS.md` reaches a run with `AGENTS.md` beside it. An import outside the project, of a `.env` file or of `CLAUDE.local.md` is left out, and the report's "Not Staged" table names it as `<file>: @<path>` with the reason. An import Claude Code would read but the loader can't stage safely (a symlink, inside `node_modules/` or another excluded folder, under the evals path, unreadable or not UTF-8) stops the run, naming the file that holds it: a run without it would test less than the project. Before 2026-11-12 imported files weren't staged at all, and a `CLAUDE.md` of `@AGENTS.md` reached the run empty.
+
+**Not staged, a known gap:** `.claude/rules/*.md`. Claude Code loads the rules there that have no `paths` field at launch, and the run sent one; the loader names `.claude/rules/` as "rest of .claude/" and stages none of it.
+
 ### Skills and agents
 
 Claude Code 2.1.322 offers the skills in the project's `.claude/skills/` and the agents in its `.claude/agents/` (`docs/spike-findings.md`, "Phase 5 Task 36"):
@@ -183,7 +197,8 @@ Claude Code 2.1.322 offers the skills in the project's `.claude/skills/` and the
 | `.claude/skills/` | staged | staged |
 | `.claude/agents/` | not staged (Kilo doesn't read it, [above](#results-1)) | staged |
 | `.claude/settings.json` | not staged | its `permissions` block only |
-| Files a `CLAUDE.md` imports with `@path` | not staged | not staged |
+| Files a `CLAUDE.md` imports with `@path` | not staged (Kilo's import handling isn't tested here) | staged, with their own imports to four hops; one outside the project, a `.env` file or `CLAUDE.local.md` is named instead, and one that is a symlink stops the run ([above](#imports)) |
+| `.claude/rules/` | not staged | not staged, though Claude Code reads it ([above](#imports)) |
 
 [`examples/consumer`](../examples/consumer/) is laid out for both. Its skills are in `.kilo/skills/` for Kilo, with a copy in `.claude/skills/` for Claude Code; Kilo reads both. When two skills share a name, Kilo 7.8.27 loaded the `.kilo/` copy in each of the 4 runs of the recorded one-epoch run that loaded it, and the `.claude/` copy in the 2 control runs where the `.kilo/` copy was removed ([results](results/2026-11-12-claude-code-example.md#which-skill-copy-kilo-used)); for rules files and workflows Kilo keeps the `.kilo/` one too. The Kilo skill eval's baseline removes both copies, and on `kilo` its automatic trigger control removes every staged skill folder named `release-notes` in the folders Kilo reads ([adding-tests.md](adding-tests.md#testing-a-skill-or-an-agent)); re-run after that fix, the control failed both positive prompts, as it should ([results](results/2026-11-12-claude-code-example.md#the-kilo-trigger-control-re-run-after-the-fix)). Copies are matched by folder name; no Kilo run here has had a skill whose folder and `name` differ. Its `CLAUDE.md` repeats the rules of `AGENTS.md` and `.kilo/rules/data-handling.md` rather than importing them, and its Kilo baselines remove `CLAUDE.md` as well as the file under test, because the Kilo loader stages it.
 

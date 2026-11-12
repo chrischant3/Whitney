@@ -89,8 +89,9 @@ def _rules(relative: str) -> list[str]:
 
 
 def test_the_examples_claude_md_holds_every_rule_kilo_reads_with_no_imports():
-    # Claude Code reads CLAUDE.md in place of AGENTS.md, and Whitney doesn't copy a file a CLAUDE.md
-    # imports with @path, so the rules are repeated in it word for word.
+    # Claude Code reads CLAUDE.md in place of AGENTS.md, so the example repeats the rules in it word for word.
+    # It was written before the claude-code loader copied @path imports (2026-11-12); repeating still keeps
+    # each rule in one file both harnesses read as text.
     claude_md = _rules("CLAUDE.md")
 
     for relative in ("AGENTS.md", ".kilo/rules/data-handling.md"):
