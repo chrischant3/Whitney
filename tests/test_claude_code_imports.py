@@ -8,16 +8,24 @@ staged project without the imported files would give the model less than the
 real project does.
 """
 
+import json
+
 import pytest
 
 from whitney.project_files import (
+    CONFIG_IMPORT_REASON,
     ENV_IMPORT_REASON,
-    IMPORT_MAX_HOPS,
+    GIT_IMPORT_REASON,
+    LARGE_IMPORT_REASON,
+    LINK_REFUSAL,
     LOCAL_REASON,
     OUTSIDE_IMPORT_REASON,
+    REST_REASON,
+    SECRET_IMPORT_REASON,
     files_not_staged,
     files_not_staged_reasons,
     load_claude_code_project_files,
+    load_project_files,
     not_staged_reason,
 )
 
@@ -70,7 +78,6 @@ def test_imports_are_followed_four_hops_and_no_further(tmp_path):
 
     staged = load_claude_code_project_files(tmp_path)
 
-    assert IMPORT_MAX_HOPS == 4
     assert sorted(staged) == ["CLAUDE.md", "h1.md", "h2.md", "h3.md", "h4.md"]
 
 
@@ -269,3 +276,177 @@ def test_an_import_under_the_evals_path_is_named_with_the_rest_of_dot_claude(tmp
 
     assert files_not_staged("claude-code", tmp_path, evals_path=tmp_path / ".claude") == [".claude/notes.md"]
     assert files_not_staged("claude-code", tmp_path) == []
+
+
+# Review fixes, 2026-11-12: an import adds a file, and never stages one the harness reads as its own
+# configuration, or one the loader would stage differently or not at all.
+
+# Claude Code's memory docs, read 2026-11-12: "Claude Code skips a file over 4 MiB and loads none of it."
+FOUR_MIB = 4 * 1024 * 1024
+HOOKS_ONLY = '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"touch x"}]}]}}'
+
+
+def test_an_imported_settings_file_with_hooks_is_never_staged(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "@.claude/settings.json\n", ".claude/settings.json": HOOKS_ONLY})
+
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert staged == {"CLAUDE.md": "@.claude/settings.json\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {
+        "CLAUDE.md: @.claude/settings.json": CONFIG_IMPORT_REASON,
+        ".claude/settings.json": REST_REASON,
+    }
+
+
+def test_the_cut_down_settings_win_over_an_import_of_the_whole_file(tmp_path):
+    settings = '{"permissions": {"deny": ["Bash(rm:*)"], "defaultMode": "bypassPermissions"}, ' + HOOKS_ONLY[1:]
+    _project(tmp_path, {"CLAUDE.md": "@.claude/settings.json\n", ".claude/settings.json": settings})
+
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert json.loads(staged[".claude/settings.json"]) == {"permissions": {"deny": ["Bash(rm:*)"]}}
+    assert files_not_staged_reasons("claude-code", tmp_path)["CLAUDE.md: @.claude/settings.json"] == CONFIG_IMPORT_REASON
+
+
+@pytest.mark.parametrize("imported", [
+    ".claude/settings.local.json",
+    ".claude/commands/deploy.md",
+    ".claude/hooks/gate.sh",
+    ".claude/rules/style.md",
+    ".claude/output-styles/terse.md",
+    ".claude/launch.json",
+    ".mcp.json",
+])
+def test_an_import_of_a_file_claude_code_reads_as_configuration_is_named_not_staged(tmp_path, imported):
+    _project(tmp_path, {"CLAUDE.md": f"rules @{imported}\n", imported: "{}\n"})
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": f"rules @{imported}\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path)[f"CLAUDE.md: @{imported}"] == CONFIG_IMPORT_REASON
+
+
+def test_a_configuration_path_is_left_out_whatever_its_case_or_spelling(tmp_path):
+    _project(tmp_path, {
+        "CLAUDE.md": "@./.claude/settings.json @docs/../.claude//commands/x.md @.MCP.json\n",
+        ".claude/settings.json": HOOKS_ONLY, ".claude/commands/x.md": "x\n", ".mcp.json": "{}\n", "docs/a.md": "a\n",
+    })
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md"]
+
+
+def test_an_import_inside_dot_git_is_named_not_staged(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "@.git/config\n", ".git/config": "[core]\n"})
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": "@.git/config\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {"CLAUDE.md: @.git/config": GIT_IMPORT_REASON}
+
+
+def test_an_import_of_a_skill_an_agent_or_dot_claudes_instruction_file_is_staged(tmp_path):
+    _project(tmp_path, {
+        "CLAUDE.md": "@.claude/skills/demo/SKILL.md @.claude/agents/reviewer.md @.claude/AGENTS.md\n",
+        ".claude/skills/demo/SKILL.md": "skill\n", ".claude/agents/reviewer.md": "agent\n", ".claude/AGENTS.md": "dot agents\n",
+    })
+
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert staged[".claude/AGENTS.md"] == "dot agents\n"
+    assert staged[".claude/skills/demo/SKILL.md"] == "skill\n"
+    assert staged[".claude/agents/reviewer.md"] == "agent\n"
+    assert files_not_staged("claude-code", tmp_path) == []
+
+
+def test_the_kilo_loader_stages_no_settings_a_claude_md_imports(tmp_path):
+    _project(tmp_path, {"kilo.jsonc": "{}\n", "CLAUDE.md": "@.claude/settings.json\n", ".claude/settings.json": HOOKS_ONLY})
+
+    assert sorted(load_project_files(tmp_path)) == ["CLAUDE.md", "kilo.jsonc"]
+
+
+@pytest.mark.parametrize("name", [
+    "keys/server.pem", "deploy.key", "ID_RSA", "id_rsa.pub", "id_ed25519", "id_ecdsa", ".npmrc", ".pypirc", ".netrc",
+    ".envrc", "prod.env", "credentials", "credentials.json", "cert.p12", "cert.pfx",
+])
+def test_an_import_whose_name_looks_like_a_secret_is_named_not_staged(tmp_path, name):
+    _project(tmp_path, {"CLAUDE.md": f"@{name}\n", name: "not a real secret\n"})
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": f"@{name}\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {f"CLAUDE.md: @{name}": SECRET_IMPORT_REASON}
+
+
+def test_an_import_over_the_size_claude_code_skips_is_named_not_staged(tmp_path):
+    _project(tmp_path, {
+        "CLAUDE.md": "@big.md @limit.md\n",
+        "big.md": "a" * (FOUR_MIB + 1), "limit.md": "b" * FOUR_MIB,
+    })
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "limit.md"]
+    assert files_not_staged_reasons("claude-code", tmp_path) == {"CLAUDE.md: @big.md": LARGE_IMPORT_REASON}
+
+
+def test_an_import_in_a_block_level_html_comment_is_not_followed(tmp_path):
+    _project(tmp_path, {
+        "CLAUDE.md": "<!--\n@hidden.md\n-->\n  <!-- @one-line.md -->\n<!-- starts\n@also-hidden.md --> ends\n@shown.md\n",
+        "hidden.md": "h\n", "one-line.md": "o\n", "also-hidden.md": "a\n", "shown.md": "s\n",
+    })
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "shown.md"]
+
+
+def test_a_comment_opened_in_a_fenced_block_hides_nothing(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "```\n<!--\n```\n@after.md\n", "after.md": "a\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "after.md"]
+
+
+@pytest.mark.parametrize("text", [
+    "````\n```\n@inner.md\n````\n@after.md\n",
+    "```\n~~~\n@inner.md\n```\n@after.md\n",
+    "~~~~\n~~~\n@inner.md\n~~~~~\n@after.md\n",
+    "```python\n@inner.md\n```\n@after.md\n",
+    "```\n``` not a closing fence\n@inner.md\n```\n@after.md\n",
+    "   ```\n@inner.md\n   ```\n@after.md\n",
+])
+def test_a_fence_closes_only_with_its_own_character_at_least_as_long(tmp_path, text):
+    _project(tmp_path, {"CLAUDE.md": text, "inner.md": "i\n", "after.md": "a\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "after.md"]
+
+
+def test_a_fence_indented_four_spaces_is_not_a_fence(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "    ```\n@shown.md\n", "shown.md": "s\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "shown.md"]
+
+
+def test_a_broken_symlink_import_is_refused_saying_so(tmp_path):
+    root = tmp_path.resolve()
+    _project(root, {"CLAUDE.md": "@gone.md\n"})
+    (root / "gone.md").symlink_to("nowhere.md")
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(root)
+
+    assert str(raised.value) == (
+        f"{root / 'CLAUDE.md'} imports @gone.md, which Claude Code would read, but Whitney doesn't stage it: "
+        f"it is a symlink to nothing, gone.md. {LINK_REFUSAL}"
+    )
+
+
+def test_a_symlinked_folder_import_is_refused_saying_so(tmp_path):
+    root = tmp_path.resolve()
+    _project(root, {"CLAUDE.md": "@shared\n", "real/x.md": "x\n"})
+    (root / "shared").symlink_to("real", target_is_directory=True)
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(root)
+
+    assert str(raised.value).endswith(f"it is a symlink to a folder, shared. {LINK_REFUSAL}")
+
+
+def test_an_import_inside_a_symlinked_folder_is_refused_naming_the_folder(tmp_path):
+    root = tmp_path.resolve()
+    _project(root, {"CLAUDE.md": "@shared/deep/x.md\n", "real/deep/x.md": "x\n"})
+    (root / "shared").symlink_to("real", target_is_directory=True)
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(root)
+
+    assert str(raised.value).endswith(f"it is inside a symlinked folder, shared. {LINK_REFUSAL}")

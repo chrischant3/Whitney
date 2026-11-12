@@ -119,6 +119,11 @@ OUTSIDE_IMPORT_REASON = (
     "which an eval's run never has"
 )
 ENV_IMPORT_REASON = "an imported .env file, which is never staged"
+CONFIG_IMPORT_REASON = "x"
+GIT_IMPORT_REASON = "x"
+SECRET_IMPORT_REASON = "x"
+LARGE_IMPORT_REASON = "x"
+LINK_REFUSAL = "x"
 
 
 def load_template_files(template_dir: Path) -> dict[str, str]:
