@@ -5,7 +5,8 @@ A project with its own rules, and the evals that test them, laid out as a team u
 - `AGENTS.md`: never edit files under `vendor/`. Kilo reads it. Tested by `evals/agents-md.json` with the `no_file_edits` check, on both targets.
 - `CLAUDE.md`: the same rule, and the two data-handling rules below, word for word. Claude Code reads `CLAUDE.md` in place of `AGENTS.md` when both are there, so the rules have to be in it. They are repeated, not imported with `@AGENTS.md`: Whitney doesn't copy a file a `CLAUDE.md` imports, so the import would reach the run empty. On `claude-code`, `evals/agents-md.json` tests its `vendor/` rule (its `AGENTS.md` source stands for the instruction files Claude Code reads), and `evals/claude-md.json` tests its data-handling rules with `no_string_added` and `no_secret_committed`. Change a rule in both places.
 - `.kilo/rules/data-handling.md`, loaded through `instructions` in `kilo.jsonc`: never copy customer data out of `exports/`, and never point code at production URLs. Tested by `evals/rules/data-handling-md.json`, on `kilo`, with `no_string_added` and `no_secret_committed`.
-- `.claude/skills/release-notes/`: a skill for writing release notes, which must leave internal ticket ids out of `CHANGELOG.md`. Kilo and Claude Code both read `.claude/skills/`, so it is kept there once and tested on both targets by `evals/skills/release-notes.json`: its scenarios use `no_string_added`, and its trigger tests ask whether the right prompts load the skill. A second skill, `debugging`, is there so one trigger test can check that a bug-fix prompt loads it and not `release-notes`.
+- `.kilo/skills/release-notes/`: a skill for writing release notes, which must leave internal ticket ids out of `CHANGELOG.md`. Tested on `kilo` by `evals/skills/release-notes.json`: its scenarios use `no_string_added`, and its trigger tests ask whether the right prompts load the skill. A second skill, `debugging`, is there so one trigger test can check that a bug-fix prompt loads it and not `release-notes`.
+- `.claude/skills/release-notes/` and `.claude/skills/debugging/`: the same two skills, copied for Claude Code, which doesn't read `.kilo/skills/`. Tested on `claude-code` by `evals/skills/claude-release-notes.json`. Keep the two copies the same. Kilo reads `.claude/skills/` too, so a Kilo run holds both copies, and which one Kilo uses hasn't been tested. The Kilo eval's baseline removes both, but the trigger control Whitney adds removes only `.kilo/skills/release-notes/`, so on `kilo` a positive trigger prompt can pass in that control by loading the `.claude/skills/` copy. Read a Kilo `trigger_control` pass here as that, not as a check that can't fail ([known gap](../../docs/adding-tests.md#testing-a-skill-or-an-agent)).
 - `.kilo/agents/reviewer.md`: a reviewer that reports problems and never changes a file. Tested on `kilo` by `evals/agents/reviewer.json`: its scenarios run it with `kilo run --agent` and use `no_file_edits`, and its trigger tests ask whether a request for a review is handed to it.
 - `.claude/agents/reviewer.md`: the same reviewer for Claude Code. Claude Code doesn't read `.kilo/agents/`, and Kilo doesn't read `.claude/agents/`. Its frontmatter has a `name`, which Claude Code needs, and no `mode`, which is Kilo's. Tested on `claude-code` by `evals/agents/claude-reviewer.json`. Claude Code has no `--agent` for a run, so its scenarios ask for the reviewer subagent by name; `no_file_edits` sees the main agent's edits too, so a pass means nobody changed a `.py` file.
 - `kilo.jsonc`: a permission rule, `"git push *": "deny"`, so nobody pushes from an agent's session. Tested by `evals/kilo-jsonc.json` with the `permission_held` check. Its control variant sets the rule to `allow`, and there the push must go through. The file says `"targets": ["kilo"]`.
@@ -19,7 +20,8 @@ Which eval file runs on which target, and the file it tests there:
 | `agents-md.json` | the `vendor/` rule | `AGENTS.md` | `CLAUDE.md` |
 | `claude-md.json` | the data-handling rules | not run | `CLAUDE.md` |
 | `rules/data-handling-md.json` | the data-handling rules | `.kilo/rules/data-handling.md` | not run |
-| `skills/release-notes.json` | the skill | `.claude/skills/release-notes/` | `.claude/skills/release-notes/` |
+| `skills/release-notes.json` | the skill | `.kilo/skills/release-notes/` | not run |
+| `skills/claude-release-notes.json` | the skill's copy | not run | `.claude/skills/release-notes/` |
 | `agents/reviewer.json` | Kilo's reviewer | `.kilo/agents/reviewer.md` | not run |
 | `agents/claude-reviewer.json` | Claude Code's reviewer | not run | `.claude/agents/reviewer.md` |
 | `kilo-jsonc.json` | the push rule | `kilo.jsonc` | not run |
@@ -33,7 +35,7 @@ Check the evals without calling a model:
     whitney validate --target claude-code --project-path examples/consumer --evals-path examples/consumer/evals
     whitney validate --project-path examples/consumer --evals-path examples/consumer/evals
 
-Each ends `8 eval file(s), 0 problem(s), 0 warning(s)` and exits 0. The count is every eval file in the folder; each target checks the files in its column above.
+Each ends `9 eval file(s), 0 problem(s), 0 warning(s)` and exits 0. The count is every eval file in the folder; each target checks the files in its column above.
 
 Run them (this calls a real model; `claude-code` needs `ANTHROPIC_API_KEY`):
 

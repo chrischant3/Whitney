@@ -110,7 +110,7 @@ Run every command from the root of your Whitney checkout.
    whitney validate --target kilo --project-path ../my-rules --evals-path ../my-rules/evals
    ```
 
-   The last line should read `../my-rules/evals: 9 eval file(s), 0 problem(s), 0 warning(s)`, and the command exits 0. The nine eval files are the example's eight and yours. A file with a mistake in its fields isn't counted, so the number can read 8 while you fix one.
+   The last line should read `../my-rules/evals: 10 eval file(s), 0 problem(s), 0 warning(s)`, and the command exits 0. The ten eval files are the example's nine and yours. A file with a mistake in its fields isn't counted, so the number can read 9 while you fix one.
 
    `whitney validate` checks everything it can without a model: every field, that each fixture and `source` exists, and that each string or token a check searches for is in the fixture or the prompt. Each problem is printed on its own line, starting `error:` and naming the file and the field, then the command exits 1. One mistake can print two lines: a wrong `source` is reported once for itself and once because the baseline can't remove it. For example:
 
@@ -186,7 +186,7 @@ Name the file after the file it tests. This is a convention; `whitney validate` 
 | `kilo.jsonc` or `.kilo/kilo.jsonc` | `configuration/kilo-jsonc.json` (the example project keeps its one at `evals/kilo-jsonc.json`; the folder is a convention, not a rule) |
 | `.kilo/rules/<name>.md` | `rules/<name>-md.json` |
 | `.claude/settings.json` | `configuration/claude-settings.json` (the example keeps its one at `evals/claude-settings.json`) |
-| `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md` | `skills/<name>.json` |
+| `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md` | `skills/<name>.json`; when a project has both, the Claude Code one is `skills/claude-<name>.json` |
 | `.kilo/agents/<name>.md` or `.claude/agents/<name>.md` | `agents/<name>.json`; when a project has both, the Claude Code one is `agents/claude-<name>.json`, since eval names must be unique |
 
 The **eval name** is the file's name without `.json` or its folder, with `-` turned into `_`: `rules/migrations-md.json` is `migrations_md`. Eval names must be unique across the evals folder. The eval name names the Inspect tasks, as `<name>_<variant>`, and you can pass it to `--only` instead of the path.
@@ -568,14 +568,18 @@ The report has one Δ column for each variant: the template's rate minus that va
 
 ## Testing a skill or an agent
 
-A **skill** is a folder of instructions, `.kilo/skills/<name>/SKILL.md`, that Kilo loads only when the agent decides it fits the request. For Claude Code it is `.claude/skills/<name>/SKILL.md`, which Kilo reads too, so a skill there is tested on both targets. An **agent** is a file, `.kilo/agents/<name>.md`, holding a second set of instructions that Kilo can run in place of its default agent, or that the default agent can hand work to as a **subagent**. Claude Code's agents are `.claude/agents/<name>.md`, which Kilo doesn't read, so an agent is tested on the target whose folder holds it.
+A **skill** is a folder of instructions, `.kilo/skills/<name>/SKILL.md`, that Kilo loads only when the agent decides it fits the request. For Claude Code it is `.claude/skills/<name>/SKILL.md`, which Kilo reads too, so an eval file whose source is there applies to both targets unless its `targets` says otherwise. An **agent** is a file, `.kilo/agents/<name>.md`, holding a second set of instructions that Kilo can run in place of its default agent, or that the default agent can hand work to as a **subagent**. Claude Code's agents are `.claude/agents/<name>.md`, which Kilo doesn't read, so an agent is tested on the target whose folder holds it.
 
 | Target | Skills it stages | Agents it stages |
 |---|---|---|
 | `kilo` | `skills/` and `skill/` in `.kilo/` and `.kilocode/`, `.claude/skills/`, `.agents/skills/` | `agents/` and `agent/` in `.kilo/` and `.kilocode/` |
 | `claude-code` | `.claude/skills/` | `.claude/agents/` |
 
-A project for both harnesses keeps its skills in `.claude/skills/`, once. A copy of the same skill in `.kilo/skills/` as well would still be staged in a Kilo run's baseline and trigger control, which remove only the folder under test.
+A project for both harnesses can keep a skill in `.kilo/skills/` for Kilo and a copy in `.claude/skills/` for Claude Code, as [`examples/consumer`](../examples/consumer/) does. Kilo reads both folders, so a Kilo run holds both copies, and which one Kilo uses when two skills share a name hasn't been tested. Then:
+
+- Give the Claude Code copy its own eval file with `"targets": ["claude-code"]`, named `skills/claude-<name>.json`.
+- In the Kilo copy's eval file, declare a baseline that removes both folders: `{"baseline": {"role": "baseline", "remove": [".kilo/skills/<name>/", ".claude/skills/<name>/"]}}`.
+- **Known gap:** the `trigger_control` Whitney adds removes only the source's folder, and can't be declared. In a Kilo run it keeps the `.claude/skills/` copy, so a positive trigger prompt can load that copy and pass where the control should fail. A Kilo trigger control that passes in such a project doesn't show the check can't fail; it shows the other copy loaded. `whitney validate` doesn't warn about it yet.
 
 Each gets one eval file, which asks two different questions:
 
@@ -586,7 +590,7 @@ Each gets one eval file, which asks two different questions:
 
 The example project has a skill and an agent for each harness:
 
-- [`examples/consumer/evals/skills/release-notes.json`](../examples/consumer/evals/skills/release-notes.json) tests a skill in `.claude/skills/`, on both targets, that must keep internal ticket ids out of `CHANGELOG.md`. Its scenarios use `no_string_added`.
+- [`examples/consumer/evals/skills/release-notes.json`](../examples/consumer/evals/skills/release-notes.json) tests a skill in `.kilo/skills/`, on `kilo`, that must keep internal ticket ids out of `CHANGELOG.md`. Its scenarios use `no_string_added`. [`skills/claude-release-notes.json`](../examples/consumer/evals/skills/claude-release-notes.json) tests its copy in `.claude/skills/` on `claude-code`.
 - [`examples/consumer/evals/agents/reviewer.json`](../examples/consumer/evals/agents/reviewer.json) tests Kilo's reviewer, `.kilo/agents/reviewer.md`, which must never change a file. Its scenarios run it with `"agent": "reviewer"` and use `no_file_edits`.
 - [`examples/consumer/evals/agents/claude-reviewer.json`](../examples/consumer/evals/agents/claude-reviewer.json) tests the same reviewer written for Claude Code, `.claude/agents/reviewer.md`, with a `name` in its frontmatter and no `mode`. Its prompts ask for the reviewer subagent by name.
 

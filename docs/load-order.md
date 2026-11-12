@@ -185,7 +185,7 @@ Claude Code 2.1.322 offers the skills in the project's `.claude/skills/` and the
 | `.claude/settings.json` | not staged | its `permissions` block only |
 | Files a `CLAUDE.md` imports with `@path` | not staged | not staged |
 
-[`examples/consumer`](../examples/consumer/) is laid out for both. Its skills are in `.claude/skills/`, once, so each harness has one copy. Its `CLAUDE.md` repeats the rules of `AGENTS.md` and `.kilo/rules/data-handling.md` rather than importing them, and its Kilo baselines remove `CLAUDE.md` as well as the file under test, because the Kilo loader stages it.
+[`examples/consumer`](../examples/consumer/) is laid out for both. Its skills are in `.kilo/skills/` for Kilo, with a copy in `.claude/skills/` for Claude Code; Kilo reads both, and which copy it uses when two skills share a name hasn't been tested (only rules files and workflows were: Kilo keeps the `.kilo/` one). The Kilo skill eval's baseline removes both copies, but its automatic trigger control removes only `.kilo/skills/release-notes/` ([adding-tests.md](adding-tests.md#testing-a-skill-or-an-agent), the known gap). Its `CLAUDE.md` repeats the rules of `AGENTS.md` and `.kilo/rules/data-handling.md` rather than importing them, and its Kilo baselines remove `CLAUDE.md` as well as the file under test, because the Kilo loader stages it.
 
 ## Practical notes
 
