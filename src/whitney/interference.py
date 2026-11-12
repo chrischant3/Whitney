@@ -1,6 +1,10 @@
 """IFEvalCode as an instruction-interference check using sanitised local data."""
 
+import ast
+import codecs
 import json
+import re
+import warnings
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -25,6 +29,9 @@ LOCAL_DATASET = ROOT / "dataset/ifevalcode_cleaned.jsonl"
 # otherwise run commands on the host. The same grants as the Harbor eval.
 IFEVALCODE_PERMISSIONS = HARBOR_PERMISSIONS
 SUPPORTED_LANGUAGES = ("cpp", "csharp", "java", "javascript", "php", "python", "shell", "typescript")
+# The languages whose check code inspect_evals 0.27.0 decodes with unicode_escape (scorer_check_code).
+UPSTREAM_DECODES = frozenset({"python", "cpp", "java", "csharp"})
+_BARE_QUOTE = re.compile(r'(?<!\\)"')
 IFEVALCODE_SYSTEM_PROMPT = """You are an expert programmer. You will be given a task description with specific constraints and requirements. Write code in {language} that solves the problem while adhering to all the specified constraints.
 
 Provide your solution in a markdown code block with the appropriate language tag."""
@@ -96,7 +103,8 @@ def ifevalcode(
                 id=record["id"],
                 input=prompt,
                 metadata={
-                    "check_correctness": record.get("check_correctness", ""),
+                    "check_correctness": scorer_check_code(language, record.get("check_correctness", "")),
+                    "check_correctness_as_written": record.get("check_correctness", ""),
                     "check_instruction": record.get("check_instruction", ""),
                     "entry_point": record.get("entry_point", []),
                     "programming_language": language,
@@ -183,3 +191,61 @@ def _load_records(path: Path, languages: set[str], limit: int | None) -> tuple[l
         counts[language] = counts.get(language, 0) + 1
         selected.append(record)
     return selected, excluded
+
+
+def scorer_check_code(language: str, check_code: str) -> str:
+    """The check code to give the upstream scorer so the sandbox gets the row's code.
+
+    inspect_evals 0.27.0's post-processors for UPSTREAM_DECODES languages run
+    the check code through `unicode_escape` before writing it to the sandbox.
+    That repairs rows the dataset over-escaped (`\\"` where `"` was meant) but
+    breaks rows already valid as written (row 505's `'<>&\\"\\''` loses its
+    backslashes), turns non-ASCII text into mojibake and drops backslash-newline
+    continuations. So Whitney decodes only an over-escaped row, itself and
+    without the mojibake, then escapes the result so upstream's decode gives it
+    back unchanged.
+    """
+    language = language.lower()
+    if language not in UPSTREAM_DECODES:
+        return check_code
+    decoded = _decode_escapes(check_code)
+    if decoded is not None and _over_escaped(language, check_code, decoded):
+        check_code = decoded
+    return _survives_upstream_decode(check_code)
+
+
+def _over_escaped(language: str, as_written: str, decoded: str) -> bool:
+    """Whether the row only makes sense once its escapes are decoded.
+
+    Python: it doesn't parse as written and does once decoded. The C family
+    writes strings only in double quotes, so a row holding `\\"` and no bare
+    `"` has no string the `\\"` could sit in.
+    """
+    if language == "python":
+        return not _parses(as_written) and _parses(decoded)
+    return '\\"' in as_written and not _BARE_QUOTE.search(as_written)
+
+
+def _parses(source: str) -> bool:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)  # invalid escapes such as "\\d" only warn
+        try:
+            ast.parse(source)
+        except (SyntaxError, ValueError):
+            return False
+    return True
+
+
+def _decode_escapes(text: str) -> str | None:
+    """Escape sequences decoded and every other character kept, or None if an escape is malformed."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)  # an unknown escape such as "\\d" is kept, with a warning
+        try:
+            return codecs.unicode_escape_decode(codecs.latin_1_encode(text, "backslashreplace")[0])[0]
+        except UnicodeDecodeError:
+            return None
+
+
+def _survives_upstream_decode(text: str) -> str:
+    """The ASCII text upstream's `.encode("utf-8").decode("unicode_escape")` turns back into text."""
+    return codecs.ascii_encode(text.replace("\\", "\\\\"), "backslashreplace")[0].decode()
