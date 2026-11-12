@@ -1020,6 +1020,8 @@ Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `genera
 - [x] `whitney checks` before and after. *(2026-11-11: `targets: kilo`, then `targets: kilo, claude-code`; docs/results/2026-11-11-claude-code-outside.md.)*
 - [ ] Evidence items 1 and 5 to 7.
 
+**Follow-up (2026-11-11, from Task 38's review):** `scoring.judge_claude_code_access` reads Claude Code's stream with its own small readers (`_claude_tool_calls`, `_claude_denials`), and `outside.py` imports `checks.skills._is_claude_codes`, a private name. One shared reader of Claude Code's stream, for the skill, outside and permission checks, would remove the overlap. Left until Task 37 merges, since it imports the same private readers from `checks/skills.py`.
+
 **Dependencies:** 35. **Estimated scope:** S.
 
 ### Task 39: Claude Code example, recorded real run and docs
