@@ -377,8 +377,24 @@ def redact(text: str, secrets: list[str]) -> str:
 
 
 def redact_run(run: dict, secrets: list[str]) -> dict:
-    """`run` with the secrets redacted from its events and stderr, which go into the eval log."""
-    return {**run, "events": redact(run["events"], secrets), "stderr": redact(run["stderr"], secrets)}
+    """A copy of `run` with the secrets redacted from every string in it, names included, since it goes into the eval log.
+
+    Every field, not only events and stderr: a captured request (`sent`)
+    can hold a key in a field of its own, such as a tool result the agent's
+    shell printed it into (docs/spike-findings.md, "Phase 5 Task 31").
+    """
+    return _redacted(run, secrets)
+
+
+def _redacted(value, secrets: list[str]):
+    """`value`, a JSON-like value, with `secrets` redacted from each string in it; other values are kept."""
+    if isinstance(value, str):
+        return redact(value, secrets)
+    if isinstance(value, dict):
+        return {_redacted(name, secrets): _redacted(item, secrets) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_redacted(item, secrets) for item in value]
+    return value
 
 
 async def _run_kilo(
