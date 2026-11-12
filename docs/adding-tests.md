@@ -738,6 +738,55 @@ The report's last section before the staged files, "How to improve the files und
 
 Change one thing at a time and keep the old scenarios, so the next report's counts are about that change.
 
+## Seeing what was sent to the model
+
+A report shows whether a rule held, not whether the rule reached the model. Two `whitney run` options, both off by default, record that:
+
+- `--capture-prompt` records what each run sent to the model.
+- `--thinking` tells the harness to think and show its thinking.
+
+A run without them starts no proxy and stores what it always did.
+
+```bash
+whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 \
+    --project-path <project> --evals-path <evals> --only <eval-file> --epochs 1 --capture-prompt
+```
+
+**How it's captured.** In local mode Whitney starts a small proxy on `127.0.0.1`, on a port the system picks, for the length of each harness run. Kilo is given the proxy's address as its provider's `baseURL`, and Claude Code as `ANTHROPIC_BASE_URL`. The proxy forwards every request to the provider's own API: the Kilo Gateway, Anthropic's or OpenAI's API, or the `baseURL` your global Kilo config sets for the provider. It never forwards to a host a request names, and it stops when the run ends, however the run ends. It doesn't go through `HTTPS_PROXY`. `--capture-prompt` can't be combined with `--base-url`, and on `kilo` it knows the addresses of `kilo/`, `anthropic/` and `openai/` models only, unless your global Kilo config sets the provider's `baseURL`. In Docker mode no proxy runs: Whitney reads Inspect's own log of the calls its bridge answered, and tells Inspect to log every call, not only the first five.
+
+**What is stored.** Each run's record gains a `sent` entry:
+
+- `via`: `proxy` or `inspect-log`.
+- `first_body`: the first model request's body, in full.
+- `requests`: for every request, its method, its path, its size in bytes, whether it was a model request, and whether its system prompt and tools differ from the first's.
+- `found`: for each text looked for, the index of the first request it was in, or `null`.
+- In Docker only, `unlogged`: how many model calls Inspect logged no request for.
+
+Header values are never recorded: the proxy passes them on and keeps nothing of them. Answers aren't stored. The thinking text stays where each harness writes it, in the run's `events`.
+
+**What a captured log can hold.** The full text of your instruction files, skills and agents, every tool definition, the prompt, and tool results, as the model saw them. It also holds temporary project paths and, on Claude Code, `metadata.user_id`, a device id and session id that Claude Code sends. The run's keys are redacted from the whole record, as they are from the rest of the log, and nothing else is. Whitney doesn't remove paths, home folders or user names from a request, so treat a captured log as you would the project itself before you share it.
+
+**What capture costs in isolation.** No plugin runs, and Kilo keeps `--pure`. The harness gains nothing. The one thing added is the proxy's local port, which the agent's shell could reach too. The proxy adds no credential of its own: it forwards only what the caller sent, so a call from the agent's shell without a key gets the provider's refusal, and the shell gains no access it didn't have.
+
+**The report's section, "What was sent to the model".** It appears only when some run captured what was sent or recorded its thinking. It has one line per eval file and target, with a count for each variant. What a line looks for depends on the kind of `source`:
+
+| Source | What the line says |
+|---|---|
+| An instruction file | Whether the file's exact text was sent, after line endings and trailing spaces are made the same. On `claude-code`, an `AGENTS.md` source stands for the instruction files staged and the files they import, each counted on its own. |
+| A skill or an agent | Its `description` and its body (the text after the frontmatter), counted separately, since the description is sent in every request and the body only once loaded. |
+| A permission or config file | "not sent as text: enforced by the harness". |
+| A run with no capture | "not captured". |
+
+A baseline that removes the source should say "not found". If a template says "not found", read `first_body` before you conclude that the rule never reached the model. The match is exact, and Claude Code removes HTML comments from an instruction file before sending it, so a file holding one isn't matched on `claude-code` even though its rules were sent ([2026-11-12 runs](results/2026-11-12-prompt-capture-runs.md)).
+
+**Thinking.** With `--thinking`:
+
+- Kilo runs with `--variant high --thinking`.
+- Claude Code gets `showThinkingSummaries` in its `--settings`.
+- In Docker the task also sets Inspect's `reasoning_tokens` to 31,999, because the bridge drops the harness's own setting.
+
+With capture or thinking on, each run's record gains a `thinking` entry. Locally it gives `set`, what Whitney told the harness ("not set by Whitney" if nothing), and `sent`, the thinking setting in the captured request ("not captured" without `--capture-prompt`). In Docker it gives `asked` and `applied` instead, so a level that wasn't applied is never claimed. The report adds one thinking line per eval file and target. On the Kilo Gateway route, `--variant high` doesn't reach the model: the request still says `"thinking": {"type": "disabled"}`. On a provider key it does.
+
 ## Running one scenario with Inspect
 
 `whitney run` runs whole eval files. To run one scenario in one variant, use Inspect's `inspect eval` with Whitney's `scenario_eval` task, giving the eval file's path inside the evals folder:
