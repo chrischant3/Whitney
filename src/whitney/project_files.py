@@ -8,6 +8,7 @@ picks between them.
 import fnmatch
 import json
 import os
+import posixpath
 import re
 import stat
 import sys
@@ -385,6 +386,31 @@ def _import_paths(text: str) -> list[str]:
         else:
             paths += [match.replace("\\ ", " ") for match in IMPORT.findall(CODE_SPAN.sub(" ", line))]
     return paths
+
+
+def staged_imports(names: list[str], staged: Mapping[str, str]) -> list[str]:
+    """The staged files that the staged files `names` import with @path, and those import, to IMPORT_MAX_HOPS.
+
+    Read from what was staged, not the disk: each import is resolved against
+    its importer's folder and matched to a staged name ignoring case, as the
+    loader stages it by its spelling on disk (_claude_code_imports). Each
+    file is listed once, in the order first imported, and none of `names`.
+    """
+    by_folded = {name.casefold(): name for name in staged}
+    seen = {name.casefold() for name in names}
+    found: list[str] = []
+    queue = deque((name, 0) for name in names)
+    while queue:
+        importer, hops = queue.popleft()
+        if hops == IMPORT_MAX_HOPS:
+            continue
+        for written in _import_paths(staged[importer]):
+            name = by_folded.get(posixpath.normpath(posixpath.join(posixpath.dirname(importer), written)).casefold())
+            if name is not None and name.casefold() not in seen:
+                seen.add(name.casefold())
+                found.append(name)
+                queue.append((name, hops + 1))
+    return found
 
 
 def _claude_code_imports(root: Path, instructions: Mapping[str, str], evals: "_EvalsFolder | None") -> _Imports:
