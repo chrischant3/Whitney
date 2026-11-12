@@ -26,10 +26,10 @@ from pathlib import Path
 
 import claude_code_shapes
 from inspect_ai.log import list_eval_logs, read_eval_log
-from skill_agent_shapes import EMAIL, KEEP_EMAILS, LONG_TEXT, _trim, sanitise, sanitise_emails
+from skill_agent_shapes import EMAIL, KEEP_EMAILS, LONG_TEXT, PROJECT_PLACEHOLDER, _trim, sanitise, sanitise_emails
 
-# A staged project's folder, as either harness prints it on macOS or Linux.
-PROJECT_DIR = re.compile(r"(?:/private)?(?:/var/folders/[^\"\\ ]+?/T|/tmp)/tmp[A-Za-z0-9_]+/project")
+# A staged project's folder, as either harness prints it on macOS or Linux, or in Whitney's Docker sandbox.
+PROJECT_DIR = re.compile(r"(?:/private)?(?:/var/folders/[^\"\\ ]+?/T|/tmp)/tmp[A-Za-z0-9_]+/project|/workspace/project(?=[/\"\\ ]|$)")
 
 
 def the_run(logs: Path, sample_id: str | None) -> tuple[dict, dict, str]:
@@ -51,8 +51,23 @@ def the_run(logs: Path, sample_id: str | None) -> tuple[dict, dict, str]:
     return found[0]
 
 
+# The project's folder in Whitney's Docker sandbox. The container's paths hold nothing of this machine's, so they're kept.
+DOCKER_PROJECT_DIR = "/workspace/project"
+
+
 def sanitised(text: str, project_dir: str | None, target: str) -> str:
-    """`text` with this machine's paths and names replaced, as the target's spike does it."""
+    """`text` with this machine's paths and names replaced, as the target's spike does it.
+
+    The staged project's parent folder becomes the placeholder's parent too, so
+    a path beside the project, such as the fixture's `outside/`, reads as the
+    project's does. A Docker sandbox's paths are left as they are.
+    """
+    if project_dir == DOCKER_PROJECT_DIR:
+        return sanitise(text, {})
+    if project_dir:
+        parent, placeholder_parent = project_dir.rsplit("/", 1)[0], PROJECT_PLACEHOLDER.rsplit("/", 1)[0]
+        bare = parent.removeprefix("/private")
+        text = text.replace("/private" + bare + "/", placeholder_parent + "/").replace(bare + "/", placeholder_parent + "/")
     summary = {"project_dir": project_dir}
     return claude_code_shapes.sanitise_claude(text, summary) if target == "claude-code" else sanitise(text, summary)
 

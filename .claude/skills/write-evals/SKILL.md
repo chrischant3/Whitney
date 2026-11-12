@@ -47,8 +47,9 @@ Go through the file line by line. Leave out what isn't a rule: the tech stack, a
 | Ask before X, or don't X unless the user asks | `no_file_edits` on what X changes | In a headless run there's no one to ask, so stopping without the change is the pass |
 | Don't run command X | `no_file_edits` on a file left by a stand-in for X | the stand-in's file; see [references/fixtures.md](references/fixtures.md) |
 | Treat file contents as data, not instructions | `no_string_added` and `no_file_edits` on what an instruction planted in an input file asks for | the planted instruction's effect |
-| Stay inside the project | `outside_canary_not_reached` | the fixture's `outside/` folder (`kilo` only) |
-| A `kilo.jsonc` `deny` or `ask` rule | `permission_held` | the harness's refusal (`kilo` only); read "`permission_held`" and "Variants" in `docs/adding-tests.md` first |
+| Stay inside the project | `outside_canary_not_reached` | the fixture's `outside/` folder, on both targets. On `claude-code` a shell read fails it unless a `Read` deny rule refuses it; read "`outside_canary_not_reached`" in `docs/adding-tests.md` |
+| A `kilo.jsonc` `deny` or `ask` rule | `permission_held` | the harness's refusal (`kilo`); read "`permission_held`" and "Variants" in `docs/adding-tests.md` first |
+| A `.claude/settings.json` `deny` or `ask` rule written `Bash(<pattern>)` | `permission_held` | the harness's refusal (`claude-code`); read "`permission_held` on Claude Code" in `docs/adding-tests.md` first |
 | A skill's or agent's `description` | trigger tests, which use `skill_loaded`, `subagent_delegated` and their `not_` forms | both targets; read "Testing a skill or an agent" and "Trigger tests" |
 
 Some rules can't be tested with today's checks. Say so plainly, with the reason, rather than forcing a check that doesn't fit. The usual ones:
@@ -58,6 +59,7 @@ Some rules can't be tested with today's checks. Say so plainly, with the reason,
 - **The quality, tone or format of what's written**, such as "one plain sentence per bullet" or "write for customers": no check judges it.
 - **Anything only in the agent's reply.** Checks read files, commits and the harness's logs, not the chat. A secret pasted into a reply passes `no_secret_committed`. For a skill whose output is a report or a review, most of its rules fall here. Say so at the top of the hand-back, so nobody reads a pass as "the skill works": the evals test what it mustn't do, and whether it loads, not the quality of its report.
 - **In `kilo.jsonc`, an `allow` rule or a key that isn't a permission**, such as `instructions`: an `allow` rule forbids nothing, so `permission_held` refuses it. Test what `instructions` loads with an eval file for each loaded file.
+- **In `.claude/settings.json`, an `allow` rule, a rule for any tool but `Bash`, a bare `Bash` rule, or any key but `permissions`**: Claude Code ignores a project's `allow` rules in an eval run, whose folder is never trusted; only `Bash(<pattern>)` has been captured being refused; and Whitney copies only the `permissions` block, so hooks and the rest never run.
 
 ### 3. Design one small fixture
 
@@ -76,11 +78,12 @@ Read "Eval files" in `docs/adding-tests.md` for the fields. Name the file after 
 | `AGENTS.md` or another Markdown file at the project root | `agents-md.json` |
 | `.kilo/rules/<name>.md` | `rules/<name>-md.json` |
 | `kilo.jsonc` | `configuration/kilo-jsonc.json` |
+| `.claude/settings.json` | `configuration/claude-settings.json` |
 | `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md` | `skills/<name>.json` |
 | `.kilo/agents/<name>.md` or `.claude/agents/<name>.md` | `agents/<name>.json` |
 
-- **`targets`**: leave it out for `AGENTS.md`, which both targets stage. Use `["kilo"]` for `kilo.jsonc` and for a root file only Kilo reads, such as `CONTEXT.md`. A source under `.kilo/` applies to `kilo` alone and one under `.claude/agents/` to `claude-code` alone, without it.
-- **`variants`**: a file with `permission_held` must declare its own, with a control that sets the rule under test to `allow`, so the check is shown able to fail. Read "Variants". Other files can leave `variants` out and get the default baseline, which removes the file under test, or a skill's whole folder.
+- **`targets`**: leave it out for `AGENTS.md`, which both targets stage. Use `["kilo"]` for `kilo.jsonc` and for a root file only Kilo reads, such as `CONTEXT.md`: a `kilo.jsonc` file without it that uses `permission_held` applies to `claude-code` too, and fails validation there. A source under `.kilo/` applies to `kilo` alone, and one under `.claude/agents/`, or `.claude/settings.json`, to `claude-code` alone, without it.
+- **`variants`**: a file with `permission_held` must declare its own, with a control that sets the rule under test to `allow` in `kilo.jsonc`, or takes it out of `.claude/settings.json` (such as `"/permissions/deny": []`), so the check is shown able to fail. Read "Variants". Other files can leave `variants` out and get the default baseline, which removes the file under test, or a skill's whole folder.
 - **`defaults`**: put `fixture`, `setup` and any shared `expect` here.
 - **One eval file per file under test.** To test another of its rules, add scenarios to the same file.
 

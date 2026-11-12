@@ -15,7 +15,7 @@ CONSUMER = ROOT / "examples" / "consumer"
 def test_the_consumer_example_validates_for_kilo_with_no_problems_or_warnings(capsys):
     code = cli.main(["validate", "--target", "kilo", "--project-path", str(CONSUMER), "--evals-path", str(CONSUMER / "evals")])
 
-    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 5 eval file(s), 0 problem(s), 0 warning(s)"
+    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 6 eval file(s), 0 problem(s), 0 warning(s)"
     assert code == 0
 
 
@@ -58,3 +58,19 @@ def test_the_example_skill_and_agent_apply_to_kilo_only():
         [eval_file] = [f for f in discover(CONSUMER / "evals") if f.path.relative_to(CONSUMER / "evals").as_posix() == name]
         assert cli.why_not_run(eval_file, "kilo", registry()) is None
         assert cli.why_not_run(eval_file, "claude-code", registry()) is not None
+
+
+def test_the_consumer_example_validates_for_claude_code_with_no_problems_or_warnings(capsys):
+    code = cli.main(["validate", "--target", "claude-code", "--project-path", str(CONSUMER), "--evals-path", str(CONSUMER / "evals")])
+
+    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 6 eval file(s), 0 problem(s), 0 warning(s)"
+    assert code == 0
+
+
+def test_the_consumer_examples_push_rule_is_tested_on_each_harness_from_its_own_settings():
+    files = {f.source: f for f in discover(CONSUMER / "evals") if f.source in ("kilo.jsonc", ".claude/settings.json")}
+
+    assert {source: f.applies_to() for source, f in files.items()} == {"kilo.jsonc": ("kilo",), ".claude/settings.json": ("claude-code",)}
+    for f in files.values():
+        assert {e.check for scenario in f.resolved() for e in scenario.expect} == {"permission_held"}
+        assert [variant.role for variant in (f.variants or {}).values()] == ["control"]

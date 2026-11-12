@@ -68,10 +68,17 @@ GLOB_CASE_BLIND = sys.platform in ("darwin", "win32")
 # CLAUDE.md is there. Each is staged under its own name. CLAUDE.local.md is personal and usually
 # not committed, so it's never staged, only named. The project's skills and agents, .claude/skills/
 # and .claude/agents/, are staged too: Claude Code 2.1.322 offers both (docs/spike-findings.md,
-# "Phase 5 Task 36"). The rest of .claude/ stays out: settings.json can hold hooks, which run
-# commands (spec open question 8).
+# "Phase 5 Task 36"). So is the `permissions` block of .claude/settings.json, alone in a file of
+# that name: a rule there refuses a call (docs/spike-findings.md, "Permissions"). The file's other
+# keys stay out, because hooks run commands on the machine running the evals (spec open question 8;
+# decision 8). The rest of .claude/ stays out too.
 CLAUDE_CODE_DIR = ".claude"
 CLAUDE_CODE_ASSET_DIRS = (f"{CLAUDE_CODE_DIR}/skills", f"{CLAUDE_CODE_DIR}/agents")
+CLAUDE_SETTINGS = f"{CLAUDE_CODE_DIR}/settings.json"
+CLAUDE_PERMISSIONS = "permissions"  # the one key of CLAUDE_SETTINGS that is staged
+# The keys of that block that are staged, each a list of rules. Its others, such as defaultMode and
+# additionalDirectories, could let a run do more than the eval's own grant allows on the machine running it.
+CLAUDE_RULE_LISTS = ("allow", "ask", "deny")
 AGENTS_MD = "AGENTS.md"
 CLAUDE_MD = "CLAUDE.md"
 CLAUDE_LOCAL_MD = "CLAUDE.local.md"
@@ -91,6 +98,11 @@ LOCAL_REASON = "personal and not committed; on its owner's machine it also stops
 UNSAFE_REASON = "a symlink or outside the project"
 REST_REASON = f"rest of {CLAUDE_CODE_DIR}/"
 WHOLE_REASON = "a symlink, or can't be read"
+SETTINGS_KEY_REASON = f"only the {CLAUDE_PERMISSIONS} block of the settings is staged"
+SETTINGS_REASONS = {"hooks": f"hooks run commands, so {SETTINGS_KEY_REASON}"}  # a key with a reason of its own
+NOT_SETTINGS_REASON = f"isn't a JSON object, so its {CLAUDE_PERMISSIONS} can't be read"
+RULE_LISTS_REASON = f"only the {', '.join(CLAUDE_RULE_LISTS[:-1])} and {CLAUDE_RULE_LISTS[-1]} lists of the {CLAUDE_PERMISSIONS} block are staged"
+NOT_PERMISSIONS_REASON = f"its {CLAUDE_PERMISSIONS} block isn't an object"
 
 
 def load_template_files(template_dir: Path) -> dict[str, str]:
@@ -204,13 +216,22 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     config is needed, and a project with skills or agents needs no
     instruction file.
 
+    .claude/settings.json is staged cut down to the allow, ask and deny
+    lists of its `permissions` block, so the project's ask and deny rules
+    apply and nothing else in the file does: its hooks never run. Claude
+    Code itself ignores the allow rules of a folder nobody has trusted,
+    which an eval's project never is (docs/spike-findings.md, "Phase 5
+    Task 37"). A project with only that needs no
+    instruction file either.
+
     Args:
         project_dir: the project folder. It is read, never written.
         evals_path: the evals root, whose files are never staged.
 
     Returns:
         {name: text} for each staged file: the instruction files, named as
-        in CLAUDE_CODE_INSTRUCTIONS, then the skills' and agents' files.
+        in CLAUDE_CODE_INSTRUCTIONS, then the skills' and agents' files,
+        then CLAUDE_SETTINGS if the project's has a `permissions` block.
 
     Raises:
         FileNotFoundError: project_dir doesn't exist.
@@ -223,12 +244,13 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     root = _project_root(project_dir)
     evals = _evals_root(root, evals_path)
     sources = _claude_code_sources(root)
-    assets = _claude_code_assets(root, evals)[0]
+    assets = {**_claude_code_assets(root, evals)[0], **_claude_code_settings(root, evals)[0]}
     if not sources and not assets:
         raise ValueError(
             f"project has no Claude Code instructions to stage ({', '.join(CLAUDE_CODE_INSTRUCTIONS)}; "
             "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped), "
-            f"and no skills or agents ({', '.join(f'{folder}/' for folder in CLAUDE_CODE_ASSET_DIRS)}): "
+            f"no skills or agents ({', '.join(f'{folder}/' for folder in CLAUDE_CODE_ASSET_DIRS)}), "
+            f"and no {CLAUDE_PERMISSIONS} in {CLAUDE_SETTINGS}: "
             f"{root}{_hidden_by_claude_md(root)}"
         )
     for source in sources:
@@ -456,7 +478,8 @@ def not_staged_reason(
             return f"the claude-code loader stages only what Claude Code reads, and this file is left out: {reasons[relative]}"
         return (
             f"the claude-code loader stages only {', '.join(CLAUDE_CODE_INSTRUCTIONS)}, "
-            f"and the files under {' and '.join(f'{folder}/' for folder in CLAUDE_CODE_ASSET_DIRS)}"
+            f"the files under {' and '.join(f'{folder}/' for folder in CLAUDE_CODE_ASSET_DIRS)}, "
+            f"and the {CLAUDE_PERMISSIONS} block of {CLAUDE_SETTINGS}"
         )
     left_out = dict(_load_kilo(root, evals_path)[1])
     if relative in left_out:
@@ -656,7 +679,11 @@ def _not_staged(target: str, project_dir: Path, evals_path: Path | None) -> tupl
     folder_instructions = {name.casefold() for name in (DOT_CLAUDE_MD, DOT_AGENTS_MD)}
     entries = _unstaged_claude_entries(root, sources)
     if not any(name == f"{CLAUDE_CODE_DIR}/" for name, _ in entries):  # a .claude/ named whole says it all
-        entries += _claude_code_assets(root, _evals_folder(evals_path))[1]
+        evals = _evals_folder(evals_path)
+        entries += _claude_code_assets(root, evals)[1]
+        staged, about_settings = _claude_code_settings(root, evals)
+        if staged or about_settings:  # the file is staged, or left out for a reason of its own
+            entries = [entry for entry in entries if entry[0] != CLAUDE_SETTINGS] + about_settings
     for name, reason in sorted(entries):
         # .claude/'s instruction files, in any spelling, go ahead of the cap: the report most needs to name them.
         (first if name.casefold() in folder_instructions else others).append((name, reason))
@@ -722,6 +749,42 @@ def _is_there(path: Path) -> bool:
         return _is_present(path)
     except OSError:  # inside a .claude/ that can't be read, which Claude Code couldn't read either
         return False
+
+
+def _claude_code_settings(root: Path, evals: "_EvalsFolder | None") -> tuple[dict[str, str], list[tuple[str, str]]]:
+    """The project's settings cut down to the rule lists of its `permissions` block, and (name, reason) for what that leaves out.
+
+    Nothing is staged from a file that is a symlink, under the evals path,
+    or has no `permissions` key: _unstaged_claude_entries names such a file
+    with the rest of .claude/. One that can't be read as a JSON object, or
+    whose `permissions` isn't one, is left out and named here with why.
+    Each other key of a staged file is named as "<file> (<key>)", and each
+    key of the block that isn't a list of rules (CLAUDE_RULE_LISTS) as
+    "<file> (permissions.<key>)".
+    """
+    path = root / CLAUDE_SETTINGS
+    linked = (root / CLAUDE_CODE_DIR).is_symlink()
+    if not _is_staged_claude_code_file(root, CLAUDE_SETTINGS, linked) or _under(path, evals):
+        return {}, []
+    unreadable: tuple[dict[str, str], list[tuple[str, str]]] = ({}, [(CLAUDE_SETTINGS, NOT_SETTINGS_REASON)])
+    try:
+        settings = json.loads(path.read_bytes())
+    except (OSError, ValueError):  # not UTF-8 and not JSON are both a ValueError
+        return unreadable
+    if not isinstance(settings, dict):
+        return unreadable
+    if CLAUDE_PERMISSIONS not in settings:
+        return {}, []
+    permissions = settings[CLAUDE_PERMISSIONS]
+    if not isinstance(permissions, dict):
+        return {}, [(CLAUDE_SETTINGS, NOT_PERMISSIONS_REASON)]
+    rules = {key: value for key, value in permissions.items() if key in CLAUDE_RULE_LISTS and isinstance(value, list)}
+    left_out = [
+        (f"{CLAUDE_SETTINGS} ({key})", SETTINGS_REASONS.get(key, SETTINGS_KEY_REASON))
+        for key in settings if key != CLAUDE_PERMISSIONS
+    ]
+    left_out += [(f"{CLAUDE_SETTINGS} ({CLAUDE_PERMISSIONS}.{key})", RULE_LISTS_REASON) for key in permissions if key not in rules]
+    return {CLAUDE_SETTINGS: json.dumps({CLAUDE_PERMISSIONS: rules}, indent=2) + "\n"}, left_out
 
 
 def _is_staged_claude_code_file(root: Path, relative: str, linked: bool = False) -> bool:

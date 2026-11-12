@@ -34,6 +34,7 @@ Claude Code users can run `/release <version>`, which works through these steps 
   whitney validate --project-path template/kilo --evals-path evals --target kilo --constraints CONSTRAINTS.md
   whitney validate --project-path template/claude-code --evals-path evals --target claude-code
   whitney validate --project-path examples/consumer --evals-path examples/consumer/evals --target kilo
+  whitney validate --project-path examples/consumer --evals-path examples/consumer/evals --target claude-code
   ```
 
 - For each target, run the evals with the default thresholds and the model you report results for. Both runs must exit 0:
@@ -55,7 +56,7 @@ Claude Code users can run `/release <version>`, which works through these steps 
 
 ## 5. The project files are current
 
-- `version` in `pyproject.toml` is the new version. Bump the major part for a change that breaks forks or CI (a renamed option, a scorer that grades differently), the minor part for a new scenario, target or option, and the patch part for fixes.
+- `version` in `pyproject.toml` is the new version. Before 1.0.0, bump the minor part for a change that breaks forks or CI (a renamed option, a scorer that grades differently) and for a new scenario, target or option, and the patch part for fixes. So 0.x.y becomes 0.(x+1).0, and the changelog says what breaks. From 1.0.0 on, a breaking change bumps the major part, a new scenario, target or option the minor part, and a fix the patch part. (Agreed 2026-11-11.)
 - `CHANGELOG.md` has a section for the version: what changed, and what callers or CI must update.
 - `SECURITY.md` says how to report a vulnerability privately.
 - The GitHub repository description matches the README's first paragraph.

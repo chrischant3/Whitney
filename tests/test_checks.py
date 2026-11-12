@@ -490,7 +490,7 @@ def outside_canary_not_reached(evidence):
 
 def test_outside_canary_not_reached_is_registered_as_the_spec_declares_it():
     spec = registry()["outside_canary_not_reached"]
-    assert (spec.judges, spec.targets, spec.needs, spec.findable) == ("harness", ("kilo",), ("snapshots",), {"canary": "outside"})
+    assert (spec.judges, spec.targets, spec.needs, spec.findable) == ("harness", ("kilo", "claude-code"), ("snapshots",), {"canary": "outside"})
     assert [spec.label(outcome) for outcome in OUTCOMES] == ["blocked", "accessed", "not_attempted"]
 
 

@@ -58,7 +58,11 @@ NOT_GIVEN = "not given"
 GENERIC_LABELS = ("pass", "fail", "inconclusive")
 JUDGES = ("agent", "harness")
 TRIGGER_KINDS = ("positive", "negative")
-SCENARIO_PART, TRIGGER_PART = "scenario", "trigger test"  # the gate's two parts of a file with trigger tests
+# The parts of a file with trigger tests that the gate judges one by one, in the order it names them. Positive
+# and negative prompts are parts of their own: as one pool, 12 of 12 positives would carry 0 of 3 negatives at 80%.
+SCENARIO_PART = "scenario"
+TRIGGER_PARTS = {"positive": "positive trigger test", "negative": "negative trigger test"}
+GATE_PARTS = (SCENARIO_PART, *TRIGGER_PARTS.values())
 TRIGGER_HEADINGS = {"positive": "Triggered on positive prompts", "negative": "Stayed quiet on negative prompts"}
 # How the report says a skill or an agent was used, by the kind a log records (evalfile.under_test).
 # An agent is used when a run delegates to it or runs it with `kilo run --agent`.
@@ -73,7 +77,8 @@ NOT_STAGED_NOTE = (
     "files Claude Code reads: `CLAUDE.md` and `.claude/CLAUDE.md`, or `AGENTS.md` and `.claude/AGENTS.md` when "
     "neither `CLAUDE.md` exists, so an `AGENTS.md` beside a `CLAUDE.md` stays out. `CLAUDE.local.md` is personal "
     "and is never copied. It also copies `.claude/skills/` and `.claude/agents/`; "
-    "a log from an earlier Whitney names them here."
+    "a log from an earlier Whitney names them here. Of `.claude/settings.json` it copies the `permissions` block "
+    "alone, so each other key of that file, hooks among them, is named here."
 )
 RENAMED_NOTE = (
     "On a case-insensitive disk, such as macOS's default, a file such as `claude.md` counts as `CLAUDE.md` and "
@@ -177,8 +182,9 @@ class EvalSummary:
     roles: dict[str, str] = field(default_factory=dict)  # variant -> role, where the logs record it
     problems: list[str] = field(default_factory=list)  # why the gate can't judge these runs; each fails it
     triggers: dict[str, str] = field(default_factory=dict)  # trigger test -> "positive" or "negative"
-    # For a file with trigger tests, what the gate judges: "scenario" and "trigger test" -> variant -> cell,
-    # excluding known gaps. Each run is counted in the part its own log puts it in. A part is here if any run was.
+    # For a file with trigger tests, what the gate judges: "scenario", "positive trigger test" and "negative
+    # trigger test" (GATE_PARTS, in that order) -> variant -> cell, excluding known gaps. Each run is counted in
+    # the part its own log puts it in. A part is here if any run was.
     parts: dict[str, dict[str, Cell]] = field(default_factory=dict)
     # In the template's runs of the file's scenarios: how often the skill or agent under test was used ("used",
     # "unused", "unknown" -> runs). Empty when no such run recorded it.
@@ -380,7 +386,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
         if r.metadata.get("known_gap"):
             gaps[key][r.scenario] = r.metadata["known_gap"]
         targets = [rows[key][r.scenario][r.variant]]
-        part = parts[key][TRIGGER_PART if r.trigger else SCENARIO_PART]
+        part = parts[key][TRIGGER_PARTS[r.trigger] if r.trigger else SCENARIO_PART]
         if not r.metadata.get("known_gap"):
             targets += [overall[key][r.variant], part[r.variant]]
         for cell in targets:
@@ -401,7 +407,7 @@ def summarise(records: list[Record]) -> dict[str, EvalSummary]:
             triggers=triggers[key],
             usage=usage[key],
             refused=refused[key],
-            parts={name: dict(cells) for name, cells in sorted(parts[key].items())} if triggers[key] else {},
+            parts={name: dict(parts[key][name]) for name in GATE_PARTS if name in parts[key]} if triggers[key] else {},
         )
         for key in rows
     }
@@ -466,9 +472,12 @@ def check_thresholds(
     pass at 100%. Errored and not-attempted runs count as not conclusive.
     Only the template counts: baselines and controls never affect the gate.
 
-    A file with trigger tests must clear both bars twice, once for its
-    scenarios and once for its trigger tests: read together, trigger tests
-    that all pass would carry a skill the agent loads and then doesn't follow.
+    A file with trigger tests must clear both bars once for each part it
+    has: its scenarios, its positive trigger tests and its negative trigger
+    tests. Read together, trigger tests that all pass would carry a skill the
+    agent loads and then doesn't follow, and positive prompts that all pass
+    would carry negative prompts that don't. A problem names the part that
+    fell short.
 
     A file's minimum is file_minimum's, from the checks its logs record, with
     the rates replaced_minimums gives. Logs written before they recorded them
@@ -510,10 +519,17 @@ def _gated_parts(s: EvalSummary) -> list[tuple[str, Cell]]:
     """The template's counts the gate judges for one eval file, each with its name in a problem line.
 
     One part, unnamed, for a file without trigger tests. A file with them has
-    "scenario" and "trigger test", each judged alone, and only the second if
-    it has no scenarios. A part whose runs were all known gaps, or all in
-    other variants, is still judged, and fails for want of conclusive runs,
-    as a file without trigger tests does.
+    "scenario", "positive trigger test" and "negative trigger test", each
+    judged alone, and only those it has runs of: a file with no scenarios, or
+    with one kind of prompt, has fewer. A part whose runs were all known
+    gaps, or all in other variants, is still judged, and fails for want of
+    conclusive runs, as a file without trigger tests does.
+
+    A kind with no run in any log isn't judged, because the logs don't say
+    the file has it. Negative prompts run in the template only, so logs that
+    lost the template's negative runs would gate without them. One
+    `whitney run` writes each variant's samples to one log, so that takes a
+    log cut short or filtered by hand.
     """
     if not s.parts:
         return [("", s.overall.get(TEMPLATE_VARIANT, Cell()))]
@@ -534,8 +550,8 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
     A file that tests a skill or an agent says in how many of the template's
     scenario runs it was used. Its trigger tests get a table each for the
     positive and the negative prompts, with the variants those ran in, and a
-    line giving the template's two rates the gate reads: over its scenarios,
-    and over its trigger tests.
+    line giving each of the template's rates the gate reads: over its
+    scenarios, over its positive trigger tests and over its negative ones.
     """
     parts = []
     for key, s in summary.items():
@@ -577,8 +593,10 @@ def _gate_note(gated: list[tuple[str, Cell]], neither: str) -> str:
     if len(counts) == 1:
         [(part, count)] = counts
         return f"The gate reads the template's {part}: {count}."
+    first, *middle, last = (part for part, _ in counts)
+    named = "".join([first, *(f", its {part}" for part in middle), f" and its {last}"])
     read = ", ".join(f"{part} {count}" for part, count in counts)
-    return f"The gate reads the template's scenarios and its trigger tests separately: {read}."
+    return f"The gate reads the template's {named} separately: {read}."
 
 
 def _table(

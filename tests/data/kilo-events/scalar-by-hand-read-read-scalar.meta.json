@@ -1,0 +1,57 @@
+{
+  "case": "scalar-by-hand-read-read-scalar",
+  "about": "No model: the `read` tool run by hand as the default agent, with project permission {'read': 'deny'}",
+  "date": "2026-11-11",
+  "kilo_version": "7.8.27",
+  "model": null,
+  "argv": [
+    "kilo",
+    "debug",
+    "agent",
+    "code",
+    "--pure",
+    "--tool",
+    "read",
+    "--params",
+    "{\"filePath\": \"README.md\"}"
+  ],
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
+  },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    "kilo.jsonc": "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"permission\": {\n    \"read\": \"deny\"\n  }\n}\n"
+  },
+  "home_files": {},
+  "exit_code": 1,
+  "stderr": "Tool read is disabled for agent code\n",
+  "git_status_after": "",
+  "git_diff_after": "",
+  "skipped_lines": 0,
+  "trimmed": "nothing cut: the command's whole standard output and standard error, as text",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER"
+  },
+  "new_files_after": {}
+}
