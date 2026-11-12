@@ -621,7 +621,7 @@ def test_an_import_of_claude_local_md_at_any_depth_is_named_not_staged(tmp_path,
     "sub/deeper/.MCP.json",
     ".claude-plugin/plugin.json",
     "plugins/x/.claude-plugin/README.md",
-    ".claude/skills/demo/.claude/settings.json",
+    "docs/.claude/settings.local.json",
 ])
 def test_configuration_at_any_depth_is_named_not_staged(tmp_path, imported):
     _project(tmp_path, {"CLAUDE.md": f"@{imported}\n", imported: HOOKS_ONLY})
@@ -695,7 +695,8 @@ def test_imported_files_up_to_the_size_cap_are_staged(tmp_path):
 def test_imported_files_past_the_size_cap_stop_the_run_naming_the_cap_and_the_importing_file(tmp_path):
     root = tmp_path.resolve()
     _project(root, {
-        "CLAUDE.md": "@a.md @docs/more.md\n", "a.md": "a" * (4 * MIB),
+        # a.md and docs/more.md come to 4 MiB, with docs/b.md 8 MiB, the cap itself; docs/c.md passes it.
+        "CLAUDE.md": "@a.md @docs/more.md\n", "a.md": "a" * (4 * MIB - len("@b.md @c.md\n")),
         "docs/more.md": "@b.md @c.md\n", "docs/b.md": "b" * (4 * MIB), "docs/c.md": "c",
     })
 
@@ -703,9 +704,8 @@ def test_imported_files_past_the_size_cap_stop_the_run_naming_the_cap_and_the_im
         load_claude_code_project_files(root)
 
     assert project_files.IMPORT_MAX_TOTAL_BYTES == 8 * MIB
-    total = 8 * MIB + len("@b.md @c.md\n") + 1
     assert str(raised.value) == (
-        f"{root / 'docs/more.md'} imports @c.md, which brings the imported files to {total} bytes, "
+        f"{root / 'docs/more.md'} imports @c.md, which brings the imported files to {8 * MIB + 1} bytes, "
         f"more than the 8 MiB ({8 * MIB} bytes) Whitney stages. "
         "Staging only some would test part of the rule set, so the run stops: import fewer or smaller files"
     )
