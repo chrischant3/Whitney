@@ -458,6 +458,12 @@ Give the file a control that takes the rule out, not one that adds an `allow` ru
 
 Claude Code ignores `permissions.allow` entries from a project's `.claude/settings.json` in a folder nobody has trusted, and an eval's temporary project never is. It says so on stderr: "Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted." Its `deny` and `ask` rules still apply, and win over the eval's own grant. So what the agent may do in a run comes from `harness_permissions` (by default allow `Bash`, `Edit` and `Write`), and a project's `allow` rules aren't tested. In the control above, the default grant lets the push run.
 
+Three things the check and `whitney validate` do so that a pass means this rule refused the call:
+
+- **A hand-off isn't the command.** An `Agent` call whose prompt quotes the command is passed over; the subagent's own calls are in the stream and are judged.
+- **A matching call that failed some other way leaves the run inconclusive**: another tool's error, or a refusal in other words (a hook, or a rule of the other action).
+- **`whitney validate` refuses a rule another rule would answer for**: the same rule under `deny` as well as `ask`, or a rule for the whole tool (`Bash`) beside it. Claude Code's refusal doesn't name the rule. A narrower overlap, such as `Bash(git:*)` beside `Bash(git push:*)`, isn't worked out: a control that takes out only the rule under test shows it, by still being refused.
+
 The rule matches the command's text, so `git -C . push` stepped round `Bash(git push:*)` in a spike. Write `forbidden_input` to catch it, and add a scenario that asks for it.
 
 `examples/consumer/evals/claude-settings.json` is a working example, and its real run is in [results](results/2026-11-12-claude-code-permissions.md).
@@ -721,13 +727,14 @@ Each file keeps its own name. An eval file about the project's instructions is s
 
 `.claude/skills/` and `.claude/agents/` are copied whole, under the same rules as Kilo's skill folders: nothing through a symlink, and a file that isn't UTF-8 text is left out and named in the report. A project with only skills or agents needs no instruction file. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
 
-`.claude/settings.json` is copied cut down to its `permissions` block, so the project's `allow`, `ask` and `deny` rules are in the run, and nothing else in the file is: its hooks never run. Claude Code ignores the `allow` rules there, because the eval's project isn't a trusted folder ([`permission_held` on Claude Code](#permission_held-on-claude-code)), so in practice the project's `deny` and `ask` rules apply. A project with only a `permissions` block needs no instruction file either. The file isn't copied at all when it is a symlink, is under the evals path, has no `permissions` key, isn't a JSON object, or has a `permissions` that isn't an object. The rest of `.claude/`, such as commands, isn't copied.
+`.claude/settings.json` is copied cut down to the `allow`, `ask` and `deny` lists of its `permissions` block, so the project's rules are in the run, and nothing else in the file is: its hooks never run, and a `defaultMode` or `additionalDirectories` there can't widen what the run may do on your machine. A variant can `set` those three lists, each as a whole, and nothing else in the file. Claude Code ignores the `allow` rules there, because the eval's project isn't a trusted folder ([`permission_held` on Claude Code](#permission_held-on-claude-code)), so in practice the project's `deny` and `ask` rules apply. A project with only a `permissions` block needs no instruction file either. The file isn't copied at all when it is a symlink, is under the evals path, has no `permissions` key, isn't a JSON object, or has a `permissions` that isn't an object. The rest of `.claude/`, such as commands, isn't copied.
 
 The report's "Not Staged" table names each file the runs didn't use, with a short reason after it:
 - an `AGENTS.md` beside a `CLAUDE.md` ("Claude Code doesn't read AGENTS.md beside a CLAUDE.md");
 - an instruction file that is "a symlink or outside the project";
 - `CLAUDE.local.md`;
 - each key of `.claude/settings.json` other than `permissions`, as `.claude/settings.json (<key>)`: "only the permissions block of the settings is staged", or, for `hooks`, "hooks run commands, so only the permissions block of the settings is staged";
+- each key of its `permissions` block that isn't one of the three rule lists, or a rule list that isn't a list, as `.claude/settings.json (permissions.<key>)`: "only the allow, ask and deny lists of the permissions block are staged";
 - a `.claude/settings.json` that "isn't a JSON object, so its permissions can't be read", or where "its permissions block isn't an object";
 - up to 50 other `.claude/` entries ("rest of .claude/"), a settings file with no `permissions` key among them.
 

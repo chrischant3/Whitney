@@ -1768,3 +1768,24 @@ def test_settings_that_arent_utf8_are_left_out_and_say_why(tmp_path):
     assert files_not_staged_reasons("claude-code", project) == {
         ".claude/settings.json": "isn't a JSON object, so its permissions can't be read",
     }
+
+
+def test_only_the_rule_lists_of_the_permissions_block_are_staged(tmp_path):
+    # defaultMode and additionalDirectories would widen what the agent may do on the machine running the evals.
+    permissions = {
+        "defaultMode": "bypassPermissions", "deny": ["Bash(git push:*)"], "additionalDirectories": ["/", "~"],
+        "ask": ["Bash(git tag:*)"], "allow": "Bash", "disableBypassPermissionsMode": "disable",
+    }
+    project = claude_project(tmp_path, json.dumps({"permissions": permissions}))
+
+    staged = load_project_files_for("claude-code", project)
+
+    assert json.loads(staged[".claude/settings.json"]) == {"permissions": {"deny": ["Bash(git push:*)"], "ask": ["Bash(git tag:*)"]}}
+    reason = "only the allow, ask and deny lists of the permissions block are staged"
+    assert files_not_staged_reasons("claude-code", project) == {
+        ".claude/settings.json (permissions.additionalDirectories)": reason,
+        ".claude/settings.json (permissions.allow)": reason,
+        ".claude/settings.json (permissions.defaultMode)": reason,
+        ".claude/settings.json (permissions.disableBypassPermissionsMode)": reason,
+    }
+

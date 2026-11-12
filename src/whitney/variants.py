@@ -28,7 +28,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from whitney.evalfile import TRIGGER_CONTROL, EvalFile, V1File, Variant, location, version_1_variants
-from whitney.project_files import CONFIG_PATHS, claude_code_instructions
+from whitney.project_files import CLAUDE_PERMISSIONS, CLAUDE_RULE_LISTS, CLAUDE_SETTINGS, CONFIG_PATHS, claude_code_instructions
 from whitney.static_checks import parse_jsonc
 
 # The staged files as supplied. Every eval file runs it, so no declared variant may take the name.
@@ -174,6 +174,8 @@ def apply_variant(files: Mapping[str, str], variant: Variant) -> dict[str, str]:
                 continue
             for pointer, value in pointers.items():
                 try:
+                    if path == CLAUDE_SETTINGS:
+                        _only_a_rule_list(pointer, value)
                     _put(document, pointer, value)
                 except PointerError as e:
                     problems.append((("set", path, pointer), str(e)))
@@ -187,6 +189,31 @@ def apply_variant(files: Mapping[str, str], variant: Variant) -> dict[str, str]:
     if problems:
         raise VariantError(problems)
     return updated
+
+
+# The pointers a variant may set in Claude Code's settings: the rule lists, each as a whole.
+RULE_LIST_POINTERS = tuple(f"/{CLAUDE_PERMISSIONS}/{kind}" for kind in CLAUDE_RULE_LISTS)
+
+
+def _only_a_rule_list(pointer: str, value: Any) -> None:
+    """Refuse a `set` in Claude Code's settings that isn't a whole rule list.
+
+    The loader stages that file cut down to its rule lists so that no hook,
+    environment or permission mode from a project reaches the machine running
+    the evals. A variant is applied after that cut, so it gets the same limit.
+
+    Raises:
+        PointerError: saying which limit `pointer` or `value` breaks.
+    """
+    if pointer not in RULE_LIST_POINTERS:
+        why = f"only {', '.join(RULE_LIST_POINTERS[:-1])} and {RULE_LIST_POINTERS[-1]} can be set"
+    elif not (isinstance(value, list) and all(isinstance(rule, str) for rule in value)):
+        why = "a list of rules must be set to a list of strings"
+    else:
+        return
+    raise PointerError(
+        f"'{pointer}' can't be set in {CLAUDE_SETTINGS}: {why}, so a variant can't add hooks or widen what the run may do"
+    )
 
 
 def changes_nothing(files: Mapping[str, str], changed: Mapping[str, str]) -> bool:

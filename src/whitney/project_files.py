@@ -76,6 +76,9 @@ CLAUDE_CODE_DIR = ".claude"
 CLAUDE_CODE_ASSET_DIRS = (f"{CLAUDE_CODE_DIR}/skills", f"{CLAUDE_CODE_DIR}/agents")
 CLAUDE_SETTINGS = f"{CLAUDE_CODE_DIR}/settings.json"
 CLAUDE_PERMISSIONS = "permissions"  # the one key of CLAUDE_SETTINGS that is staged
+# The keys of that block that are staged, each a list of rules. Its others, such as defaultMode and
+# additionalDirectories, could let a run do more than the eval's own grant allows on the machine running it.
+CLAUDE_RULE_LISTS = ("allow", "ask", "deny")
 AGENTS_MD = "AGENTS.md"
 CLAUDE_MD = "CLAUDE.md"
 CLAUDE_LOCAL_MD = "CLAUDE.local.md"
@@ -98,6 +101,7 @@ WHOLE_REASON = "a symlink, or can't be read"
 SETTINGS_KEY_REASON = f"only the {CLAUDE_PERMISSIONS} block of the settings is staged"
 SETTINGS_REASONS = {"hooks": f"hooks run commands, so {SETTINGS_KEY_REASON}"}  # a key with a reason of its own
 NOT_SETTINGS_REASON = f"isn't a JSON object, so its {CLAUDE_PERMISSIONS} can't be read"
+RULE_LISTS_REASON = f"only the {', '.join(CLAUDE_RULE_LISTS[:-1])} and {CLAUDE_RULE_LISTS[-1]} lists of the {CLAUDE_PERMISSIONS} block are staged"
 NOT_PERMISSIONS_REASON = f"its {CLAUDE_PERMISSIONS} block isn't an object"
 
 
@@ -212,9 +216,12 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     config is needed, and a project with skills or agents needs no
     instruction file.
 
-    .claude/settings.json is staged cut down to its `permissions` block, so
-    the project's allow, ask and deny rules apply and nothing else in the
-    file does: its hooks never run. A project with only that needs no
+    .claude/settings.json is staged cut down to the allow, ask and deny
+    lists of its `permissions` block, so the project's ask and deny rules
+    apply and nothing else in the file does: its hooks never run. Claude
+    Code itself ignores the allow rules of a folder nobody has trusted,
+    which an eval's project never is (docs/spike-findings.md, "Phase 5
+    Task 37"). A project with only that needs no
     instruction file either.
 
     Args:
@@ -745,13 +752,15 @@ def _is_there(path: Path) -> bool:
 
 
 def _claude_code_settings(root: Path, evals: "_EvalsFolder | None") -> tuple[dict[str, str], list[tuple[str, str]]]:
-    """The project's settings cut down to its `permissions` block, and (name, reason) for what that leaves out.
+    """The project's settings cut down to the rule lists of its `permissions` block, and (name, reason) for what that leaves out.
 
     Nothing is staged from a file that is a symlink, under the evals path,
     or has no `permissions` key: _unstaged_claude_entries names such a file
     with the rest of .claude/. One that can't be read as a JSON object, or
     whose `permissions` isn't one, is left out and named here with why.
-    Each other key of a staged file is named as "<file> (<key>)".
+    Each other key of a staged file is named as "<file> (<key>)", and each
+    key of the block that isn't a list of rules (CLAUDE_RULE_LISTS) as
+    "<file> (permissions.<key>)".
     """
     path = root / CLAUDE_SETTINGS
     linked = (root / CLAUDE_CODE_DIR).is_symlink()
@@ -769,11 +778,13 @@ def _claude_code_settings(root: Path, evals: "_EvalsFolder | None") -> tuple[dic
     permissions = settings[CLAUDE_PERMISSIONS]
     if not isinstance(permissions, dict):
         return {}, [(CLAUDE_SETTINGS, NOT_PERMISSIONS_REASON)]
+    rules = {key: value for key, value in permissions.items() if key in CLAUDE_RULE_LISTS and isinstance(value, list)}
     left_out = [
         (f"{CLAUDE_SETTINGS} ({key})", SETTINGS_REASONS.get(key, SETTINGS_KEY_REASON))
         for key in settings if key != CLAUDE_PERMISSIONS
     ]
-    return {CLAUDE_SETTINGS: json.dumps({CLAUDE_PERMISSIONS: permissions}, indent=2) + "\n"}, left_out
+    left_out += [(f"{CLAUDE_SETTINGS} ({CLAUDE_PERMISSIONS}.{key})", RULE_LISTS_REASON) for key in permissions if key not in rules]
+    return {CLAUDE_SETTINGS: json.dumps({CLAUDE_PERMISSIONS: rules}, indent=2) + "\n"}, left_out
 
 
 def _is_staged_claude_code_file(root: Path, relative: str, linked: bool = False) -> bool:

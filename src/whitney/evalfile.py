@@ -152,7 +152,7 @@ class Expectation(BaseModel):
 def source_targets(source: str) -> tuple[str, ...]:
     """The targets whose loader can stage `source`: one target for a file in a folder only it reads, else every target."""
     for folder, target in ONE_TARGETS_FOLDERS.items():
-        if source.startswith(folder):
+        if source.startswith(folder) if folder.endswith("/") else source == folder:
             return (target,)
     return TARGETS
 

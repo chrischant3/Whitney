@@ -34,6 +34,7 @@ Claude Code users can run `/release <version>`, which works through these steps 
   whitney validate --project-path template/kilo --evals-path evals --target kilo --constraints CONSTRAINTS.md
   whitney validate --project-path template/claude-code --evals-path evals --target claude-code
   whitney validate --project-path examples/consumer --evals-path examples/consumer/evals --target kilo
+  whitney validate --project-path examples/consumer --evals-path examples/consumer/evals --target claude-code
   ```
 
 - For each target, run the evals with the default thresholds and the model you report results for. Both runs must exit 0:

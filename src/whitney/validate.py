@@ -886,9 +886,11 @@ def _claude_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> lis
     problems = []
     for at, params in expectations:
         rule, action = _claude_rule(params), params["action"]
-        if rule in rules.get(action, []):
-            continue
         source = f"'{eval_file.source}'"
+        if rule in rules.get(action, []):
+            answers = _claude_answers_for(rule, action, params["permission"], rules)
+            problems += [Problem(eval_file.path, at, f"{source} {answers}")] if answers else []
+            continue
         elsewhere = next((kind for kind in CLAUDE_RULE_KINDS if rule in rules.get(kind, [])), None)
         if elsewhere == "allow":
             message = f"{source} has {rule} under \"allow\", which refuses nothing; {PERMISSION_HELD} reads a rule under \"ask\" or \"deny\""
@@ -901,6 +903,29 @@ def _claude_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> lis
             message = f"{source} has no rule {rule} under {json.dumps(action)}; its {action} rules: {', '.join(rules.get(action, [])) or 'none'}"
         problems.append(Problem(eval_file.path, at, message))
     return problems
+
+
+def _claude_answers_for(rule: str, action: str, tool: str, rules: Mapping[str, list[str]]) -> str | None:
+    """Why another staged rule, not `rule`, would refuse the call, or None.
+
+    Claude Code's refusal doesn't name the rule behind it. A deny beats an
+    ask for the same rule, and a rule for the whole tool refuses everything
+    the tool does. A narrower overlap, such as Bash(git:*) beside
+    Bash(git push:*), isn't worked out here: a control that takes out only
+    the rule under test shows it, by still being refused.
+    """
+    if action == "ask" and rule in rules.get("deny", []):
+        return (
+            f"has {rule} under \"deny\" as well as \"ask\", and Claude Code refuses it as a deny, "
+            "so the check would never see an ask; keep the rule in one list"
+        )
+    whole = next((kind for kind in ("deny", "ask") if tool in rules.get(kind, [])), None)
+    if whole:
+        return (
+            f"also has a rule for the whole tool, {tool}, under {json.dumps(whole)}: Claude Code's refusal doesn't name "
+            "the rule, so the check couldn't tell which one refused the call"
+        )
+    return None
 
 
 def _a(permission: str) -> str:
