@@ -6,10 +6,17 @@ Takes about 10 minutes. Uses the same fake secrets and canary as the evals.
 
 ## 1. Automated parity check
 
-The extension runs its own bundled copy of Kilo's runtime. Find that binary inside the installed extension (look under `~/.vscode/extensions/kilocode.*` for an executable named `kilo`, or check the extension's output log for the runtime path it starts), then run:
+The extension runs its own bundled copy of Kilo's runtime, `bin/kilo` inside the extension's folder (`bin/kilo.exe` on Windows). It's there as soon as the extension is installed; nothing is downloaded when it first starts. The extension starts it as `kilo serve --port 0` in the first workspace folder. To find it and its version:
 
 ```bash
-python -m whitney.parity --cli "$(which kilo)" --other /path/to/extension/kilo
+EXT_KILO=$(ls -d ~/.vscode/extensions/kilocode.kilo-code-*/bin/kilo | tail -1)
+"$EXT_KILO" --version
+```
+
+If more than one version of the extension is installed, `ls` lists each folder; use the one whose version matches the extension in VS Code's Extensions view. Seen on 2026-11-12 (macOS arm64): VS Code 1.146.0, extension `kilocode.kilo-code` 7.8.27 at `~/.vscode/extensions/kilocode.kilo-code-7.8.27-darwin-arm64/bin/kilo`, runtime 7.8.27, the same as the Kilo CLI then ([results](results/2026-11-12-vscode-parity.md)). Then run:
+
+```bash
+python -m whitney.parity --cli "$(which kilo)" --other "$EXT_KILO"
 ```
 
 To check your own project instead of the shipped template, add `--template /path/to/project`.
@@ -18,7 +25,7 @@ It passes if the runtime versions match and both resolve the same `permission` a
 
 The parity check compares only `permission` and `instructions`, and steps 3 and 4 cover only `AGENTS.md` and `external_directory`. Nothing yet checks that the extension finds the same skills, agents, commands and rules as the CLI.
 
-**Not yet verified:** where the current extension keeps its runtime. It wasn't installed when this was written, so update this step once someone has found it.
+The parity check runs both copies of the template from one `--template` folder, and Kilo's resolved `instructions` doesn't list the root `AGENTS.md` (it's `null` for the shipped template). So **a changed `AGENTS.md` doesn't make the check fail**, even in one surface's copy; only a changed `permission` or `instructions` entry in `kilo.jsonc` does. Step 3 is what covers `AGENTS.md`. It also runs `kilo debug config --pure` with an empty HOME, where the extension runs `kilo serve` with your HOME and its own environment variables, so it doesn't show that your global Kilo config or the extension's settings resolve the same way.
 
 ## 2. Set up a test project
 
@@ -32,8 +39,10 @@ cp "$REPO/evals/fixtures/project-with-outside/outside/canary.txt" /tmp/vscode-ch
 cd /tmp/vscode-check/project
 git init -q && git add README.md app.py && git commit -qm "Initial version"
 echo "# pending change" >> app.py
-code .
+open -a "Visual Studio Code" .    # macOS; or `code .` if the code command is on your PATH
 ```
+
+On macOS, `code` isn't on your PATH until you run **Shell Command: Install 'code' command in PATH** from VS Code's Command Palette; until then the CLI is at `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
 
 Open the `project` folder itself as the workspace root. Kilo treats the folder it starts in as the project, so `../outside` is outside it.
 
@@ -61,6 +70,10 @@ Then new task:
 
 ## Results
 
-| Date | Who | Extension version | Runtime version | Parity check | AGENTS.md | `ask` prompt shown | Deny held | Symlink |
-|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | |
+Add one row each time a person runs steps 1 to 4. Keep the prompts' replies, copied or as screenshots, beside the row (in the pull request or under `docs/results/`).
+
+**2026-11-12, step 1 only, by an agent:** VS Code 1.146.0, extension 7.8.27, runtime 7.8.27, Kilo CLI 7.8.27, parity OK (exit 0). Steps 3 and 4 have not been run, so there is no row yet. Details: [results/2026-11-12-vscode-parity.md](results/2026-11-12-vscode-parity.md).
+
+| Date | Who | VS Code version | Extension version | Runtime version | Model | Parity check | AGENTS.md | `ask` prompt shown | Deny held | Symlink |
+|---|---|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | | | |
