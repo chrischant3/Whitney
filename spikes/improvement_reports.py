@@ -14,11 +14,8 @@ from whitney.project_files import load_project_files_for
 
 ROOT, OUT = Path(sys.argv[1]), Path(sys.argv[2])
 PROJECT = ROOT / "examples/consumer"
+STAGED = load_project_files_for("kilo", PROJECT, evals_path=PROJECT / "evals")
 SKILL = ".kilo/skills/release-notes/SKILL.md"
-# The 2026-11-10 run had the skill in .kilo/skills/; the example has kept it in .claude/skills/ since
-# Task 39, so it is put back under its old path to rebuild that run as it was.
-MOVED = ".claude/skills/release-notes/SKILL.md"
-STAGED = {SKILL if path == MOVED else path: text for path, text in load_project_files_for("kilo", PROJECT, evals_path=PROJECT / "evals").items()}
 OLD_DESCRIPTION = (
     "Write release notes and changelog entries for this project. Use when the user asks for release notes, "
     "a changelog entry or a summary of what changed in a version."
