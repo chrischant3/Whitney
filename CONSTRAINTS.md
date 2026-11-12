@@ -123,8 +123,7 @@ much memory the capture proxy uses, never what it forwards or records:
 `tempfile.SpooledTemporaryFile(max_size=None)` in `capture_proxy._Body`,
 which keeps a body in memory instead of moving it to disk past
 SPOOLED_IN_MEMORY; `self.spool.read(None)` in `_Body.pieces`, which sends the
-whole body in one piece; `max(1, ...)` in `_Body.write`, which keeps one byte
-past the cap per piece, which `capture._read` cuts off again; and in
+whole body in one piece; and in
 `capture._read`, `decompress(body, )` without its bound and with
 `MAX_STORED_BODY + 2`, which decode more of a gzip body but keep and judge
 the same MAX_STORED_BODY bytes. `zlib.MAX_WBITS | 33` there is the same

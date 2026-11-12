@@ -97,6 +97,18 @@ def test_the_capture_is_handed_exactly_its_cap_of_a_longer_body_sent_in_pieces(u
     assert handed == [(b"0123456", 10)]
 
 
+def test_a_piece_arriving_after_the_cap_is_reached_adds_nothing_to_what_the_capture_is_handed(upstream, monkeypatch):
+    monkeypatch.setattr(capture, "MAX_STORED_BODY", 7)
+    handed = []
+    found = Capture(VIA_PROXY, {})
+    found.add = lambda data, *args, **kwargs: handed.append((bytes(data), kwargs["size"]))
+
+    with logging_proxy(upstream.url, found) as origin:
+        sent_raw(origin, chunked(b"5\r\n01234\r\n5\r\n56789\r\n5\r\nabcde\r\n0\r\n\r\n"))
+
+    assert handed == [(b"0123456", 15)]
+
+
 # --- what the capture reads ---------------------------------------------------------------------------
 
 
