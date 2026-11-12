@@ -50,6 +50,7 @@ from inspect_ai._util.dotenv import init_dotenv
 
 from whitney import targets
 from whitney.agent import redact
+from whitney.capture_report import render_capture_markdown
 from whitney.checks import CheckSpec, registry
 from whitney.credentials import CredentialsError, resolve_gateway_credentials
 from whitney.evidence import run_secrets
@@ -616,8 +617,9 @@ def write_report(
     table per eval file, the IFEvalCode and Harbor tables if those ran, the
     files not run for this target and those --only left out, how to improve
     each file under test (whitney.improve, or one line naming the error if
-    that section can't be built), the staged files' provenance and the
-    gate's problems.
+    that section can't be built), what was sent to the model if any run
+    captured it or its thinking (whitney.capture_report), the staged
+    files' provenance and the gate's problems.
 
     Args:
         logs: Inspect logs, from this run or read back.
@@ -657,6 +659,8 @@ def write_report(
     except Exception as error:  # anything at all: the section advises, so a fault in it costs neither report nor gate
         improvements = improvement_failed(error)
     report += f"\n{improvements}" if improvements else ""
+    sent = render_capture_markdown(core_logs)
+    report += f"\n{sent}" if sent else ""
     report += "\n" + render_asset_provenance_markdown(logs)
     header = render_header(logs, evals_path, min_rates)
     if min_conclusive != MIN_CONCLUSIVE:

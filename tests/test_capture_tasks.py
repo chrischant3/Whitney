@@ -180,3 +180,34 @@ def test_help_names_both_options(capsys):
 
     out = capsys.readouterr().out
     assert "--capture-prompt" in out and "--thinking" in out
+
+
+# --- the report -------------------------------------------------------------------------------
+
+
+def _log(built_task, found):
+    score = SimpleNamespace(answer="pass", metadata={"sent": {"via": "proxy", "requests": 2, "found": found}} if found else {})
+    sample = SimpleNamespace(id="s", error=None, scores={"scenario_checks": score}, metadata={})
+    return SimpleNamespace(eval=SimpleNamespace(task=built_task.name, metadata=built_task.metadata, task_args={}), samples=[sample], status="success")
+
+
+def _report(logs, results) -> str:
+    cli.write_report(logs, target="kilo", model="m", evals_path=None, min_rates={}, min_conclusive=0.0, results_dir=results)
+    [written] = Path(results).iterdir()
+    return written.read_text()
+
+
+def test_the_report_says_what_was_sent_after_the_tables_when_runs_were_captured(evals, tmp_path):
+    logs = [_log(task(evals, capture_prompt=True), {"AGENTS.md": 0}), _log(task(evals, variant="baseline", capture_prompt=True), {"AGENTS.md": None})]
+
+    report = _report(logs, tmp_path / "results")
+
+    assert "## What was sent to the model" in report
+    assert "baseline: `AGENTS.md` not found (0 of 1 runs); template: `AGENTS.md` found in 1 of 1 runs." in report
+    assert report.index("## Rules") < report.index("## What was sent to the model") < report.index("## Evaluation Instructions and Assets")
+
+
+def test_the_report_of_runs_without_capture_has_no_such_section(evals, tmp_path):
+    report = _report([_log(task(evals), None)], tmp_path / "results")
+
+    assert "What was sent to the model" not in report
