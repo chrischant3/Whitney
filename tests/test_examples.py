@@ -15,7 +15,7 @@ CONSUMER = ROOT / "examples" / "consumer"
 def test_the_consumer_example_validates_for_kilo_with_no_problems_or_warnings(capsys):
     code = cli.main(["validate", "--target", "kilo", "--project-path", str(CONSUMER), "--evals-path", str(CONSUMER / "evals")])
 
-    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 8 eval file(s), 0 problem(s), 0 warning(s)"
+    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 9 eval file(s), 0 problem(s), 0 warning(s)"
     assert code == 0
 
 
@@ -38,32 +38,32 @@ def test_mutmut_copies_the_folders_the_tests_read(folder):
 
 def test_the_example_skill_and_agent_each_have_trigger_tests_and_scenarios():
     files = {f.source: f for f in discover(CONSUMER / "evals")}
-    skill, agent = files[".claude/skills/release-notes/SKILL.md"], files[".kilo/agents/reviewer.md"]
+    skill, agent = files[".kilo/skills/release-notes/SKILL.md"], files[".kilo/agents/reviewer.md"]
 
     for eval_file in (skill, agent):
         kinds = [scenario.trigger for scenario in eval_file.resolved()]
         assert {None, "positive", "negative"} <= set(kinds)
     # One of the skill's negative prompts belongs to another skill, which must load instead.
     assert [prompt.owner for prompt in skill.trigger.negative if prompt.owner] == ["debugging"]
-    assert (CONSUMER / ".claude" / "skills" / "debugging" / "SKILL.md").is_file()
+    assert (CONSUMER / ".kilo" / "skills" / "debugging" / "SKILL.md").is_file()
     # The agent's scenarios run it as the primary agent; its trigger tests don't.
     assert {scenario.agent for scenario in agent.resolved() if scenario.trigger is None} == {"reviewer"}
     assert {scenario.agent for scenario in agent.resolved() if scenario.trigger} == {None}
 
 
-def test_the_example_skill_applies_to_both_targets_and_the_kilo_agent_to_kilo_only():
+def test_the_example_skill_and_agent_apply_to_kilo_only():
     from whitney.checks import registry
 
-    for name, on_claude_code in (("skills/release-notes.json", True), ("agents/reviewer.json", False)):
+    for name in ("skills/release-notes.json", "agents/reviewer.json"):
         [eval_file] = [f for f in discover(CONSUMER / "evals") if f.path.relative_to(CONSUMER / "evals").as_posix() == name]
         assert cli.why_not_run(eval_file, "kilo", registry()) is None
-        assert (cli.why_not_run(eval_file, "claude-code", registry()) is None) == on_claude_code
+        assert cli.why_not_run(eval_file, "claude-code", registry()) is not None
 
 
 def test_the_consumer_example_validates_for_claude_code_with_no_problems_or_warnings(capsys):
     code = cli.main(["validate", "--target", "claude-code", "--project-path", str(CONSUMER), "--evals-path", str(CONSUMER / "evals")])
 
-    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 8 eval file(s), 0 problem(s), 0 warning(s)"
+    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 9 eval file(s), 0 problem(s), 0 warning(s)"
     assert code == 0
 
 
