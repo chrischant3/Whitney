@@ -377,9 +377,12 @@ These optional evals reuse published benchmarks to check whether adding the temp
 ```bash
 pip install -e ".[ifevalcode]"
 
-# Once: clean the supplied dataset and audit it for prompt injection.
+# Once: download the pinned dataset revision from Hugging Face into dataset/hf/ (gitignored)
+python -c "import datasets; datasets.load_dataset('Multilingual-Multimodal-NLP/IfEvalCode-testset', revision='7d2918680c806a235beed1224b2dc726a6771021', cache_dir='dataset/hf')"
+
+# Once: clean that copy and audit it for prompt injection.
 # Read dataset/ifevalcode_prompt_injection_audit.md before running.
-python scripts/audit_ifevalcode_dataset.py
+python scripts/audit_ifevalcode_dataset.py --input dataset/hf/Multilingual-Multimodal-NLP___if_eval_code-testset/default/0.0.0/7d2918680c806a235beed1224b2dc726a6771021/if_eval_code-testset-train.arrow
 
 # Python subset, 3 samples per variant, 1 repeat
 python scripts/run_evals.py --target $TARGET --model $MODEL --evals ifevalcode --epochs 1
@@ -410,6 +413,24 @@ inspect eval src/whitney/harbor_tasks.py@bigcodebench_hard_complete -T variant=t
 The report shows mean reward and pass rate per variant and the difference between them.
 
 Both datasets are read from local files after the one-time setup, so runs make no Hugging Face or Hub calls.
+
+### What these evals download
+
+Each step fetches from the network as follows. If your network has an allowlist, these are the hosts to open.
+
+| Step | Fetches from | When |
+| --- | --- | --- |
+| `pip install -e ".[ifevalcode,harbor]"` | PyPI (`pypi.org`, `files.pythonhosted.org`) | Once |
+| IFEvalCode dataset download | Hugging Face (`huggingface.co`, and its file hosts `cdn-lfs.hf.co` and `cas-bridge.xethub.hf.co`): `Multilingual-Multimodal-NLP/IfEvalCode-testset` at the pinned revision | Once |
+| `scripts/audit_ifevalcode_dataset.py` | Nothing: it reads the local Arrow file | |
+| `scripts/cache_and_audit_bigcodebench_hard.py` | The Harbor hub (`ofhuhcpkvzjlejydnvyd.supabase.co`, inspect-harbor's default hub URL): package `bigcode/bigcodebench-hard-complete` at the pinned digest | Once; later runs check the local cache |
+| IFEvalCode sandbox image build | Docker Hub (`python:3.10-slim`) and Debian's apt mirrors over plain HTTP (`deb.debian.org`) | First run, until Docker's build cache is cleared |
+| BigCodeBench sandbox image build | Docker Hub (`python:3.10-slim`), Debian's apt mirrors over plain HTTP, PyPI, `raw.githubusercontent.com` (BigCodeBench's `requirements-eval.txt` from the `main` branch of `bigcode-project/bigcodebench`) and all NLTK data (`nltk.download('all')`, which NLTK serves from `raw.githubusercontent.com`) | First run, until Docker's build cache is cleared |
+| Each eval run | The model provider for `--model` (`api.anthropic.com` for `claude-code`; the Kilo Gateway or your named provider for `kilo`) | Every run |
+
+The sandboxes the code is checked in have no network while they run; the downloads above all happen while the images are built. The BigCodeBench image is not fully pinned: the Harbor digest pins the Dockerfile, but that Dockerfile installs from a requirements file on an unpinned branch and the latest NLTK data, so two first runs at different times can build different images.
+
+The image builds run inside Docker's own build containers, so they need direct access to Docker Hub, the Debian mirrors over HTTP and the hosts above. A build behind an HTTPS proxy that intercepts TLS, or one that refuses plain HTTP, fails at `apt-get update` with `Unable to locate package` and the run stops with `Failed to build docker containers`, before any model call.
 
 ## How it works
 
