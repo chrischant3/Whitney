@@ -623,3 +623,21 @@ def test_only_the_variants_whitney_adds_itself_are_automatic(tmp_path):
     assert automatic(trigger=negative) == {"baseline"}
     assert automatic(trigger=positive, variants={"baseline": {"remove": ["AGENTS.md"]}}) == {"trigger_control"}
     assert automatic(variants={}) == set()
+
+
+def test_a_variant_that_already_removes_every_copy_is_kept_as_it_is():
+    source = ".kilo/skills/release-notes/SKILL.md"
+    staged = {".kilo/skills/release-notes/SKILL.md": "kilo\n", ".claude/skills/release-notes/SKILL.md": "claude\n"}
+    both = Variant(remove=[".kilo/skills/release-notes/", ".claude/skills/release-notes/"])
+
+    assert variants_module.for_kilo_skill_copies(both, staged, source) is both
+
+
+def test_a_copy_the_variant_already_removes_isnt_listed_twice():
+    source = ".kilo/skills/release-notes/SKILL.md"
+    staged = {f"{folder}/release-notes/SKILL.md": "x\n" for folder in (".kilo/skills", ".claude/skills", ".agents/skills")}
+    own = Variant(remove=["AGENTS.md", ".kilo/skills/release-notes/", ".agents/skills/release-notes/"])
+
+    widened = variants_module.for_kilo_skill_copies(own, {**staged, "AGENTS.md": "a\n"}, source)
+
+    assert widened.remove == ["AGENTS.md", ".kilo/skills/release-notes/", ".claude/skills/release-notes/", ".agents/skills/release-notes/"]

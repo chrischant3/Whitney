@@ -381,21 +381,31 @@ def for_claude_code_instructions(variant: Variant, files: Mapping[str, str]) -> 
 def for_kilo_skill_copies(variant: Variant, files: Mapping[str, str], source: str) -> Variant:
     """`variant` with a `remove` of the skill folder `source` is in widened to every staged copy of the skill, for the kilo target.
 
-    Kilo reads skills from each of project_files.KILO_SKILL_FOLDERS and
-    offers one by its folder's name (evalfile.under_test), so a project that
-    keeps the same skill in `.kilo/skills/` and `.claude/skills/` still has
-    it after only the source's folder is removed: a positive trigger prompt
-    would load the other copy and pass in a control where it must fail. A
-    copy is a staged folder `<skill folder>/<name>/`; only staged ones are
-    added, since apply_variant refuses a remove of a path that isn't. The
-    source's own entry is kept, staged or not, for apply_variant to report.
+    Kilo reads skills from each of project_files.KILO_SKILL_FOLDERS, so a
+    project that keeps the same skill in `.kilo/skills/` and `.claude/skills/`
+    still has it after only the source's folder is removed: a positive
+    trigger prompt would load the other copy and pass in a control where it
+    must fail, as it did in docs/results/2026-11-12-claude-code-example.md
+    ("Which skill copy Kilo used"). A copy is a staged folder
+    `<skill folder>/<name>/`, with the name taken from the source's folder as
+    evalfile.under_test takes it. That Kilo names a skill by its folder is an
+    assumption: it has been shown for Claude Code (docs/spike-findings.md,
+    "Phase 5 Task 36"), but every Kilo run so far used skills whose
+    frontmatter `name` matched their folder, so a copy in a differently named
+    folder whose `name` matches is not removed.
 
-    Use it on the variants Whitney adds itself (automatic_variants). The
-    claude-code target reads only `.claude/skills/`, so it doesn't need this.
+    Only staged copies the variant doesn't already remove are added, right
+    after the source's folder, since apply_variant refuses a remove of a path
+    that isn't staged. The source's own entry is kept, staged or not, for
+    apply_variant to report.
+
+    Whitney uses it on the variants it adds itself (automatic_variants), and
+    validate.skill_copy_warnings on declared ones, to warn. The claude-code
+    target reads only `.claude/skills/`, so it doesn't need this.
 
     Returns:
         `variant` itself if `source` isn't a skill, the variant doesn't remove
-        its folder, or no other copy is staged.
+        its folder, or no other copy is staged that it leaves in.
     """
     skill = SKILL_SOURCE.fullmatch(source)
     own_folder = skill.group(1) if skill else None
@@ -403,11 +413,11 @@ def for_kilo_skill_copies(variant: Variant, files: Mapping[str, str], source: st
         return variant
     _, name = under_test(source)
     copies = [f"{folder}/{name}/" for folder in KILO_SKILL_FOLDERS]
-    staged_copies = [copy for copy in copies if copy != own_folder and staged_matches(files, copy)]
-    if not staged_copies:
+    left_in = [copy for copy in copies if copy not in variant.remove and staged_matches(files, copy)]
+    if not left_in:
         return variant
-    widened = [entry for path in variant.remove for entry in ([path, *staged_copies] if path == own_folder else [path])]
-    return variant.model_copy(update={"remove": widened})
+    after = variant.remove.index(own_folder) + 1
+    return variant.model_copy(update={"remove": [*variant.remove[:after], *left_in, *variant.remove[after:]]})
 
 
 def spread_over_kilo_configs(variant: Variant, files: Mapping[str, str], source: str) -> Variant:

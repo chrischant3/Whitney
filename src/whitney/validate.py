@@ -70,9 +70,12 @@ from whitney.variants import (
     PointerError,
     VariantError,
     apply_variant,
+    automatic_variants,
     changes_nothing,
     declared_variants,
+    default_baseline,
     for_claude_code_instructions,
+    for_kilo_skill_copies,
     pointer_tokens,
     repeated_removes,
     shadowed_sets,
@@ -1019,6 +1022,39 @@ def _rule_problem(source: str, rules: dict, params: dict) -> str | None:
     if action == "allow":
         return f"'{source}' sets this rule to \"allow\", which refuses nothing; {reads}"
     return f"'{source}' sets this rule to {json.dumps(action)}, and no refusal has been captured for that; {reads}"
+
+
+def skill_copy_warnings(eval_files: list[EvalFile], project_path: Path, *, evals_path: Path | None = None) -> list[Problem]:
+    """Warn where a variant an eval file declares removes its skill's folder but a same-named copy stays staged for Kilo.
+
+    Kilo reads skills from every folder in project_files.KILO_SKILL_FOLDERS,
+    so a baseline that removes `.kilo/skills/<name>/` while `.claude/skills/<name>/`
+    is staged still has the skill. Whitney widens the variants it adds itself
+    (variants.for_kilo_skill_copies) but runs a declared one as written, since
+    its author may mean the copy to stay; so this is a warning. Agents aren't
+    checked: no run has shown Kilo picking between same-named agents. A
+    project the Kilo loader can't stage gives none.
+    """
+    try:
+        staged = load_project_files_for("kilo", project_path, evals_path=evals_path)
+    except (OSError, ValueError):
+        return []
+    warnings = []
+    for eval_file in eval_files:
+        if "kilo" not in eval_file.applies_to():
+            continue
+        automatic = automatic_variants(eval_file)
+        for name, variant in declared_variants(eval_file).items():
+            widened = for_kilo_skill_copies(variant, staged, eval_file.source)
+            if name in automatic or widened is variant:
+                continue
+            left = " and ".join(f"'{path}'" for path in widened.remove if path not in variant.remove)
+            removed = default_baseline(eval_file.source).remove[0]
+            warnings.append(Problem(eval_file.path, f"variants.{name}.remove", (
+                f"removes '{removed}', but Kilo also reads the same skill from {left}, left staged, "
+                "so the skill can load in this variant too; add each to its remove if the skill is meant to be gone"
+            )))
+    return warnings
 
 
 def permission_warnings(eval_files: list[EvalFile], project_path: Path, *, evals_path: Path | None = None) -> list[Problem]:
