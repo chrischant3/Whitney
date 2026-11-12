@@ -1,0 +1,52 @@
+{
+  "case": "scalar-tools-none",
+  "about": "No model: the default agent's tools and rules with project permission {}, from `kilo debug agent code`",
+  "date": "2026-11-11",
+  "kilo_version": "7.8.27",
+  "model": null,
+  "argv": [
+    "kilo",
+    "debug",
+    "agent",
+    "code",
+    "--pure"
+  ],
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
+  },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {},
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "",
+  "git_status_after": "",
+  "git_diff_after": "",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all; output keys kept: ['name', 'tools', 'permission']; permission rules kept: ['bash', 'edit', 'read']",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER",
+    "ids in Kilo's debug log (telemetry alias, run_id)": "ID-PLACEHOLDER"
+  },
+  "new_files_after": {}
+}

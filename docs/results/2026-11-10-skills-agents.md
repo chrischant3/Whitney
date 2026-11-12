@@ -97,6 +97,8 @@ Since 2026-11-10 the gate reads the two separately, and each must reach the file
 
 That matches what the runs showed. The skill didn't load under time pressure, and the reviewer edited the file under time pressure.
 
+Since 2026-11-11 (Task 29) the gate also reads positive and negative trigger tests separately. `whitney report` on this run's logs was run again that day: it still exits 1, with the same two lines, because every trigger test of both kinds passed. Only the line under each file's tables changed. For the skill it read "scenarios 3/6, trigger tests 12/12" and now reads "scenarios 3/6, positive trigger tests 6/6, negative trigger tests 6/6"; for the reviewer, "scenarios 4/6, trigger tests 9/9" became "scenarios 4/6, positive trigger tests 6/6, negative trigger tests 3/3". See [2026-11-11-trigger-gates.md](2026-11-11-trigger-gates.md).
+
 ## The example's two older evals, run again
 
 Every eval file runs with the whole project copied in, so the two rules' evals from [2026-11-09](2026-11-09-own-rules.md) now run with the skills and the reviewer present. They were run again the same way, 36 runs, to see whether the earlier results still hold.

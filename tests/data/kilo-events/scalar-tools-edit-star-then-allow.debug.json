@@ -1,0 +1,55 @@
+{
+  "name": "code",
+  "tools": {
+    "invalid": true,
+    "question": true,
+    "bash": true,
+    "read": true,
+    "glob": true,
+    "grep": true,
+    "edit": true,
+    "write": true,
+    "task": true,
+    "webfetch": true,
+    "todowrite": true,
+    "websearch": true,
+    "skill": true,
+    "plan_exit": false,
+    "suggest": true,
+    "goal_report": true,
+    "goal": true,
+    "board_read": true,
+    "board_post": true,
+    "kilo_local_recall": true,
+    "background_process": true,
+    "schedule_wakeup": true,
+    "cancel_wakeup": true,
+    "cron_create": true,
+    "cron_list": true,
+    "cron_delete": true,
+    "agent_manager_models": true,
+    "link_pr": true
+  },
+  "permission": [
+    {
+      "permission": "edit",
+      "pattern": "*",
+      "action": "deny"
+    },
+    {
+      "permission": "edit",
+      "pattern": "scratch.txt",
+      "action": "allow"
+    },
+    {
+      "permission": "edit",
+      "pattern": "*",
+      "action": "deny"
+    },
+    {
+      "permission": "edit",
+      "pattern": "scratch.txt",
+      "action": "allow"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+--- stdout ---
+{
+  "tool": "write",
+  "input": {
+    "filePath": "notes.txt",
+    "content": "hello\n"
+  },
+  "result": {
+    "title": "notes.txt",
+    "metadata": {
+      "diagnostics": {},
+      "filepath": "/tmp/kilo-eval-XXXXXXXX/project/notes.txt",
+      "exists": false,
+      "diff": "Index: /tmp/kilo-eval-XXXXXXXX/project/notes.txt\n===================================================================\n--- /tmp/kilo-eval-XXXXXXXX/project/notes.txt\n+++ /tmp/kilo-eval-XXXXXXXX/project/notes.txt\n@@ -0,0 +1,1 @@\n+hello\n",
+      "filediff": {
+        "file": "/tmp/kilo-eval-XXXXXXXX/project/notes.txt",
+        "patch": "Index: /tmp/kilo-eval-XXXXXXXX/project/notes.txt\n===================================================================\n--- /tmp/kilo-eval-XXXXXXXX/project/notes.txt\n+++ /tmp/kilo-eval-XXXXXXXX/project/notes.txt\n@@ -0,0 +1,1 @@\n+hello\n",
+        "additions": 1,
+        "deletions": 0
+      },
+      "truncated": false
+    },
+    "output": "Wrote file successfully."
+  }
+}
+--- stderr ---
