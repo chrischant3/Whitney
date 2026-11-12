@@ -10,10 +10,7 @@
       "role": "control",
       "set": {
         ".claude/settings.json": {
-          "/permissions/deny": [],
-          "/permissions/allow": [
-            "Bash(git push:*)"
-          ]
+          "/permissions/deny": []
         }
       }
     }

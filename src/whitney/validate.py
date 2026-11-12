@@ -826,12 +826,12 @@ def _permission_held_problems(eval_file: EvalFile) -> list[Found]:
     claude = eval_file.source == CLAUDE_SETTINGS
     if expectations and eval_file.variants is None:
         removed, then, change = (
-            ("settings file", "the eval's own grant then decides", "moves the rule to")
-            if claude else ("config", "Kilo's own rules then decide", "sets the rule to")
+            ("settings file", "the eval's own grant then decides", "takes the rule out")
+            if claude else ("config", "Kilo's own rules then decide", "sets the rule to \"allow\"")
         )
         found.append(("variants", (
             f"a file that uses {PERMISSION_HELD} must say which variants run: the default baseline removes the whole {removed}, "
-            f"and {then}. Add a control that {change} \"allow\", or \"variants\": {{}} for the template alone"
+            f"and {then}. Add a control that {change}, or \"variants\": {{}} for the template alone"
         )))
     if claude:
         return found + [(f"{at}.{field}", message) for at, params in expectations for field, message in [_claude_form_problem(params)] if field]

@@ -127,7 +127,7 @@ def test_a_file_must_say_which_variants_run(tmp_path):
 
     assert eval_problems(root) == [("variants", (
         "a file that uses permission_held must say which variants run: the default baseline removes the whole settings file, "
-        "and the eval's own grant then decides. Add a control that moves the rule to \"allow\", or \"variants\": {} for the template alone"
+        "and the eval's own grant then decides. Add a control that takes the rule out, or \"variants\": {} for the template alone"
     ))]
 
 
@@ -141,8 +141,10 @@ def test_the_files_own_grant_may_not_hold_the_rule_under_test(tmp_path, kind):
     ))]
 
 
-def test_a_control_that_moves_the_rule_to_allow_is_valid_and_changes_the_staged_settings(tmp_path):
-    control = {"role": "control", "set": {SETTINGS: {"/permissions/deny": [], "/permissions/allow": [RULE]}}}
+def test_a_control_that_takes_the_rule_out_is_valid(tmp_path):
+    # Claude Code ignores a project's allow rules in a folder nobody has trusted, as an eval's project is
+    # (its stderr on 2026-11-12), so a control empties the deny list and the eval's own grant lets the call run.
+    control = {"role": "control", "set": {SETTINGS: {"/permissions/deny": []}}}
     root = project(tmp_path, {"deny": [RULE]}, variants={"allow_control": control})
 
     assert eval_problems(root) == []
