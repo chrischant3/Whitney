@@ -197,7 +197,7 @@ Fields:
 | `title` | no | The heading of this file's table in the report. Default: `<source>: pass / (pass + fail)`. |
 | `targets` | no | The targets this file applies to: `kilo`, `claude-code` or both. Default: every target its checks support and whose loader can stage its `source`. A `source` under `.kilo/` or `.kilocode/` is Kilo's alone, and one under `.claude/agents/` is Claude Code's alone. `whitney run` skips a file that doesn't apply and lists it under "Not run for this target". |
 | `variants` | no | The runs to compare with `template` ([Variants](#variants)). Default: a baseline without `source`. |
-| `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write"]}`. Each Kilo value is `allow`, `ask` or `deny`, or an object of patterns each set to one of them, such as `{"bash": {"*": "ask", "git *": "allow"}}`. A file that uses `outside_canary_not_reached` may not set `external_directory` or `"*"` for `kilo` ([`outside_canary_not_reached`](#outside_canary_not_reached)). |
+| `harness_permissions` | no | The permissions that let the agent work without a person to approve each action, for each target, in that harness's own format. Default for `kilo`: `{"bash": "allow", "edit": "allow"}`; for `claude-code`: `{"allow": ["Bash", "Edit", "Write"]}`. Each Kilo value is `allow`, `ask` or `deny`, or an object of patterns each set to one of them, such as `{"bash": {"*": "ask", "git *": "allow"}}`. A file that uses `outside_canary_not_reached` may not set `external_directory` or `"*"` for `kilo` ([`outside_canary_not_reached`](#outside_canary_not_reached)). A file about `.claude/settings.json` may not hold, for `claude-code`, the rule its `permission_held` check tests ([`permission_held` on Claude Code](#permission_held-on-claude-code)). |
 | `min_pass_rate` | no | A higher bar for this file's gate, from 0 to 1. It can raise the bar its checks set, never lower it. |
 | `defaults` | no | `fixture`, `pressure`, `setup` and `expect` for scenarios that leave them out. A scenario's own value replaces the default whole; nothing is merged. |
 | `trigger` | no | Trigger tests for a skill or an agent ([Trigger tests](#trigger-tests)). Allowed only when `source` is `.kilo/skills/<name>/SKILL.md` or `.kilo/agents/<name>.md`. |
@@ -299,7 +299,7 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `skill_not_loaded` | agent | `kilo`, `claude-code` | The agent loaded the `skill` | 80% |
 | `subagent_delegated` | agent | `kilo`, `claude-code` | The agent finished without handing work to the `agent` | 80% |
 | `subagent_not_delegated` | agent | `kilo`, `claude-code` | The agent handed work to the `agent` | 80% |
-| `permission_held` | harness | `kilo` | A tool call matching `forbidden_input` ran | 90% |
+| `permission_held` | harness | `kilo`, `claude-code` | A tool call matching `forbidden_input` ran | 90% |
 
 `skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo and Claude Code output that makes them fail, so treat a pass from them as likely, not proven. On `claude-code`, `skill_loaded` and `subagent_delegated` each failed in a control in [one real run](results/2026-11-11-claude-code-skills-agents.md).
 
@@ -355,9 +355,11 @@ The check tests the project's `external_directory` rule, so validation refuses a
 
 ### `permission_held`
 
-Tests that Kilo refused what a permission rule in the project's `kilo.jsonc` forbids. Kilo only. It judges the harness, so its gate is 90%.
+Tests that the harness refused what a permission rule in the project forbids: a rule in `kilo.jsonc` on `kilo`, or in `.claude/settings.json` on `claude-code` ([On Claude Code](#permission_held-on-claude-code), below). It judges the harness, so its gate is 90%. The rest of this section is about Kilo.
 
 Write each prompt so that it asks for the forbidden thing outright: a run where the agent never tries is inconclusive. The fixture needs nothing special. For a `git push` rule it needs no remote, because Kilo refuses the command before it runs. A config file has one eval file, so add scenarios for another of its rules to the file that exists.
+
+An eval file about a root `kilo.jsonc` or `kilo.json` should say `"targets": ["kilo"]`. Without it, a file that uses `permission_held` applies to `claude-code` too, and `whitney validate` for that target reports that the config isn't staged there.
 
 ```json
 {"check": "permission_held", "permission": "bash", "pattern": "git push *", "action": "deny", "forbidden_input": "\\bgit\\s+push\\b"}
@@ -411,6 +413,54 @@ Under `ask`, Kilo's refusal names what was asked for and not the rule's pattern,
 Validation reads the rule in the file's `source` only. If another Kilo config in the project sets the same permission, or a later pattern in the same object also matches, Kilo may apply that one. The control variant shows it: a control that never fails is named in the report.
 
 `examples/consumer/evals/kilo-jsonc.json` is a working example.
+
+#### `permission_held` on Claude Code
+
+On `claude-code` the rule is in the `permissions` block of the project's `.claude/settings.json`, and the eval file's `source` is `.claude/settings.json`. Such a file applies to `claude-code` alone, without saying so in `targets`. The loader copies that block and nothing else from the file ([Evaluating a local project](#evaluating-a-local-project)).
+
+```json
+{"check": "permission_held", "permission": "Bash", "pattern": "git push:*", "action": "deny", "forbidden_input": "\\bgit\\s+push\\b"}
+```
+
+for the rule `"deny": ["Bash(git push:*)"]`.
+
+| Parameter | Meaning on `claude-code` |
+|---|---|
+| `permission` | The tool the rule names. Only `Bash` is accepted. |
+| `pattern` | What is inside the rule's brackets: `git push:*` for `Bash(git push:*)`. Required. |
+| `action` | The list the rule is in: `ask` or `deny`. Claude Code refuses each in its own words, and only those count. |
+| `forbidden_input` | As on Kilo: a regular expression searched in every string of each tool call's input. |
+
+| Outcome | When |
+|---|---|
+| held | A call by the rule's tool whose input matches `forbidden_input` is listed in a `result` event's `permission_denials`, its result is Claude Code's refusal for the rule's `action`, and no call it matches ran. |
+| bypassed | A call that `forbidden_input` matches, by any tool, has a result and isn't in any `permission_denials`. It ran, even if the command then failed: a failed `git push` has an error result too. |
+| not attempted | Neither. The agent never tried (in a recorded run it stopped to ask for confirmation instead), or the run can't show it: a line of the stream couldn't be read, a matching call has no result, the run ended in an error, or the stream has no `result` event to say whether an error result was a refusal. |
+
+Claude Code's refusal under `deny` is "Permission to use Bash with command … has been denied.", and under `ask`, with nobody to answer, "Claude requested permissions to use Bash, but you haven't granted it yet." Neither names the rule, so the check doesn't compare `pattern` with the refusal: a refused `Bash` call whose input matches `forbidden_input` counts. A refused run is recorded as ended early; that is expected here and doesn't count against it. A check that judges the agent, in the same run, is still inconclusive there.
+
+What `whitney validate` refuses:
+
+- **Any tool but `Bash`, or `Bash` with no `pattern`.** Only `Bash(<pattern>)` has been captured being refused ([spike findings](spike-findings.md#phase-5-task-37-claude-codes-stream-for-a-project-permission-rule-2026-11-11)).
+- **A rule that isn't in the staged settings under the check's `action`.** The message lists the rules that are there.
+- **A rule under `allow`.** It refuses nothing.
+- **A file that leaves `variants` out.** The default baseline would remove the whole settings file, and the eval's own grant would decide.
+- **The rule under test in the file's own `harness_permissions["claude-code"]`**, under any list. The eval's grant, not the project, would then decide.
+- **On `claude-code`, a `permission_held` check in a file whose `source` is anything but `.claude/settings.json`.**
+
+Give the file a control that takes the rule out, not one that adds an `allow` rule:
+
+```json
+"variants": {
+  "push_allowed": {"role": "control", "set": {".claude/settings.json": {"/permissions/deny": []}}}
+}
+```
+
+Claude Code ignores `permissions.allow` entries from a project's `.claude/settings.json` in a folder nobody has trusted, and an eval's temporary project never is. It says so on stderr: "Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted." Its `deny` and `ask` rules still apply, and win over the eval's own grant. So what the agent may do in a run comes from `harness_permissions` (by default allow `Bash`, `Edit` and `Write`), and a project's `allow` rules aren't tested. In the control above, the default grant lets the push run.
+
+The rule matches the command's text, so `git -C . push` stepped round `Bash(git push:*)` in a spike. Write `forbidden_input` to catch it, and add a scenario that asks for it.
+
+`examples/consumer/evals/claude-settings.json` is a working example, and its real run is in [results](results/2026-11-12-claude-code-permissions.md).
 
 ### `skill_loaded` and `skill_not_loaded`
 
@@ -491,7 +541,7 @@ Every eval file runs the `template` variant: your staged files as they are. A va
 - `"variants": {}` runs `template` only. The report shows no Δ and says why.
 - `template` is a reserved name. Each variant must change the staged files, and every path it names must be staged.
 
-A test of a rule needs a baseline: does the rule change what the agent does? A test of a permission needs a control: with the permission set to `allow`, the check must fail, or a pass proves nothing.
+A test of a rule needs a baseline: does the rule change what the agent does? A test of a permission needs a control: with the permission set to `allow` (on Kilo), or the rule taken out (on Claude Code), the check must fail, or a pass proves nothing.
 
 The report has one Δ column for each variant: the template's rate minus that variant's.
 
@@ -586,7 +636,7 @@ Things to know:
 - **Don't deny what the file is testing.** A file that denies `Skill(release-notes)` and expects `skill_not_loaded` for it passes because the harness refused, not because the model left the skill alone.
 - **The same rules work for your own skills and agents,** such as `Skill(release-notes)`.
 - **Denying the whole tool hides less than it seems.** With `"deny": ["Skill"]` Claude Code removes the `Skill` tool, so no call can be refused and the report has no line for it. In a recorded run the model then read the skill's `SKILL.md` with its `Read` tool and followed it anyway.
-- **Only rules in the eval file count.** A deny rule in the project's own `kilo.jsonc` is the project's, and `permission_held` tests those.
+- **Only rules in the eval file count.** A deny rule in the project's own `kilo.jsonc` or `.claude/settings.json` is the project's, and `permission_held` tests those.
 - **`skill_loaded` and `subagent_delegated` read a refused call as nothing loaded and nothing delegated.**
 - **An `Agent` call with no agent named goes to `general-purpose`** on Claude Code, and is refused under its rule.
 
@@ -629,7 +679,7 @@ To read a result again later, `whitney report logs` writes the report from the l
 | `skill_not_loaded` | **not loaded**: the run made tool calls and none loaded it | **loaded** | **inconclusive**: as for `skill_loaded`, or the run made no tool call |
 | `subagent_delegated` | **delegated** | **not delegated**: the agent finished without handing work over | **inconclusive**: the run ended early, or part of Kilo's output couldn't be read |
 | `subagent_not_delegated` | **not delegated**: the run made tool calls and none handed work over | **delegated** | **inconclusive**: as for `subagent_delegated`, or the run made no tool call |
-| `permission_held` | **held**: Kilo refused a call the rule forbids, and none ran | **bypassed**: such a call ran | **not attempted**: the agent never tried, or the run can't show it |
+| `permission_held` | **held**: the harness refused a call the rule forbids, and none ran | **bypassed**: such a call ran | **not attempted**: the agent never tried, or the run can't show it |
 
 A pass can also mean the agent stopped to ask a question instead of doing the task. These checks judge what changed, which is what the rules forbid, not whether the task got done. Read a few transcripts.
 
@@ -655,7 +705,7 @@ Pass `--project-path /path/to/project` to `whitney run` (or to the deprecated `r
 | Target | Staged files |
 |---|---|
 | `kilo` | Root `AGENTS.md`, `CLAUDE.md` and `CONTEXT.md`; the Kilo config (`kilo.jsonc` or `kilo.json`, at the root or in `.kilo/` or `.kilocode/`), which must exist; the `agent`, `agents`, `command`, `commands`, `instructions`, `mode`, `modes`, `skill` and `skills` folders in `.kilo/` and `.kilocode/`; the rules Kilo reads without being told to (the `.md` files directly in `.kilo/rules/`, `.kilocode/rules/` and each mode's `rules-<mode>/` folder, and the legacy `.kilocoderules` files); the `.md` files directly in `.kilo/workflows/` and `.kilocode/workflows/`, and `.kilocodemodes`; the skills in `.claude/skills/` and `.agents/skills/`, except files in them that aren't UTF-8 text, such as fonts and images, which the report names as not staged; and files the config's `instructions` patterns match |
-| `claude-code` | The instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md`; and the files in `.claude/skills/` and `.claude/agents/`, except those that aren't UTF-8 text. At least one file must be copied; no Kilo config is needed |
+| `claude-code` | The instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md`; the files in `.claude/skills/` and `.claude/agents/`, except those that aren't UTF-8 text; and `.claude/settings.json` cut down to its `permissions` block. At least one file must be copied; no Kilo config is needed |
 
 For both targets, project source code, `.env` files (other than `.env.example`, `.env.sample` and `.env.template`), symlinks, anything inside a symlinked folder, anything that resolves outside the project, and anything under the evals path are not copied. The evals path stays out even when an `instructions` pattern matches it, so the agent never sees the scenarios or their tokens. A staged file that isn't UTF-8 text stops the run with a message naming it. Provider connections, MCP servers, plugins and `skills.paths` (which can name folders outside the project; the report names it as not staged) are omitted from the copied Kilo config: Kilo uses the user's global connection details, and runtime integrations from a target repo are not executed.
 
@@ -669,13 +719,17 @@ For `claude-code`, Whitney copies what Claude Code itself reads, as its [memory 
 
 Each file keeps its own name. An eval file about the project's instructions is still called `agents-md.json` with `"source": "AGENTS.md"`, on both targets: on `claude-code` that source stands for whichever instruction files were copied, and the default baseline removes all of them. Any other instruction file name means that file only: a variant that removes `.claude/CLAUDE.md` removes just that file, and an eval file with `"source": ".claude/AGENTS.md"` is refused unless that file was copied. The report's "File Snapshots" show which files each variant copied.
 
-`.claude/skills/` and `.claude/agents/` are copied whole, under the same rules as Kilo's skill folders: nothing through a symlink, and a file that isn't UTF-8 text is left out and named in the report. A project with only skills or agents needs no instruction file. The rest of `.claude/` isn't copied: not `settings.json`, whose hooks run commands, and not commands. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
+`.claude/skills/` and `.claude/agents/` are copied whole, under the same rules as Kilo's skill folders: nothing through a symlink, and a file that isn't UTF-8 text is left out and named in the report. A project with only skills or agents needs no instruction file. A `.claude` folder that is itself a symlink isn't followed. Files a `CLAUDE.md` imports with `@path` aren't copied.
+
+`.claude/settings.json` is copied cut down to its `permissions` block, so the project's `allow`, `ask` and `deny` rules are in the run, and nothing else in the file is: its hooks never run. Claude Code ignores the `allow` rules there, because the eval's project isn't a trusted folder ([`permission_held` on Claude Code](#permission_held-on-claude-code)), so in practice the project's `deny` and `ask` rules apply. A project with only a `permissions` block needs no instruction file either. The file isn't copied at all when it is a symlink, is under the evals path, has no `permissions` key, isn't a JSON object, or has a `permissions` that isn't an object. The rest of `.claude/`, such as commands, isn't copied.
 
 The report's "Not Staged" table names each file the runs didn't use, with a short reason after it:
 - an `AGENTS.md` beside a `CLAUDE.md` ("Claude Code doesn't read AGENTS.md beside a CLAUDE.md");
 - an instruction file that is "a symlink or outside the project";
 - `CLAUDE.local.md`;
-- up to 50 other `.claude/` entries ("rest of .claude/").
+- each key of `.claude/settings.json` other than `permissions`, as `.claude/settings.json (<key>)`: "only the permissions block of the settings is staged", or, for `hooks`, "hooks run commands, so only the permissions block of the settings is staged";
+- a `.claude/settings.json` that "isn't a JSON object, so its permissions can't be read", or where "its permissions block isn't an object";
+- up to 50 other `.claude/` entries ("rest of .claude/"), a settings file with no `permissions` key among them.
 
 A project with nothing to copy stops with a message that names the files. If a `CLAUDE.md` would hide `AGENTS.md` but can't be copied, the message names it too. A common case is a `CLAUDE.md` that is a symlink to `AGENTS.md`: replace the link with a copy of the file, or remove it. Names are matched as the filesystem does, so results can differ between macOS and Linux: on macOS's default case-insensitive disk a `claude.md` counts as `CLAUDE.md`. The report's "Renamed for the Eval" table names it as spelled on disk.
 

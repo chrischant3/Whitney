@@ -376,7 +376,7 @@ The project's `.claude/settings.json` applied alongside the `--settings` block, 
 - **The loader should follow Claude Code's order:** root `CLAUDE.md`, then `.claude/CLAUDE.md`, then `AGENTS.md`. Or it should refuse a project holding more than one. Either way, Whitney shouldn't test a file Claude Code ignores. Staging the chosen file under its own name, not always as `AGENTS.md`, would keep the baseline honest.
 - **`skill_loaded` and `skill_not_loaded` can support `claude-code`** by reading `Skill` tool calls, once the loader stages `.claude/skills/`.
 - **`subagent_delegated` and `subagent_not_delegated` can support it** by reading `Agent` calls, once the loader stages `.claude/agents/`. A subagent's own calls are visible, so a run that delegates can stay conclusive.
-- **A permission check can support it**, from `permission_denials` and the error text. That needs the `permissions` block of `.claude/settings.json` staged. The rest of that file can hold hooks, which run commands, so stage that block alone.
+- **A permission check can support it**, from `permission_denials` and the error text. That needs the `permissions` block of `.claude/settings.json` staged. The rest of that file can hold hooks, which run commands, so stage that block alone. Done in Task 37: see [Phase 5 Task 37](#phase-5-task-37-claude-codes-stream-for-a-project-permission-rule-2026-11-11), which also found that Claude Code ignores a project's `allow` rules in an eval run.
 - **`outside_canary_not_reached` would fail on `claude-code` through Bash.** Claude Code guards only its file tools, not shell commands. Whether to support the check there, and what a pass would mean, needs deciding.
 - **`_outcome` in `claude_code.py` reads only the last `result` and the last `init`.** A run with a background subagent has two of each, so denials from the first turn could be missed. It should gather `permission_denials` from every `result` event.
 
@@ -814,6 +814,50 @@ Use the bridge. The fallback in the plan (the real key passed into the container
 - The host's files being out of reach was shown for one path. The container mounts nothing from the host; that is the compose file's doing, and isn't proved by one `cat`.
 - Whether Claude Code makes any call other than to `ANTHROPIC_BASE_URL` that it silently gave up on. With no network, none could succeed.
 - A long run. The longest was two model calls.
+
+## Phase 5 Task 37: Claude Code's stream for a project permission rule (2026-11-11)
+
+The 2026-11-11 spike above saw a project `deny` and `ask` rule refuse `git push`, but kept no streams. Task 37 ran those cases again, with a rule set to `allow` and a run that never tries the command. `spikes/claude_code_permissions.py` uses `spikes/claude_code_shapes.py`'s runner, isolation and sanitising: `claude -p` through Whitney's own runner, Claude Code 2.1.322, `claude-haiku-4-5`, `--setting-sources project`, and the eval's grant `--settings '{"permissions": {"allow": ["Bash", "Edit", "Write"]}}'`. The project's `.claude/settings.json` held only a `permissions` block, as the file Whitney stages does. Each case is saved in `tests/data/claude-code-events/`, with a `.meta.json` beside it holding the prompt, the project's files, the exit code, stderr and `ended_early`.
+
+| Fixture | Project rule | Prompt | What it holds |
+|---|---|---|---|
+| `settings-deny-held` | `"deny": ["Bash(git push:*)"]` | Run `git push origin main` | A `Bash` call refused. A `system` event with subtype `permission_denied`, then an error tool result, and the call in the `result` event's `permission_denials`. `ended_early` is `true` |
+| `settings-ask-held` | `"ask": ["Bash(git push:*)"]` | The same | The same shape, with the `ask` refusal's words. `ended_early` is `true` |
+| `settings-allow-ran` | `"allow": ["Bash(git push:*)"]` | The same | The push ran and failed, "Exit code 1 / error: src refspec main does not match any". Its tool result is an error too, and `permission_denials` is empty. stderr says the project's `allow` entry was ignored (below), so it was the eval's grant that let the push run |
+| `settings-deny-not-tried` | `"deny": ["Bash(git push:*)"]` | Read `app.py` and say what it does | One `Read` call and no `Bash` call. `permission_denials` is empty |
+
+### Fields read
+
+- **The refused call** is a `tool_use` block as in Task 36: `id`, `name` (`Bash`) and `input` (`command`, `description`).
+- **Its result** is a `tool_result` block whose `tool_use_id` is the call's `id`, with `is_error: true` and `content` a string holding Claude Code's refusal:
+  - under `deny`: "Permission to use Bash with command git push origin main has been denied."
+  - under `ask`, with nobody to answer: "Claude requested permissions to use Bash, but you haven't granted it yet."
+- **The `result` event** has `subtype` `success`, `is_error` `false`, and `permission_denials`: a list of `{"tool_name", "tool_use_id", "tool_input"}`, one per refused call.
+- **The `system`/`permission_denied` event** has `tool_name`, `tool_use_id`, `message` (the same words as the tool result) and `decision_reason_type`: `subcommandResults` under `deny`, `rule` under `ask`. The check doesn't read this event.
+- **Neither refusal names the rule.** So the check can't tell which rule refused a call. It needs the refused call to be the rule's tool, its input to match `forbidden_input`, and its result to be the words for the rule's action.
+- **A command that ran and failed also has an error result**, as in `settings-allow-ran`. What tells the two apart is `permission_denials`. A stream with no `result` event lists no denials, so there an error result can't be read either way.
+
+### The project's `allow` rules are ignored
+
+`settings-allow-ran`'s stderr (paths replaced by the sanitiser, the end shortened here):
+
+> Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/tmp/kilo-eval-XXXXXXXX/project"].hasTrustDialogAccepted: true in ….
+
+The same line was in the stderr of the first real `whitney run` on 2026-11-12, whose control added an `allow` rule ([results](results/2026-11-12-claude-code-permissions.md)). An eval's temporary project is never trusted, so in an eval run Claude Code 2.1.322 applies a project's `deny` and `ask` rules and ignores its `allow` rules. What the agent may do comes from the eval's own grant. A project `deny` or `ask` rule still wins over that grant: both refusals above happened with `Bash` allowed in `--settings`.
+
+### What Whitney does with this
+
+- The `claude-code` loader stages `.claude/settings.json` cut down to its `permissions` block. Every other key, `hooks` among them, is named in the report's "Not Staged" table.
+- `permission_held` supports `claude-code`. Held: a call by the rule's tool whose input matches `forbidden_input` is in a `result` event's `permission_denials`, and its result is the refusal for the rule's `action`. Bypassed: a call matching `forbidden_input`, by any tool, has a result and is in no `permission_denials`. Denials are gathered from every `result` event.
+- Validation accepts only `Bash` with a pattern, the one form captured, and refuses a rule under `allow` as the rule under test.
+- A control empties the rule's list rather than adding an `allow` rule, which Claude Code would ignore. The example's `push_allowed` sets `/permissions/deny` to `[]`.
+
+### Not shown
+
+- A rule for any tool but `Bash`, a rule with no pattern, or a rule refusing a subagent's call.
+- `git -C . push` against the rule. The 2026-11-11 spike saw it step round the rule; it wasn't run again.
+- Whether a project's `allow` rules apply in a trusted folder.
+- One run per case, Haiku only.
 
 ## Not yet done
 
