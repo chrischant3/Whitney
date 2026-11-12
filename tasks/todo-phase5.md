@@ -1037,15 +1037,15 @@ Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `genera
 ### Task 39: Claude Code example, recorded real run and docs
 
 **Acceptance criteria:**
-- [ ] `examples/consumer` gains what a Claude Code team would have: a `CLAUDE.md`, a skill and an agent under `.claude/`, and a `.claude/settings.json` with a `deny` rule. Its eval files run on `claude-code`.
-- [ ] One recorded real run with `--epochs 1` on both targets, with Christopher's go-ahead first (about a dollar), written up in `docs/results/`.
-- [ ] `docs/adding-tests.md`, `docs/load-order.md`, the README and the `write-evals` skill say what each target stages and supports. `references/fixtures.md` drops "The `claude-code` target stages no skills".
-- [ ] `whitney checks` lists `claude-code` for every check that supports it.
+- [x] `examples/consumer` gains what a Claude Code team would have: a `CLAUDE.md`, a skill and an agent under `.claude/`, and a `.claude/settings.json` with a `deny` rule. Its eval files run on `claude-code`. *(2026-11-12, on `feature/p5-t39-claude-example`: `CLAUDE.md` repeats the `AGENTS.md` and `.kilo/rules/data-handling.md` rules, since Claude Code doesn't read `AGENTS.md` beside it and Whitney doesn't copy `@path` imports; both skills moved to `.claude/skills/`, which Kilo reads too; `.claude/agents/reviewer.md` added; new eval files `claude-md.json` and `agents/claude-reviewer.json`. On `claude-code` five eval files apply: `agents-md.json`, `claude-md.json`, `skills/release-notes.json`, `agents/claude-reviewer.json`, `claude-settings.json`. `whitney validate` with `--target kilo`, `--target claude-code` and no `--target` each print `examples/consumer/evals: 8 eval file(s), 0 problem(s), 0 warning(s)` and exit 0; `tests/test_examples.py`. No real run yet: see the next box.)*
+- [ ] One recorded real run with `--epochs 1` on both targets, with Christopher's go-ahead first (about a dollar), written up in `docs/results/`. *(2026-11-12: waiting for the go-ahead. The commands are prepared: 37 agent runs on each target, 74 in all, estimated $0.75 to $2.20 on Haiku.)*
+- [x] `docs/adding-tests.md`, `docs/load-order.md`, the README and the `write-evals` skill say what each target stages and supports. `references/fixtures.md` drops "The `claude-code` target stages no skills". *(2026-11-12: a table of the skill and agent folders each target stages in `docs/adding-tests.md`, "Testing a skill or an agent"; a side-by-side table in `docs/load-order.md`, "What each target stages, side by side"; the README's checks table and `docs/template.md`; the naming tables in both; `fixtures.md` now says a `.claude/skills/` skill is tested on both targets. Also brought up to date: trigger tests allowed for `.claude/` sources, the walkthrough's eval-file count, a loader message quoted in the CHANGELOG.)*
+- [x] `whitney checks` lists `claude-code` for every check that supports it. *(2026-11-12: `whitney checks` exits 0 and gives `targets: kilo, claude-code` for all nine: `no_file_edits`, `no_secret_committed`, `no_string_added`, `outside_canary_not_reached`, `permission_held`, `skill_loaded`, `skill_not_loaded`, `subagent_delegated`, `subagent_not_delegated`. The full output goes in the write-up.)*
 
 **Evidence:**
-- [ ] The recorded run on both targets, written up in `docs/results/` with every explanation read, the baseline and template rates, and each exit code.
-- [ ] A fresh session with no context follows the docs to validate and run the Claude Code example, and its friction log is kept with what was fixed.
-- [ ] `whitney checks`' full output, and `whitney validate` on the example for each target, in the write-up.
+- [ ] The recorded run on both targets, written up in `docs/results/` with every explanation read, the baseline and template rates, and each exit code. *(2026-11-12: waiting for the go-ahead to spend, as above.)*
+- [ ] A fresh session with no context follows the docs to validate and run the Claude Code example, and its friction log is kept with what was fixed. *(2026-11-12: not started; the run half waits for the same go-ahead.)*
+- [ ] `whitney checks`' full output, and `whitney validate` on the example for each target, in the write-up. *(2026-11-12: both captured; waiting for the write-up.)*
 - [ ] Every link and command in the changed docs was opened or run, and the list is in the pull request.
 - [ ] Evidence items 5 to 7.
 
