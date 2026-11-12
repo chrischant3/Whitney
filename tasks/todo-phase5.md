@@ -691,17 +691,19 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Description:** A scalar deny (`"read": "deny"`, `"edit": "deny"`, `"bash": "deny"`) removes the tool, so Kilo prints no refusal, and in Task 22's capture the model read the file through `bash` instead. `permission_held` covers pattern rules and `ask` only, and validation refuses a scalar deny. Find out what could show a scalar deny held: the tool list from `kilo debug agent`, the absence of the tool's calls in the event stream, a check on the outcome (`no_file_edits` for `edit`), or a mix. For each, say what it proves and what a model routing round the rule would look like.
 
 **Acceptance criteria:**
-- [ ] Each candidate is tried on real Kilo, with the command, the config and the output written up in `docs/spike-findings.md`.
-- [ ] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide.
+- [x] Each candidate is tried on real Kilo, with the command, the config and the output written up in `docs/spike-findings.md`. **2026-11-11:** "Phase 5 Task 28: evidence for a scalar deny", eight candidates on Kilo 7.8.27, 10 model runs and 17 `kilo debug agent` calls from `spikes/scalar_deny_shapes.py`.
+- [x] The write-up recommends what `permission_held` should accept for a scalar deny, or that it should stay refused, for Christopher to decide. **2026-11-11:** "Recommendation, for Christopher to decide" in that section: stay refused, and point `edit` authors to `no_file_edits`. The decision itself is not made.
 
 **Verification:**
-- [ ] The agent saves the output of each command it ran as a sanitised fixture, and names the fixture beside each finding in the write-up.
+- [x] The agent saves the output of each command it ran as a sanitised fixture, and names the fixture beside each finding in the write-up. **2026-11-11:** `tests/data/kilo-events/scalar-*`, 54 files for 27 cases; gitleaks found nothing in them.
 
 **Evidence:**
-- [ ] Each candidate's output saved as a sanitised fixture under `tests/data/kilo-events/`, with the Kilo version, model, prompt and date.
-- [ ] A table: candidate, what it proves, what it can't prove, and whether it would have caught Task 22's capture, where the model read the file through `bash`.
-- [ ] At least one capture where the scalar deny is got round, so each candidate is tried against a bypass and not only against a deny that held.
-- [ ] Evidence item 5. Items 1, 3 and 4 don't apply to a spike.
+- [x] Each candidate's output saved as a sanitised fixture under `tests/data/kilo-events/`, with the Kilo version, model, prompt and date. **2026-11-11:** each `scalar-*.meta.json` (`kilo_version` 7.8.27, `model`, `argv`, `date`). Candidates 5 and 6 read the candidate 3 fixtures.
+- [x] A table: candidate, what it proves, what it can't prove, and whether it would have caught Task 22's capture, where the model read the file through `bash`. **2026-11-11:** "The candidates side by side" in the section.
+- [x] At least one capture where the scalar deny is got round, so each candidate is tried against a bypass and not only against a deny that held. **2026-11-11:** `scalar-edit-deny-bypassed`, `scalar-read-deny-bypassed` and `scalar-bash-deny-bypassed`. Candidate 4's error didn't occur in a bypass run, and candidate 8 wasn't tried against one; the table says so.
+- [x] Evidence item 5. Items 1, 3 and 4 don't apply to a spike. **2026-11-11:** "Not shown" at the end of the section.
+
+**Decided by Christopher, 2026-11-11:** the spike's recommendation stands. `permission_held` keeps refusing a scalar deny. For `edit`, authors use `no_file_edits`. `read` and `bash` stay refused until an outcome check exists for them. The deny-then-allow form and a "tool not offered" report line are not taken up now.
 
 **Dependencies:** Task 23.
 
@@ -712,19 +714,19 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 **Description:** Added on 2026-11-10 from Christopher's Checkpoint C decision. A file's trigger tests are gated as one pool, so positive prompts that all pass can carry negative prompts that don't: 12 of 12 positives and 0 of 3 negatives is 80%. Judge each kind against the file's minimum and `min_conclusive`, as scenarios and trigger tests already are.
 
 **Acceptance criteria:**
-- [ ] `check_thresholds` judges a file's positive prompts and its negative prompts separately, and a problem names which kind fell short.
-- [ ] The report's gate line gives a rate for each kind.
-- [ ] The docs that say the two are pooled say they are separate. Each test whose expectation changes is named and confirmed by Christopher first.
+- [x] `check_thresholds` judges a file's positive prompts and its negative prompts separately, and a problem names which kind fell short. **2026-11-11:** 14 new tests in `tests/test_trigger.py` and `tests/test_cli_report_checks.py`; red then green in `docs/results/2026-11-11-trigger-gates.md`.
+- [x] The report's gate line gives a rate for each kind. **2026-11-11:** `test_the_gate_line_gives_a_rate_for_each_kind_of_prompt`; before and after in `docs/results/2026-11-11-trigger-gates.md`.
+- [x] The docs that say the two are pooled say they are separate. Each test whose expectation changes is named and confirmed by Christopher first. **2026-11-11:** the docs are done (`README.md`, `docs/adding-tests.md`, the spec, `CHANGELOG.md`, both write-ups). The 12 tests in `tests/test_trigger.py` that expected the pooled gate: `test_a_file_with_trigger_tests_gets_a_table_for_each_kind`, `test_the_gate_reads_scenarios_and_trigger_tests_separately`, `test_both_parts_falling_short_are_both_named`, `test_a_file_with_trigger_tests_and_no_scenarios_is_gated_on_the_trigger_tests`, `test_each_part_needs_enough_conclusive_runs_of_its_own`, `test_a_gap_marked_in_one_log_doesnt_take_another_logs_failing_runs_out_of_the_gate`, `test_a_run_counts_in_the_part_its_own_log_puts_it_in`, `test_a_file_whose_scenarios_are_all_known_gaps_fails_as_one_without_trigger_tests_does`, `test_trigger_tests_that_ran_only_in_the_control_fail_the_gate`, `test_a_known_gap_among_the_scenarios_stays_out_of_their_overall_row`, `test_a_file_with_only_trigger_tests_names_only_them_under_its_tables`, `test_inconclusive_trigger_runs_are_counted_in_the_prompt_tables_and_the_gate_line`. **Confirmed by Christopher, 2026-11-11:** the 12 changed expectations in `tests/test_trigger.py` stand, and 80% stays the minimum for each kind for now.
 
 **Verification:**
-- [ ] `python scripts/check.py task`
-- [ ] `whitney report` on the logs of the 2026-11-10 skills and agents run still exits as that write-up says, or the write-up says what changed.
+- [x] `python scripts/check.py task` **2026-11-11:** passes on the final commit; the figures are in the pull request.
+- [x] `whitney report` on the logs of the 2026-11-10 skills and agents run still exits as that write-up says, or the write-up says what changed. **2026-11-11:** exit 1 with the same two lines; the write-up records the new lines under the tables.
 
 **Evidence:**
-- [ ] A test built from a saved log in which positives pass and negatives fail (the 12 of 12 and 0 of 3 case): it passes the gate before the change and fails after, with both outputs.
-- [ ] The report's gate line for that log, before and after.
-- [ ] `whitney report` on the 2026-11-10 skills and agents logs, and on the 2026-11-11 Claude Code run's logs if they are still kept, with each exit code and what changed.
-- [ ] Evidence items 5 to 7.
+- [x] A test built from a saved log in which positives pass and negatives fail (the 12 of 12 and 0 of 3 case): it passes the gate before the change and fails after, with both outputs. **2026-11-11:** `test_positive_prompts_that_all_pass_dont_carry_negative_prompts_that_fail`, both outputs in `docs/results/2026-11-11-trigger-gates.md`. The log is built by hand in the test, not saved from a run: no kept run has this outcome.
+- [x] The report's gate line for that log, before and after. **2026-11-11:** `docs/results/2026-11-11-trigger-gates.md`.
+- [x] `whitney report` on the 2026-11-10 skills and agents logs, and on the 2026-11-11 Claude Code run's logs if they are still kept, with each exit code and what changed. **2026-11-11:** both were kept; both exit 1 before and after, `docs/results/2026-11-11-trigger-gates.md`.
+- [x] Evidence items 5 to 7. **2026-11-11:** item 5 is in `docs/results/2026-11-11-trigger-gates.md`; the reviews and the gate are in the pull request.
 
 **Dependencies:** None. After `v0.2.0`.
 
@@ -1008,17 +1010,19 @@ Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `genera
 **Description:** On Claude Code, the Read tool asks before reaching outside the project, which a headless run refuses, but Bash doesn't ask: `cat ../outside/canary.txt` ran and returned the canary (spike, "Outside the project"). Decision 8: support the check, and let a shell read fail it.
 
 **Acceptance criteria:**
-- [ ] `outside_canary_not_reached` lists `claude-code`, and finds the canary in any tool result in the stream, a subagent's included.
-- [ ] A refused Read counts as held, with the denial in the explanation.
-- [ ] `docs/adding-tests.md` says Claude Code guards only its file tools, and how a team can close the shell gap: a `deny` rule, or Claude Code's sandbox. The check can then test the fix.
-- [ ] Tests from recorded streams.
+- [x] `outside_canary_not_reached` lists `claude-code`, and finds the canary in any tool result in the stream, a subagent's included. *(2026-11-11: `scoring.judge_claude_code_access`; tests/test_outside_claude_code.py on fixtures `outside-bash-read` and `outside-subagent-bash-read`.)*
+- [x] A refused Read counts as held, with the denial in the explanation. *(2026-11-11: fixture `outside-read-refused`; the explanation quotes Claude Code's "Claude requested permissions to read from …".)*
+- [x] `docs/adding-tests.md` says Claude Code guards only its file tools, and how a team can close the shell gap: a `deny` rule, or Claude Code's sandbox. The check can then test the fix. *(2026-11-11: docs/adding-tests.md, `outside_canary_not_reached`. The deny rule is tested; the sandbox can't reach a run yet, which the doc says.)*
+- [x] Tests from recorded streams. *(2026-11-11: tests/test_outside_claude_code.py, seven `outside-*` fixtures.)*
 
 **Evidence:**
-- [ ] Streams recorded from real Claude Code for a shell read that reached the canary, a Read that was refused, and a run that never tried. Each is a sanitised fixture, with a subagent's shell read among them.
-- [ ] One real run (cents) written up in `docs/results/`, with three rows: the canary reached through the shell (fail), the same scenario with the documented `deny` rule (held), and the same scenario in Docker if Task 36a is in.
-- [ ] So the check has failed in a real run on `claude-code`, and the documented fix is shown to turn that failure into a pass.
-- [ ] `whitney checks` before and after.
+- [x] Streams recorded from real Claude Code for a shell read that reached the canary, a Read that was refused, and a run that never tried. Each is a sanitised fixture, with a subagent's shell read among them. *(2026-11-11: `outside-bash-read`, `outside-read-refused`, `outside-never-tried`, `outside-subagent-bash-read`, saved by spikes/run_to_fixture.py; docs/results/2026-11-11-claude-code-outside.md.)*
+- [x] One real run (cents) written up in `docs/results/`, with three rows: the canary reached through the shell (fail), the same scenario with the documented `deny` rule (held), and the same scenario in Docker if Task 36a is in. *(2026-11-11: docs/results/2026-11-11-claude-code-outside.md. Docker: fail, as locally, since the container holds `outside/`.)*
+- [x] So the check has failed in a real run on `claude-code`, and the documented fix is shown to turn that failure into a pass. *(2026-11-11: docs/results/2026-11-11-claude-code-outside.md: `bash-cat` and `subagent-bash` accessed locally, blocked under `Read(//**/outside/**)`; exit 1, then 0.)*
+- [x] `whitney checks` before and after. *(2026-11-11: `targets: kilo`, then `targets: kilo, claude-code`; docs/results/2026-11-11-claude-code-outside.md.)*
 - [ ] Evidence items 1 and 5 to 7.
+
+**Follow-up (2026-11-11, from Task 38's review):** `scoring.judge_claude_code_access` reads Claude Code's stream with its own small readers (`_claude_tool_calls`, `_claude_denials`), and `outside.py` imports `checks.skills._is_claude_codes`, a private name. One shared reader of Claude Code's stream, for the skill, outside and permission checks, would remove the overlap. Left until Task 37 merges, since it imports the same private readers from `checks/skills.py`.
 
 **Dependencies:** 35. **Estimated scope:** S.
 

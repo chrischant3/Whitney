@@ -1,0 +1,61 @@
+{
+  "case": "scalar-edit-deny-logs",
+  "about": "edit \"deny\" in the project, with Kilo's debug log on stderr",
+  "date": "2026-11-11",
+  "kilo_version": "7.8.27",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "argv": [
+    "kilo",
+    "run",
+    "--pure",
+    "--format",
+    "json",
+    "-m",
+    "kilo/anthropic/claude-haiku-4.5",
+    "--print-logs",
+    "--log-level",
+    "DEBUG",
+    "--",
+    "Reply with exactly the word OK."
+  ],
+  "overlay_permission": {
+    "bash": "allow",
+    "edit": "allow"
+  },
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    "kilo.jsonc": "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"permission\": {\n    \"edit\": \"deny\"\n  }\n}\n"
+  },
+  "home_files": {},
+  "exit_code": 0,
+  "stderr": "timestamp=2026-11-11T21:47:55.269Z level=INFO run=e9b67a0b message=loading path=/tmp/kilo-eval-home-XXXXXXXX/.config/kilo/config.json\ntimestamp=2026-11-11T21:47:55.280Z level=INFO run=e9b67a0b message=loading path=/tmp/kilo-eval-home-XXXXXXXX/.config/kilo/kilo.json\ntimestamp=2026-11-11T21:47:55.284Z level=INFO run=e9b67a0b message=loading path=/tmp/kilo-eval-home-XXXXXXXX/.config/kilo/kilo.jsonc\ntimestamp=2026-11-11T21:47:55.304Z level=INFO run=e9b67a0b message=loading path=/tmp/kilo-eval-home-XXXXXXXX/.config/kilo/opencode.json\ntimestamp=2026-11-11T21:47:55.310Z level=INFO run=e9b67a0b message=loading path=/tmp/kilo-eval-home-XXXXXXXX/.config/kilo/opencode.jsonc\ntelemetry alias marker read failed; retrying link ENOENT: no such file or directory, open '/tmp/kilo-eval-home-XXXXXXXX/.local/share/kilo/telemetry-alias-ID-PLACEHOLDER'\n    path: \"/tmp/kilo-eval-home-XXXXXXXX/.local/share/kilo/telemetry-alias-ID-PLACEHOLDER\",\n syscall: \"open\",\n   errno: -2,\n    code: \"ENOENT\"\n\n      at f (/$bunfs/root/kilo:597:5738)\n      at d (/$bunfs/root/kilo:597:8391)\n      at async s (/$bunfs/root/kilo:9773:4814)\n      at async <anonymous> (/$bunfs/root/kilo:9773:6223)\n\nINFO  2026-11-11T21:47:55 +1952ms service=default version=7.8.27 command=run process_role=main run_id=ID-PLACEHOLDER opencode\ntimestamp=2026-11-11T21:47:55.686Z level=INFO run=e9b67a0b message=\"creating instance\" directory=/tmp/kilo-eval-XXXXXXXX/project\ntimestamp=2026-11-11T21:47:55.687Z level=INFO run=e9b67a0b message=fromDirectory directory=/tmp/kilo-eval-XXXXXXXX/project\ntimestamp=2026-11-11T21:47:55.966Z level=DEBUG run=e9b67a0b message=bootstrapping directory=/tmp/kilo-eval-XXXXXXXX/project\ntimestamp=2026-11-11T21:47:55.992Z level=INFO run=e9b67a0b message=loading path=/tmp/tmpcmytla9i.json\ntimestamp=2026-11-11T21:47:56.009Z level=DEBUG run=e9b67a0b message=\"loaded custom config\" path=/tmp/tmpcmytla9i.json\ntimestamp=2026-11-11T21:47:56.011Z level=INFO run=e9b67a0b message=loading path=/tmp/kilo-eval-XXXXXXXX/project/kilo.jsonc\nINFO  2026-11-11T21:47:56 +716ms service=bus type=session.turn.open subscribing\nINFO  2026-11-11T21:47:56 +4ms service=bus type=session.turn.close subscribing\nINFO  2026-11-11T21:47:56 +0ms service=bus type=memory.status subscribing\nINFO  2026-11-11T21:47:56 +1ms service=bus type=memory.updated subscribing\ntimestamp=2026-11-11T21:47:56.418Z level=INFO run=e9b67a0b message=\"running migration\" index=0\ntimestamp=2026-11-11T21:47:56.432Z level=INFO run=e9b67a0b message=\"running migration\" index=1\ntimestamp=2026-11-11T21:47:56.666Z level=INFO run=e9b67a0b message=\"all LSPs are disabled\"\ntimestamp=2026-11-11T21:47:56.666Z level=INFO run=e9b67a0b message=\"all formatters are disabled\"\ntimestamp=2026-11-11T21:47:56.667Z level=INFO run=e9b67a0b message=init\ntimestamp=2026-11-11T21:47:56.935Z level=INFO run=e9b67a0b message=created id=ses_e336b0978ffevW4fOtpy2ohioc slug=gentle-moon version=7.8.27 projectID=8aa8b51bd43f9b7380b53a71381b150d1d6e79ae directory=/tmp/kilo-eval-XXXXXXXX/project path=\"\" workspaceID=undefined parentID=undefined title=\"New session - 2026-11-11T21:47:56.935Z\" agent=undefined model=undefined metadata=undefined permission=\"[{\\\"permission\\\":\\\"question\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"suggest\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_enter\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"},{\\\"permission\\\":\\\"plan_exit\\\",\\\"pattern\\\":\\\"*\\\",\\\"action\\\":\\\"deny\\\"}]\" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1794433676935 time.updated=1794433676935\ntimestamp=2026-11-11T21:48:10.345Z level=INFO run=e9b67a0b message=\"event connected\"\nINFO  2026-11-11T21:48:12 +15753ms service=kilo-sessions sessionId=ses_e336b0978ffevW4fOtpy2ohioc creating session\nINFO  2026-11-11T21:48:12 +331ms service=kilocode-indexing workspacePath=/tmp/kilo-eval-XXXXXXXX/project initializing project indexing\nINFO  2026-11-11T21:48:12 +303ms service=bus type=indexing.status publishing\nINFO  2026-11-11T21:48:12 +4ms service=bus type=indexing.status publishing\ntimestamp=2026-11-11T21:48:14.055Z level=INFO run=e9b67a0b message=\"watcher backend\" directory=/tmp/kilo-eval-XXXXXXXX/project platform=darwin backend=fs-events\ntimestamp=2026-11-11T21:48:14.072Z level=INFO run=e9b67a0b message=\"project copy refresh started\" projectID=8aa8b51bd43f9b7380b53a71381b150d1d6e79ae\nINFO  2026-11-11T21:48:14 +1389ms service=kilo-sessions sessionId=ses_e336b0978ffevW4fOtpy2ohioc session bootstrap completed\nINFO  2026-11-11T21:48:14 +1ms service=kilo-sessions sessionId=ses_e336b0978ffevW4fOtpy2ohioc full sync\ntimestamp=2026-11-11T21:48:16.263Z level=INFO run=e9b67a0b message=\"project copy refresh done\" projectID=8aa8b51bd43f9b7380b53a71381b150d1d6e79ae updated=[] removed=[]\ntimestamp=2026-11-11T21:48:16.303Z level=INFO run=e9b67a0b message=\"booting location services\" directory=/tmp/kilo-eval-XXXXXXXX/project workspaceID=undefined\nINFO  2026-11-11T21:48:16 +2567ms service=bus type=session.turn.open publishing\ntimestamp=2026-11-11T21:48:16.821Z level=INFO run=e9b67a0b message=loop session.id=ses_e336b0978ffevW4fOtpy2ohioc step=0\nDEBUG 2026-11-11T21:48:16 +114ms service=model-cache providerID=kilo hasToken=true hasOrganizationId=false auth options resolved\nINFO  2026-11-11T21:48:16 +0ms service=model-cache providerID=kilo fetching models\nINFO  2026-11-11T21:48:17 +639ms service=model-cache providerID=kilo count=321 models fetched and cached\nDEBUG 2026-11-11T21:48:17 +6ms service=model-cache providerID=apertis hasKey=false hasBaseURL=false apertis auth options resolved\nINFO  2026-11-11T21:48:17 +0ms service=model-cache providerID=apertis fetching models\nDEBUG 2026-11-11T21:48:17 +1ms service=model-cache no API key for apertis, skipping model fetch\nINFO  2026-11-11T21:48:17 +0ms service=model-cache providerID=apertis count=0 models fetched and cached\nDEBUG 2026-11-11T21:48:18 +1206ms service=model-cache providerID=apertis hasKey=false hasBaseURL=false apertis auth options resolved\nINFO  2026-11-11T21:48:18 +0ms service=model-cache providerID=apertis refreshing models\nDEBUG 2026-11-11T21:48:18 +1ms service=model-cache no API key for apertis, skipping model fetch\nINFO  2026-11-11T21:48:18 +0ms service=model-cache providerID=apertis count=0 models fetched and cached\nINFO  2026-11-11T21:48:20 +1390ms service=snapshot.seed paths=3 dropped=0 ignored=0 large=0 trusted=true shared=true reset=0 duration=1021 snapshot seed complete\ntimestamp=2026-11-11T21:48:20.109Z level=INFO run=e9b67a0b message=initialized\ntimestamp=2026-11-11T21:48:20.495Z level=INFO run=e9b67a0b message=tracking hash=4783d9a8437d4636dca5e32571c2a064438d8624 cwd=/tmp/kilo-eval-XXXXXXXX/project git=/tmp/kilo-eval-home-XXXXXXXX/.local/share/kilo/snapshot/8aa8b51bd43f9b7380b53a71381b150d1d6e79ae/f1a9002e6c8fbfa48c130fc7c295b57562e3afdb\ntimestamp=2026-11-11T21:48:20.981Z level=INFO run=e9b67a0b message=\"shell tool using shell\" shell=/bin/zsh\ntimestamp=2026-11-11T21:48:21.338Z level=INFO run=e9b67a0b message=init count=1\ntimestamp=2026-11-11T21:48:21.615Z level=INFO run=e9b67a0b message=process session.id=ses_e336b0978ffevW4fOtpy2ohioc messageID=msg_1cc954bed001aPFHOTKVrWIKJw\ntimestamp=2026-11-11T21:48:21.723Z level=INFO run=e9b67a0b message=stream providerID=kilo modelID=anthropic/claude-haiku-4.5 session.id=ses_e336b0978ffevW4fOtpy2ohioc small=false agent=code mode=primary\ntimestamp=2026-11-11T21:48:22.041Z level=INFO run=e9b67a0b message=\"llm runtime selected\" llm.runtime=ai-sdk llm.provider=kilo llm.model=anthropic/claude-haiku-4.5\ntimestamp=2026-11-11T21:48:23.786Z level=INFO run=e9b67a0b message=tracking hash=4783d9a8437d4636dca5e32571c2a064438d8624 cwd=/tmp/kilo-eval-XXXXXXXX/project git=/tmp/kilo-eval-home-XXXXXXXX/.local/share/kilo/snapshot/8aa8b51bd43f9b7380b53a71381b150d1d6e79ae/f1a9002e6c8fbfa48c130fc7c295b57562e3afdb\ntimestamp=2026-11-11T21:48:24.612Z level=INFO run=e9b67a0b message=loop session.id=ses_e336b0978ffevW4fOtpy2ohioc step=1\ntimestamp=2026-11-11T21:48:24.651Z level=INFO run=e9b67a0b message=\"exiting loop\" session.id=ses_e336b0978ffevW4fOtpy2ohioc\nINFO  2026-11-11T21:48:24 +4619ms service=bus type=session.turn.close publishing\ntimestamp=2026-11-11T21:48:25.001Z level=INFO run=e9b67a0b message=\"disposing instance\" directory=/tmp/kilo-eval-XXXXXXXX/project\ntimestamp=2026-11-11T21:48:25.771Z level=INFO run=e9b67a0b message=loading path=/tmp/tmpcmytla9i.json\ntimestamp=2026-11-11T21:48:25.799Z level=DEBUG run=e9b67a0b message=\"loaded custom config\" path=/tmp/tmpcmytla9i.json\ntimestamp=2026-11-11T21:48:25.804Z level=INFO run=e9b67a0b message=loading path=/tmp/kilo-eval-XXXXXXXX/project/kilo.jsonc\ntimestamp=2026-11-11T21:48:26.057Z level=INFO run=e9b67a0b message=\"disposing all instances\"\n",
+  "git_status_after": "",
+  "git_diff_after": "",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "project folder": "/tmp/kilo-eval-XXXXXXXX/project",
+    "temporary HOME": "/tmp/kilo-eval-home-XXXXXXXX",
+    "other temporary paths": "/tmp/",
+    "Kilo login values": "[redacted]",
+    "user's home folder": "/home/user",
+    "user name": "user",
+    "email addresses other than the git identity": "user@example.invalid",
+    "gateway request id (step_finish vercelID)": "REQUEST-ID-PLACEHOLDER",
+    "ids in Kilo's debug log (telemetry alias, run_id)": "ID-PLACEHOLDER"
+  },
+  "new_files_after": {}
+}
