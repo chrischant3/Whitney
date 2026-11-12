@@ -441,6 +441,27 @@ def test_validate_is_silent_when_a_declared_variant_removes_every_copy(project):
     assert copy_warnings(project) == []
 
 
+@pytest.mark.parametrize("wider", [".claude/skills/", ".claude/"])
+def test_a_copy_removed_through_a_folder_above_it_isnt_left_staged(project, wider):
+    add_copies(project)
+    removes = [".kilo/skills/release-notes/", wider]
+    write(project, eval_file(variants={"no_skill": {"role": "baseline", "remove": removes}}))
+
+    assert copy_warnings(project) == [("variants.no_skill.remove", (
+        "removes '.kilo/skills/release-notes/', but Kilo also reads the same skill from "
+        "'.agents/skills/release-notes/', left staged, so the skill can load in this variant too; "
+        "add each to its remove if the skill is meant to be gone"
+    ))]
+
+
+def test_a_copy_with_one_file_still_staged_is_left_staged(project):
+    add_copies(project)
+    removes = [".kilo/skills/release-notes/", ".agents/skills/release-notes/", ".claude/skills/release-notes/references/"]
+    write(project, eval_file(variants={"no_skill": {"role": "baseline", "remove": removes}}))
+
+    assert [message.split("from ")[1].split(",")[0] for _, message in copy_warnings(project)] == ["'.claude/skills/release-notes/'"]
+
+
 def test_validate_is_silent_with_no_copy_or_for_the_variants_whitney_adds(project):
     write(project, eval_file(variants={"baseline": {"role": "baseline", "remove": [".kilo/skills/release-notes/"]}}))
     assert copy_warnings(project) == []

@@ -394,8 +394,9 @@ def for_kilo_skill_copies(variant: Variant, files: Mapping[str, str], source: st
     frontmatter `name` matched their folder, so a copy in a differently named
     folder whose `name` matches is not removed.
 
-    Only staged copies the variant doesn't already remove are added, right
-    after the source's folder, since apply_variant refuses a remove of a path
+    Only copies with a staged file the variant doesn't already remove, by
+    their own entry or by one for a folder above, are added, right after the
+    source's folder, since apply_variant refuses a remove of a path
     that isn't staged. The source's own entry is kept, staged or not, for
     apply_variant to report.
 
@@ -413,7 +414,8 @@ def for_kilo_skill_copies(variant: Variant, files: Mapping[str, str], source: st
         return variant
     _, name = under_test(source)
     copies = [f"{folder}/{name}/" for folder in KILO_SKILL_FOLDERS]
-    left_in = [copy for copy in copies if copy not in variant.remove and staged_matches(files, copy)]
+    removed = {path for entry in variant.remove for path in staged_matches(files, entry)}
+    left_in = [copy for copy in copies if set(staged_matches(files, copy)) - removed]
     if not left_in:
         return variant
     after = variant.remove.index(own_folder) + 1

@@ -213,7 +213,7 @@ On `claude-code`, which reads only `.claude/skills/`, the same control removed t
 
 ### The Kilo trigger control, re-run after the fix
 
-2026-11-12, at commit `4d40904`, with Christopher's go-ahead: `skills/release-notes.json` alone, Haiku, one epoch, 10 agent runs. The cost wasn't recorded: Kilo's figures weren't read.
+2026-11-12, at commit `4d40904` (later commits changed only the validate warning and how copies a variant already removes are counted, not what this file's control removes), with Christopher's go-ahead: `skills/release-notes.json` alone, Haiku, one epoch, 10 agent runs. The cost wasn't recorded: Kilo's figures weren't read.
 
 ```bash
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer \
