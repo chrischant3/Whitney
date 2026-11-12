@@ -429,10 +429,13 @@ def test_docker_mode_hands_inspect_the_model_and_checks_no_host_harness(consumer
 
 
 def test_a_file_that_does_not_apply_to_the_target_is_listed_as_not_run(consumer, recorded, monkeypatch):
+    from conftest import with_a_kilo_only_check
+
+    with_a_kilo_only_check(monkeypatch)
     _write(consumer.evals, {
         "configuration/kilo-only.json": _eval_file(source="kilo.jsonc", targets=["kilo"]),
         "outside.json": _eval_file(source="CLAUDE.md", defaults={
-            "fixture": "repo", "expect": [{"check": "outside_canary_not_reached", "canary": "CANARY-OUTSIDE-team"}],
+            "fixture": "repo", "expect": [{"check": "kilo_only"}],
         }),
     })
     args = _for_claude_code(_run_args(consumer))
@@ -444,7 +447,7 @@ def test_a_file_that_does_not_apply_to_the_target_is_listed_as_not_run(consumer,
     assert (
         "\n## Not run for this target\n\n"
         "- `configuration/kilo-only.json`: it applies to kilo\n"
-        "- `outside.json`: its check outside_canary_not_reached doesn't support it\n"
+        "- `outside.json`: its check kilo_only doesn't support it\n"
     ) in _report(consumer)
 
 

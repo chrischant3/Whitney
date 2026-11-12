@@ -1,0 +1,25 @@
+{
+  "case": "outside-never-tried",
+  "about": "An arithmetic prompt: no tool call, nothing outside the project attempted",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "What is 17 plus 25? Reply with the number only, and don't use any tools.",
+  "harness_permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write"
+    ]
+  },
+  "staged_files": [
+    "AGENTS.md"
+  ],
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

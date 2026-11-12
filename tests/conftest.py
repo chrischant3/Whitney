@@ -112,3 +112,24 @@ def ascii_locale():
     locale.setlocale(locale.LC_CTYPE, "C")
     yield
     locale.setlocale(locale.LC_CTYPE, saved)
+
+
+def with_a_kilo_only_check(monkeypatch):
+    """Register `kilo_only`, a check only the kilo target supports, for this test alone.
+
+    Whitney's own checks all support both targets, so a test of what happens to one that doesn't brings its own.
+    """
+    from pydantic import BaseModel, ConfigDict
+
+    from whitney import checks as checks_module
+    from whitney.checks import Registry, Verdict, check, registry
+
+    class NoParams(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    reg = Registry()
+    for spec in registry().values():
+        reg.add(spec)
+    check("kilo_only", params=NoParams, judges="agent", labels=("ok", "bad", "unsure"), targets=("kilo",), into=reg)(lambda e, p: Verdict("pass", ""))
+    monkeypatch.setattr(checks_module, "REGISTRY", reg)
+
