@@ -13,6 +13,8 @@ A project with its own rules, and the evals that test them, laid out as a team u
 - `.claude/settings.json`: the same rule for Claude Code, `"deny": ["Bash(git push:*)"]`. It is a real settings file: a Claude Code session started in this folder is refused `git push` too. Tested by `evals/claude-settings.json` with the `permission_held` check, on `claude-code` alone. Its control variant, `push_allowed`, empties the `deny` list, and there the push must go through. It doesn't add an `allow` rule, because Claude Code ignores a project's `allow` rules in an eval run ([results](../../docs/results/2026-11-12-claude-code-permissions.md)). Whitney copies only this file's `permissions` block.
 - `evals/`: the eval files and their fixtures. Whitney never stages this folder, so the agent under test can't read the evals.
 
+Why a second file for `CLAUDE.md`: `agents-md.json` stays the eval for the project's instructions on both targets. But on Kilo the data-handling rules live in `.kilo/rules/data-handling.md`, and the eval file for that source can't run on `claude-code`, which doesn't copy `.kilo/`. On Claude Code the same rules are in `CLAUDE.md`, so they need an eval file whose source Claude Code does copy. That is `claude-md.json`, for `claude-code` alone.
+
 Which eval file runs on which target, and the file it tests there:
 
 | Eval file | Tests | `kilo` | `claude-code` |

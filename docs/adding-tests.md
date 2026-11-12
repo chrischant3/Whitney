@@ -182,7 +182,7 @@ Name the file after the file it tests. This is a convention; `whitney validate` 
 
 | File under test | Eval file |
 |---|---|
-| `AGENTS.md`, or another Markdown file at the project root, such as `CLAUDE.md` | `agents-md.json` (`<name>-md.json`, so `claude-md.json`) |
+| `AGENTS.md`, or another Markdown file at the project root, such as `CLAUDE.md` | `agents-md.json` (`<name>-md.json`, so `claude-md.json`). One file, `agents-md.json`, covers the project's instructions on both targets. Add `claude-md.json` only for rules that Kilo gets from a file Claude Code doesn't read, such as `.kilo/rules/`, and that you repeat in `CLAUDE.md`, as [`examples/consumer`](../examples/consumer/) does |
 | `kilo.jsonc` or `.kilo/kilo.jsonc` | `configuration/kilo-jsonc.json` (the example project keeps its one at `evals/kilo-jsonc.json`; the folder is a convention, not a rule) |
 | `.kilo/rules/<name>.md` | `rules/<name>-md.json` |
 | `.claude/settings.json` | `configuration/claude-settings.json` (the example keeps its one at `evals/claude-settings.json`) |

@@ -866,7 +866,7 @@ Whitney does the opposite today. It stages one file, always as `AGENTS.md`, pref
 - [x] The safety rules stay: a symlink, or a file resolving outside the project, is skipped and named. A skipped `CLAUDE.md` doesn't make `AGENTS.md` load, because Claude Code would still see the `CLAUDE.md`.
 - [x] `check_no_inherited_instructions` refuses a run with a `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `AGENTS.md` or `.claude/AGENTS.md` in a folder above the staged project, since Claude Code reads every folder above.
 - [x] The default baseline removes every staged instruction file, so it's a run with no project instructions at all.
-- [x] Eval file naming: `agents-md.json` stays the eval for the project's instructions on both targets. Recommended: the report names which files were staged, rather than adding a `claude-md.json`. Christopher confirmed on 2026-11-11.
+- [x] Eval file naming: `agents-md.json` stays the eval for the project's instructions on both targets. Recommended: the report names which files were staged, rather than adding a `claude-md.json`. Christopher confirmed on 2026-11-11. *(2026-11-12, Task 39: the example adds a `claude-md.json` all the same, for its data-handling rules only. On Kilo they are in `.kilo/rules/`, whose eval file can't run on `claude-code`; `agents-md.json` is still the instructions eval on both targets. Christopher agreed on 2026-11-12.)*
 - [x] Decision 5 in `plan-phase5.md` is marked as replaced, and `docs/load-order.md` and the comment above `CLAUDE_CODE_DIR` in `project_files.py` say the new order.
 - [x] One real run per case (cents, Haiku) confirms Claude Code reads what was staged: `CLAUDE.md` and `.claude/CLAUDE.md` together, and `.claude/AGENTS.md` alone.
 
