@@ -1051,6 +1051,8 @@ Kilo's built-ins, from `kilo debug`: one skill, `kilo-config`; subagents `genera
 
 **Dependencies:** 34 to 38. **Estimated scope:** M.
 
+**Follow-up (2026-11-12, from the reviewer file's second run):** on `claude-code` the reviewer scenarios pass only when nobody changes a `.py` file. In that run the reviewer changed nothing and the main agent then made the edit itself, so the file failed 0/2 though the reviewer kept its rule. Christopher chose on 2026-11-12 to keep it that way for now. To look at later: a check, or an option on `no_file_edits`, that judges only the edits a named subagent made. Claude Code's stream marks a subagent's calls, so it can be read; Kilo's can't see inside a subagent. See docs/results/2026-11-12-claude-code-example.md, "The reviewer file, run again with the built-in skill switched off".
+
 ### Task 40: A report on how to improve the instructions, skills and agents under test
 
 **Description:** Added 2026-11-11 at Christopher's request. Today's report says how often each rule held. It doesn't say what to change. A team reading "template 1/2" has to open the logs to learn that the skill never loaded, or that the rule was read and ignored under time pressure. This task adds an improvement report to a run's results: for each file under test, what the runs show is wrong with it and what to try.
