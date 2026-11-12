@@ -291,7 +291,8 @@ def test_a_claude_code_project_without_instructions_is_told_which_files_were_loo
     assert str(raised.value) == (
         "project has no Claude Code instructions to stage (CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md; "
         "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped), "
-        f"and no skills or agents (.claude/skills/, .claude/agents/): {tmp_path.resolve()}"
+        "no skills or agents (.claude/skills/, .claude/agents/), "
+        f"and no permissions in .claude/settings.json: {tmp_path.resolve()}"
     )
 
 
@@ -1013,11 +1014,12 @@ def test_a_staged_file_has_no_reason(unsafe_project):
         "personal and not committed; on its owner's machine it also stops Claude Code reading AGENTS.md"
     )),
     (["AGENTS.md", ".claude/settings.json"], ".claude/settings.json", (
-        "the claude-code loader stages only what Claude Code reads, and this file is left out: rest of .claude/"
+        "the claude-code loader stages only what Claude Code reads, and this file is left out: "
+        "isn't a JSON object, so its permissions can't be read"
     )),
     (["AGENTS.md", "notes.md"], "notes.md", (
         "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md, "
-        "and the files under .claude/skills/ and .claude/agents/"
+        "the files under .claude/skills/ and .claude/agents/, and the permissions block of .claude/settings.json"
     )),
 ])
 def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reason):
@@ -1632,7 +1634,7 @@ def test_a_file_outside_the_two_folders_is_told_what_the_claude_code_loader_stag
 
     assert not_staged_reason("claude-code", tmp_path, "docs/skills/x/SKILL.md", staged) == (
         "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md, "
-        "and the files under .claude/skills/ and .claude/agents/"
+        "the files under .claude/skills/ and .claude/agents/, and the permissions block of .claude/settings.json"
     )
     assert not_staged_reason("claude-code", tmp_path, ".claude/skills/x/SKILL.md", staged) == "the project has no such file"
 

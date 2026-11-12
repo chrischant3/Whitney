@@ -451,15 +451,16 @@ def test_either_field_is_refused_in_a_file_that_applies_to_claude_code(project, 
     ))]
 
 
-def test_a_file_whose_checks_keep_it_to_kilo_needs_no_targets(project):
+def test_a_file_that_uses_permission_held_needs_targets_to_name_an_agent(project):
+    """permission_held kept such a file to Kilo until Task 37; now the file would run on claude-code too."""
     data = eval_file({
         "id": "a", "prompt": "p", "agent": "reviewer",
         "expect": [{"check": "permission_held", "permission": "bash", "pattern": "git push *", "action": "deny", "forbidden_input": r"\bgit\s+push\b"}],
     }, variants={})
     del data["targets"]
-    write(project, data)
+    path = write(project, data)
 
-    assert validate_evals(project / "evals").problems == []
+    assert [(p.file, p.location) for p in validate_evals(project / "evals").problems] == [(path, "scenarios[0].agent")]
 
 
 def test_a_file_whose_checks_support_claude_code_needs_targets_to_name_an_agent(project):

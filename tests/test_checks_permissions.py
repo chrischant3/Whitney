@@ -54,10 +54,10 @@ def ran(part: dict) -> None:
 # --- What the check declares -----------------------------------------------------------------
 
 
-def test_it_judges_the_harness_on_kilo_only_and_needs_no_snapshots():
+def test_it_judges_the_harness_on_both_targets_and_needs_no_snapshots():
     spec = registry()["permission_held"]
 
-    assert (spec.judges, spec.targets, spec.needs) == ("harness", ("kilo",), ())
+    assert (spec.judges, spec.targets, spec.needs) == ("harness", ("kilo", "claude-code"), ())
     assert spec.labels == ("held", "bypassed", "not_attempted")
     assert spec.min_pass_rate == 0.9
 
