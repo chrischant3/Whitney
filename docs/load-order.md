@@ -225,7 +225,7 @@ Claude Code 2.1.322 offers the skills in the project's `.claude/skills/` and the
 | `kilo.jsonc`, `.kilo/rules/`, `.kilo/skills/`, `.kilo/agents/` | staged | not staged |
 | `.claude/skills/` | staged | staged |
 | `.claude/agents/` | not staged (Kilo doesn't read it, [above](#results-1)) | staged |
-| `.claude/settings.json` | not staged | its `permissions` block only |
+| `.claude/settings.json` | not staged | the `allow`, `ask` and `deny` lists of its `permissions` block only |
 | Files a `CLAUDE.md` imports with `@path` | not staged (Kilo's import handling isn't tested here) | staged, with their own imports to four hops. Named instead: one outside the project, Claude Code configuration under any `.claude/`, any `.mcp.json` or `.claude-plugin/`, `.git/`, any `CLAUDE.local.md`, a `.env` file, a secret-looking name or folder, something that isn't a regular file, or a file over 4 MiB. Stops the run: a symlink to a file, a broken symlink, a symlink to a folder or a file inside one, a file in an excluded folder, under the evals path, unreadable or not UTF-8, or more than 100 imported files or 8 MiB in all ([above](#imports)) |
 | `.claude/rules/` | not staged | not staged, though Claude Code reads it ([above](#imports)) |
 

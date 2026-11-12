@@ -47,7 +47,7 @@ Claude Code users can run `/release <version>`, which works through these steps 
   ```
 
   Save each report from `results/` under `docs/results/`. A `known_gap` scenario is reported, not gated, so check its finding is still open.
-- If a template or Kilo's version changed since the last release, run [the VS Code extension check](vscode-manual-check.md) again and add a row to its results.
+- If a template or Kilo's version changed since the last release, run [the VS Code extension check](vscode-manual-check.md) again and add a row to its results. For 0.3.0 it is due whatever changed: it was moved from 0.2.0 and has no row yet (`tasks/todo-phase5.md`, Task 30).
 
 ## 4. A new user can get started
 
@@ -70,7 +70,7 @@ Before a release with large changes, have a reviewer that didn't write them audi
 Sign the tag with your own key, as for approvals in CONSTRAINTS.md. Run this step in your own terminal: the Claude Code git workflow gate refuses every push from main, tags included.
 
 ```bash
-VERSION=0.2.0
+VERSION=0.3.0   # the next release (decided 2026-11-11)
 git tag -s "v$VERSION" -m "Whitney $VERSION"
 git push origin "v$VERSION"
 gh release create "v$VERSION" --verify-tag --title "Whitney $VERSION" --notes-file notes.md   # notes.md: the version's CHANGELOG section

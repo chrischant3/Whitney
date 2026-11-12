@@ -14,6 +14,7 @@ The spec in `docs/specs/` is an unchanged copy of `~/workspace/package-and-expec
 
 Read this first when resuming. Also read `AGENTS.md` and `CONSTRAINTS.md`.
 
+- **Status, 2026-11-12:** in `main` since the bullet below: Tasks 28, 29, 36a, 36b, 37, 38, 39 and 40 (PRs #46 to #49 and #51 to #54), the pre-1.0 versioning rule (PR #50), the Kilo skill-control fix (PR #55) and an IFEvalCode sandbox fix (PR #56). The next release is 0.3.0 (decision 9, below); CHANGELOG.md's "Unreleased" lists what it holds. Open: Task 26's `v0.2.0` install boxes and Checkpoint D's review; Task 27; Task 30's person's steps, and its parity finding; Tasks 31 and 33; Task 32, whose groundwork is now an external skill; evidence left in Tasks 37 to 40; and the Checkpoint E review. The questions waiting for Christopher are gathered in todo-phase5.md, "Open decisions for the maintainer". The bullets below are kept as a record.
 - **Status, 2026-11-11:** `v0.2.0` is tagged and released (2026-11-10). In `main`: Tasks 1 to 26 and Checkpoint C, and from Milestone E Tasks 34, 35 and 36 (PRs #40 to #44). Open on Task 26: the install from the tag, and a person's walkthrough. Not started: Tasks 27 to 32, 36a, 36b and 37 to 40; Task 33 has one box done. **Next:** 36b, then 36a, then 37. Each task not yet started now has an Evidence list (todo-phase5.md, "Evidence for every task not yet started"). The two bullets below marked 2026-11-10 are kept as a record.
 - **In `main` (2026-11-10):** Tasks 1 to 22 and 25, Checkpoints A and B, validation rule 8 (PR #25), the release checklist, and the push-controls guide. Tasks 17 to 21 and 25 came in as PR #26.
 - **Decided by Christopher on 2026-11-10 (Checkpoint B):**
@@ -105,9 +106,9 @@ Tasks run in order inside each milestone. Three lanes can run beside the main on
 | 27 | Raise `MIN_HELD` to 1.0, or decide not to (after `v0.2.0`) | after D | 23 | S | no |
 | 28 | Spike: evidence for a scalar deny (after `v0.2.0`) | after D | 23 | S | yes, cents |
 | 29 | Gate positive and negative trigger prompts separately (after `v0.2.0`) | after D | none | S | no |
-| 30 | The VS Code extension check (moved from `v0.2.0`) | after D | none | S | yes, cents |
+| 30 | The VS Code extension check (moved from `v0.2.0` to 0.3.0) | after D | none | S | yes, cents |
 | 31 | Record what was sent to the model, and the agent's reasoning (after `v0.2.0`) | after D | none | M | yes, cents |
-| 32 | An eval-driven development skill (after `v0.2.0`) | after D | `write-evals` | M | yes, dollars |
+| 32 | An eval-driven development skill (after `v0.2.0`; groundwork done outside Whitney, 2026-11-12) | after D | `write-evals`; the external skill's branch merged | S here | yes, dollars |
 | 33 | Fix and re-run the eval sets `write-evals` drafted | after D | none | S | yes, about a dollar an epoch |
 | 34 | Claude Code loader: follow Claude Code's documented order | E | none | M | yes, cents |
 | 35 | Claude Code: gather denials from every `result` event | E | none | XS | no |
@@ -179,7 +180,7 @@ Approved on 2026-11-06 with the recommendation for each. For decision 3, nobody 
 6. **What is the baseline for a scenario that names its agent (Task 20)?** Removing the agent file makes `kilo run --agent` fail, which would make every baseline run inconclusive. Recommended: the baseline runs the same prompt with Kilo's default agent. **Corrected 2026-11-06:** Task 16 showed the premise is wrong (Kilo falls back to its default agent and exits 0), so the outcome stands but the baseline drops `--agent`; see Task 20.
 8. **Claude Code at parity (milestone E), answered by Christopher on 2026-11-11.**
    - The loader follows the order in Claude Code's own documentation, not Whitney's earlier choice. This replaces decision 5 once Task 34 lands.
-   - From `.claude/settings.json`, only the `permissions` block is staged to begin with. Hooks stay out, and may be supported later if they would change an eval's result (Later list).
+   - From `.claude/settings.json`, only the `permissions` block is staged to begin with. Hooks stay out, and may be supported later if they would change an eval's result (Later list). *(Done 2026-11-12, Task 37: the `allow`, `ask` and `deny` lists of that block are staged, and every other key is named in the report as left out.)*
    - `outside_canary_not_reached` is supported on `claude-code`, and a shell command that reads outside the project fails it. That's a true finding about Claude Code, and the docs say how to close it.
 9. **Task 31, what was sent to the model, answered by Christopher on 2026-11-12** (tasks/todo-phase5.md, Task 31, "Decisions"):
    - A run never drops `--pure`; capture uses the logging proxy on both targets (Claude Code through `ANTHROPIC_BASE_URL`), not Kilo's plugin hooks or Claude Code's raw-body telemetry.
@@ -188,6 +189,14 @@ Approved on 2026-11-06 with the recommendation for each. For decision 3, nobody 
    - The Gateway proxy's base URL: settled by runs, the origin alone ([follow-up](../docs/results/2026-11-12-capture-followups.md#decision-6-the-gateway-base-url)).
    - `CLAUDE.md` imports: run, and fixed in the Task 31 branch; the `claude-code` loader stages imported files ([follow-up](../docs/results/2026-11-12-capture-followups.md#decision-7-claudemd-imports)). This adds to decision 8's first point: the loader follows Claude Code's documented imports as well as its order.
 7. **Real-model spend.** Tasks 14, 16, 21, 22 and 23 and Checkpoint A2 call a real model, and Task 1 can. Recommended: Haiku through your Kilo login, with `--limit` and `--epochs` kept small.
+9. **Decided by Christopher on 2026-11-11 and 2026-11-12** (recorded here 2026-11-12):
+   1. **Versioning (2026-11-11).** The next release is 0.3.0. Before 1.0.0 a breaking change bumps the minor part (`docs/release-checklist.md`, step 5; PR #50).
+   2. **Task 29 (2026-11-11).** 80% stays the minimum for positive and for negative trigger prompts, each on its own, for now. **Task 28:** the spike's recommendation stands: `permission_held` keeps refusing a scalar deny, and `edit` authors use `no_file_edits`.
+   3. **Claude Code at parity (2026-11-12).** Tasks 37 to 40 are merged (PRs #51 to #54). `permission_held` and `outside_canary_not_reached` support `claude-code`; the `allow`, `ask` and `deny` lists of `.claude/settings.json` are staged; `examples/consumer` is laid out for both harnesses, with its skills in `.kilo/skills/` (Kilo's own folder) and a copy in `.claude/skills/`, and a `claude-md.json` for its data-handling rules, which on Kilo are in `.kilo/rules/` ([docs/adding-tests.md](../docs/adding-tests.md#evaluating-a-local-project) says why).
+   4. **The improvement report (2026-11-12)** stays a section of the results report, on by default. Task 40's Evidence item 1 was reworded.
+   5. **Kilo's skill control (2026-11-12, PR #55).** On `kilo` the automatic trigger control and the default baseline remove every staged copy of a skill. Agents aren't covered; a spike on same-named agents is a recorded follow-up (todo-phase5.md, Task 39).
+   6. **The Claude Code reviewer eval (2026-11-12)** stays as it is: it passes only when nobody edits the file. A check that judges only a named subagent's edits is one for the future (follow-up under Task 39).
+   7. **Task 32 (2026-11-12).** Christopher has done the groundwork outside Whitney, as the `eval-driven-development` skill in his public skills repository, with a Whitney runner reference on an unmerged branch. Task 32 now covers what is left for Whitney (todo-phase5.md).
 
 Spec open questions that block a task here, so they need an answer before that task starts:
 
@@ -220,7 +229,7 @@ Not planned in detail:
   - **Which files the agent read**, such as "read CONSTRAINTS.md before writing code". This needs a check that a read of the named file came before the first edit. A read through `bash`, such as `cat`, counts too.
   - **What the agent's reply says**, such as "quote evidence for every finding" in an audit skill. No check reads the reply, so for a skill whose output is a report, the evals test only what it mustn't do and whether it loads. Model-graded checks, listed below, are one way in.
   - **Something the agent must do**, such as "colocate tests next to the source". Every check today watches for what mustn't happen. Turned round, "no test file in a separate folder" also passes a run that writes no test at all. A `file_added` check, which fails if no new file matches a pattern, would test it the right way round.
-- Claude Code skills and agents: its own capture of `--output-format stream-json`, and staging `.claude/skills/` and `.claude/agents/` without `.claude/settings.json`, whose hooks run commands.
+- ~~Claude Code skills and agents: its own capture of `--output-format stream-json`, and staging `.claude/skills/` and `.claude/agents/` without `.claude/settings.json`, whose hooks run commands.~~ Done in milestone E: Task 36 (2026-11-11) captured the stream and stages both folders; Task 37 (2026-11-12) stages the permission lists of `.claude/settings.json`, never its hooks.
 - `--junit` output; model-graded checks (spec open question 13); check plugins (spec open question 9).
 - The proposal's other future work: instruction hierarchy, `REVIEW.md`, hooks.
 - A fake `claude` for `tests/test_safe_staging.py::test_the_project_is_unchanged_after_a_run`, so the claude-code target's run is checked too, not only its staging (from the Task 8 review).
