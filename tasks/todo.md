@@ -154,7 +154,7 @@ Results: `docs/results/2026-11-02-phase2.md`.
 **Description:** An automated check that the extension's runtime resolves the same `kilo.jsonc` and `AGENTS.md` as the CLI (method from T2). Plus `docs/vscode-manual-check.md`: a short script that repeats one scenario from each eval in the extension, with a results table to fill in.
 
 **Acceptance criteria:**
-- [x] Parity check passes on the template and fails if the extension would load a different file (unit-tested; CLI-vs-CLI run OK; **not yet run against the extension**, which isn't installed here)
+- [x] Parity check passes on the template and fails if the extension would load a different file (unit-tested; CLI-vs-CLI run OK; **not yet run against the extension**, which isn't installed here) *(2026-11-12: run against the extension, `parity OK` (Phase 5 Task 30, [docs/results/2026-11-12-vscode-parity.md](../docs/results/2026-11-12-vscode-parity.md)). "A different file" holds for `kilo.jsonc`'s `permission` and `instructions` only: a changed `AGENTS.md` doesn't make it fail. Left ticked as recorded; see open decision 1 in [todo-phase5.md](todo-phase5.md#open-decisions-for-the-maintainer).)*
 - [ ] Manual checklist run once, with results recorded (**needs a person with the extension installed**)
 
 **Verification:**
