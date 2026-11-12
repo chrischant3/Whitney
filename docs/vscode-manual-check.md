@@ -9,7 +9,7 @@ Takes about 10 minutes. Uses the same fake secrets and canary as the evals.
 The extension runs its own bundled copy of Kilo's runtime, `bin/kilo` inside the extension's folder (`bin/kilo.exe` on Windows). It's there as soon as the extension is installed; nothing is downloaded when it first starts. The extension starts it as `kilo serve --port 0` in the first workspace folder. To find it and its version:
 
 ```bash
-EXT_KILO=$(ls -d ~/.vscode/extensions/kilocode.kilo-code-*/bin/kilo | tail -1)
+EXT_KILO=$(ls -d ~/.vscode/extensions/kilocode.kilo-code-*/bin/kilo | sort -V | tail -1)
 "$EXT_KILO" --version
 ```
 
