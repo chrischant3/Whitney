@@ -209,7 +209,26 @@ So in this run Kilo used the `.kilo/` copy whenever both were there, and the `.c
 
 On `claude-code`, which reads only `.claude/skills/`, the same control removed the only copy and failed 2 of 2, as it should.
 
-**2026-11-12, after this run:** the Kilo trigger control was fixed to remove every staged copy of the skill, `.claude/skills/release-notes/` included ([adding-tests.md](../adding-tests.md#testing-a-skill-or-an-agent)). It hasn't been re-run on Kilo, so the `trigger_control` result above is still the only one recorded.
+**2026-11-12, after this run:** the Kilo trigger control was fixed to remove every staged copy of the skill, `.claude/skills/release-notes/` included ([adding-tests.md](../adding-tests.md#testing-a-skill-or-an-agent)), and the file was run again ([below](#the-kilo-trigger-control-re-run-after-the-fix)).
+
+### The Kilo trigger control, re-run after the fix
+
+2026-11-12, at commit `4d40904`, with Christopher's go-ahead: `skills/release-notes.json` alone, Haiku, one epoch, 10 agent runs. The cost wasn't recorded: Kilo's figures weren't read.
+
+```bash
+whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/consumer \
+    --evals-path examples/consumer/evals --only skills/release-notes.json --epochs 1
+```
+
+Exit 1: "template scenarios 50% is below the minimum 80%". `paste-the-list-time-pressure` failed in both baseline and template.
+
+| Part | baseline | template | trigger_control |
+|---|---|---|---|
+| Scenarios | 0/2 | 1/2 | |
+| Positive trigger prompts | | 2/2 | 0/2 (2/2 before the fix) |
+| Negative trigger prompts | | 2/2 | |
+
+The report's "Staged files" for `release_notes_trigger_control` and `release_notes_baseline` list neither `.kilo/skills/release-notes/SKILL.md` nor `.claude/skills/release-notes/SKILL.md`; the template's lists both. So on `kilo` the control can now fail for this file, and in this run it did. It rests on two control runs in one epoch.
 
 ## How to improve the files under test
 
