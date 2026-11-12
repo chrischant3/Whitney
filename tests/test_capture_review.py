@@ -309,6 +309,7 @@ def sent_raw(origin: str, data: bytes) -> bytes:
     b"Content-Length: -1\r\n",
     b"Content-Length: 2\r\nContent-Length: 3\r\n",
     b"Content-Length: 1,1\r\n",
+    "Content-Length: \u00b2\r\n".encode("latin-1"),  # a digit to str.isdigit, not to int
     b"Transfer-Encoding: gzip\r\n",
     b"Transfer-Encoding: chunked\r\n\r\nZZ\r\n",
     b"Transfer-Encoding: chunked\r\n\r\n2\r\n{}XX0\r\n",
@@ -469,7 +470,7 @@ def test_the_model_is_matched_by_the_name_the_harness_sends():
 
 
 def test_inspect_s_log_is_matched_by_its_order_alone_since_the_bridge_answers_every_call_with_the_run_s_model():
-    found = capture.from_inspect_log([model_event({"model": "anything", "messages": []})], {}, {}, model=MODEL)
+    found = capture.from_inspect_log([model_event({"model": "anything", "messages": []})], {}, {})
 
     assert found["first_request"] == 0
 
@@ -528,7 +529,7 @@ def test_a_gzip_body_is_decoded_and_searched_and_forwarded_as_it_came(upstream):
 
 
 def test_a_gzip_body_that_decodes_past_the_cap_is_cut(monkeypatch):
-    monkeypatch.setattr(capture, "MAX_STORED_BODY", 300)
+    monkeypatch.setattr(capture, "MAX_STORED_BODY", 1000)
     body = claude_code_body("the rule\n", pad="z" * 5000)
     found = Capture(VIA_PROXY, {"rule": "the rule"}, model=MODEL)
 

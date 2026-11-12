@@ -124,7 +124,7 @@ def claude_code(
     command = _claude_command(model.removeprefix(MODEL_PREFIX), harness_permissions or {}, thinking)
     asked_for = asked("claude-code", harness_permissions or {})
     told = capture.told_harness(f"--settings {json.dumps(capture.CLAUDE_CODE_THINKING)}", execution == "docker")
-    watch = capture.watch_for(capture_prompt, thinking, capture_texts, told)
+    watch = capture.watch_for(capture_prompt, thinking, capture_texts, told, model)
 
     async def execute_in_docker(state: AgentState) -> AgentState:
         # "inspect" is the bridge's own name for the eval's --model. Claude Code is told the model's real

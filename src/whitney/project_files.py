@@ -13,7 +13,7 @@ import re
 import stat
 import sys
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -123,6 +123,7 @@ CODE_SPAN = re.compile(r"`[^`]*`")
 FENCE = re.compile(r"^ {0,3}(`{3,}(?!.*`)|~{3,})")
 COMMENT_START = re.compile(r"^ {0,3}<!--")
 COMMENT_END = "-->"
+TEXT_LINE, FENCE_LINE, COMMENT_LINE = "text", "fence", "comment"  # what a line is to Claude Code (_markdown_lines)
 # Claude Code "skips a file over 4 MiB and loads none of it", and each import counts as a file (memory docs, 2026-11-12).
 MIB = 1024 * 1024
 IMPORT_MAX_BYTES = 4 * MIB
@@ -372,20 +373,47 @@ def _import_paths(text: str) -> list[str]:
 
     Each is as written, with escaped spaces unescaped.
     """
-    paths, fence, in_comment = [], None, False
-    for line in text.splitlines():
-        if in_comment:
-            in_comment = COMMENT_END not in line
-        elif fence is not None:
-            if re.fullmatch(rf" {{0,3}}{fence[:1]}{{{len(fence)},}}[ \t]*", line):  # the same character, at least as long
-                fence = None
-        elif opened := FENCE.match(line):
-            fence = opened.group(1)
-        elif COMMENT_START.match(line):
-            in_comment = COMMENT_END not in line  # CommonMark: a first line that also holds the end is the whole block
-        else:
+    paths = []
+    for line, kind in _markdown_lines(text):
+        if kind == TEXT_LINE:
             paths += [match.replace("\\ ", " ") for match in IMPORT.findall(CODE_SPAN.sub(" ", line))]
     return paths
+
+
+def without_block_comments(text: str) -> str:
+    """`text` without its block-level HTML comments, which Claude Code strips from an instruction file before sending it.
+
+    Its memory docs (read 2026-11-12): "Block-level HTML comments
+    (`<!-- maintainer notes -->`) in CLAUDE.md files are stripped before the
+    content is injected into Claude's context ... Comments inside code blocks
+    are preserved." So a comment inside a line, or in a fenced block, stays.
+    Each comment's whole lines go, line endings included: an assumption,
+    since the docs don't say what is left in their place, and the one real
+    run (2026-11-12) had a comment only on the file's last line.
+    """
+    return "".join(line for line, kind in _markdown_lines(text, keepends=True) if kind != COMMENT_LINE)
+
+
+def _markdown_lines(text: str, keepends: bool = False) -> Iterator[tuple[str, str]]:
+    """Each line of `text`, with what it is to Claude Code: TEXT_LINE, FENCE_LINE (a fence or inside one) or COMMENT_LINE."""
+    fence, in_comment = None, False
+    for line in text.splitlines(keepends=keepends):
+        bare = line.rstrip("\r\n")
+        if in_comment:
+            in_comment = COMMENT_END not in bare
+            yield line, COMMENT_LINE
+        elif fence is not None:
+            if re.fullmatch(rf" {{0,3}}{fence[:1]}{{{len(fence)},}}[ \t]*", bare):  # the same character, at least as long
+                fence = None
+            yield line, FENCE_LINE
+        elif opened := FENCE.match(bare):
+            fence = opened.group(1)
+            yield line, FENCE_LINE
+        elif COMMENT_START.match(bare):
+            in_comment = COMMENT_END not in bare  # CommonMark: a first line that also holds the end is the whole block
+            yield line, COMMENT_LINE
+        else:
+            yield line, TEXT_LINE
 
 
 def staged_imports(names: list[str], staged: Mapping[str, str]) -> list[str]:

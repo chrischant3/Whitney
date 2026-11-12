@@ -50,6 +50,7 @@ from inspect_ai._util.dotenv import init_dotenv
 
 from whitney import targets
 from whitney.agent import redact
+from whitney.capture import thinking_warnings
 from whitney.capture_report import render_capture_markdown
 from whitney.checks import CheckSpec, registry
 from whitney.credentials import CredentialsError, resolve_gateway_credentials
@@ -114,7 +115,10 @@ HELP = {
     ),
     "--thinking": (
         "tell the harness to think and show it (kilo: --variant high --thinking; claude-code: showThinkingSummaries; "
-        "Docker: Inspect's reasoning_tokens too), and record the level that reached the model. Off by default"
+        "Docker: Inspect's reasoning_tokens too). The log and report give what Whitney told the harness, and the level "
+        "the run's first model call carried: with --capture-prompt, or in Docker, read from that request; without "
+        "--capture-prompt a local run records only what Whitney told the harness. On kilo/ models Kilo's Gateway route "
+        "didn't apply it in real runs (2026-11-12); a warning says so. Off by default"
     ),
     "--epochs": "runs of each scenario",
     "--limit": "at most this many scenarios per eval file and variant",
@@ -359,6 +363,8 @@ def _run(args: argparse.Namespace) -> int:
         CannotRun: anything that stops the run before its first sample.
     """
     _check_target(args)
+    warnings = thinking_warnings(args.target, args.model, args.execution, args.capture_prompt, args.thinking)
+    _print_findings(ValidationResult(warnings=warnings), sys.stderr)
     evals, project = Path(args.evals_path), Path(args.project_path)
     result = validate_evals(evals, constraints=_constraints(args))
     _print_findings(result, sys.stderr)

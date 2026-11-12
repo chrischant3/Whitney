@@ -45,6 +45,8 @@ DOCKER_HOME = "/home/node"  # the sandbox image's unprivileged user (sandbox/Doc
 # programs, set the locale and reach the network through a proxy. The agent's
 # shell inherits Kilo's environment, and its tool output is stored in the eval
 # log, so provider keys, cloud and CI tokens and GIT_* variables stay out.
+# The host's keys Inspect may answer a bridged Docker call with, which a Docker Kilo run's record is redacted of.
+DOCKER_HOST_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "KILO_API_KEY")
 # Variables the run's config names as {env:NAME} are added to these.
 LOCAL_ENV_PASSTHROUGH = (
     "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "SHELL", "USER", "LOGNAME",
@@ -156,8 +158,9 @@ def kilo(
     variables in LOCAL_ENV_PASSTHROUGH plus those the overlay references,
     and git without the user's git config (whitney.git_env). With
     capture_prompt or thinking it also stores `sent` (capture only) and
-    `thinking` (capture.run_entries); with neither, a run records only the
-    fields above and starts no proxy.
+    `thinking` (capture.run_entries), and in Docker redacts the whole
+    record of the host's keys (docker_secrets), as claude_code does; with
+    neither, a run records only the fields above and starts no proxy.
 
     Raises:
         ValueError: api_key_env or base_url given in Docker mode, where
@@ -175,11 +178,11 @@ def kilo(
         raise ValueError("base_url and capture_prompt can't be used together: capture sets the base URL, to its proxy")
     kilo_cli_model = bridge_kilo_model(model) if execution == "docker" else model
     upstream = capture_proxy.kilo_upstream(model, global_provider_settings()) if capture_prompt and execution == "local" else ""
-    # Passed on only when given, so a run without them calls the runners as it always did.
-    names = {key: value for key, value in (("agent_name", agent_name), ("command_name", command_name), ("thinking", thinking)) if value}
-    named = {"named": names} if names else {}
+    # The `kilo run` options (_kilo_command's), passed on only when given, so a run without them calls the runners as it always did.
+    options = {key: value for key, value in (("agent_name", agent_name), ("command_name", command_name), ("thinking", thinking)) if value}
+    named = {"named": options} if options else {}
     told = capture.told_harness(f"kilo run {' '.join(capture.KILO_THINKING)}", execution == "docker")
-    watch = capture.watch_for(capture_prompt, thinking, capture_texts, told)
+    watch = capture.watch_for(capture_prompt, thinking, capture_texts, told, model)
 
     async def execute(state: AgentState) -> AgentState:
         if execution == "docker":
@@ -196,9 +199,12 @@ def kilo(
                 await sbox.write_file(f"{DOCKER_HOME}/.config/kilo/kilo.json", json.dumps(global_config))
                 start = len(transcript().events) if watch else 0
                 run = await _run_kilo(sbox, state, kilo_cli_model, auto, {"HOME": DOCKER_HOME}, timeout, **named)
-                if watch:  # a Docker run is given no secret: Inspect's bridge answers it
-                    sent = capture.from_inspect_log(list(transcript().events)[start:], transcript().attachments, watch.texts)
-                    run |= capture.run_entries(watch, sent, run["events"], docker=True)
+                if watch:  # the run is given no secret, but the record goes into the eval log, so it is redacted as Claude Code's is
+                    secrets = docker_secrets()
+                    sent = capture.from_inspect_log(
+                        list(transcript().events)[start:], transcript().attachments, watch.texts, lambda text: redact(text, secrets)
+                    )
+                    run = redact_run(run | capture.run_entries(watch, sent, run["events"], docker=True), secrets)
                 store().set(RUN_STORE_KEY, run)
             return bridge.state
 
@@ -381,6 +387,15 @@ def kilo_home(environ: Mapping[str, str] = os.environ) -> Iterator[KiloHome]:
             },
             secrets=secrets,
         )
+
+
+def docker_secrets(environ: Mapping[str, str] = os.environ) -> list[str]:
+    """The host's credentials a Docker Kilo run's record is redacted of: the keys in DOCKER_HOST_KEYS and the Kilo login.
+
+    The container is given none of them (Inspect's bridge answers it), so
+    this should find nothing; the record goes into the eval log all the same.
+    """
+    return [*(environ[name] for name in DOCKER_HOST_KEYS if environ.get(name)), *login_secrets(environ)]
 
 
 def login_secrets(environ: Mapping[str, str] = os.environ) -> list[str]:
