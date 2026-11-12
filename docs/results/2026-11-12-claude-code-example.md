@@ -209,6 +209,8 @@ So in this run Kilo used the `.kilo/` copy whenever both were there, and the `.c
 
 On `claude-code`, which reads only `.claude/skills/`, the same control removed the only copy and failed 2 of 2, as it should.
 
+**2026-11-12, after this run:** the Kilo trigger control was fixed to remove every staged copy of the skill, `.claude/skills/release-notes/` included ([adding-tests.md](../adding-tests.md#testing-a-skill-or-an-agent)). It hasn't been re-run on Kilo, so the `trigger_control` result above is still the only one recorded.
+
 ## How to improve the files under test
 
 Both reports have the section, with a part for each of the five eval files: on `kilo` for `.kilo/agents/reviewer.md`, `AGENTS.md`, `kilo.jsonc`, `.kilo/rules/data-handling.md` and `.kilo/skills/release-notes/SKILL.md`; on `claude-code` for `.claude/agents/reviewer.md`, `AGENTS.md`, `CLAUDE.md`, `.claude/settings.json` and `.claude/skills/release-notes/SKILL.md`.
