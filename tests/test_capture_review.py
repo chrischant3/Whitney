@@ -10,6 +10,7 @@ and a compressed body was silently "not a model request".
 import gzip
 import json
 import socket
+import subprocess
 import urllib.parse
 from pathlib import Path
 
@@ -597,7 +598,13 @@ def test_the_score_keeps_the_counts_the_report_needs():
 
 
 def test_an_independent_verifier_s_verdict_files_are_never_committed():
-    assert ".verifier/" in (ROOT / ".gitignore").read_text().splitlines()
+    """Asked of git from the checkout's root, so it holds wherever the tests run from (mutmut copies them)."""
+    here = Path(__file__).parent
+    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=here, capture_output=True, text=True, check=True).stdout.strip()
+
+    ignored = subprocess.run(["git", "check-ignore", "--no-index", "-q", ".verifier/verdict.json"], cwd=root, check=False)
+
+    assert ignored.returncode == 0
 
 
 def test_a_watch_carries_the_run_s_model_so_a_capture_knows_which_call_is_the_run_s():
