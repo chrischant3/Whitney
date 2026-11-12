@@ -14,7 +14,7 @@ Every path this skill names, such as `docs/adding-tests.md` and `examples/consum
 - Read the docs from the checkout, which match its version.
 - Run `whitney` from the checkout's venv, `<checkout>/.venv/bin/whitney`, or the `whitney` on the PATH if the person installed it. Check with `whitney --version`.
 
-`examples/consumer/evals/` has a worked eval file for each kind of file under test: a rules file, `kilo.jsonc`, a skill and an agent.
+`examples/consumer/evals/` has a worked eval file for each kind of file under test: `AGENTS.md` and `CLAUDE.md`, a Kilo rules file, `kilo.jsonc` and `.claude/settings.json`, a skill with a copy for each harness, and a reviewer agent for each harness.
 
 ## Inputs
 
@@ -75,14 +75,14 @@ Read "Eval files" in `docs/adding-tests.md` for the fields. Name the file after 
 
 | File under test | Eval file |
 |---|---|
-| `AGENTS.md` or another Markdown file at the project root | `agents-md.json` |
+| `AGENTS.md` or another Markdown file at the project root | `agents-md.json`; `CLAUDE.md` is `claude-md.json` |
 | `.kilo/rules/<name>.md` | `rules/<name>-md.json` |
 | `kilo.jsonc` | `configuration/kilo-jsonc.json` |
 | `.claude/settings.json` | `configuration/claude-settings.json` |
-| `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md` | `skills/<name>.json` |
-| `.kilo/agents/<name>.md` or `.claude/agents/<name>.md` | `agents/<name>.json` |
+| `.kilo/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md` | `skills/<name>.json`; with both in one project, `skills/claude-<name>.json` for the Claude Code one, with `"targets": ["claude-code"]` |
+| `.kilo/agents/<name>.md` or `.claude/agents/<name>.md` | `agents/<name>.json`; with both in one project, `agents/claude-<name>.json` for the Claude Code one |
 
-- **`targets`**: leave it out for `AGENTS.md`, which both targets stage. Use `["kilo"]` for `kilo.jsonc` and for a root file only Kilo reads, such as `CONTEXT.md`: a `kilo.jsonc` file without it that uses `permission_held` applies to `claude-code` too, and fails validation there. A source under `.kilo/` applies to `kilo` alone, and one under `.claude/agents/`, or `.claude/settings.json`, to `claude-code` alone, without it.
+- **`targets`**: leave it out for `AGENTS.md`, which both targets stage; on `claude-code` it stands for the `CLAUDE.md` files when there are any, since Claude Code then doesn't read `AGENTS.md`. Use `["claude-code"]` for an eval file about `CLAUDE.md` in a project that also has an `AGENTS.md`. If such a project's `CLAUDE.md` repeats a rule, the Kilo eval file's baseline must remove `CLAUDE.md` too, because the Kilo loader stages it: `examples/consumer/evals/agents-md.json` does. Use `["kilo"]` for `kilo.jsonc` and for a root file only Kilo reads, such as `CONTEXT.md`: a `kilo.jsonc` file without it that uses `permission_held` applies to `claude-code` too, and fails validation there. A source under `.kilo/` applies to `kilo` alone, and one under `.claude/agents/`, or `.claude/settings.json`, to `claude-code` alone, without it.
 - **`variants`**: a file with `permission_held` must declare its own, with a control that sets the rule under test to `allow` in `kilo.jsonc`, or takes it out of `.claude/settings.json` (such as `"/permissions/deny": []`), so the check is shown able to fail. Read "Variants". Other files can leave `variants` out and get the default baseline, which removes the file under test, or a skill's whole folder.
 - **`defaults`**: put `fixture`, `setup` and any shared `expect` here.
 - **One eval file per file under test.** To test another of its rules, add scenarios to the same file.

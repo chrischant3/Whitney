@@ -63,6 +63,7 @@ These read list items: lines starting `-`, `*`, `+` or a number, with the indent
 - **Advises** saying when to use the skill, naming the requests and files it covers.
 - **Source:** Skills, "Writing effective descriptions": the description "should include both what the Skill does and when to use it".
 - **Misses** a description that says when in words other than those above, and one that says when but too vaguely. In Whitney's recorded run ([results/2026-11-10-skills-agents.md](results/2026-11-10-skills-agents.md)) the `release-notes` skill never loaded for the scenario prompts until its description named CHANGELOG.md, and then loaded in 3 of 6; but the old description already said "when the user asks…", so this rule wouldn't have fired on it, and the report doesn't cite the run.
+- **Followed through once,** 2026-11-12, on `claude-code` with three epochs ([results/2026-11-12-improvement-report-runs.md](results/2026-11-12-improvement-report-runs.md#runs-b-and-c-one-finding-followed-through)): the rule fired on a description that said what but not when; with the description changed as advised, the template's scenarios went from 2/6 to 5/6, and the skill loaded in them in 3 of 6 instead of 0. Every count moved the right way, but within noise at three epochs, so the run neither shows the advice helps nor that it doesn't, and the report doesn't cite it.
 
 ### `whitney-validate`
 
@@ -101,6 +102,7 @@ These read list items: lines starting `-`, `*`, `+` or a number, with the indent
   - Both say what a hook is: on Claude Code a shell command run as the user, with the API key in its environment, which a `claude -p` run starts without asking; on Kilo code inside Kilo's own process. A skill name that couldn't go into the script as it is, such as one with `$` in it, is left as `<skill>` for the reader to fill.
 - **How to tell:** add the hook, then run the skill's positive trigger prompts, and the scenarios where it didn't load, in the harness itself. A Whitney run leaves the hook out: Whitney stages no hooks, and runs Kilo with `--pure`, which turns plugins off.
 - **Source:** Hooks (`UserPromptSubmit` stdout is added to the model's context; `PreToolUse` can refuse a call); Plugins; and the hook spike. On Claude Code (2.1.322, Haiku, one skill and one prompt) the skill loaded in 1 of 6 runs with no hook and 7 of 7 with a reminder. On Kilo (7.8.27, Haiku) the reminder's effect wasn't shown: the skill loaded in 3 of 3 runs with it, but also in the one run where the plugin didn't run.
+- **Seen firing in a recorded run,** 2026-11-12, on `claude-code` with three epochs: the example's `release-notes` skill loaded in 9 of 12 runs that could tell, exactly the 25% missed the rule needs ([results/2026-11-12-improvement-report-runs.md](results/2026-11-12-improvement-report-runs.md#rule-3-fired-on-run-c)). The advice wasn't tried.
 
 ## Left out
 

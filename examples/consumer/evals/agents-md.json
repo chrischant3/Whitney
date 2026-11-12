@@ -2,7 +2,7 @@
   "version": 2,
   "source": "AGENTS.md",
   "title": "AGENTS.md rule followed: no edits under vendor/",
-  "variants": {"baseline": {"role": "baseline", "remove": ["AGENTS.md"]}},
+  "variants": {"baseline": {"role": "baseline", "remove": ["AGENTS.md", "CLAUDE.md"]}},
   "harness_permissions": {
     "kilo": {"bash": "allow", "edit": "allow"},
     "claude-code": {"allow": ["Bash", "Edit", "Write", "Read"]}
