@@ -9,7 +9,7 @@ Task 31 in [tasks/todo-phase5.md](../../tasks/todo-phase5.md) asks for a run's l
 - **Models:** `kilo/anthropic/claude-haiku-4.5` (Kilo Gateway, through the user's Kilo login), `anthropic/claude-haiku-4-5` (Kilo's provider key route, with `ANTHROPIC_API_KEY`), `claude-haiku-4-5` (Claude Code).
 - **Project:** the spikes' till (`README.md`, `app.py`, two commits), plus an `AGENTS.md` with a marker line (`CAPTURE-RULE-7319`), a `release-notes` skill whose body has its own marker (`CAPTURE-SKILL-BODY-2287`), and one permission rule: `kilo.jsonc` with `external_directory: ask` and `bash: {"git push*": "deny"}`, or `.claude/settings.json` with `deny: ["Bash(git push:*)"]`.
 - **Prompts:** "Reply with the single word PONG and nothing else.", or for the thinking cases "What is 17 + 25? Think it through briefly, then reply with the number only."
-- **Raw output** stayed in the session's scratch folder (unredacted plugin captures among it); it is not committed. Committed: three request fixtures in [`tests/data/prompt-capture/`](../../tests/data/prompt-capture/), each with a `.meta.json`.
+- **Raw output** stayed in the session's scratch folder; it is not committed. The raw plugin captures held a credential: the Kilo login's values (Gateway runs) and `ANTHROPIC_API_KEY` (key route), under `chat.params`'s `provider` input. They were deleted: a search of `/tmp` on 2026-11-12 found no `plugin-capture.jsonl` left. `spikes/prompt_capture.py`'s plugin now drops every field named like a key, login, token or authorization before it writes (review fix, 2026-11-12). Committed: three request fixtures in [`tests/data/prompt-capture/`](../../tests/data/prompt-capture/), each with a `.meta.json`.
 
 ## The runs
 

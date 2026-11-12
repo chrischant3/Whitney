@@ -410,6 +410,18 @@ def test_a_fence_closes_only_with_its_own_character_at_least_as_long(tmp_path, t
     assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "after.md"]
 
 
+def test_a_backtick_line_whose_info_holds_a_backtick_is_not_a_fence(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "```a`b\n@shown.md\n", "shown.md": "s\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "shown.md"]
+
+
+def test_a_comment_whose_first_line_holds_its_end_hides_only_that_line(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "<!-->\n@shown.md\n", "shown.md": "s\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "shown.md"]
+
+
 def test_a_fence_indented_four_spaces_is_not_a_fence(tmp_path):
     _project(tmp_path, {"CLAUDE.md": "    ```\n@shown.md\n", "shown.md": "s\n"})
 
@@ -450,3 +462,15 @@ def test_an_import_inside_a_symlinked_folder_is_refused_naming_the_folder(tmp_pa
         load_claude_code_project_files(root)
 
     assert str(raised.value).endswith(f"it is inside a symlinked folder, shared. {LINK_REFUSAL}")
+
+
+def test_every_line_of_a_comment_is_passed_over_until_its_end(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "<!--\nnotes\n@hidden.md\n-->\n@shown.md\n", "hidden.md": "h\n", "shown.md": "s\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "shown.md"]
+
+
+def test_an_import_after_one_already_staged_is_still_followed(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "@a.md @a.md @CLAUDE.md @missing.md @b.md\n", "a.md": "a\n", "b.md": "b\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "a.md", "b.md"]

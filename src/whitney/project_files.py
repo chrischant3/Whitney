@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -111,19 +112,48 @@ NOT_PERMISSIONS_REASON = f"its {CLAUDE_PERMISSIONS} block isn't an object"
 # than the project does. A path ends at the first space not escaped with a backslash.
 IMPORT_MAX_HOPS = 4
 IMPORT = re.compile(r"(?<!\S)@((?:\\ |\S)+)")
-FENCE = re.compile(r"^\s*(```|~~~)")
 CODE_SPAN = re.compile(r"`[^`]*`")
+# Claude Code skips the fenced blocks the CommonMark way: a fence of three or more backticks or tildes,
+# indented at most three spaces, closes only on a line of the same character at least as long, with
+# nothing after it. Block-level HTML comments are stripped before the text is sent (memory docs,
+# 2026-11-12), so an import in one isn't followed: an assumption, since the docs don't say which comes
+# first and no run has tried it. Indented code blocks are read like other text (docs/load-order.md, "Imports").
+FENCE = re.compile(r"^ {0,3}(`{3,}(?!.*`)|~{3,})")
+COMMENT_START = re.compile(r"^ {0,3}<!--")
+COMMENT_END = "-->"
+# Claude Code "skips a file over 4 MiB and loads none of it", and each import counts as a file (memory docs, 2026-11-12).
+IMPORT_MAX_BYTES = 4 * 1024 * 1024
+# Under .claude/, an import may stage only what the loader would stage there itself (CLAUDE.md, AGENTS.md,
+# skills and agents) and Markdown files directly in it, which Claude Code reads as nothing else. The rest,
+# settings.json and settings.local.json above all, Claude Code reads as its own configuration on the
+# machine running the eval (`--setting-sources project`), so an import of it is left out, and the loader's
+# cut-down settings are the only settings staged. Names are compared ignoring case, as macOS's disk does.
+IMPORTABLE_IN_CLAUDE_DIR = tuple(f"{folder}/" for folder in CLAUDE_CODE_ASSET_DIRS)
+CLAUDE_CONFIG_FILES = (".mcp.json",)
+# Names a file holding a key or login usually has, beyond the .env files _is_safe_file keeps out. Real
+# Claude Code would send such an import, but a staged file is copied into the run's log, so it's left out.
+SECRET_NAMES = (
+    "*.pem", "*.key", "id_rsa*", "id_dsa*", "id_ecdsa*", "id_ed25519*", ".npmrc", ".pypirc", ".netrc", ".envrc",
+    "*.env", "credentials*", "*.p12", "*.pfx",
+)
 # Why files_not_staged_reasons says an import, named "<file>: @<path>", was left out.
 OUTSIDE_IMPORT_REASON = (
     "outside the project: Claude Code loads it only once a person approves the project's external imports, "
     "which an eval's run never has"
 )
 ENV_IMPORT_REASON = "an imported .env file, which is never staged"
-CONFIG_IMPORT_REASON = "x"
-GIT_IMPORT_REASON = "x"
-SECRET_IMPORT_REASON = "x"
-LARGE_IMPORT_REASON = "x"
-LINK_REFUSAL = "x"
+CONFIG_IMPORT_REASON = (
+    "Claude Code reads it as configuration, such as settings, hooks, commands or MCP servers, "
+    "which an import never stages"
+)
+GIT_IMPORT_REASON = "inside .git/, which is never staged"
+SECRET_IMPORT_REASON = "its name looks like a key's or a login's, and a staged file is copied into the run's log"
+LARGE_IMPORT_REASON = "over 4 MiB, which Claude Code skips"
+# The end of the message refusing an import reached through a symlink.
+LINK_REFUSAL = (
+    "Whitney never stages a file through a link, so the copy can't reach outside the project. "
+    "Replace the link with the file it points to"
+)
 
 
 def load_template_files(template_dir: Path) -> dict[str, str]:
@@ -248,8 +278,11 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     Each file an instruction file imports with `@path`, and each file those
     import, up to IMPORT_MAX_HOPS deep, is staged too, by the same rules, so
     a CLAUDE.md that is only `@AGENTS.md` stages AGENTS.md beside it. An
-    import outside the project, of a .env file or of CLAUDE.local.md is left
-    out and named by files_not_staged.
+    import only adds a file: one outside the project, of a file Claude Code
+    reads as configuration (most of .claude/, .mcp.json), under .git/, of
+    CLAUDE.local.md, a .env file, a secret-looking name or a file over 4 MiB
+    is left out and named by files_not_staged, and the cut-down settings
+    above are the only settings staged.
 
     Args:
         project_dir: the project folder. It is read, never written.
@@ -293,6 +326,7 @@ def load_claude_code_project_files(project_dir: Path, *, evals_path: Path | None
     imports = _claude_code_imports(root, instructions, evals)
     if imports.refused:  # Claude Code would read the file, so a run without it would test less than the project
         raise ValueError("; ".join(imports.refused))
+    # Assets last: should an import ever name a skill, an agent or the settings, the loader's own copy wins.
     return {**instructions, **imports.files, **assets}
 
 
@@ -306,12 +340,22 @@ class _Imports:
 
 
 def _import_paths(text: str) -> list[str]:
-    """The paths `text` imports with @path, outside code spans and fenced blocks, as written (escaped spaces unescaped)."""
-    paths, fenced = [], False
+    """The paths `text` imports with @path, outside code spans, fenced blocks and block-level HTML comments.
+
+    Each is as written, with escaped spaces unescaped.
+    """
+    paths, fence, in_comment = [], None, False
     for line in text.splitlines():
-        if FENCE.match(line):
-            fenced = not fenced
-        elif not fenced:
+        if in_comment:
+            in_comment = COMMENT_END not in line
+        elif fence is not None:
+            if re.fullmatch(rf" {{0,3}}{fence[:1]}{{{len(fence)},}}[ \t]*", line):  # the same character, at least as long
+                fence = None
+        elif opened := FENCE.match(line):
+            fence = opened.group(1)
+        elif COMMENT_START.match(line):
+            in_comment = COMMENT_END not in line  # CommonMark: a first line that also holds the end is the whole block
+        else:
             paths += [match.replace("\\ ", " ") for match in IMPORT.findall(CODE_SPAN.sub(" ", line))]
     return paths
 
@@ -319,23 +363,27 @@ def _import_paths(text: str) -> list[str]:
 def _claude_code_imports(root: Path, instructions: Mapping[str, str], evals: "_EvalsFolder | None") -> _Imports:
     """Follow the imports of `instructions` ({name: text}, the staged instruction files) up to IMPORT_MAX_HOPS.
 
-    An import of a file outside the project, a .env file or CLAUDE.local.md
-    is left out and named "<importing file>: @<path>". One Claude Code would
-    read that Whitney can't stage safely (a symlink, inside an excluded
-    folder, under the evals path, unreadable or not UTF-8) is refused. A
-    path that names no file, or a folder, is passed over, as nothing is there
-    to read.
+    An import Claude Code wouldn't load in a run, or that Whitney keeps out
+    (see _import_left_out), is left out and named "<importing file>: @<path>".
+    One Claude Code would read that Whitney can't stage safely (a symlink,
+    inside an excluded folder, under the evals path, unreadable or not UTF-8)
+    is refused. A path that names no file, or a folder, is passed over, as
+    nothing is there to read.
     """
     found = _Imports({}, [], [])
-    seen, queue = set(instructions), [(name, text, 0) for name, text in instructions.items()]
+    seen, queue = set(instructions), deque((name, text, 0) for name, text in instructions.items())
     while queue:
-        importer, text, hops = queue.pop(0)
+        importer, text, hops = queue.popleft()
         for written in _import_paths(text):
-            relative, reason = _import_target(root, importer, written)
+            path = _import_path(root, importer, written)
+            if path is not None and (not _is_present(path) or (path.is_dir() and not path.is_symlink())):
+                continue  # nothing there to read; a symlinked folder goes on to be refused
+            reason = _import_left_out(root, path)
             if reason:
                 found.left_out.append((f"{importer}: @{written}", reason))
                 continue
-            if relative is None or relative in seen:
+            relative = path.relative_to(root).as_posix()
+            if relative in seen:
                 continue
             seen.add(relative)
             try:
@@ -348,21 +396,40 @@ def _claude_code_imports(root: Path, instructions: Mapping[str, str], evals: "_E
     return found
 
 
-def _import_target(root: Path, importer: str, written: str) -> tuple[str | None, str | None]:
-    """(project-relative path, None) for an import of a file in the project, (None, reason) for one left out, or (None, None)."""
+def _import_path(root: Path, importer: str, written: str) -> Path | None:
+    """Where an import in `importer` points, normalised, or None if that is outside the project."""
     if written.startswith("~"):
-        return None, OUTSIDE_IMPORT_REASON
+        return None
     path = Path(os.path.normpath((root / importer).parent / written))  # an absolute `written` replaces the folder
-    if not path.is_relative_to(root):
-        return None, OUTSIDE_IMPORT_REASON
-    relative = path.relative_to(root).as_posix()
-    if not _is_present(path) or (path.is_dir() and not path.is_symlink()):
-        return None, None
-    if relative == CLAUDE_LOCAL_MD:
-        return None, LOCAL_REASON
+    return path if path.is_relative_to(root) else None
+
+
+def _import_left_out(root: Path, path: Path | None) -> str | None:
+    """Why an import of `path`, a file or link in the project (None: outside it), is left out and named, or None to stage it."""
+    if path is None:
+        return OUTSIDE_IMPORT_REASON
+    parts = [part.casefold() for part in path.relative_to(root).parts]
+    relative = "/".join(parts)
+    if parts[0] == ".git":
+        return GIT_IMPORT_REASON
+    if relative in CLAUDE_CONFIG_FILES or (parts[0] == CLAUDE_CODE_DIR and not _importable_in_claude_dir(relative)):
+        return CONFIG_IMPORT_REASON
+    if relative == CLAUDE_LOCAL_MD.casefold():
+        return LOCAL_REASON
     if not _is_safe_file(path):
-        return None, ENV_IMPORT_REASON
-    return relative, None
+        return ENV_IMPORT_REASON
+    if any(fnmatch.fnmatchcase(parts[-1], pattern) for pattern in SECRET_NAMES):
+        return SECRET_IMPORT_REASON
+    if path.lstat().st_size > IMPORT_MAX_BYTES:
+        return LARGE_IMPORT_REASON
+    return None
+
+
+def _importable_in_claude_dir(relative: str) -> bool:
+    """True for a casefolded path under .claude/ that an import may stage (see IMPORTABLE_IN_CLAUDE_DIR)."""
+    if relative.startswith(IMPORTABLE_IN_CLAUDE_DIR):
+        return True
+    return relative.count("/") == 1 and relative.endswith(".md")
 
 
 class _Refused(Exception):
@@ -377,18 +444,41 @@ def _imported_text(root: Path, relative: str, evals: "_EvalsFolder | None") -> s
     """
     path = root / relative
     if path.resolve() != path:  # root is resolved and `relative` normalised, so only a link makes them differ
-        raise _Refused("it is a symlink, or inside a symlinked folder. Replace the link with the file it points to")
+        raise _Refused(_link_refusal(root, path))
     excluded = next((part for part in PurePosixPath(relative).parts if part in EXCLUDED_DIRS), None)
     if excluded:
         raise _Refused(f"it is inside {excluded}/, which is never staged")
     if _under(path, evals):
         raise _Refused("it is under the evals path, whose files are never staged")
     try:
-        return path.read_bytes().decode()
+        return _decoded(path)
     except UnicodeDecodeError:
         raise _Refused("it isn't UTF-8 text") from None
     except OSError as error:
         raise _Refused(f"it can't be read: {error.strerror}") from None
+
+
+def _link_refusal(root: Path, path: Path) -> str:
+    """Why an import reached through a symlink is refused, naming the link."""
+    name = path.relative_to(root).as_posix()
+    if not path.is_symlink():
+        folder = next(parent for parent in path.parents if parent.is_symlink())
+        return f"it is inside a symlinked folder, {folder.relative_to(root).as_posix()}. {LINK_REFUSAL}"
+    if not path.exists():
+        return f"it is a symlink to nothing, {name}. {LINK_REFUSAL}"
+    if path.is_dir():
+        return f"it is a symlink to a folder, {name}. {LINK_REFUSAL}"
+    return "it is a symlink, or inside a symlinked folder. Replace the link with the file it points to"
+
+
+def _decoded(path: Path) -> str:
+    """The file's text, decoded as UTF-8.
+
+    Raises:
+        OSError: it can't be read.
+        UnicodeDecodeError: it isn't UTF-8.
+    """
+    return path.read_bytes().decode()
 
 
 def _claude_code_assets(root: Path, evals: "_EvalsFolder | None") -> tuple[dict[str, str], list[tuple[str, str]]]:
@@ -549,7 +639,9 @@ def files_not_staged_reasons(target: str, project_dir: Path, *, evals_path: Path
         {name: short reason} for every name files_not_staged lists except a
         last "and N more". The reasons are NOT_UTF8_REASON and
         SKILL_PATHS_REASON for kilo, and IGNORED_REASON, LOCAL_REASON,
-        UNSAFE_REASON, REST_REASON, WHOLE_REASON, NOT_UTF8_REASON, OUTSIDE_IMPORT_REASON and ENV_IMPORT_REASON for claude-code.
+        UNSAFE_REASON, REST_REASON, WHOLE_REASON, NOT_UTF8_REASON, OUTSIDE_IMPORT_REASON,
+        ENV_IMPORT_REASON, CONFIG_IMPORT_REASON, GIT_IMPORT_REASON, SECRET_IMPORT_REASON and
+        LARGE_IMPORT_REASON for claude-code.
 
     Raises:
         FileNotFoundError, ValueError: as files_not_staged raises them.
@@ -829,7 +921,7 @@ def _readable(root: Path, sources: list[str]) -> dict[str, str]:
 def _utf8_or_none(path: Path) -> str | None:
     """The file's text, or None if it can't be read or isn't UTF-8."""
     try:
-        return path.read_bytes().decode()
+        return _decoded(path)
     except (OSError, UnicodeDecodeError):
         return None
 

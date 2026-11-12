@@ -26,8 +26,10 @@ user's Kilo login.
     .venv/bin/python spikes/prompt_capture.py --out /tmp/whitney-t31 --analyse
     .venv/bin/python spikes/prompt_capture.py --out /tmp/whitney-t31 --fixtures tests/data/prompt-capture
 
-Raw output stays in --out, outside the repo; it holds unredacted plugin and
-request captures, so treat it as you would a log. Only --fixtures output is
+Raw output stays in --out, outside the repo; it holds unredacted request
+captures, so treat it as you would a log. The capture plugin drops every
+field named like a key, login or token before it writes (CAPTURE_PLUGIN):
+its first captures, before that, held the Kilo login and ANTHROPIC_API_KEY. Only --fixtures output is
 meant to be committed, and it refuses to write a file that still holds a
 local path, an `sk-` key, the user's name or an email address.
 """
@@ -88,9 +90,14 @@ PONG = "Reply with the single word PONG and nothing else."
 SUM = "What is 17 + 25? Think it through briefly, then reply with the number only."
 
 # A plugin that writes what each chat hook is given to a file. It does nothing else and changes nothing.
+# `chat.params` is handed the provider's key or the Kilo login (the spike's first captures held both), so
+# any field whose name says key, login, token, authorization, secret or password is dropped before writing.
+# The plugin route was dropped by Christopher's decision 1 (2026-11-12); this is kept to rerun the record.
 CAPTURE_PLUGIN = """import { appendFileSync } from "node:fs"
 const OUT = %s
+const CREDENTIAL = /key|login|token|authorization|secret|password|cookie/i
 const safe = (value) => { const seen = new WeakSet(); return JSON.stringify(value, (k, v) => {
+  if (CREDENTIAL.test(k)) return "[dropped]"
   if (typeof v === "object" && v !== null) { if (seen.has(v)) return "[circular]"; seen.add(v) }
   return typeof v === "function" ? "[function]" : v }) }
 const log = (hook, input, output) => appendFileSync(OUT, safe({ hook, input, output }) + "\\n")
