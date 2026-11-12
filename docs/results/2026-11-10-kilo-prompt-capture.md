@@ -54,11 +54,13 @@ In that one run the agent asked which relaxation was wanted instead of editing `
 
 | Way | What it shows | Works on the Kilo Gateway? | Works with Whitney's `--pure`? | Cost to test |
 |---|---|---|---|---|
-| A logging proxy, set as the provider's `baseURL` | Every request body: the system prompt, all messages and every tool definition | No: only on the provider key route | Yes | One model call per run |
-| A Kilo plugin using the chat hooks | The system prompt and messages, before they're sent; it can change them too | Not tested; the hooks run before the provider is chosen | No: `--pure` turns plugins off | Free against a stub model |
+| A logging proxy, set as the provider's `baseURL` | Every request body: the system prompt, all messages and every tool definition | Yes, shown 2026-11-12 (below); this page first said only on the provider key route | Yes | One model call per run |
+| A Kilo plugin using the chat hooks | The system prompt and messages, before they're sent; it can change them too | Yes, shown 2026-11-12 (below) | No: `--pure` turns plugins off | Free against a stub model |
 | OpenTelemetry (`OTEL_EXPORTER_OTLP_ENDPOINT`) | Spans for Kilo's internal functions, with HTTP, database and error attributes, and Kilo's event log | Yes | Yes | Free against a stub model |
 | `kilo export <session>` | The session's messages and tool calls | Yes | Yes | Free |
 | `--print-logs --log-level DEBUG` | Kilo's event log | Yes | Yes | Free |
+
+**Update, 2026-11-12 (Task 31 spike).** Both ways work on the Kilo Gateway route too. With the `kilo` provider's `baseURL` pointed at a local proxy that forwards to `https://api.kilo.ai`, Kilo 7.8.27's chat call reached the proxy and was answered, with `--pure` kept; and the plugin, loaded from the `KILO_CONFIG` overlay, saw the same system prompt there. The plugin's `chat.params` hook was also handed the Kilo login. See [spike-findings.md](../spike-findings.md#phase-5-task-31-what-was-sent-to-the-model-2026-11-12) and [the spike's results](2026-11-12-prompt-capture-spike.md).
 
 Only the proxy and the plugin show the prompt. The other three were checked against the same session and hold none of it: not the base prompt, not the user's prompt, not the `AGENTS.md` text.
 

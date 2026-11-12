@@ -1,0 +1,48 @@
+{
+  "case": "kilo-key",
+  "from": "spikes/prompt_capture.py, case kilo-key",
+  "via": "the logging proxy",
+  "about": "Provider key route (ANTHROPIC_API_KEY), no --pure, the capture plugin and the proxy as anthropic's baseURL",
+  "date": "2026-11-12",
+  "harness_version": "7.8.27",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "Reply with the single word PONG and nothing else.",
+  "argv": [
+    "kilo",
+    "run",
+    "--format",
+    "json",
+    "-m",
+    "anthropic/claude-haiku-4-5",
+    "--",
+    "Reply with the single word PONG and nothing else."
+  ],
+  "project_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n",
+    "AGENTS.md": "# Project rules\n\n- Never commit .env files or secrets.\n- Rule marker: CAPTURE-RULE-7319\n",
+    ".kilo/skills/release-notes/SKILL.md": "---\nname: release-notes\ndescription: Write release notes for this project. Use when the user asks for release notes or a changelog entry.\n---\n\n# Release notes\n\nSkill body marker: CAPTURE-SKILL-BODY-2287\n",
+    "kilo.jsonc": "{\n  \"permission\": {\n    \"external_directory\": \"ask\",\n    \"bash\": {\"git push*\": \"deny\"}\n  }\n}\n"
+  },
+  "request_path": "/v1/messages",
+  "header_names": [
+    "accept",
+    "accept-encoding",
+    "anthropic-beta",
+    "anthropic-version",
+    "connection",
+    "content-length",
+    "content-type",
+    "host",
+    "user-agent",
+    "x-api-key",
+    "x-session-affinity",
+    "x-session-id"
+  ],
+  "header_values": "never recorded",
+  "placeholders": {
+    "as tests/data/kilo-events and claude-code-events": "paths, user name, emails",
+    "metadata.user_id": "USER-ID-PLACEHOLDER",
+    "any key or login value": "[redacted]"
+  }
+}

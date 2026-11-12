@@ -1,0 +1,63 @@
+{
+  "case": "claude-code",
+  "from": "spikes/prompt_capture.py, case cc-local",
+  "via": "the logging proxy",
+  "about": "Claude Code, local: the proxy through ANTHROPIC_BASE_URL and OTEL_LOG_RAW_API_BODIES in the same run",
+  "date": "2026-11-12",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "claude-haiku-4-5",
+  "prompt": "Reply with the single word PONG and nothing else.",
+  "argv": [
+    "claude",
+    "-p",
+    "--setting-sources",
+    "project",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"permissions\": {\"allow\": [\"Bash\", \"Edit\", \"Write\"]}}",
+    "--model",
+    "claude-haiku-4-5",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--",
+    "Reply with the single word PONG and nothing else."
+  ],
+  "project_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n",
+    "AGENTS.md": "# Project rules\n\n- Never commit .env files or secrets.\n- Rule marker: CAPTURE-RULE-7319\n",
+    ".claude/skills/release-notes/SKILL.md": "---\nname: release-notes\ndescription: Write release notes for this project. Use when the user asks for release notes or a changelog entry.\n---\n\n# Release notes\n\nSkill body marker: CAPTURE-SKILL-BODY-2287\n",
+    ".claude/settings.json": "{\n  \"permissions\": {\n    \"deny\": [\"Bash(git push:*)\"]\n  }\n}\n"
+  },
+  "request_path": "/v1/messages?beta=true",
+  "header_names": [
+    "accept",
+    "accept-encoding",
+    "anthropic-beta",
+    "anthropic-dangerous-direct-browser-access",
+    "anthropic-version",
+    "connection",
+    "content-length",
+    "content-type",
+    "host",
+    "user-agent",
+    "x-api-key",
+    "x-app",
+    "x-claude-code-session-id",
+    "x-stainless-arch",
+    "x-stainless-lang",
+    "x-stainless-os",
+    "x-stainless-package-version",
+    "x-stainless-retry-count",
+    "x-stainless-runtime",
+    "x-stainless-runtime-version",
+    "x-stainless-timeout"
+  ],
+  "header_values": "never recorded",
+  "placeholders": {
+    "as tests/data/kilo-events and claude-code-events": "paths, user name, emails",
+    "metadata.user_id": "USER-ID-PLACEHOLDER",
+    "any key or login value": "[redacted]"
+  }
+}

@@ -757,15 +757,15 @@ Added on 2026-11-10 from Christopher's Checkpoint B decisions. Neither task hold
 Two ways were shown to work on Kilo 7.8.27:
 
 - **A Kilo plugin** on `experimental.chat.system.transform` and `experimental.chat.messages.transform` sees the system prompt and messages before they're sent. It needs Kilo to run without `--pure`, which also lets any plugin in the project run. Today Whitney stages only instruction and config files.
-- **A logging proxy** set as the provider's `baseURL` sees the whole request, including the tool definitions, but only on the provider key route, not the Kilo Gateway.
+- **A logging proxy** set as the provider's `baseURL` sees the whole request, including the tool definitions, but only on the provider key route, not the Kilo Gateway. (2026-11-12: wrong. The Task 31 spike showed the proxy working on the Gateway route too, as the `kilo` provider's `baseURL`, with `--pure` kept; see the spike result below.)
 
 Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in the same session.
 
 **Acceptance criteria:**
-- [ ] A spike decides between the plugin, the proxy and a mix, for each target, and says what each costs in isolation. It tries the plugin once on the Kilo Gateway route.
+- [x] A spike decides between the plugin, the proxy and a mix, for each target, and says what each costs in isolation. It tries the plugin once on the Kilo Gateway route. (2026-11-12: `spikes/prompt_capture.py`, [spike-findings.md](../docs/spike-findings.md#phase-5-task-31-what-was-sent-to-the-model-2026-11-12), [results](../docs/results/2026-11-12-prompt-capture-spike.md); the recommendation is below.)
 - [ ] Christopher has decided whether a run may drop `--pure`, and if so whether only Whitney's own plugin may load or the project's plugins too.
 - [ ] With capture turned on, each run's log holds the system prompt and messages the model was sent, and for Kilo the tool definitions if the chosen way gives them. No key or token reaches the log: headers are never recorded, and the text passes through the same redaction as the rest of the log.
-- [ ] A run can turn on the model's extended thinking, and its thinking is kept in the log beside the agent's text. A run without it records that thinking was off.
+- [ ] A run can turn on the model's extended thinking, and its thinking is kept in the log beside the agent's text. A run without it records that thinking was off. (2026-11-12: on `claude-code` thinking is already on in every run, with its text withheld (`"display": "updates"`), so "off" needs a decision; see below.)
 - [ ] The report says, for each eval file, whether its `source` file's text was found in what was sent, so a reader can see the rule reached the model.
 - [ ] Capture is opt-in, and a run without it behaves as today. Each test whose expectation changes is named and confirmed by Christopher first.
 
@@ -785,6 +785,28 @@ Claude Code needs its own way. A proxy through `ANTHROPIC_BASE_URL` worked in th
 **Dependencies:** None. After `v0.2.0`.
 
 **Estimated scope:** M. Start with the spike (S, a few cents in model calls).
+
+**Spike result and recommended design (2026-11-12).** Evidence: [spike-findings.md](../docs/spike-findings.md#phase-5-task-31-what-was-sent-to-the-model-2026-11-12), [results](../docs/results/2026-11-12-prompt-capture-spike.md), fixtures in `tests/data/prompt-capture/`. Nine Haiku runs, about $0.18. Nothing is built yet.
+
+| Target, execution | Recommended | Why not the others |
+|---|---|---|
+| `kilo`, local, Gateway or provider key | Whitney's logging proxy as the provider's `baseURL` in the `KILO_CONFIG` overlay, `--pure` kept | The plugin needs `--pure` dropped, which lets every plugin Kilo finds run, and its `chat.params` hook is handed the key or login. It sees no tool definitions. |
+| `claude-code`, local | The same proxy, through `ANTHROPIC_BASE_URL` | `OTEL_LOG_RAW_API_BODIES=file:` also works with no proxy, but it turns telemetry on, needs a local OTLP sink, and it replaces the thinking in responses with `"<REDACTED>"`. The session transcript holds the request too, but its format isn't documented. |
+| both, Docker | Inspect's own log: each `model` event's `call.request`, read with attachments resolved | It is already there. A proxy in the container would add nothing. |
+
+- **Opt-in:** `whitney run --capture-prompt` (task parameter `capture_prompt`), off by default. A run without it starts no proxy and writes the same log fields as today. Thinking gets its own `--thinking`: on Kilo `--variant high --thinking`; on Claude Code `showThinkingSummaries: true` in the `--settings` JSON; in Docker, the eval's `reasoning_tokens`, since the bridge doesn't pass the harness's own setting on.
+- **Stored:** under `RUN_STORE_KEY`, a new `sent` entry: `via` (`proxy` or `inspect-log`), the first model request's body in full, then for each request its path, size in bytes and whether its system prompt and tools differ from the first. Header values are never recorded; header names may be. `redact_run` covers `sent` with the same secrets as `events` (today it covers only `events` and `stderr`). Thinking text stays where each harness already writes it, in `events` (Kilo's `reasoning` events, Claude Code's `thinking` blocks), with a `thinking` entry saying `on`, `off` or `on, text withheld`.
+- **Report line**, one per eval file and target: "Sent to the model: `AGENTS.md` found in 3 of 3 runs, under `Instructions from: …/AGENTS.md`". A skill gets two counts, description and body. A permission file gets "not sent as text: enforced by the harness". A run without capture gets "not captured".
+
+**Decisions for Christopher before implementation:**
+
+1. **May a Kilo run drop `--pure`?** The recommendation is no: the proxy works on both routes without it. If yes, decide whether only Whitney's own plugin (from the overlay) may load, or the project's `.kilo/plugin/` too. A project plugin also makes Kilo run an npm install in the project's `.kilo/`.
+2. **Claude Code local:** the proxy (one mechanism for both targets) or `OTEL_LOG_RAW_API_BODIES` (no proxy, telemetry on).
+3. **What "thinking off" means on Claude Code.** Today every `claude-code` run thinks, with a 31,999-token budget and its text hidden. Either `MAX_THINKING_TOKENS=0` for runs without `--thinking`, which changes every Claude Code run and makes old results less comparable, or record "on, text withheld".
+4. **Docker thinking:** map `--thinking` to Inspect's `reasoning_tokens` for the bridged model.
+5. **How much to keep:** the first request in full plus a size and a "changed" flag for each later one (recommended: about 70 to 90 KB a run), or every request (about half a megabyte for five steps).
+6. **The Gateway proxy's base URL.** With `/api/gateway` in it, Kilo's model-list calls got 405, though the run worked. Use the origin alone and check it again before building.
+7. **Not this task, but found here:** the `claude-code` loader doesn't stage files a `CLAUDE.md` imports with `@path`, and it stages `AGENTS.md` only when there is no `CLAUDE.md`, so in a Whitney run a `CLAUDE.md` that is just `@AGENTS.md` would give Claude Code nothing to import. That follows from the loader's rules; it wasn't run.
 
 ### Task 32: An eval-driven development skill
 
