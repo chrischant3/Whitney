@@ -9,9 +9,11 @@ real project does.
 """
 
 import json
+import os
 
 import pytest
 
+from whitney import project_files
 from whitney.project_files import (
     ABSOLUTE_IMPORT_REASON,
     CONFIG_IMPORT_REASON,
@@ -23,11 +25,13 @@ from whitney.project_files import (
     OUTSIDE_IMPORT_REASON,
     REST_REASON,
     SECRET_IMPORT_REASON,
+    claude_code_instructions,
     files_not_staged,
     files_not_staged_reasons,
     load_claude_code_project_files,
     load_project_files,
     not_staged_reason,
+    without_instructions,
 )
 
 
@@ -477,3 +481,261 @@ def test_an_import_after_one_already_staged_is_still_followed(tmp_path):
     _project(tmp_path, {"CLAUDE.md": "@a.md @a.md @CLAUDE.md @missing.md @b.md\n", "a.md": "a\n", "b.md": "b\n"})
 
     assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "a.md", "b.md"]
+
+
+# Second review fixes, 2026-11-12: imports keyed by their on-disk spelling, excluded folders in any case,
+# no non-regular files, CLAUDE.local.md and configuration at any depth, more secret-looking names, and caps.
+
+MIB = 1024 * 1024
+
+
+@pytest.fixture
+def case_insensitive(tmp_path):
+    """True on a disk that finds a file whatever the case of its name, such as macOS's default."""
+    (tmp_path / "probe").write_text("")
+    found = (tmp_path / "PROBE").exists()
+    (tmp_path / "probe").unlink()
+    return found
+
+
+def test_an_import_in_another_case_is_staged_by_its_on_disk_name_and_left_out_of_the_baseline(tmp_path, case_insensitive):
+    _project(tmp_path, {"CLAUDE.md": "@agents.md\n", "AGENTS.md": "agents rule\n"})
+
+    staged = load_claude_code_project_files(tmp_path)
+
+    # A case-insensitive disk finds AGENTS.md; a case-sensitive one finds nothing, and AGENTS.md stays unread.
+    expected = {"CLAUDE.md": "@agents.md\n", **({"AGENTS.md": "agents rule\n"} if case_insensitive else {})}
+    assert staged == expected
+    assert without_instructions("claude-code", staged) == {}
+    assert files_not_staged("claude-code", tmp_path) == ([] if case_insensitive else ["AGENTS.md"])
+
+
+def test_one_file_imported_in_two_spellings_is_staged_once(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "@AGENTS.md @agents.md\n", "AGENTS.md": "agents rule\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["AGENTS.md", "CLAUDE.md"]
+
+
+def test_an_import_of_a_staged_instruction_file_in_another_case_stages_nothing_more(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "@.claude/claude.md\n", ".claude/CLAUDE.md": "folder rule\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == [".claude/CLAUDE.md", "CLAUDE.md"]
+    assert files_not_staged("claude-code", tmp_path) == []
+
+
+def test_an_instruction_file_on_disk_in_another_case_is_not_staged_again_by_an_import(tmp_path, case_insensitive):
+    _project(tmp_path, {"claude.md": "@CLAUDE.md @claude.md\n"})
+    if not case_insensitive:  # claude.md isn't CLAUDE.md here, so there's nothing to stage
+        with pytest.raises(ValueError, match="^project has no Claude Code instructions"):
+            load_claude_code_project_files(tmp_path)
+        return
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": "@CLAUDE.md @claude.md\n"}
+
+
+def test_every_folder_of_an_import_is_spelled_as_on_disk(tmp_path, case_insensitive):
+    _project(tmp_path, {"CLAUDE.md": "@.Claude/Notes.md\n", ".claude/notes.md": "n\n"})
+
+    staged = load_claude_code_project_files(tmp_path)
+
+    if case_insensitive:
+        assert staged == {"CLAUDE.md": "@.Claude/Notes.md\n", ".claude/notes.md": "n\n"}
+        assert files_not_staged("claude-code", tmp_path) == []
+    else:
+        assert staged == {"CLAUDE.md": "@.Claude/Notes.md\n"}
+        assert files_not_staged("claude-code", tmp_path) == [".claude/notes.md"]
+
+
+def test_a_root_agents_md_imported_in_another_case_is_not_named_as_left_out(tmp_path, case_insensitive):
+    _project(tmp_path, {"CLAUDE.md": "@AGENTS.md\n", "Agents.md": "agents rule\n"})
+
+    staged = load_claude_code_project_files(tmp_path)
+
+    assert staged == {"CLAUDE.md": "@AGENTS.md\n", **({"Agents.md": "agents rule\n"} if case_insensitive else {})}
+    assert files_not_staged("claude-code", tmp_path) == []
+
+
+def test_the_baseline_leaves_out_an_instruction_file_in_any_spelling():
+    staged = {"CLAUDE.md": "c", "agents.md": "a", ".Claude/Agents.md": "d", "docs/agents.md": "kept"}
+
+    # The staged copy may be run on either kind of disk, so every spelling of an instruction file is one.
+    assert without_instructions("claude-code", staged) == {"docs/agents.md": "kept"}
+    assert claude_code_instructions("AGENTS.md", staged) == ["CLAUDE.md", "agents.md", ".Claude/Agents.md"]
+
+
+@pytest.mark.parametrize("imported, folder", [
+    ("sub/.GIT/config", ".GIT"),
+    ("Node_Modules/x.md", "Node_Modules"),
+    (".VENV/x.md", ".VENV"),
+    ("sub/__PyCache__/x.md", "__PyCache__"),
+    (".Pytest_Cache/x.md", ".Pytest_Cache"),
+    (".TOX/x.md", ".TOX"),
+])
+def test_an_import_inside_an_excluded_folder_in_any_case_is_refused(tmp_path, imported, folder):
+    root = tmp_path.resolve()
+    _project(root, {"CLAUDE.md": f"@{imported}\n", imported: "r\n"})
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(root)
+
+    assert str(raised.value) == (
+        f"{root / 'CLAUDE.md'} imports @{imported}, which Claude Code would read, but Whitney doesn't stage it: "
+        f"it is inside {folder}/, which is never staged"
+    )
+
+
+@pytest.mark.timeout(10)
+def test_an_import_of_a_fifo_is_named_not_read(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "@pipe.md\n"})
+    os.mkfifo(tmp_path / "pipe.md")
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": "@pipe.md\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {"CLAUDE.md: @pipe.md": project_files.NOT_REGULAR_IMPORT_REASON}
+
+
+@pytest.mark.timeout(10)
+def test_a_fifo_inside_a_symlinked_folder_is_never_opened(tmp_path):
+    root = tmp_path.resolve()
+    _project(root, {"CLAUDE.md": "@shared/pipe.md\n"})
+    (root / "real").mkdir()
+    os.mkfifo(root / "real/pipe.md")
+    (root / "shared").symlink_to("real", target_is_directory=True)
+
+    assert load_claude_code_project_files(root) == {"CLAUDE.md": "@shared/pipe.md\n"}
+    assert files_not_staged_reasons("claude-code", root) == {"CLAUDE.md: @shared/pipe.md": project_files.NOT_REGULAR_IMPORT_REASON}
+
+
+@pytest.mark.parametrize("imported", [".claude/CLAUDE.local.md", "sub/CLAUDE.local.md", "sub/claude.LOCAL.md"])
+def test_an_import_of_claude_local_md_at_any_depth_is_named_not_staged(tmp_path, imported):
+    _project(tmp_path, {"CLAUDE.md": f"@{imported}\n", imported: "mine\n"})
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": f"@{imported}\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path)[f"CLAUDE.md: @{imported}"] == LOCAL_REASON
+
+
+@pytest.mark.parametrize("imported", [
+    "sub/.claude/settings.json",
+    "sub/.claude/commands/deploy.md",
+    "sub/.Claude/hooks/gate.sh",
+    "sub/.mcp.json",
+    "sub/deeper/.MCP.json",
+    ".claude-plugin/plugin.json",
+    "plugins/x/.claude-plugin/README.md",
+    ".claude/skills/demo/.claude/settings.json",
+])
+def test_configuration_at_any_depth_is_named_not_staged(tmp_path, imported):
+    _project(tmp_path, {"CLAUDE.md": f"@{imported}\n", imported: HOOKS_ONLY})
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": f"@{imported}\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path)[f"CLAUDE.md: @{imported}"] == CONFIG_IMPORT_REASON
+
+
+def test_what_the_root_rule_allows_under_a_nested_dot_claude_is_staged(tmp_path):
+    _project(tmp_path, {
+        "CLAUDE.md": "@sub/.claude/notes.md @sub/.claude/skills/demo/SKILL.md @sub/.claude/agents/a.md\n",
+        "sub/.claude/notes.md": "n\n", "sub/.claude/skills/demo/SKILL.md": "s\n", "sub/.claude/agents/a.md": "a\n",
+    })
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == [
+        "CLAUDE.md", "sub/.claude/agents/a.md", "sub/.claude/notes.md", "sub/.claude/skills/demo/SKILL.md",
+    ]
+
+
+@pytest.mark.parametrize("name", [
+    "release.keystore", "app.jks", ".htpasswd", ".dockercfg", "kubeconfig", "prod.kubeconfig", "prod.tfvars",
+    "terraform.tfstate", "terraform.tfstate.backup", "service-account.json", "service-account-prod.json",
+    "secrets.yaml", "Secrets.YAML", "secret.txt", "api.secret", ".git-credentials", ".pgpass", "notes.gpg", "key.asc",
+    "token.txt", "github.token",
+    ".ssh/config", "sub/.aws/config", ".docker/config.json", ".gnupg/notes.md", "deploy/.kube/config", "home/.SSH/notes.md",
+])
+def test_more_secret_looking_names_and_folders_are_named_not_staged(tmp_path, name):
+    _project(tmp_path, {"CLAUDE.md": f"@{name}\n", name: "not a real secret\n"})
+
+    assert load_claude_code_project_files(tmp_path) == {"CLAUDE.md": f"@{name}\n"}
+    assert files_not_staged_reasons("claude-code", tmp_path) == {f"CLAUDE.md: @{name}": SECRET_IMPORT_REASON}
+
+
+@pytest.mark.parametrize("name", ["docs/ssh.md", "docs/secretary.md", "tokens/notes.md", "docs/kube.md", "my.ssh/notes.md"])
+def test_names_merely_like_a_secret_folder_or_file_are_staged(tmp_path, name):
+    _project(tmp_path, {"CLAUDE.md": f"@{name}\n", name: "n\n"})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", name]
+
+
+def _imports(count):
+    return {"CLAUDE.md": "".join(f"@f{number}.md\n" for number in range(count)), **{f"f{number}.md": "x\n" for number in range(count)}}
+
+
+def test_as_many_imported_files_as_the_cap_are_staged(tmp_path):
+    _project(tmp_path, _imports(project_files.IMPORT_MAX_FILES))
+
+    assert len(load_claude_code_project_files(tmp_path)) == project_files.IMPORT_MAX_FILES + 1
+
+
+def test_one_imported_file_past_the_cap_stops_the_run_naming_the_cap_and_the_importing_file(tmp_path):
+    root = tmp_path.resolve()
+    _project(root, _imports(project_files.IMPORT_MAX_FILES + 1))
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(root)
+
+    assert project_files.IMPORT_MAX_FILES == 100
+    assert str(raised.value) == (
+        f"{root / 'CLAUDE.md'} imports @f100.md, which makes 101 imported files, more than the 100 Whitney stages. "
+        "Staging only some would test part of the rule set, so the run stops: import fewer files"
+    )
+
+
+def test_imported_files_up_to_the_size_cap_are_staged(tmp_path):
+    _project(tmp_path, {"CLAUDE.md": "@a.md @b.md\n", "a.md": "a" * (4 * MIB), "b.md": "b" * (4 * MIB)})
+
+    assert sorted(load_claude_code_project_files(tmp_path)) == ["CLAUDE.md", "a.md", "b.md"]
+
+
+def test_imported_files_past_the_size_cap_stop_the_run_naming_the_cap_and_the_importing_file(tmp_path):
+    root = tmp_path.resolve()
+    _project(root, {
+        "CLAUDE.md": "@a.md @docs/more.md\n", "a.md": "a" * (4 * MIB),
+        "docs/more.md": "@b.md @c.md\n", "docs/b.md": "b" * (4 * MIB), "docs/c.md": "c",
+    })
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(root)
+
+    assert project_files.IMPORT_MAX_TOTAL_BYTES == 8 * MIB
+    total = 8 * MIB + len("@b.md @c.md\n") + 1
+    assert str(raised.value) == (
+        f"{root / 'docs/more.md'} imports @c.md, which brings the imported files to {total} bytes, "
+        f"more than the 8 MiB ({8 * MIB} bytes) Whitney stages. "
+        "Staging only some would test part of the rule set, so the run stops: import fewer or smaller files"
+    )
+
+
+def test_a_file_imported_again_in_any_spelling_does_not_count_toward_the_cap(tmp_path):
+    files = _imports(project_files.IMPORT_MAX_FILES)
+    files["CLAUDE.md"] += "@f0.md @F0.md @./f1.md\n"
+    _project(tmp_path, files)
+
+    assert len(load_claude_code_project_files(tmp_path)) == project_files.IMPORT_MAX_FILES + 1
+
+
+def test_the_report_names_what_it_found_before_a_cap_without_stopping(tmp_path):
+    files = _imports(project_files.IMPORT_MAX_FILES + 1)
+    files["CLAUDE.md"] = "@~/x.md\n" + files["CLAUDE.md"]
+    _project(tmp_path, files)
+
+    assert files_not_staged("claude-code", tmp_path) == ["CLAUDE.md: @~/x.md"]
+
+
+def test_a_symlink_inside_a_symlinked_folder_gets_the_last_link_message(tmp_path):
+    # _link_refusal's last message, "a symlink, or inside a symlinked folder", is reached by a link to a file
+    # and also by a link inside a linked folder, so both halves of it can be true.
+    root = tmp_path.resolve()
+    _project(root, {"CLAUDE.md": "@shared/link.md\n", "real/target.md": "t\n"})
+    (root / "real/link.md").symlink_to("target.md")
+    (root / "shared").symlink_to("real", target_is_directory=True)
+
+    with pytest.raises(ValueError) as raised:
+        load_claude_code_project_files(root)
+
+    assert str(raised.value).endswith("it is a symlink, or inside a symlinked folder. Replace the link with the file it points to")
