@@ -112,6 +112,12 @@ in `tasks._loaded`, whose block can raise no warning but version 1's
 adds more codec-name cases (`cli.harness_version`, `cli.write_report`);
 the `", "` in `tasks._scenario_task` moved to `tasks.why_not_applies`, which
 `whitney run` uses too, and an eval file may now list each target only once.
+The IFEvalCode escape fix (2026-11-12) adds `simplefilter("ignore", )`
+without its category in `interference._parses` and
+`interference._decode_escapes`: each block runs only `ast.parse` or a
+`unicode_escape` decode, which raise no warning but the `SyntaxWarning` or
+`DeprecationWarning` already named, so ignoring every warning there ignores
+the same one.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
