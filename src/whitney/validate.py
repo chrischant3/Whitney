@@ -61,7 +61,7 @@ from whitney.evalfile import (
     location,
     under_test,
 )
-from whitney.project_files import load_project_files_for, not_staged_reason
+from whitney.project_files import CLAUDE_PERMISSIONS, CLAUDE_SETTINGS, load_project_files_for, not_staged_reason
 from whitney.target_names import TARGETS
 from whitney.static_checks import parse_jsonc
 from whitney.setup_steps import NOTHING_PENDING, PENDING_DIR, PROJECT_DIR, SETUP_STEPS, order_problems, pending_problem
@@ -105,6 +105,10 @@ CAPTURED_REFUSALS = {
     "external_directory": ("scalar", ("ask", "deny")),
     "task": ("pattern", ("deny",)),
 }
+# The same for a rule in Claude Code's project settings, by the tool it names: only `Bash(<pattern>)` was
+# captured being refused, under `ask` and under `deny` (docs/spike-findings.md, "Phase 5 Task 37").
+CLAUDE_CAPTURED_REFUSALS = {"Bash": ("ask", "deny")}
+CLAUDE_RULE_KINDS = ("allow", "ask", "deny")  # the lists of rules in a `permissions` block
 # Set to "deny" for everything, each of these takes its tool away, so Kilo has nothing to refuse (the same captures).
 TOOL_REMOVED_BY_DENY = ("bash", "edit", "read")
 # Kilo's key for every permission, so setting it sets a guarded key too.
@@ -489,6 +493,7 @@ def validate_project(
         if target == "kilo":
             problems += _permission_rule_problems(eval_file, staged)
         else:
+            problems += _claude_rule_problems(eval_file, staged)
             problems += _agent_name_problems(eval_file, staged)
         problems += validate_variants(eval_file, staged, target=target)
     return problems
@@ -767,7 +772,29 @@ def _harness_permission_problems(eval_file: EvalFile, checks: Mapping[str, Check
                     f"sets {guarded}, the permission {name} tests, "
                     "so the overlay and not the project would decide the outcome; leave it out"
                 )))
-    return found
+    return found + _claude_grant_problems(eval_file)
+
+
+def _claude_grant_problems(eval_file: EvalFile) -> list[Found]:
+    """Rule 8 for Claude Code: the eval's own grant holds no rule a permission_held check in the file tests."""
+    if eval_file.source != CLAUDE_SETTINGS:
+        return []
+    grant = (eval_file.harness_permissions or {}).get("claude-code") or {}
+    tested = dict.fromkeys(_claude_rule(params) for _, params in _permission_expectations(eval_file))
+    return [
+        (location(("harness_permissions", "claude-code", kind)), (
+            f"holds {rule}, the rule {PERMISSION_HELD} tests, so the eval's grant and not the project "
+            "would decide the outcome; leave it out"
+        ))
+        for kind in CLAUDE_RULE_KINDS for rule in tested
+        if isinstance(grant.get(kind), list) and rule in grant[kind]
+    ]
+
+
+def _claude_rule(params: dict) -> str:
+    """The rule a permission_held check names, as Claude Code's settings write it: `Bash(git push:*)`, or the tool alone."""
+    pattern = params.get("pattern")
+    return f"{params['permission']}({pattern})" if pattern is not None else params["permission"]
 
 
 def tested_permissions(eval_file: EvalFile, checks: Mapping[str, CheckSpec]) -> list[tuple[str, str]]:
@@ -796,11 +823,18 @@ def _permission_held_problems(eval_file: EvalFile) -> list[Found]:
     found = []
     captured = sorted(CAPTURED_REFUSALS)
     expectations = _permission_expectations(eval_file)
+    claude = eval_file.source == CLAUDE_SETTINGS
     if expectations and eval_file.variants is None:
+        removed, then, change = (
+            ("settings file", "the eval's own grant then decides", "moves the rule to")
+            if claude else ("config", "Kilo's own rules then decide", "sets the rule to")
+        )
         found.append(("variants", (
-            f"a file that uses {PERMISSION_HELD} must say which variants run: the default baseline removes the whole config, "
-            "and Kilo's own rules then decide. Add a control that sets the rule to \"allow\", or \"variants\": {} for the template alone"
+            f"a file that uses {PERMISSION_HELD} must say which variants run: the default baseline removes the whole {removed}, "
+            f"and {then}. Add a control that {change} \"allow\", or \"variants\": {{}} for the template alone"
         )))
+    if claude:
+        return found + [(f"{at}.{field}", message) for at, params in expectations for field, message in [_claude_form_problem(params)] if field]
     for at, params in expectations:
         permission = params["permission"]
         if permission not in CAPTURED_REFUSALS:
@@ -811,6 +845,61 @@ def _permission_held_problems(eval_file: EvalFile) -> list[Found]:
         elif (CAPTURED_REFUSALS[permission][0] == "pattern") != (params.get("pattern") is not None):
             found.append((f"{at}.pattern", f"{_a(permission)} rule's refusal was captured only for {_captured_form(permission)}"))
     return found
+
+
+def _claude_form_problem(params: dict) -> tuple[str, str]:
+    """(the parameter at fault, why) if no refusal was captured for a Claude Code rule of this form, else ("", "")."""
+    permission = params["permission"]
+    if permission not in CLAUDE_CAPTURED_REFUSALS:
+        return "permission", (
+            f"no refusal has been captured for a '{permission}' rule in Claude Code's settings (docs/spike-findings.md), "
+            f"so {PERMISSION_HELD} can't read one; it reads rules for {', '.join(sorted(CLAUDE_CAPTURED_REFUSALS))}"
+        )
+    if params.get("pattern") is None:
+        return "pattern", (
+            f"a {permission} rule's refusal was captured only with a pattern, such as {permission}(git push:*); "
+            "give what is inside the brackets as the pattern"
+        )
+    return "", ""
+
+
+def _claude_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
+    """Criterion 17 for Claude Code: the rule under test is in the staged settings, under the action the check names.
+
+    A rule under "allow" refuses nothing, so it can't be the rule under
+    test, as on Kilo. The staged file is the loader's own JSON: an object
+    with a `permissions` object. A file with any other source has no rule
+    for the check to read on this target.
+    """
+    if eval_file.source != CLAUDE_SETTINGS:
+        message = (
+            f"{PERMISSION_HELD} tests a rule in the eval file's source, and '{eval_file.source}' "
+            f"isn't Claude Code's project settings ({CLAUDE_SETTINGS})"
+        )
+        return [Problem(eval_file.path, at, message) for at, _ in _permission_expectations(eval_file)]
+    expectations = [(at, params) for at, params in _permission_expectations(eval_file) if not _claude_form_problem(params)[0]]
+    if not expectations or eval_file.source not in staged:  # an unstaged source is reported by validate_project
+        return []
+    held = json.loads(staged[eval_file.source])[CLAUDE_PERMISSIONS]
+    rules = {kind: [rule for rule in held[kind] if isinstance(rule, str)] for kind in CLAUDE_RULE_KINDS if isinstance(held.get(kind), list)}
+    problems = []
+    for at, params in expectations:
+        rule, action = _claude_rule(params), params["action"]
+        if rule in rules.get(action, []):
+            continue
+        source = f"'{eval_file.source}'"
+        elsewhere = next((kind for kind in CLAUDE_RULE_KINDS if rule in rules.get(kind, [])), None)
+        if elsewhere == "allow":
+            message = f"{source} has {rule} under \"allow\", which refuses nothing; {PERMISSION_HELD} reads a rule under \"ask\" or \"deny\""
+        elif elsewhere:
+            message = (
+                f"{source} has {rule} under {json.dumps(elsewhere)}, and the check says {json.dumps(action)}; "
+                "they must agree, because each is refused in its own way"
+            )
+        else:
+            message = f"{source} has no rule {rule} under {json.dumps(action)}; its {action} rules: {', '.join(rules.get(action, [])) or 'none'}"
+        problems.append(Problem(eval_file.path, at, message))
+    return problems
 
 
 def _a(permission: str) -> str:

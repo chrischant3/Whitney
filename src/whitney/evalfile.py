@@ -60,7 +60,8 @@ SKILL_SOURCE = re.compile(r"\.(?:kilo|claude)/skills/([^/]+)/SKILL\.md")
 AGENT_SOURCE = re.compile(r"\.(?:kilo|claude)/agents/([^/]+)\.md")
 # Folders only one target's loader stages, so a file about something in one applies to that target alone
 # (whitney.project_files: the claude-code loader stages nothing of Kilo's, and the Kilo loader no .claude/agents/).
-ONE_TARGETS_FOLDERS = {".kilo/": "kilo", ".kilocode/": "kilo", ".claude/agents/": "claude-code"}
+# The last is a file, not a folder: Claude Code's project settings, which Kilo doesn't read.
+ONE_TARGETS_FOLDERS = {".kilo/": "kilo", ".kilocode/": "kilo", ".claude/agents/": "claude-code", ".claude/settings.json": "claude-code"}
 # The checks a trigger test expects, by kind: (the used one, the unused one, their parameter).
 TRIGGER_CHECKS = {
     "skill": ("skill_loaded", "skill_not_loaded", "skill"),
