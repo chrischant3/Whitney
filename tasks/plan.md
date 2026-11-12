@@ -12,7 +12,7 @@ A forkable Python + inspect-ai framework that produces evidence of whether a Kil
 - **Every eval runs `baseline` and `template` variants.** The delta is the finding; a pass in baseline isn't evidence the template works. Every scorer gets a control that proves it can fail.
 - **Scenario files follow the proposal's naming**: `evals/agents-md.json`, `evals/configuration/kilo-jsonc.json`. Format modelled on agent-skills `cases/*.json` (id, prompt, pressure, fixture, expectations), validated before any model call.
 - **Template layout (agreed after T2)**: rules live in `template/AGENTS.md`, at the project root, where Kilo loads them automatically. Teams add their own instructions to that file. `.kilo/AGENTS.md` (the proposal's layout) isn't loaded by Kilo on its own; see `docs/load-order.md`.
-- **VS Code coverage (agreed)**: automated evals on the CLI + an automated parity check that the extension's runtime reads the same `kilo.jsonc`/`AGENTS.md` + a short scripted manual check in the extension with recorded results.
+- **VS Code coverage (agreed)**: automated evals on the CLI + an automated parity check that the extension's runtime reads the same `kilo.jsonc`/`AGENTS.md` + a short scripted manual check in the extension with recorded results. *(2026-11-12, finding from Phase 5 Task 30: the parity check compares the resolved `permission` and `instructions` keys only, so it can't detect a changed `AGENTS.md`; [docs/results/2026-11-12-vscode-parity.md](../docs/results/2026-11-12-vscode-parity.md) proposes a fix, which is an open decision in [todo-phase5.md](todo-phase5.md#open-decisions-for-the-maintainer).)*
 
 ### Testing `"external_directory": "ask"` headlessly
 Documented behaviour of `kilo run`: without `--auto` a non-interactive run "auto-rejects any permission request it receives" and exits `1` with a stderr diagnostic; with `--auto`, "operations which are not auto-approved will not be allowed" (whether `ask` counts as auto-approved is undocumented). The eval therefore asserts, per scenario:
@@ -43,7 +43,7 @@ Tasks and checkpoints are tracked in [todo.md](todo.md).
 
 ### Phase 3: Reporting, VS Code, docs
 - [x] T8: Runner and report (tests/test_run_evals.py, tests/test_report*.py)
-- [ ] T9: VS Code parity check and manual checklist — parity check built and unit-tested; **open:** run it against the extension, and run the manual checklist (needs a person with the extension installed)
+- [ ] T9: VS Code parity check and manual checklist — parity check built and unit-tested; run against the extension on 2026-11-12 (`parity OK`, Phase 5 Task 30); **open:** the manual checklist (needs a person in the extension), and whether the check should also catch a changed `AGENTS.md`
 - [ ] T10: Docs and README — written; **open:** someone new follows docs/adding-tests.md from a clean clone
 - [x] T11 (optional): IFEvalCode interference check
 - [ ] Checkpoint: MVP complete — **open:** T9, T10 (CI runs `check.py task` on every pull request; see `.github/workflows/`)
