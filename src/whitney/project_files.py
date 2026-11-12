@@ -142,6 +142,11 @@ OUTSIDE_IMPORT_REASON = (
     "which an eval's run never has"
 )
 ENV_IMPORT_REASON = "an imported .env file, which is never staged"
+# Staging the file wouldn't help: the staged importer still names the original path, outside the run's project.
+ABSOLUTE_IMPORT_REASON = (
+    "written as an absolute path, which in a run's temporary project points outside it, "
+    "so the model wouldn't get it; write the import relative to the file holding it"
+)
 CONFIG_IMPORT_REASON = (
     "Claude Code reads it as configuration, such as settings, hooks, commands or MCP servers, "
     "which an import never stages"
@@ -378,7 +383,7 @@ def _claude_code_imports(root: Path, instructions: Mapping[str, str], evals: "_E
             path = _import_path(root, importer, written)
             if path is not None and (not _is_present(path) or (path.is_dir() and not path.is_symlink())):
                 continue  # nothing there to read; a symlinked folder goes on to be refused
-            reason = _import_left_out(root, path)
+            reason = _import_left_out(root, path) or (ABSOLUTE_IMPORT_REASON if os.path.isabs(written) else None)
             if reason:
                 found.left_out.append((f"{importer}: @{written}", reason))
                 continue
@@ -640,7 +645,7 @@ def files_not_staged_reasons(target: str, project_dir: Path, *, evals_path: Path
         last "and N more". The reasons are NOT_UTF8_REASON and
         SKILL_PATHS_REASON for kilo, and IGNORED_REASON, LOCAL_REASON,
         UNSAFE_REASON, REST_REASON, WHOLE_REASON, NOT_UTF8_REASON, OUTSIDE_IMPORT_REASON,
-        ENV_IMPORT_REASON, CONFIG_IMPORT_REASON, GIT_IMPORT_REASON, SECRET_IMPORT_REASON and
+        ABSOLUTE_IMPORT_REASON, ENV_IMPORT_REASON, CONFIG_IMPORT_REASON, GIT_IMPORT_REASON, SECRET_IMPORT_REASON and
         LARGE_IMPORT_REASON for claude-code.
 
     Raises:

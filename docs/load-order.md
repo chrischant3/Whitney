@@ -167,7 +167,7 @@ Claude Code's own [memory docs](https://code.claude.com/docs/en/memory.md) (read
 
 A `CLAUDE.md`, `.claude/CLAUDE.md` or `AGENTS.md` can import other files with `@path`. Claude Code's memory docs (read 2026-11-12) and a run on 2.1.322 agree ([spike-findings.md](spike-findings.md#phase-5-task-31-follow-up-gateway-base-url-and-claudemd-imports-2026-11-12)):
 
-- A relative path is read from the folder of the file holding the import: `@../docs/x.md` in `.claude/CLAUDE.md` is `docs/x.md`. An absolute path is allowed.
+- A relative path is read from the folder of the file holding the import: `@../docs/x.md` in `.claude/CLAUDE.md` is `docs/x.md`. Claude Code allows an absolute path; Whitney leaves an absolute import of a file inside the project out of a run and names it, because the staged copy of the importing file still names the original path, which is outside the run's temporary project. Write such an import as a relative path.
 - An imported file's own imports are followed, to four hops; the fifth isn't sent.
 - An `@path` in a code span or a fenced block isn't followed. A backslash escapes a space in the path; a quoted path isn't an import.
 - Block-level HTML comments (`<!-- … -->`) are stripped before the text is sent.

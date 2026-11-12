@@ -13,6 +13,7 @@ import json
 import pytest
 
 from whitney.project_files import (
+    ABSOLUTE_IMPORT_REASON,
     CONFIG_IMPORT_REASON,
     ENV_IMPORT_REASON,
     GIT_IMPORT_REASON,
@@ -105,11 +106,13 @@ def test_an_agents_md_read_without_a_claude_md_has_its_imports_staged(tmp_path):
     assert load_claude_code_project_files(tmp_path) == {"AGENTS.md": "rule @docs/more.md\n", "docs/more.md": "more\n"}
 
 
-def test_an_absolute_import_inside_the_project_is_staged_by_its_project_path(tmp_path):
+def test_an_absolute_import_inside_the_project_is_named_not_staged(tmp_path):
     root = tmp_path.resolve()
-    _project(root, {"CLAUDE.md": f"@{root / 'docs/abs.md'}\n", "docs/abs.md": "abs\n"})
+    written = f"@{root / 'docs/abs.md'}"
+    _project(root, {"CLAUDE.md": f"{written}\n", "docs/abs.md": "abs\n"})
 
-    assert sorted(load_claude_code_project_files(root)) == ["CLAUDE.md", "docs/abs.md"]
+    assert sorted(load_claude_code_project_files(root)) == ["CLAUDE.md"]
+    assert files_not_staged_reasons("claude-code", root) == {f"CLAUDE.md: {written}": ABSOLUTE_IMPORT_REASON}
 
 
 def test_imports_outside_the_project_are_named_not_staged(tmp_path):
