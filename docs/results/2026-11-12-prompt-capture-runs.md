@@ -28,6 +28,8 @@ Every command exited 0. The costs total about $0.17. Kilo's figures are the sum 
 
 ## The report lines
 
+These are the lines as the report wrote them on 2026-11-12. The review fixes that day changed the wording (one line per variant, where the text was found, "asked for" and "reached the model" in the thinking line) and the claude-code match; the lines below are kept as they were printed. The lines the fixed code gives for runs 1 and 2 are in "Re-matched after the review fixes" below.
+
 Run 1, Kilo on the Gateway. The template's line says the rules were found and the baseline's says they weren't:
 
 ```
@@ -42,7 +44,7 @@ Run 2, Claude Code:
 - `capture-rules.json` on claude-code, thinking: set not set by Whitney (2 runs); sent `"thinking": {"budget_tokens": 31999, "type": "enabled", "display": "updates"}` (2 runs); text withheld: the thinking blocks are empty (2 runs).
 ```
 
-**The template's "not found" on Claude Code is a false negative of the exact match, not a missing rule.** The rules were sent, but Claude Code removes HTML comments from an instruction file before sending it, and `template/claude-code/AGENTS.md` ends with `<!-- Add your team's rules here. -->`. The request has the file's text up to `## Team rules` and then `</system-reminder>`. Checked offline against the stored request: the exact text is not in it, but the text with the comment removed is. Decision 6 asked for an exact match after normalising only line endings and trailing spaces, so the match wasn't widened here. Open decision 20 in `tasks/todo-phase5.md` asks whether to remove HTML comments on `claude-code` before matching.
+**The template's "not found" on Claude Code is a false negative of the exact match, not a missing rule.** The rules were sent, but Claude Code removes HTML comments from an instruction file before sending it, and `template/claude-code/AGENTS.md` ends with `<!-- Add your team's rules here. -->`. The request has the file's text up to `## Team rules` and then `</system-reminder>`. Checked offline against the stored request: the exact text is not in it, but the text with the comment removed is. Decision 6 asked for an exact match after normalising only line endings and trailing spaces, so the match wasn't widened here. Open decision 20 in `tasks/todo-phase5.md` asks whether to remove HTML comments on `claude-code` before matching. (Built as recommended after the review: block-level HTML comments are now removed on `claude-code` before matching, for Christopher to confirm; see below.)
 
 Run 3, Kilo on the Gateway with `--thinking`:
 
@@ -69,6 +71,21 @@ Run 6, Claude Code in Docker with both flags (the same AGENTS.md line as run 2, 
 ```
 - `thinking.json` on claude-code, thinking: asked `--settings {"showThinkingSummaries": true}; Inspect's reasoning_tokens 31999` (1 run); applied `"thinking": {"type": "enabled", "budget_tokens": 31999, "display": "summarized"}` (1 run); text in the events (1 run).
 ```
+
+## Re-matched after the review fixes
+
+After the pre-PR review fixes (2026-11-12), `whitney report` on these logs can't print the new lines: each score was written by the code of the day, in the old shape, and the report counts a score in that shape as not captured (`whitney report <logs>/cc-capture` and `<logs>/kilo-capture` both exited 0 and printed "`capture-rules.json` on claude-code: not captured." and the same for kilo). So the new matching was checked offline instead, not by a new run: a scratch script fed each log's stored `sent.first_body`, the run's first model call as it was kept, into the fixed `whitney.capture.Capture`, with the text of `template/<target>/AGENTS.md` as `texts_to_find` gives it (on `claude-code`, with the comment removed) and the model the body names, and rendered the section with `whitney.capture_report`. It printed:
+
+```
+- `capture-rules.json` on claude-code: `AGENTS.md` stands for the instruction files staged and the files they import, each looked for as its exact text after removing block-level HTML comments, as Claude Code does, and normalising line endings and trailing spaces. Only what the first model call held counts as sent as an instruction.
+  - baseline: `AGENTS.md` not in the first model call in 1 of 1 runs; 1 other request wasn't the run's model call and wasn't searched.
+  - template: `AGENTS.md` in the first model call in 1 of 1 runs (messages, under `Contents of …/AGENTS.md (project instructions, checked into the codebase):`); 1 other request wasn't the run's model call and wasn't searched.
+- `capture-rules.json` on kilo: instruction file `AGENTS.md`, looked for as its exact text after normalising line endings and trailing spaces. Only what the first model call held counts as sent as an instruction.
+  - baseline: `AGENTS.md` not in the first model call in 1 of 1 runs; 1 other request wasn't the run's model call and wasn't searched.
+  - template: `AGENTS.md` in the first model call in 1 of 1 runs (system prompt, under `Instructions from: …/AGENTS.md`); 1 other request wasn't the run's model call and wasn't searched.
+```
+
+This shows the fixed matcher gives the right answer on the requests the real harnesses sent, on both targets. It is not a run: the model-call check was given the model each body named, the later requests' bodies weren't kept, so "only in a later request" couldn't be tried, and the scores in the logs still say what the code of the day said. A new one-epoch run per target (about $0.08, as runs 1 and 2) would show the lines from `whitney run` itself.
 
 ## What each log holds
 
