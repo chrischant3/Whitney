@@ -834,7 +834,8 @@ def _permission_held_problems(eval_file: EvalFile) -> list[Found]:
             f"and {then}. Add a control that {change}, or \"variants\": {{}} for the template alone"
         )))
     if claude:
-        return found + [(f"{at}.{field}", message) for at, params in expectations for field, message in [_claude_form_problem(params)] if field]
+        problems = [(at, _claude_form_problem(params)) for at, params in expectations]
+        return found + [(f"{at}.{problem[0]}", problem[1]) for at, problem in problems if problem]
     for at, params in expectations:
         permission = params["permission"]
         if permission not in CAPTURED_REFUSALS:
@@ -847,8 +848,8 @@ def _permission_held_problems(eval_file: EvalFile) -> list[Found]:
     return found
 
 
-def _claude_form_problem(params: dict) -> tuple[str, str]:
-    """(the parameter at fault, why) if no refusal was captured for a Claude Code rule of this form, else ("", "")."""
+def _claude_form_problem(params: dict) -> tuple[str, str] | None:
+    """(the parameter at fault, why) if no refusal was captured for a Claude Code rule of this form, else None."""
     permission = params["permission"]
     if permission not in CLAUDE_CAPTURED_REFUSALS:
         return "permission", (
@@ -860,7 +861,7 @@ def _claude_form_problem(params: dict) -> tuple[str, str]:
             f"a {permission} rule's refusal was captured only with a pattern, such as {permission}(git push:*); "
             "give what is inside the brackets as the pattern"
         )
-    return "", ""
+    return None
 
 
 def _claude_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> list[Problem]:
@@ -877,7 +878,7 @@ def _claude_rule_problems(eval_file: EvalFile, staged: Mapping[str, str]) -> lis
             f"isn't Claude Code's project settings ({CLAUDE_SETTINGS})"
         )
         return [Problem(eval_file.path, at, message) for at, _ in _permission_expectations(eval_file)]
-    expectations = [(at, params) for at, params in _permission_expectations(eval_file) if not _claude_form_problem(params)[0]]
+    expectations = [(at, params) for at, params in _permission_expectations(eval_file) if not _claude_form_problem(params)]
     if not expectations or eval_file.source not in staged:  # an unstaged source is reported by validate_project
         return []
     held = json.loads(staged[eval_file.source])[CLAUDE_PERMISSIONS]

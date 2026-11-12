@@ -1741,3 +1741,30 @@ def test_staged_settings_are_staged_for_validation_too(tmp_path):
     staged = load_project_files_for("claude-code", project)
 
     assert not_staged_reason("claude-code", project, ".claude/settings.json", staged) is None
+
+
+def test_the_staged_settings_are_the_permissions_block_as_indented_json(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"permissions": PUSH_DENIED, "hooks": {}}))
+
+    assert load_project_files_for("claude-code", project)[".claude/settings.json"] == (
+        '{\n  "permissions": {\n    "deny": [\n      "Bash(git push:*)"\n    ]\n  }\n}\n'
+    )
+
+
+def test_settings_in_a_dot_claude_that_is_a_link_are_never_staged(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real/settings.json").write_text(json.dumps({"permissions": PUSH_DENIED}))
+    (tmp_path / ".claude").symlink_to(tmp_path / "real", target_is_directory=True)
+
+    assert list(load_project_files_for("claude-code", tmp_path)) == ["AGENTS.md"]
+    assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+
+
+def test_settings_that_arent_utf8_are_left_out_and_say_why(tmp_path):
+    project = claude_project(tmp_path, "{}")
+    (project / ".claude/settings.json").write_bytes(b'{"permissions": {"deny": ["\xff"]}}')
+
+    assert files_not_staged_reasons("claude-code", project) == {
+        ".claude/settings.json": "isn't a JSON object, so its permissions can't be read",
+    }

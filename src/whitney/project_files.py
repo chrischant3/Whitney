@@ -757,12 +757,13 @@ def _claude_code_settings(root: Path, evals: "_EvalsFolder | None") -> tuple[dic
     linked = (root / CLAUDE_CODE_DIR).is_symlink()
     if not _is_staged_claude_code_file(root, CLAUDE_SETTINGS, linked) or _under(path, evals):
         return {}, []
+    unreadable: tuple[dict[str, str], list[tuple[str, str]]] = ({}, [(CLAUDE_SETTINGS, NOT_SETTINGS_REASON)])
     try:
-        settings = json.loads(path.read_text(encoding="utf-8"))
+        settings = json.loads(path.read_bytes())
     except (OSError, ValueError):  # not UTF-8 and not JSON are both a ValueError
-        settings = None
+        return unreadable
     if not isinstance(settings, dict):
-        return {}, [(CLAUDE_SETTINGS, NOT_SETTINGS_REASON)]
+        return unreadable
     if CLAUDE_PERMISSIONS not in settings:
         return {}, []
     permissions = settings[CLAUDE_PERMISSIONS]

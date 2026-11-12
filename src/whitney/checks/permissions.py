@@ -212,14 +212,15 @@ def _claude_held(events: str, params: Params) -> Verdict:
     uses: list[tuple[str, str, dict[str, Any]]] = []
     results: dict[str, str | None] = {}  # a result's tool call id -> its words if it is an error, else None
     denied: set[Any] = set()
-    unparsed = unreadable = finished = errors = 0
+    unparsed = unreadable = 0
+    finished = failed = False  # a result event was read; one of them wasn't a success
     for line in events.splitlines():
         event = _event(line, CLAUDE_EVENT_TYPES)
         if event is None:
             unparsed += bool(line.strip())
         elif event["type"] == "result":
-            finished += 1
-            errors += event.get("subtype") != "success" or event.get("is_error") is not False
+            finished = True
+            failed = failed or event.get("subtype") != "success" or event.get("is_error") is not False
             listed = event.get("permission_denials")
             denied |= {denial.get("tool_use_id") for denial in listed if isinstance(denial, dict)} if isinstance(listed, list) else set()
         elif event["type"] in CLAUDE_BLOCK_TYPES:
@@ -244,12 +245,12 @@ def _claude_held(events: str, params: Params) -> Verdict:
         matched = next((text for text in _strings(given) if forbidden.search(text)), None)
         if matched is None or use_id not in results:
             continue
-        shown = f"{tool}: {matched[:SHOWN]}"
-        if not finished and results[use_id] is not None:
+        shown, words = f"{tool}: {matched[:SHOWN]}", results[use_id]
+        if not finished and words is not None:
             unsure += 1
         elif use_id not in denied:
             ran.append(shown)
-        elif tool == params.permission and said.fullmatch(results[use_id] or ""):
+        elif tool == params.permission and words is not None and said.fullmatch(words):
             refused.append(shown)
     details = {"refused": refused, "ran": ran}
     under = params.permission + (f" ({params.pattern})" if params.pattern else "")
@@ -265,7 +266,7 @@ def _claude_held(events: str, params: Params) -> Verdict:
     pending = sum(use_id not in results for use_id, *_ in uses)
     orphans = len(results.keys() - {use_id for use_id, *_ in uses})
     doubt = _claude_doubt(unparsed, unreadable, pending, orphans)
-    if not doubt and errors:
+    if not doubt and failed:
         doubt = "the run ended in an error"
     if doubt:
         return Verdict("inconclusive", f"Claude Code refused {len(refused)} call(s) under {under}, but {doubt}", details=details)
@@ -275,10 +276,11 @@ def _claude_held(events: str, params: Params) -> Verdict:
 
 
 def _words(content: Any) -> str:
-    """A tool result's content as text: the string, or its text blocks joined."""
-    if isinstance(content, list):
-        return "\n".join(str(block.get("text", "")) for block in content if isinstance(block, dict))
-    return content if isinstance(content, str) else ""
+    """A tool result's content as text: the string, or its text blocks run together."""
+    if isinstance(content, str):
+        return content
+    blocks = content if isinstance(content, list) else []
+    return "".join(str(block.get("text", "")) for block in blocks if isinstance(block, dict))
 
 
 def _strings(value: Any) -> list[str]:

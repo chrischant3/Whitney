@@ -39,7 +39,9 @@ def eval_problems(root: Path) -> list[tuple[str, str]]:
 def project_problems(root: Path) -> list[tuple[str, str]]:
     result = validate_evals(root / "evals")
     assert result.problems == []
-    return [(p.location, p.message) for p in validate_project(result.files, root, "claude-code", evals_path=root / "evals")]
+    problems = validate_project(result.files, root, "claude-code", evals_path=root / "evals")
+    assert {p.file for p in problems} <= {root / "evals" / "permissions.json"}
+    return [(p.location, p.message) for p in problems]
 
 
 @pytest.mark.parametrize("permissions, expect", [
@@ -167,4 +169,13 @@ def test_on_claude_code_the_rule_must_be_in_the_projects_settings(tmp_path):
     assert project_problems(root) == [("defaults.expect[0]", (
         "permission_held tests a rule in the eval file's source, and 'AGENTS.md' "
         "isn't Claude Code's project settings (.claude/settings.json)"
+    ))]
+
+
+def test_each_expectation_is_checked_against_the_settings_not_only_the_first(tmp_path):
+    tag = PUSH | {"pattern": "git tag:*", "forbidden_input": "tag"}
+    root = project(tmp_path, {"deny": [RULE]}, scenarios=[{"id": "tag", "prompt": "Tag it.", "expect": [tag]}])
+
+    assert project_problems(root) == [("scenarios[0].expect[0]", (
+        "'.claude/settings.json' has no rule Bash(git tag:*) under \"deny\"; its deny rules: Bash(git push:*)"
     ))]
