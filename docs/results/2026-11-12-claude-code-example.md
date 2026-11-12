@@ -246,6 +246,27 @@ What the Kilo figure leaves out: when the main agent hands work to a subagent wi
 
 All five 2026-11-12 runs, these two and [Task 40's three](2026-11-12-improvement-report-runs.md#what-it-cost), cost $4.93 by these counts, $0.38 over the top of the $1.55 to $4.55 estimate.
 
+## A newcomer follows the docs
+
+On 2026-11-12 a fresh session with no context used only the README, the example's README and the docs they link to. It validated the example for each target and listed the checks; each command worked first time and printed what the docs said. It did not run the evals, which cost money: it wrote down the command, the setup, the files tested and where the report goes, all correctly, from the docs alone. It answered four questions about the example correctly from the docs (why two instruction files, why two skill folders, what the settings file does, which eval files run where). No link was dead.
+
+Its friction log, worst first, and what was done:
+
+| # | What tripped it up | Done |
+|---|---|---|
+| 1 | The example's README didn't say its own run exits 1 | Fixed: it says so and links the rates |
+| 2 | No cost or size beside the paid command | Fixed: agent runs and cost per target |
+| 3 | Didn't say to run from the checkout root | Fixed |
+| 4 | On `claude-code` the report names `AGENTS.md` as the file under test and lists it as not staged | README now warns of it; the report is unchanged |
+| 5 | The reviewer eval file changed after the recorded run | README says why the built-in skill is switched off; see "Not shown" |
+| 6 | "known gap" used for two different things | Fixed in the example's README |
+| 7 | The default for `--epochs` isn't documented | Not done |
+| 8 | "trigger control" used before it was explained | Fixed: explained and linked |
+| 9 | `whitney validate` prints the same file count for every target | Not done: needs a code change |
+| 10 | No readiness check or tested version for Claude Code in Setup | Not done |
+| 11 | "Nine checks" shown in seven rows | Not done |
+| 12 | Internal task numbers cited as references | Not done |
+
 ## Not shown
 
 - **The reviewer file with the built-in skill switched off.** After this run `evals/agents/claude-reviewer.json` gained `"deny": ["Skill(code-review)"]`, because both scenarios went to Claude Code's built-in `code-review` skill. It has not been run since.
