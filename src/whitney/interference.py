@@ -222,11 +222,11 @@ def _over_escaped(language: str, as_written: str, decoded: str) -> bool:
     `"` has no string the `\\"` could sit in.
     """
     if language == "python":
-        return not _compiles(as_written) and _compiles(decoded)
+        return not _parses(as_written) and _parses(decoded)
     return '\\"' in as_written and not _BARE_QUOTE.search(as_written)
 
 
-def _compiles(source: str) -> bool:
+def _parses(source: str) -> bool:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", SyntaxWarning)  # invalid escapes such as "\\d" only warn
         try:

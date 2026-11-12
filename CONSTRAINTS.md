@@ -113,7 +113,7 @@ adds more codec-name cases (`cli.harness_version`, `cli.write_report`);
 the `", "` in `tasks._scenario_task` moved to `tasks.why_not_applies`, which
 `whitney run` uses too, and an eval file may now list each target only once.
 The IFEvalCode escape fix (2026-11-12) adds `simplefilter("ignore", )`
-without its category in `interference._compiles` and
+without its category in `interference._parses` and
 `interference._decode_escapes`: each block runs only `ast.parse` or a
 `unicode_escape` decode, which raise no warning but the `SyntaxWarning` or
 `DeprecationWarning` already named, so ignoring every warning there ignores
