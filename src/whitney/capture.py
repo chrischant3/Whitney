@@ -22,7 +22,8 @@ Evidence for every field read here: docs/spike-findings.md, "Phase 5 Task
 
 import json
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 
 from whitney.evalfile import under_test
 from whitney.project_files import CLAUDE_SETTINGS, CONFIG_PATHS, claude_code_instructions, staged_imports
@@ -41,7 +42,11 @@ TEXT_IN_EVENTS = "in the events"
 TEXT_WITHHELD = "withheld: the thinking blocks are empty"
 NO_TEXT = "none in the events"
 ATTACHMENT = "attachment://"  # how Inspect's transcript refers to a long string it keeps aside
-SKILL_PARTS = ("description", "body")
+# The budget a Docker run with --thinking asks Inspect for: Claude Code's own default on the host
+# (docs/spike-findings.md, "Extended thinking"), so a Docker run asks for what a local one gets.
+DOCKER_THINKING_TOKENS = 31999
+KILO_THINKING = ("--variant", "high", "--thinking")  # the variant sets the level; --thinking puts the text in the stream
+CLAUDE_CODE_THINKING = {"showThinkingSummaries": True}  # in --settings: the thinking text in the stream
 
 
 def normalised(text: str) -> str:
@@ -72,10 +77,14 @@ class Capture:
         via: VIA_PROXY or VIA_INSPECT_LOG, where the requests came from.
         texts: label -> text to look for in every model request, after
             normalising both (texts_to_find). An empty text is left out.
+        redact: applied to each request's text before it is searched. The
+            texts come redacted (Inspect logs an agent's arguments, and the
+            task passes them as one), so a request is redacted the same way.
     """
 
-    def __init__(self, via: str, texts: Mapping[str, str]) -> None:
+    def __init__(self, via: str, texts: Mapping[str, str], redact: Callable[[str], str] = str) -> None:
         self._via = via
+        self._redact = redact
         self._texts = {label: normalised(text) for label, text in texts.items() if normalised(text)}
         self._lock = threading.Lock()
         self._requests: list[dict] = []
@@ -95,7 +104,7 @@ class Capture:
                 entry["system_differs"] = _system(parsed) != _system(self._first)
                 entry["tools_differ"] = parsed.get("tools") != self._first.get("tools")
             if parsed is not None:
-                text = normalised(request_text(parsed))
+                text = normalised(self._redact(request_text(parsed)))
                 for label, wanted in self._texts.items():
                     if self._found[label] is None and wanted in text:
                         self._found[label] = index
@@ -258,6 +267,69 @@ def thinking_text(events: str) -> str:
     if any(reasoning) or any(blocks):
         return TEXT_IN_EVENTS
     return TEXT_WITHHELD if blocks else NO_TEXT
+
+
+@dataclass(frozen=True)
+class Watch:
+    """What a run records beyond the fields every run has: its requests, its thinking level, or both.
+
+    Attributes:
+        capture: True to keep the `sent` entry (`--capture-prompt`).
+        texts: what to look for in the requests (texts_to_find), redacted.
+        told: what Whitney told the harness about thinking (`--thinking`),
+            as told_harness gives it, or None if nothing.
+    """
+
+    capture: bool = False
+    texts: Mapping[str, str] = field(default_factory=dict)
+    told: str | None = None
+
+
+def watch_for(capture_prompt: bool, thinking: bool, texts: Mapping[str, str] | None, told: str) -> Watch | None:
+    """The run's Watch, or None for a run with neither capture nor thinking, which records what every run records."""
+    if not capture_prompt and not thinking:
+        return None
+    return Watch(capture_prompt, dict(texts or {}), told if thinking else None)
+
+
+def told_harness(harness: str, docker: bool) -> str:
+    """What `--thinking` tells the harness, as the run states it: `harness`'s own setting, and in Docker Inspect's too.
+
+    In Docker the bridge drops the harness's own generation settings, so
+    the eval's reasoning_tokens is what can apply (tasks.scenario_eval sets
+    it to DOCKER_THINKING_TOKENS).
+    """
+    return f"{harness}; Inspect's reasoning_tokens {DOCKER_THINKING_TOKENS}" if docker else harness
+
+
+def run_entries(watch: Watch | None, sent: dict | None, events: str, *, docker: bool) -> dict:
+    """The fields a watched run adds to its record: `sent` with capture on, and `thinking`; {} for a run not watched.
+
+    Args:
+        watch: the run's Watch, or None.
+        sent: the requests read (a Capture's record), or None if none were.
+            A Docker run reads Inspect's log whenever it is watched, so its
+            thinking level comes from the request even with capture off.
+        events: the run's event stream.
+        docker: True for a Docker run.
+    """
+    if watch is None:
+        return {}
+    kept = {"sent": sent} if watch.capture else {}
+    return {**kept, "thinking": thinking_record(watch.told, sent_level(sent), events, docker=docker)}
+
+
+def from_inspect_log(events: Iterable, attachments: Mapping[str, str], texts: Mapping[str, str], redact: Callable[[str], str] = str) -> dict:
+    """A Docker run's `sent` entry, from its transcript's model events (requests_from_inspect_log).
+
+    It holds what a proxy's does, and `unlogged`: how many model events had
+    no call, because Inspect logged none for them.
+    """
+    bodies, unlogged = requests_from_inspect_log(events, attachments)
+    found = Capture(VIA_INSPECT_LOG, texts, redact)
+    for body in bodies:
+        found.add(body)
+    return {**found.record(), "unlogged": unlogged}
 
 
 def thinking_record(set_by: str | None, level: str, events: str, *, docker: bool) -> dict:

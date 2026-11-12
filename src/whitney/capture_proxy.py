@@ -21,10 +21,10 @@ import contextlib
 import http.client
 import threading
 import urllib.parse
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from whitney.capture import Capture
+from whitney.capture import VIA_PROXY, Capture, Watch
 
 LOOPBACK = "127.0.0.1"
 # Where each provider's calls go, by the provider part of a Kilo model, and Claude Code's.
@@ -116,6 +116,42 @@ class _Handler(BaseHTTPRequestHandler):
 
 class _Server(ThreadingHTTPServer):
     daemon_threads = True  # a connection the harness left open doesn't keep the run waiting when it ends
+
+
+def kilo_upstream(model: str, global_provider: Mapping[str, dict]) -> str:
+    """Where a captured local Kilo run's calls for `model` go: its provider's base URL in the global config, else UPSTREAMS'.
+
+    A base URL the user's own config sets for the provider is kept as the
+    upstream, so capture doesn't change where the run's calls go.
+
+    Raises:
+        ValueError: neither has one for the provider.
+    """
+    provider = model.partition("/")[0]
+    configured = ((global_provider.get(provider) or {}).get("options") or {}).get("baseURL")
+    if configured:
+        return configured
+    if provider not in UPSTREAMS:
+        raise ValueError(
+            f"--capture-prompt on the kilo target knows the API address of {', '.join(f'{name}/' for name in UPSTREAMS)} "
+            f"models only, or of a provider whose baseURL your global Kilo config sets; got {model!r}"
+        )
+    return UPSTREAMS[provider]
+
+
+@contextlib.contextmanager
+def proxied(watch: Watch | None, upstream: str, redact: Callable[[str], str]) -> Iterator[tuple[str | None, Capture | None]]:
+    """A logging proxy to `upstream` if `watch` has capture on, else nothing: yields (its origin, its Capture), or (None, None).
+
+    Args:
+        redact: as Capture's, so the redacted texts in `watch` are found.
+    """
+    if watch is None or not watch.capture:
+        yield None, None
+        return
+    capture = Capture(VIA_PROXY, watch.texts, redact)
+    with logging_proxy(upstream, capture) as origin:
+        yield origin, capture
 
 
 @contextlib.contextmanager

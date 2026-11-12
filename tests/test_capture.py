@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from whitney import capture
+from whitney.agent import redact
 from whitney.capture import (
     NO_MODEL_REQUEST,
     NOT_CAPTURED,
@@ -122,6 +123,15 @@ def test_an_openai_format_request_s_system_prompt_is_its_system_messages():
     found.add(json.dumps({"messages": [{"role": "system", "content": "b"}, first[1]]}).encode(), "POST", "/c")
 
     assert [r["system_differs"] for r in found.record()["requests"][1:]] == [False, True]
+
+
+def test_a_text_given_redacted_is_found_in_a_request_holding_the_secret():
+    """The task passes the texts redacted, since Inspect logs an agent's arguments; the request is redacted to match."""
+    found = Capture(capture.VIA_PROXY, {"rule": "Never print [redacted]."}, redact=lambda text: redact(text, ["sk-ant-fake-0123456789"]))
+
+    found.add(model_body(system="Never print sk-ant-fake-0123456789."), "POST", "/m")
+
+    assert found.record()["found"] == {"rule": 0}
 
 
 def test_an_empty_text_is_never_looked_for():
