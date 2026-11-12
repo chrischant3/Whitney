@@ -38,7 +38,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from whitney.evalfile import under_test
-from whitney.project_files import CLAUDE_SETTINGS, CONFIG_PATHS, claude_code_instructions, staged_imports, without_block_comments
+from whitney.project_files import claude_code_instructions, staged_imports, without_block_comments
 from whitney.validate import frontmatter_value
 
 VIA_PROXY = "proxy"
@@ -83,8 +83,11 @@ STRUCTURAL = frozenset({"type", "role"})  # keys whose values label a block or m
 
 
 def normalised(text: str) -> str:
-    """`text` with line endings made \\n, each line's trailing spaces dropped and the outer blank lines removed."""
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n")).strip()
+    """`text` with line endings made \\n, each line's trailing spaces dropped and the outer blank lines removed.
+
+    A \\r\\n ending is made \\n by the rstrip, which drops the \\r with the spaces.
+    """
+    return "\n".join(line.rstrip() for line in text.split("\n")).strip()
 
 
 def request_text(value) -> str:
@@ -128,7 +131,7 @@ class _Read:
     """What a capture could read of one body: the decoded text it keeps (None if it couldn't), and why not."""
 
     data: bytes | None
-    cut: bool
+    cut: bool = False
     encoding: str | None = None
     not_searched: str | None = None
 
@@ -142,14 +145,14 @@ def _read(body: bytes, size: int, encoding: str | None) -> _Read:
     """
     named = (encoding or "").strip().lower()
     if named in PLAIN:
-        return _Read(body[:MAX_STORED_BODY], size > MAX_STORED_BODY)
+        return _Read(body[:MAX_STORED_BODY], cut=size > MAX_STORED_BODY)
     if named not in DECODED:
-        return _Read(None, False, named, f"compressed ({named}), not searched")
+        return _Read(None, encoding=named, not_searched=f"compressed ({named}), not searched")
     try:
         data = zlib.decompressobj(zlib.MAX_WBITS | 32).decompress(body, MAX_STORED_BODY + 1)  # 32: a gzip or zlib header
     except zlib.error:
-        return _Read(None, False, named, f"compressed ({named}), could not be decoded")
-    return _Read(data[:MAX_STORED_BODY], size > len(body) or len(data) > MAX_STORED_BODY, named)
+        return _Read(None, encoding=named, not_searched=f"compressed ({named}), could not be decoded")
+    return _Read(data[:MAX_STORED_BODY], cut=size > len(body) or len(data) > MAX_STORED_BODY, encoding=named)
 
 
 def _partial_text(data: bytes) -> str:
@@ -286,8 +289,9 @@ class Capture:
             text, content = normalised(self._redact(raw)), normalised(self._redact(content))
             for label, wanted in self._texts.items():
                 if label not in found and wanted in text:
-                    at = content.find(wanted)
-                    found[label] = {"field": name, "heading": _heading(content, at) if at >= 0 else None}
+                    # Not in `content` when it runs through a STRUCTURAL value; then it has no heading line of its own.
+                    before, held, _ = content.partition(wanted)
+                    found[label] = {"field": name, "heading": _heading(before) if held else None}
         return found
 
     def record(self) -> dict:
@@ -341,9 +345,9 @@ def _json_object(data: bytes) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _heading(text: str, at: int) -> str | None:
-    """The last line with any text before position `at` of `text` (the heading a harness put above a file), path folders as …/."""
-    lines = [line.strip() for line in text[:at].split("\n") if line.strip()]
+def _heading(before: str) -> str | None:
+    """The last line with any text in `before`, the text above a found one (the heading a harness put above a file), path folders as …/."""
+    lines = [line.strip() for line in before.split("\n") if line.strip()]
     return PATH_FOLDERS.sub("…/", lines[-1])[:HEADING_MAX] if lines else None
 
 
@@ -409,7 +413,7 @@ def source_kind(source: str | None) -> str | None:
     tested = under_test(source)
     if tested:
         return tested[0]
-    if source in CONFIG_PATHS or source == CLAUDE_SETTINGS or source.endswith((".json", ".jsonc")):
+    if source.endswith((".json", ".jsonc")):  # as every Kilo config name and Claude Code's settings.json do
         return "config"
     return "instructions"
 

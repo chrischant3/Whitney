@@ -52,13 +52,19 @@ HOP_BY_HOP = frozenset({
 })  # fmt: skip
 # A request's Host and length are set again for the upstream; Expect was answered here already.
 NOT_FORWARDED = HOP_BY_HOP | {"host", "content-length", "expect"}
+# Header names and values the proxy reads or writes. HTTP compares names, and these values, ignoring case.
+CONTENT_LENGTH = "Content-Length"
+TRANSFER_ENCODING = "Transfer-Encoding"
+CONTENT_ENCODING = "Content-Encoding"
+CHUNKED = "chunked"
+CONNECTION = "Connection"
+CLOSE = "close"
 
 
 class _Refused(Exception):
     """A request the proxy answers itself, with `status`, without forwarding it."""
 
     def __init__(self, status: int, reason: str) -> None:
-        super().__init__(reason)
         self.status, self.reason = status, reason
 
 
@@ -67,7 +73,8 @@ class _Body:
 
     The spool keeps SPOOLED_IN_MEMORY bytes in memory and the rest on disk,
     so a large body costs the proxy at most the capture's cap and a chunk
-    in memory, and is still forwarded whole, byte for byte.
+    in memory, and is still forwarded whole, byte for byte. Its size is
+    checked against MAX_FORWARDED_BODY before it is read (_Handler._body).
     """
 
     def __init__(self, kept: int) -> None:
@@ -78,8 +85,6 @@ class _Body:
 
     def write(self, piece: bytes) -> None:
         self.size += len(piece)
-        if self.size > MAX_FORWARDED_BODY:
-            raise _Refused(413, f"a body over {MAX_FORWARDED_BODY} bytes isn't forwarded")
         self.spool.write(piece)
         self.kept += piece[: max(0, self._limit - len(self.kept))]
 
@@ -110,7 +115,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(refused.status, refused.reason)
             return
         with body.spool:
-            self.capture.add(bytes(body.kept), self.command, self.path, size=body.size, encoding=self.headers.get("content-encoding"))
+            self.capture.add(bytes(body.kept), self.command, self.path, size=body.size, encoding=self.headers.get(CONTENT_ENCODING))
             self._send_upstream(body)
 
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = _forward
@@ -124,8 +129,8 @@ class _Handler(BaseHTTPRequestHandler):
             for name, value in self.headers.items():
                 if name.lower() not in NOT_FORWARDED:
                     connection.putheader(name, value)
-            if "content-length" in self.headers or "transfer-encoding" in self.headers:
-                connection.putheader("Content-Length", str(body.size))
+            if CONTENT_LENGTH in self.headers or TRANSFER_ENCODING in self.headers:
+                connection.putheader(CONTENT_LENGTH, str(body.size))
             connection.endheaders()
             for piece in body.pieces():
                 connection.send(piece)
@@ -145,18 +150,20 @@ class _Handler(BaseHTTPRequestHandler):
         Raises:
             _Refused: 400 for framing that is malformed or cut short (a length
                 that isn't one whole number, lengths that differ, a transfer
-                coding other than chunked alone, a chunk size that isn't
+                coding other than chunked alone (empty list elements are
+                ignored, as RFC 9110 5.6.1 says), a chunk size that isn't
                 hexadecimal or a line over MAX_LINE); 413 for a body over
                 MAX_FORWARDED_BODY. Nothing negative or unbounded is read.
         """
         body = _Body(self.capture.kept_bytes)
-        codings = [coding.strip().lower() for value in self.headers.get_all("transfer-encoding") or [] for coding in value.split(",")]
-        if codings:
-            if codings != ["chunked"]:
+        values = self.headers.get_all(TRANSFER_ENCODING) or []
+        codings = [coding.strip().lower() for value in values for coding in value.split(",") if coding.strip()]
+        if values:
+            if codings != [CHUNKED]:
                 raise _Refused(400, "only the chunked transfer coding is read")
             self._read_chunks(body)
             return body
-        lengths = {value.strip() for value in self.headers.get_all("content-length") or []}
+        lengths = {value.strip() for value in self.headers.get_all(CONTENT_LENGTH) or []}
         if not lengths:
             return body
         length = lengths.pop()
@@ -210,15 +217,15 @@ class _Handler(BaseHTTPRequestHandler):
         """
         self.send_response_only(answer.status, answer.reason)
         has_body = self.command != "HEAD" and answer.status not in (204, 304)
-        unsized = has_body and answer.getheader("content-length") is None
+        unsized = has_body and answer.getheader(CONTENT_LENGTH) is None
         chunked = unsized and self.request_version != "HTTP/1.0"
         for name, value in answer.getheaders():
             if name.lower() not in HOP_BY_HOP:
                 self.send_header(name, value)
         if chunked:  # http.client has taken the upstream's chunks apart, so they are made again here
-            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header(TRANSFER_ENCODING, CHUNKED)
         elif unsized:
-            self.send_header("Connection", "close")
+            self.send_header(CONNECTION, CLOSE)
             self.close_connection = True
         self.end_headers()
         while has_body and (piece := answer.read1(CHUNK)):
@@ -231,11 +238,11 @@ class _Handler(BaseHTTPRequestHandler):
 class _Server(ThreadingHTTPServer):
     daemon_threads = True  # a connection the harness left open doesn't keep the run waiting when it ends
 
-    def handle_error(self, request, client_address) -> None:
+    def handle_error(self, *request_and_address) -> None:
         """Say nothing of a client that went before its answer was written; report anything else as the server does."""
         if isinstance(sys.exc_info()[1], ConnectionError):
             return
-        super().handle_error(request, client_address)
+        super().handle_error(*request_and_address)
 
 
 def kilo_upstream(model: str, global_provider: Mapping[str, dict]) -> str:

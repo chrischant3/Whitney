@@ -136,7 +136,7 @@ def _label_counts(name: str, places: list[dict]) -> str:
     """Where one label was found, run by run: in the first model call, not in it (and if only later), or not searched."""
     total = len(places)
     first = [place for place in places if place.get("in") == FIRST]
-    unsearched = Counter(place["not_searched"] for place in places if place.get("in") != FIRST and place.get("not_searched"))
+    unsearched = Counter(place["not_searched"] for place in places if place.get("not_searched"))  # never on a FIRST place
     not_first = [place for place in places if place.get("in") != FIRST and not place.get("not_searched")]
     clauses = []
     if first:

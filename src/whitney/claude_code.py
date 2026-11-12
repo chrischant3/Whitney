@@ -192,7 +192,7 @@ async def _container_version(sbox) -> str | None:
     return lines[0].strip()[:MAX_VERSION_LENGTH] or None if lines else None
 
 
-def _claude_command(model_id: str, harness_permissions: dict[str, list[str]], thinking: bool = False) -> list[str]:
+def _claude_command(model_id: str, harness_permissions: dict[str, list[str]], thinking: bool) -> list[str]:
     settings = {"permissions": harness_permissions, **(capture.CLAUDE_CODE_THINKING if thinking else {})}
     return [
         "claude", "-p",

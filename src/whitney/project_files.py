@@ -374,7 +374,7 @@ def _import_paths(text: str) -> list[str]:
     Each is as written, with escaped spaces unescaped.
     """
     paths = []
-    for line, kind in _markdown_lines(text):
+    for line, kind in _markdown_lines(text, keepends=False):
         if kind == TEXT_LINE:
             paths += [match.replace("\\ ", " ") for match in IMPORT.findall(CODE_SPAN.sub(" ", line))]
     return paths
@@ -394,7 +394,7 @@ def without_block_comments(text: str) -> str:
     return "".join(line for line, kind in _markdown_lines(text, keepends=True) if kind != COMMENT_LINE)
 
 
-def _markdown_lines(text: str, keepends: bool = False) -> Iterator[tuple[str, str]]:
+def _markdown_lines(text: str, *, keepends: bool) -> Iterator[tuple[str, str]]:
     """Each line of `text`, with what it is to Claude Code: TEXT_LINE, FENCE_LINE (a fence or inside one) or COMMENT_LINE."""
     fence, in_comment = None, False
     for line in text.splitlines(keepends=keepends):
