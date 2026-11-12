@@ -239,3 +239,16 @@ def test_a_project_path_never_stages_the_evals_path(tmp_path, fake_ifevalcode, m
     task = ifevalcode(target="kilo", model=MODEL, project_path=str(project), samples_per_language=1)
 
     assert set(task.metadata["evaluation_assets"]) == {"kilo.jsonc", "AGENTS.md"}
+
+
+def test_the_scorer_gets_check_code_its_decode_turns_back_into_the_row(tmp_path, fake_ifevalcode):
+    # Upstream decodes the check code before writing it to the sandbox (tests/test_ifevalcode_escapes.py),
+    # so the sample carries the form that decodes to the row's own text, and records the original.
+    check = "def check_correctness():\n    assert f('<>&\\\"\\'') == 2\n"
+    row = {**_row(505), "check_correctness": check}
+
+    task = ifevalcode(target="kilo", model=MODEL, dataset_path=_dataset(tmp_path, [row]), samples_per_language=1)
+    [sample] = list(task.dataset)
+
+    assert sample.metadata["check_correctness"] == check.replace("\\", "\\\\")
+    assert sample.metadata["check_correctness_as_written"] == check
