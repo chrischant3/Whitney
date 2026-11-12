@@ -352,7 +352,35 @@ def test_the_openai_format_s_system_messages_are_the_system_prompt_and_not_messa
     messages = [{"role": "system", "content": "Rules:\nthe rule"}, "a bare string", {"role": "user", "content": "hello"}]
 
     assert where({"messages": messages}, "the rule") == {"in": "first", "field": SYSTEM_PROMPT, "heading": "Rules:"}
-    assert where({"messages": messages}, "the rule\nuser\nhello") == {"in": None}  # each field is searched on its own
+    spanning = [messages[0], messages[2]]
+    assert where({"messages": spanning}, "the rule\nuser\nhello") == {"in": None}  # each field is searched on its own
+
+
+def test_a_json_body_that_is_not_an_object_is_not_a_model_call():
+    found = Capture(VIA_PROXY, {"rule": "the rule"}, model=MODEL)
+
+    found.add(b'["the rule"]', "POST", "/v1/messages")
+
+    assert found.record()["not_model_calls"] == 1 and found.record()["found"]["rule"] == {"in": None, "not_searched": "no model call was captured"}
+    assert found.record()["first_body_cut"] is None
+
+
+def test_a_body_sent_in_many_pieces_keeps_only_the_capture_s_cap(upstream, monkeypatch):
+    monkeypatch.setattr(capture, "MAX_STORED_BODY", 4)
+    found = Capture(VIA_PROXY, {})
+
+    with logging_proxy(upstream.url, found) as origin:
+        sent_raw(origin, chunked(b"3\r\nabc\r\n3\r\ndef\r\n3\r\nghi\r\n0\r\n\r\n"))
+
+    assert upstream.seen[0]["body"] == b"abcdefghi"
+    assert found.record()["requests"][0]["bytes"] == 9 and found.record()["requests"][0]["cut"] is True
+
+
+def test_an_upstream_path_is_kept_up_to_its_trailing_slashes_only(upstream):
+    with logging_proxy(upstream.url + "/apiX//", Capture(VIA_PROXY, {})) as origin:
+        sent_raw(origin, post(b"{}", b"Content-Length: 2\r\n"))
+
+    assert upstream.seen[0]["path"] == "/apiX/v1/messages"
 
 
 def test_an_event_without_a_kind_is_not_a_model_event():
@@ -408,6 +436,22 @@ def test_another_instruction_file_on_claude_code_is_named_and_matched_without_it
         "- `rules.json` on claude-code: instruction file `CLAUDE.md`, looked for as its exact text after removing "
         "block-level HTML comments, as Claude Code does, and normalising line endings and trailing spaces." in report
     )
+
+
+def test_a_permission_file_is_said_to_be_enforced_not_sent():
+    report = render_capture_markdown([log("template", [found_score(**{"AGENTS.md": FOUND})], source="kilo.jsonc")])
+
+    assert "- `rules.json` on kilo: `kilo.jsonc`: not sent as text: enforced by the harness." in report
+
+
+def test_agents_md_on_claude_code_stands_for_the_staged_instruction_files_but_not_on_kilo():
+    runs = [found_score(**{"AGENTS.md": FOUND})]
+    logs = [log("template", runs, target="claude-code"), log("template", runs, eval_file="k.json")]
+
+    report = render_capture_markdown(logs)
+
+    assert "- `rules.json` on claude-code: `AGENTS.md` stands for the instruction files staged and the files they import" in report
+    assert "- `k.json` on kilo: instruction file `AGENTS.md`, looked for as its exact text after normalising" in report
 
 
 def test_variants_are_listed_by_role_then_by_name():
