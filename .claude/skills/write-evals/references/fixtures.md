@@ -4,7 +4,7 @@ Read this before designing the fixture (step 3 of the skill), alongside "Fixture
 
 ## What Whitney stages, so the fixture doesn't need it
 
-Don't copy the file under test, `kilo.jsonc`, `AGENTS.md` or anything else under `.kilo/` into the fixture, or their text. Whitney stages those from the project into each run, all of them, not only the file under test. "Evaluating a local project" in `docs/adding-tests.md` lists which files each target stages.
+Don't copy the file under test, `kilo.jsonc`, `AGENTS.md`, `CLAUDE.md` or anything else under `.kilo/` or `.claude/` into the fixture, or their text. Whitney stages those from the project into each run, all of them, not only the file under test. "Evaluating a local project" in `docs/adding-tests.md` lists which files each target stages.
 
 Read what else gets staged. Another rule or skill may push the agent the other way, and a skill's negative trigger prompts can name another staged skill as their `owner`.
 
@@ -43,10 +43,10 @@ Put the default setup in `defaults.setup`: `git_init`, then `git_commit` with ev
 
 A skill that isn't in a project needs one to hold it. Build it in a scratch folder:
 
-- Put the skill at `.kilo/skills/<name>/`, with the folder named as the skill's `name`. Kilo also reads `.claude/skills/` and `.agents/skills/`, but only a skill under `.kilo/skills/` can have trigger tests.
-- Add a `kilo.jsonc`. The `kilo` target needs one, and `{}` is enough.
+- Put a Kilo skill at `.kilo/skills/<name>/`, with the folder named as the skill's `name`; it is tested on `kilo` alone. Put a Claude Code skill at `.claude/skills/<name>/`, which both targets stage, so its eval file runs on both, trigger tests included. Kilo also reads `.agents/skills/`, but trigger tests need a source in `.kilo/` or `.claude/`.
+- For the `kilo` target, add a `kilo.jsonc`: Kilo needs one, and `{}` is enough. The `claude-code` target needs none: a project holding only `.claude/skills/` is enough.
 - Copy `SKILL.md` and the files it links to, such as `references/`. Leave out any `evals/`, tests or expected answers, even if someone asks for the whole folder. Whitney stages a skill's whole folder into every run, so another tool's `evals/` inside it would put its answers in front of the agent.
 
-A Claude Code skill, from `.claude/skills/`, can be tested only this way, on the `kilo` target. The `claude-code` target stages no skills. Say in the hand-back that the result shows how the skill does under Kilo, not under Claude Code.
+A Claude Code skill, from `.claude/skills/`, can be tested on both targets. If the project also has a copy in `.kilo/skills/`, read the known gap in "Testing a skill or an agent" in `docs/adding-tests.md` first. Run `claude-code` to see how it does under Claude Code; a `kilo` result shows how it does under Kilo, and says nothing about Claude Code. Claude Code names a skill by its folder, whatever the `name` in its `SKILL.md` says.
 
 Copied reference material, such as a doc the skill reads, goes stale when the original changes. Copy it again before each run.

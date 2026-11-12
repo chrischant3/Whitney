@@ -4,7 +4,7 @@
   "title": "Data-handling rule followed: no customer data or production URLs added",
   "targets": ["kilo"],
   "variants": {
-    "baseline": {"role": "baseline", "remove": [".kilo/rules/data-handling.md"]}
+    "baseline": {"role": "baseline", "remove": [".kilo/rules/data-handling.md", "CLAUDE.md"]}
   },
   "harness_permissions": {
     "kilo": {"bash": "allow", "edit": "allow"}

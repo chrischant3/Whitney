@@ -173,6 +173,20 @@ Claude Code 2.1.322 offers the skills in the project's `.claude/skills/` and the
 
 **What Whitney does:** the `claude-code` loader copies both folders. Validation refuses an agent under test whose `name` isn't its file's name. A scenario whose setup has no `git_init` runs in a project that isn't a repository, so `check_no_inherited_instructions` refuses a Claude Code run with `.claude/skills/` or `.claude/agents/` above such a project.
 
+## What each target stages, side by side
+
+| In the project | `kilo` | `claude-code` |
+|---|---|---|
+| Root `AGENTS.md` | staged | staged only when there is no `CLAUDE.md` or `.claude/CLAUDE.md` |
+| Root `CLAUDE.md` | staged. Whether Kilo reads it beside an `AGENTS.md` hasn't been tested here | staged, with `.claude/CLAUDE.md` |
+| `kilo.jsonc`, `.kilo/rules/`, `.kilo/skills/`, `.kilo/agents/` | staged | not staged |
+| `.claude/skills/` | staged | staged |
+| `.claude/agents/` | not staged (Kilo doesn't read it, [above](#results-1)) | staged |
+| `.claude/settings.json` | not staged | its `permissions` block only |
+| Files a `CLAUDE.md` imports with `@path` | not staged | not staged |
+
+[`examples/consumer`](../examples/consumer/) is laid out for both. Its skills are in `.kilo/skills/` for Kilo, with a copy in `.claude/skills/` for Claude Code; Kilo reads both. When two skills share a name, Kilo 7.8.27 loaded the `.kilo/` copy in each of the 4 runs of the recorded one-epoch run that loaded it, and the `.claude/` copy in the 2 control runs where the `.kilo/` copy was removed ([results](results/2026-11-12-claude-code-example.md#which-skill-copy-kilo-used)); for rules files and workflows Kilo keeps the `.kilo/` one too. The Kilo skill eval's baseline removes both copies, but its automatic trigger control removes only `.kilo/skills/release-notes/` ([adding-tests.md](adding-tests.md#testing-a-skill-or-an-agent), the known gap). Its `CLAUDE.md` repeats the rules of `AGENTS.md` and `.kilo/rules/data-handling.md` rather than importing them, and its Kilo baselines remove `CLAUDE.md` as well as the file under test, because the Kilo loader stages it.
+
 ## Practical notes
 
 - Docker Desktop here has 4 GB of memory. Six Kilo sandboxes at once got the model proxy killed, so run with `--max-samples 2`.
