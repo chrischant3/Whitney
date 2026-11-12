@@ -26,7 +26,7 @@ from whitney import agent as agent_module
 from whitney import capture_proxy
 from whitney import claude_code as claude_module
 from whitney.agent import RUN_STORE_KEY, kilo
-from whitney.capture import NOT_CAPTURED, NOT_SET
+from whitney.capture import LEVEL_NOT_RECORDED, NOT_SET
 from whitney.claude_code import claude_code
 
 KEY = "sk-ant-fake-capture-key-0123456789"
@@ -56,10 +56,11 @@ def send(base, method, path, body, headers):
 
 key = os.environ.get("ANTHROPIC_API_KEY", "")
 if os.path.basename(sys.argv[0]) == "claude":
+    sent_model = args[args.index("--model") + 1]
     base, auth = os.environ.get("ANTHROPIC_BASE_URL"), {"x-api-key": key}
     calls = [("POST", "/v1/messages?beta=true", body) for body in control["requests"]]
 else:
-    provider = args[args.index("-m") + 1].split("/")[0]
+    provider, _, sent_model = args[args.index("-m") + 1].partition("/")  # Kilo names the model without its provider
     base = ((((overlay or {}).get("provider") or {}).get(provider) or {}).get("options") or {}).get("baseURL")
     login = os.path.join(os.environ["HOME"], ".local/share/kilo/auth.json")
     token = json.load(open(login))["kilo"]["access"] if os.path.exists(login) else ""
@@ -69,7 +70,7 @@ else:
 if base:
     for method, path, body in calls:
         if body is not None:
-            body = json.loads(json.dumps(body).replace("KEY-HERE", key or token))
+            body = json.loads(json.dumps(body).replace("KEY-HERE", key or token).replace("MODEL-HERE", sent_model))
         send(base, method, path, body, {**auth, "content-type": "application/json"})
 time.sleep(control.get("sleep", 0))
 if os.path.basename(sys.argv[0]) == "claude":
@@ -89,7 +90,7 @@ else:
 def first_request(system: str = AGENTS_MD) -> dict:
     """A model request in Anthropic's format holding the key the way an agent's shell could put it there."""
     return {
-        "model": "claude-haiku-4-5",
+        "model": "MODEL-HERE",
         "system": [{"type": "text", "text": f"Instructions from: /tmp/project/AGENTS.md\n{system}"}],
         "messages": [
             {"role": "user", "content": "Reply with PONG."},
@@ -197,9 +198,10 @@ def test_claude_code_with_capture_keeps_its_first_request_and_finds_the_rules_in
     sent = run_record["sent"]
     assert urllib.parse.urlsplit(seen(harness)["base"]).hostname == "127.0.0.1"
     assert harness.upstream.seen[0]["path"] == "/v1/messages?beta=true"
-    assert sent["via"] == "proxy" and sent["first_request"] == 0 and sent["found"] == {"AGENTS.md": 0}
+    assert sent["via"] == "proxy" and sent["first_request"] == 0
+    assert sent["found"] == {"AGENTS.md": {"in": "first", "field": "system prompt", "heading": "Instructions from: …/AGENTS.md"}}
     assert sent["first_body"]["system"] == first_request()["system"]
-    assert sent["requests"][0]["path"] == "/v1/messages?beta=true"
+    assert sent["requests"][0]["path"] == "/v1/messages" and sent["requests"][0]["query_removed"] is True
     assert run_record["thinking"] == {
         "set": NOT_SET, "sent": '"thinking": {"budget_tokens": 31999, "type": "enabled", "display": "updates"}',
         "text": "withheld: the thinking blocks are empty",
@@ -233,7 +235,7 @@ def test_claude_code_with_thinking_is_told_to_show_it_and_states_what_it_was_tol
     settings = json.loads(args(harness)[args(harness).index("--settings") + 1])
     assert settings == {"permissions": {"allow": ["Bash"]}, "showThinkingSummaries": True}
     assert harness.stored[RUN_STORE_KEY]["thinking"] == {
-        "set": '--settings {"showThinkingSummaries": true}', "sent": NOT_CAPTURED, "text": "in the events",
+        "set": '--settings {"showThinkingSummaries": true}', "sent": LEVEL_NOT_RECORDED, "text": "in the events",
     }
     assert "sent" not in harness.stored[RUN_STORE_KEY]
     assert seen(harness)["base"] is None  # thinking alone starts no proxy
@@ -250,7 +252,8 @@ def test_kilo_on_the_gateway_is_given_the_proxy_s_origin_alone_and_its_paths_rea
     assert [(s["method"], s["path"]) for s in harness.upstream.seen] == [("GET", "/api/openrouter/models"), ("POST", "/api/openrouter/messages")]
     assert harness.upstream.headers(1)["authorization"] == [f"Bearer {LOGIN}"]
     run_record = harness.stored[RUN_STORE_KEY]
-    assert run_record["sent"]["first_request"] == 1 and run_record["sent"]["found"] == {"AGENTS.md": 1}
+    assert run_record["sent"]["first_request"] == 1 and run_record["sent"]["found"]["AGENTS.md"]["in"] == "first"
+    assert run_record["sent"]["first_body"]["model"] == "anthropic/claude-haiku-4.5"
     assert [r["model_request"] for r in run_record["sent"]["requests"]] == [False, True]
     assert run_record["thinking"]["set"] == NOT_SET
     assert LOGIN not in json.dumps(run_record)  # the login's token, which the fake put in its request, is redacted
@@ -284,7 +287,7 @@ def test_kilo_with_thinking_runs_the_high_variant_and_states_it(harness):
         "run", "--pure", "--format", "json", "-m", "kilo/anthropic/claude-haiku-4.5", "--agent", "reviewer",
         "--variant", "high", "--thinking", "--", "Reply with PONG.",
     ]  # fmt: skip
-    assert harness.stored[RUN_STORE_KEY]["thinking"] == {"set": "kilo run --variant high --thinking", "sent": NOT_CAPTURED, "text": "in the events"}
+    assert harness.stored[RUN_STORE_KEY]["thinking"] == {"set": "kilo run --variant high --thinking", "sent": LEVEL_NOT_RECORDED, "text": "in the events"}
 
 
 def test_kilo_with_capture_refuses_a_base_url_of_its_own():
@@ -355,7 +358,8 @@ def test_a_docker_run_with_capture_reads_the_bridged_requests_from_inspect_s_log
     run(claude_code(model="anthropic/claude-haiku-4-5", execution="docker", api_key_env=None, capture_prompt=True, capture_texts={"AGENTS.md": AGENTS_MD}))
 
     sent = container.stored[RUN_STORE_KEY]["sent"]
-    assert sent["via"] == "inspect-log" and sent["found"] == {"AGENTS.md": 0} and sent["unlogged"] == 1
+    assert sent["via"] == "inspect-log" and sent["unlogged"] == 1
+    assert sent["found"] == {"AGENTS.md": {"in": "first", "field": "system prompt", "heading": None}}
     assert sent["first_body"] == {"system": AGENTS_MD, "messages": [{"role": "user", "content": "hi [redacted]"}]}
     assert container.stored[RUN_STORE_KEY]["thinking"] == {"asked": NOT_SET, "applied": "no thinking setting in the request", "text": "none in the events"}
 
@@ -400,7 +404,7 @@ def test_a_docker_kilo_run_with_capture_finds_nothing_of_a_text_it_was_not_sent(
 
     run(kilo(model="kilo/anthropic/claude-haiku-4.5", execution="docker", capture_prompt=True, capture_texts={"AGENTS.md": AGENTS_MD}))
 
-    assert container.stored[RUN_STORE_KEY]["sent"]["found"] == {"AGENTS.md": None}
+    assert container.stored[RUN_STORE_KEY]["sent"]["found"] == {"AGENTS.md": {"in": None}}
     assert container.stored[RUN_STORE_KEY]["sent"]["requests"] == [
         {"method": None, "path": None, "bytes": len(json.dumps(request).encode()), "model_request": True}
     ]

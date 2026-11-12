@@ -108,7 +108,7 @@ def test_the_score_keeps_which_texts_were_found_and_the_thinking_entry():
 
     score = tasks_module._scenario_score([(registry()["no_secret_committed"], Verdict("pass", "ok"))], ["pass", "fail", "unsure"], [], run, [])
 
-    assert score.metadata["sent"] == {"via": "proxy", "requests": 2, "found": {"AGENTS.md": 1}}
+    assert score.metadata["sent"] == {"via": "proxy", "requests": 2, "not_model_calls": 0, "not_searched": 0, "found": {"AGENTS.md": 1}}
     assert score.metadata["thinking"] == run["thinking"]
 
 
@@ -198,12 +198,16 @@ def _report(logs, results) -> str:
 
 
 def test_the_report_says_what_was_sent_after_the_tables_when_runs_were_captured(evals, tmp_path):
-    logs = [_log(task(evals, capture_prompt=True), {"AGENTS.md": 0}), _log(task(evals, variant="baseline", capture_prompt=True), {"AGENTS.md": None})]
+    first = {"in": "first", "field": "system prompt", "heading": "Instructions from: …/AGENTS.md"}
+    logs = [_log(task(evals, capture_prompt=True), {"AGENTS.md": first}), _log(task(evals, variant="baseline", capture_prompt=True), {"AGENTS.md": {"in": None}})]
 
     report = _report(logs, tmp_path / "results")
 
     assert "## What was sent to the model" in report
-    assert "baseline: `AGENTS.md` not found (0 of 1 runs); template: `AGENTS.md` found in 1 of 1 runs." in report
+    assert (
+        "  - baseline: `AGENTS.md` not in the first model call in 1 of 1 runs.\n"
+        "  - template: `AGENTS.md` in the first model call in 1 of 1 runs (system prompt, under `Instructions from: …/AGENTS.md`).\n"
+    ) in report
     assert report.index("## Rules") < report.index("## What was sent to the model") < report.index("## Evaluation Instructions and Assets")
 
 

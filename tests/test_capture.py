@@ -59,10 +59,13 @@ def test_each_harness_s_captured_request_is_found_to_hold_its_agents_md(name):
     found.add(body, "POST", meta["request_path"])
 
     record = found.record()
-    assert record["found"] == {"AGENTS.md": 0}
+    assert record["found"]["AGENTS.md"]["in"] == "first"
     assert record["first_request"] == 0
     assert record["first_body"] == json.loads(body)
-    assert record["requests"] == [{"method": "POST", "path": meta["request_path"], "bytes": len(body), "model_request": True}]
+    path, _, query = meta["request_path"].partition("?")
+    assert record["requests"] == [{
+        "method": "POST", "path": path, "bytes": len(body), "model_request": True, **({"query_removed": True} if query else {}),
+    }]
     assert record["via"] == "proxy"
 
 
@@ -74,17 +77,17 @@ def test_a_skill_s_description_is_found_in_the_first_request_and_its_body_is_not
     found.add(body, "POST", meta["request_path"])
 
     assert set(texts) == {"description", "body"}
-    assert found.record()["found"] == {"description": 0, "body": None}
+    assert found.record()["found"] == {"description": {"in": "first", "field": "system prompt", "heading": "<description>"}, "body": {"in": None}}
 
 
 def test_a_text_found_in_a_later_request_names_that_request():
     found = Capture(capture.VIA_PROXY, {"body": "Skill body marker: CAPTURE-SKILL-BODY-2287"})
 
     found.add(b"", "GET", "/api/openrouter/models")
-    found.add(model_body(system="s"), "POST", "/m")
-    found.add(model_body(system="s", extra=[{"type": "tool_result", "content": "Skill body marker: CAPTURE-SKILL-BODY-2287\r\n"}]), "POST", "/m")
+    found.add(model_body(system="s"), "POST", "/v1/messages")
+    found.add(model_body(system="s", extra=[{"type": "tool_result", "content": "Skill body marker: CAPTURE-SKILL-BODY-2287\r\n"}]), "POST", "/v1/messages")
 
-    assert found.record()["found"] == {"body": 2}
+    assert found.record()["found"] == {"body": {"in": "later", "request": 2}}
 
 
 def test_requests_that_are_not_model_requests_are_listed_but_not_kept_or_searched():
@@ -96,7 +99,7 @@ def test_requests_that_are_not_model_requests_are_listed_but_not_kept_or_searche
 
     record = found.record()
     assert record["first_request"] is None and record["first_body"] is None
-    assert record["found"] == {"rule": None}
+    assert record["found"] == {"rule": {"in": None, "not_searched": "no model call was captured"}}
     assert [r["model_request"] for r in record["requests"]] == [False, False, False]
     assert [r["bytes"] for r in record["requests"]] == [21, 8, 6]
 
@@ -104,10 +107,10 @@ def test_requests_that_are_not_model_requests_are_listed_but_not_kept_or_searche
 def test_later_requests_say_whether_their_system_prompt_and_tools_differ_from_the_first():
     found = Capture(capture.VIA_PROXY, {})
 
-    found.add(model_body(system=[{"text": "a"}], tools=[{"name": "bash"}]), "POST", "/m")
-    found.add(model_body(system=[{"text": "a"}], tools=[{"name": "bash"}], more="history"), "POST", "/m")
-    found.add(model_body(system=[{"text": "b"}], tools=[{"name": "bash"}]), "POST", "/m")
-    found.add(model_body(system=[{"text": "a"}], tools=[]), "POST", "/m")
+    found.add(model_body(system=[{"text": "a"}], tools=[{"name": "bash"}]), "POST", "/v1/messages")
+    found.add(model_body(system=[{"text": "a"}], tools=[{"name": "bash"}], more="history"), "POST", "/v1/messages")
+    found.add(model_body(system=[{"text": "b"}], tools=[{"name": "bash"}]), "POST", "/v1/messages")
+    found.add(model_body(system=[{"text": "a"}], tools=[]), "POST", "/v1/messages")
 
     later = found.record()["requests"][1:]
     assert [(r["system_differs"], r["tools_differ"]) for r in later] == [(False, False), (True, False), (False, True)]
@@ -118,9 +121,9 @@ def test_an_openai_format_request_s_system_prompt_is_its_system_messages():
     found = Capture(capture.VIA_PROXY, {})
     first = [{"role": "system", "content": "a"}, {"role": "user", "content": "hi"}]
 
-    found.add(json.dumps({"messages": first}).encode(), "POST", "/c")
-    found.add(json.dumps({"messages": [first[0], *first[1:], {"role": "assistant", "content": "x"}]}).encode(), "POST", "/c")
-    found.add(json.dumps({"messages": [{"role": "system", "content": "b"}, first[1]]}).encode(), "POST", "/c")
+    found.add(json.dumps({"messages": first}).encode(), "POST", "/v1/chat/completions")
+    found.add(json.dumps({"messages": [first[0], *first[1:], {"role": "assistant", "content": "x"}]}).encode(), "POST", "/v1/chat/completions")
+    found.add(json.dumps({"messages": [{"role": "system", "content": "b"}, first[1]]}).encode(), "POST", "/v1/chat/completions")
 
     assert [r["system_differs"] for r in found.record()["requests"][1:]] == [False, True]
 
@@ -129,27 +132,27 @@ def test_a_text_given_redacted_is_found_in_a_request_holding_the_secret():
     """The task passes the texts redacted, since Inspect logs an agent's arguments; the request is redacted to match."""
     found = Capture(capture.VIA_PROXY, {"rule": "Never print [redacted]."}, redact=lambda text: redact(text, ["sk-ant-fake-0123456789"]))
 
-    found.add(model_body(system="Never print sk-ant-fake-0123456789."), "POST", "/m")
+    found.add(model_body(system="Never print sk-ant-fake-0123456789."), "POST", "/v1/messages")
 
-    assert found.record()["found"] == {"rule": 0}
+    assert found.record()["found"] == {"rule": {"in": "first", "field": "system prompt", "heading": None}}
 
 
 def test_an_empty_text_is_never_looked_for():
     found = Capture(capture.VIA_PROXY, {"empty": " \n\r\n", "rule": "a rule"})
 
-    found.add(model_body(system="a rule"), "POST", "/m")
+    found.add(model_body(system="a rule"), "POST", "/v1/messages")
 
-    assert found.record()["found"] == {"rule": 0}
+    assert found.record()["found"] == {"rule": {"in": "first", "field": "system prompt", "heading": None}}
 
 
 def test_the_record_is_a_copy_so_later_requests_do_not_change_one_already_taken():
     found = Capture(capture.VIA_PROXY, {"rule": "late"})
-    found.add(model_body(), "POST", "/m")
+    found.add(model_body(), "POST", "/v1/messages")
     taken = found.record()
 
-    found.add(model_body(system="late"), "POST", "/m")
+    found.add(model_body(system="late"), "POST", "/v1/messages")
 
-    assert taken["found"] == {"rule": None} and len(taken["requests"]) == 1
+    assert taken["found"] == {"rule": {"in": None}} and len(taken["requests"]) == 1
 
 
 # --- Docker: Inspect's own log ------------------------------------------------------------------
@@ -301,7 +304,7 @@ def test_an_openai_format_reasoning_setting_is_stated_too():
 
 
 def test_the_level_sent_is_read_from_the_first_model_request_or_says_why_not():
-    assert sent_level(None) == NOT_CAPTURED
+    assert sent_level(None) == "not recorded (no --capture-prompt)"
     assert sent_level({"first_body": None}) == NO_MODEL_REQUEST
     assert sent_level({"first_body": {"thinking": {"type": "disabled"}}}) == '"thinking": {"type": "disabled"}'
 

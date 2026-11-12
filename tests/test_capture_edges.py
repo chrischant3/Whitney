@@ -36,7 +36,7 @@ def test_a_docker_run_finds_a_redacted_text_in_a_request_holding_the_secret():
 
     found = capture.from_inspect_log(events, {}, {"AGENTS.md": "Rule: never print [redacted]."}, lambda text: redact(text, [KEY]))
 
-    assert found["found"] == {"AGENTS.md": 0}
+    assert found["found"] == {"AGENTS.md": {"in": "first", "field": "system prompt", "heading": None}}
 
 
 def test_a_jsonc_file_outside_the_known_config_paths_is_a_config():
@@ -59,7 +59,7 @@ def test_thinking_text_reads_past_lines_that_are_not_events_and_counts_only_the_
 def test_the_score_keeps_how_many_calls_inspect_did_not_log():
     run = {"sent": {"via": "inspect-log", "requests": [{}], "found": {}, "unlogged": 3}}
 
-    assert capture.score_entries(run)["sent"] == {"via": "inspect-log", "requests": 1, "found": {}, "unlogged": 3}
+    assert capture.score_entries(run)["sent"] == {"via": "inspect-log", "requests": 1, "not_model_calls": 0, "not_searched": 0, "found": {}, "unlogged": 3}
 
 
 # --- the report's section --------------------------------------------------------------------
@@ -69,7 +69,8 @@ def test_the_whole_section_as_it_is_written():
     assert render_capture_markdown([log("template", [sent(**{"AGENTS.md": 0})])]) == (
         "## What was sent to the model\n\n"
         "- `rules.json` on kilo: instruction file `AGENTS.md`, looked for as its exact text after normalising line endings "
-        "and trailing spaces. template: `AGENTS.md` found in 1 of 1 runs.\n"
+        "and trailing spaces. Only what the first model call held counts as sent as an instruction.\n"
+        "  - template: `AGENTS.md` in the first model call in 1 of 1 runs (system prompt).\n"
     )
 
 
@@ -82,8 +83,8 @@ def test_variants_are_ordered_by_role_then_by_name_not_by_name_alone():
         log("odd", [sent(**{"AGENTS.md": None})], role="something else"),
     ])
 
-    line = report.splitlines()[2]
-    order = [line.index(f"{name}:") for name in ("mm_baseline", "zz_baseline", "template", "aa_control", "odd")]
+    lines = report.splitlines()
+    order = [next(i for i, line in enumerate(lines) if line.startswith(f"  - {name}:")) for name in ("mm_baseline", "zz_baseline", "template", "aa_control", "odd")]
     assert order == sorted(order)
 
 
@@ -108,13 +109,14 @@ def test_a_failed_log_or_an_errored_sample_first_hides_nothing_after_it():
     report = render_capture_markdown([failed, errored])
 
     assert "first.json" not in report
-    assert "template: `AGENTS.md` found in 1 of 1 runs." in report
+    assert "  - template: `AGENTS.md` in the first model call in 1 of 1 runs (system prompt).\n" in report
 
 
 def test_an_agent_s_description_and_body_are_counted_separately():
     report = render_capture_markdown([log("template", [sent(description=0, body=0)], source=".kilo/agents/reviewer.md")])
 
-    assert "agent `.kilo/agents/reviewer.md`, its description and its body looked for separately. template: description found" in report
+    assert "agent `.kilo/agents/reviewer.md`, its description and its body looked for separately." in report
+    assert "  - template: description in the first model call in 1 of 1 runs (system prompt); body in the first model call" in report
 
 
 def test_a_variant_that_had_nothing_to_look_for_says_so():
