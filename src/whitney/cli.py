@@ -70,7 +70,14 @@ from whitney.report import (
 from whitney.target_names import TARGETS
 from whitney.tasks import _whitney_version, scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
-from whitney.validate import ValidationResult, permission_warnings, skill_warnings, validate_evals, validate_project
+from whitney.validate import (
+    ValidationResult,
+    permission_warnings,
+    skill_copy_warnings,
+    skill_warnings,
+    validate_evals,
+    validate_project,
+)
 from whitney.variants import TEMPLATE, declared_variants
 
 # The CLI each target runs, checked with `<name> --version` before a run.
@@ -214,7 +221,9 @@ def _validate(args: argparse.Namespace) -> int:
     """`whitney validate`: print every problem and warning, then a count; 1 if there is a problem.
 
     For the kilo target it also warns about the project's skill descriptions
-    (validate.skill_warnings), whether or not an eval file tests a skill.
+    (validate.skill_warnings), whether or not an eval file tests a skill, and
+    about a declared variant that leaves a copy of its skill staged
+    (validate.skill_copy_warnings).
     """
     evals = Path(args.evals_path)
     result = validate_evals(evals, constraints=_constraints(args))
@@ -226,6 +235,7 @@ def _validate(args: argparse.Namespace) -> int:
         if target == "kilo":  # only Kilo runs stage skills, and only Kilo's permission rules are tested
             result.warnings += skill_warnings(Path(args.project_path), evals_path=evals)
             result.warnings += permission_warnings(applicable, Path(args.project_path), evals_path=evals)
+            result.warnings += skill_copy_warnings(applicable, Path(args.project_path), evals_path=evals)
     _print_findings(result)
     print(f"{evals}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
     return 1 if result.problems else 0

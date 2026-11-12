@@ -579,7 +579,7 @@ A project for both harnesses can keep a skill in `.kilo/skills/` for Kilo and a 
 
 - Give the Claude Code copy its own eval file with `"targets": ["claude-code"]`, named `skills/claude-<name>.json`.
 - In the Kilo copy's eval file, declare a baseline that removes both folders: `{"baseline": {"role": "baseline", "remove": [".kilo/skills/<name>/", ".claude/skills/<name>/"]}}`.
-- **Known gap:** the `trigger_control` Whitney adds removes only the source's folder, and can't be declared. In a Kilo run it keeps the `.claude/skills/` copy, so a positive trigger prompt can load that copy and pass where the control should fail. A Kilo trigger control that passes in such a project doesn't show the check can't fail; it shows the other copy loaded. In the example's recorded run it did: both control prompts loaded `.claude/skills/release-notes/` ([results](results/2026-11-12-claude-code-example.md#which-skill-copy-kilo-used)). `whitney validate` doesn't warn about it yet. Until that is fixed, don't rely on the Kilo `trigger_control` result for a skill that has a `.claude/` copy: rely on the control of the `claude-code` file, or keep one copy of the skill, in `.claude/skills/`, which both harnesses read.
+- On `kilo`, the `trigger_control` Whitney adds, and the default baseline of a file that declares no variants, remove every staged skill folder with the skill's name in the folders Kilo reads (the table above), not only the source's folder: `.claude/skills/<name>/` and `.kilo/skills/<name>/` both go. A copy left in would load in the control and let a positive trigger prompt pass where it must fail, as it did in the example's first recorded run; re-run after the fix, that control failed 2 of 2 as it should ([results](results/2026-11-12-claude-code-example.md#the-kilo-trigger-control-re-run-after-the-fix)). A copy is matched by its folder's name, so a copy in a differently named folder whose `SKILL.md` gives the same `name` is not removed; no Kilo run here has had a skill whose folder and `name` differ, so keep them the same ([Trigger tests](#trigger-tests)). A folder that isn't staged is left alone, and the report's "Staged files" column shows what each variant ran with. A baseline you declare runs as written, so name every copy in it; on `kilo`, `whitney validate` warns when one removes the source's folder but leaves a copy staged ([warnings](#warnings-about-skill-copies)). On `claude-code` nothing changes: it reads only `.claude/skills/`. Agents aren't widened this way: Kilo reads `agents/` and `agent/` in both `.kilo/` and `.kilocode/`, so a same-named agent in two of them would stay in the control; keep one copy of each agent. Validation doesn't warn about agents either: no run has shown which of two same-named agents Kilo uses.
 
 Each gets one eval file, which asks two different questions:
 
@@ -622,7 +622,7 @@ A **trigger test** asks whether a prompt made the agent use a skill or a subagen
 | `positive` | The skill loaded (`skill_loaded`), or the agent was handed work (`subagent_delegated`) | `template`, and a control named `trigger_control` |
 | `negative` | The skill stayed unloaded (`skill_not_loaded`), or the agent wasn't handed work (`subagent_not_delegated`). With an `owner`, that other skill or agent must be used instead | `template` only |
 
-Whitney adds `trigger_control` itself. It removes the skill's folder, or the agent's file, and each positive prompt must fail there. That failure is what shows the check can fail. Trigger tests never run in a baseline or in a variant you declare, and negative prompts don't run in the control: without the skill, every one would pass without testing anything.
+Whitney adds `trigger_control` itself. It removes the skill's folder, or the agent's file, and each positive prompt must fail there. On `kilo` it removes every staged copy of the skill in the folders Kilo reads, not only the source's ([Testing a skill or an agent](#testing-a-skill-or-an-agent)). That failure is what shows the check can fail. Trigger tests never run in a baseline or in a variant you declare, and negative prompts don't run in the control: without the skill, every one would pass without testing anything.
 
 Rules that `whitney validate` checks:
 
@@ -681,6 +681,10 @@ Kilo picks a skill by the `description` in its `SKILL.md`. For the `kilo` target
 - two differently named skills' descriptions are nearly the same, so the agent can't tell which to load. "Nearly the same" means the two share at least four in five of their distinct words, which is what a copied description with a word or two changed looks like.
 
 It compares wording, not meaning, so it won't catch two descriptions that say the same thing in different words. A warning never changes the exit code. No model is called.
+
+### Warnings about skill copies
+
+For the `kilo` target, `whitney validate` also warns when a variant you declare removes the skill's own folder while a copy with the same folder name stays staged in another folder Kilo reads, such as `{"remove": [".kilo/skills/<name>/"]}` with `.claude/skills/<name>/` in the project. The skill can still load in that variant. The warning names the variant and each copy left in: add them to its `remove`, or leave it if the copy is meant to stay. Whitney's own `baseline` and `trigger_control` already remove every copy, so they never draw it. It isn't given for agents, or on `claude-code`, which reads only `.claude/skills/`.
 
 ## Known gaps
 

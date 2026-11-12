@@ -57,8 +57,10 @@ from whitney.validate import _spread_by_the_wrapper, staged_names, tested_permis
 from whitney.variants import (
     TEMPLATE,
     apply_variant,
+    automatic_variants,
     declared_variants,
     for_claude_code_instructions,
+    for_kilo_skill_copies,
     runs_in,
     spread_over_kilo_configs,
     staged_matches,
@@ -147,6 +149,8 @@ class _EvalPlan:
             `kilo run --agent` or `--command`.
         has_trigger: True if the file has trigger tests, which run in some variants only (variants.runs_in).
         under_test: ("skill" or "agent", its name) if the source is one (evalfile.under_test), else None.
+        automatic: the names of the variants Whitney added itself (variants.automatic_variants), which
+            on the kilo target also remove every staged copy of a skill (variants.for_kilo_skill_copies).
         left_out: the keys of Whitney's default Kilo overlay left out of harness_permissions, because a
             check in the file tests the project's rule for them (_default_overlays).
     """
@@ -166,6 +170,7 @@ class _EvalPlan:
     fixtures_dir: Path | None = None
     has_trigger: bool = False
     under_test: tuple[str, str] | None = None
+    automatic: set[str] = field(default_factory=set)
     named: dict[str, dict[str, str]] = field(default_factory=dict)
     left_out: tuple[str, ...] = ()
 
@@ -243,6 +248,7 @@ def scenario_eval(
         fixtures_dir=root / FIXTURES_FOLDER,
         has_trigger=parsed.trigger is not None,
         under_test=evalfile.under_test(parsed.source),
+        automatic=automatic_variants(parsed),
         named=_named(parsed),
     )
     return _scenario_task(
@@ -527,6 +533,8 @@ def _scenario_task(
         chosen_variant = plan.variants[variant]
         if target == "claude-code":
             chosen_variant = for_claude_code_instructions(chosen_variant, staged)
+        elif variant in plan.automatic:  # kilo: it reads a skill from more folders than the source's
+            chosen_variant = for_kilo_skill_copies(chosen_variant, staged, plan.source)
         staged = apply_variant(staged, plan.adjust(chosen_variant, staged, plan.source))
     secrets = evidence.run_secrets(target, execution, api_key_env)
     samples = []

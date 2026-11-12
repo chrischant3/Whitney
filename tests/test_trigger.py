@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from whitney import tasks
+from whitney import cli, tasks
+from whitney import validate as validate_module
 from whitney.evalfile import EvalFileError, load, under_test
 from whitney.validate import validate_evals, validate_project
 from whitney.variants import TRIGGER_CONTROL, declared_variants, runs_in
@@ -361,6 +362,129 @@ def test_only_positive_prompts_run_in_the_control_and_the_skill_is_gone_there(pr
     staged = task.metadata["evaluation_assets"]
     assert not [path for path in staged if path.startswith(".kilo/skills/release-notes/")]
     assert ".kilo/skills/debugging/SKILL.md" in staged
+
+
+def add_copies(project):
+    """Same-named copies of the skills in other folders Kilo reads, as examples/consumer keeps one in .claude/skills/."""
+    for name, text in {
+        ".claude/skills/release-notes/SKILL.md": skill_md("release-notes"),
+        ".agents/skills/release-notes/SKILL.md": skill_md("release-notes"),
+        ".claude/skills/debugging/SKILL.md": skill_md("debugging"),
+    }.items():
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
+        (project / name).write_text(text)
+
+
+def release_notes_skills(staged):
+    return [path for path in staged if path.endswith("/release-notes/SKILL.md")]
+
+
+def test_on_kilo_the_control_leaves_out_every_copy_of_the_skill_and_the_report_lists_what_is_left(project):
+    """The log's evaluation_assets are the report's "Staged files" column for the variant."""
+    add_copies(project)
+    write(project, eval_file())
+
+    template = task_for(project, "template").metadata["evaluation_assets"]
+    control = task_for(project, TRIGGER_CONTROL).metadata["evaluation_assets"]
+
+    assert len(release_notes_skills(template)) == 3
+    assert release_notes_skills(control) == []
+    assert {".kilo/skills/debugging/SKILL.md", ".claude/skills/debugging/SKILL.md"} <= set(control)
+
+
+def test_on_kilo_the_default_baseline_of_a_skill_leaves_out_every_copy_of_it(project):
+    add_copies(project)
+    write(project, eval_file())
+
+    baseline = task_for(project, "baseline").metadata["evaluation_assets"]
+
+    assert release_notes_skills(baseline) == []
+    assert ".claude/skills/debugging/SKILL.md" in baseline
+
+
+def test_a_baseline_the_file_declares_runs_as_written(project):
+    add_copies(project)
+    write(project, eval_file(variants={"baseline": {"role": "baseline", "remove": [".kilo/skills/release-notes/"]}}))
+
+    baseline = task_for(project, "baseline").metadata["evaluation_assets"]
+
+    assert sorted(release_notes_skills(baseline)) == [".agents/skills/release-notes/SKILL.md", ".claude/skills/release-notes/SKILL.md"]
+    assert release_notes_skills(task_for(project, TRIGGER_CONTROL).metadata["evaluation_assets"]) == []
+
+
+def copy_warnings(project):
+    files = validate_evals(project / "evals").files
+    return [(p.location, p.message) for p in validate_module.skill_copy_warnings(files, project, evals_path=project / "evals")]
+
+
+def test_validate_warns_when_a_declared_kilo_variant_leaves_a_copy_of_the_skill_staged(project, capsys):
+    add_copies(project)
+    write(project, eval_file(variants={"no_skill": {"role": "baseline", "remove": [".kilo/skills/release-notes/", "AGENTS.md"]}}))
+
+    assert copy_warnings(project) == [("variants.no_skill.remove", (
+        "removes '.kilo/skills/release-notes/', but Kilo also reads the same skill from "
+        "'.claude/skills/release-notes/' and '.agents/skills/release-notes/', left staged, so the skill can load in this variant too; "
+        "add each to its remove if the skill is meant to be gone"
+    ))]
+    args = ["validate", "--project-path", str(project), "--evals-path", str(project / "evals")]
+    code = cli.main([*args, "--target", "kilo"])
+    assert "warning: " in capsys.readouterr().out and code == 0
+    cli.main([*args, "--target", "claude-code"])  # claude-code reads only .claude/skills/: no such warning
+    assert "Kilo also reads the same skill" not in capsys.readouterr().out
+
+
+def test_validate_is_silent_when_a_declared_variant_removes_every_copy(project):
+    add_copies(project)
+    every = [".kilo/skills/release-notes/", ".claude/skills/release-notes/", ".agents/skills/release-notes/"]
+    write(project, eval_file(variants={"baseline": {"role": "baseline", "remove": every}}))
+
+    assert copy_warnings(project) == []
+
+
+@pytest.mark.parametrize("wider", [".claude/skills/", ".claude/"])
+def test_a_copy_removed_through_a_folder_above_it_isnt_left_staged(project, wider):
+    add_copies(project)
+    removes = [".kilo/skills/release-notes/", wider]
+    write(project, eval_file(variants={"no_skill": {"role": "baseline", "remove": removes}}))
+
+    assert copy_warnings(project) == [("variants.no_skill.remove", (
+        "removes '.kilo/skills/release-notes/', but Kilo also reads the same skill from "
+        "'.agents/skills/release-notes/', left staged, so the skill can load in this variant too; "
+        "add each to its remove if the skill is meant to be gone"
+    ))]
+
+
+def test_a_copy_with_one_file_still_staged_is_left_staged(project):
+    add_copies(project)
+    removes = [".kilo/skills/release-notes/", ".agents/skills/release-notes/", ".claude/skills/release-notes/references/"]
+    write(project, eval_file(variants={"no_skill": {"role": "baseline", "remove": removes}}))
+
+    assert [message.split("from ")[1].split(",")[0] for _, message in copy_warnings(project)] == ["'.claude/skills/release-notes/'"]
+
+
+def test_validate_is_silent_with_no_copy_or_for_the_variants_whitney_adds(project):
+    write(project, eval_file(variants={"baseline": {"role": "baseline", "remove": [".kilo/skills/release-notes/"]}}))
+    assert copy_warnings(project) == []
+
+    add_copies(project)
+    write(project, eval_file())  # the default baseline and trigger_control already remove every copy
+    assert copy_warnings(project) == []
+
+
+def test_validate_is_silent_for_a_source_that_isnt_a_skill_or_a_file_not_run_on_kilo(project):
+    add_copies(project)
+    agent = eval_file(AGENT, trigger={"positive": POSITIVE}, variants={"baseline": {"remove": [AGENT]}})
+    write(project, agent, "agents/reviewer.json")
+    write(project, eval_file(targets=["claude-code"], variants={"baseline": {"remove": [".kilo/skills/release-notes/"]}}))
+
+    assert copy_warnings(project) == []
+
+
+def test_validate_gives_no_copy_warning_for_a_project_kilo_cant_stage(project):
+    write(project, eval_file(variants={"baseline": {"remove": [".kilo/skills/release-notes/"]}}))
+    (project / "kilo.jsonc").unlink()
+
+    assert copy_warnings(project) == []
 
 
 def test_the_task_records_what_is_under_test(project):

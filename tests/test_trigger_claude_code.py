@@ -141,6 +141,19 @@ def test_the_control_removes_the_skills_whole_folder(project):
     assert [sample.id for sample in task_for(project, TRIGGER_CONTROL).dataset] == ["asks-for-release-notes"]
 
 
+def test_the_control_is_unchanged_by_a_copy_of_the_skill_in_a_folder_only_kilo_reads(project):
+    """Claude Code reads only .claude/skills/, so a .kilo/ or .agents/ copy is neither staged nor removed."""
+    for folder in (".kilo/skills", ".agents/skills"):
+        (project / folder / "release-notes").mkdir(parents=True)
+        (project / folder / "release-notes" / "SKILL.md").write_text(skill_md("release-notes"))
+    write(project, eval_file())
+
+    template, control = staged(task_for(project, "template")), staged(task_for(project, TRIGGER_CONTROL))
+
+    assert set(template) - set(control) == {SKILL, ".claude/skills/release-notes/template.md"}
+    assert not [path for path in template if path.startswith((".kilo/", ".agents/"))]
+
+
 def test_the_control_removes_the_agents_file(project):
     write(project, agent_file(), "agents/q7-helper.json")
 

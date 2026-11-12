@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from whitney import cli
-from whitney.evalfile import discover
+from whitney import cli, tasks
+from whitney.evalfile import TRIGGER_CONTROL, discover
 
 ROOT = Path(__file__).resolve().parents[1]
 CONSUMER = ROOT / "examples" / "consumer"
@@ -210,3 +210,15 @@ def test_the_claude_reviewer_file_is_claude_codes_alone_and_keeps_the_built_in_r
 
     assert eval_file["targets"] == ["claude-code"]
     assert "Skill(code-review)" in eval_file["harness_permissions"]["claude-code"]["deny"]
+
+
+def test_on_kilo_the_consumer_examples_trigger_control_stages_no_release_notes_skill():
+    """The example keeps the skill in .kilo/skills/ and .claude/skills/; Kilo reads both, so the control removes both."""
+    task = tasks.scenario_eval(
+        "skills/release-notes.json", TRIGGER_CONTROL, target="kilo", model="test-provider/test-model",
+        evals_path=str(CONSUMER / "evals"), project_path=str(CONSUMER),
+    )
+
+    staged = task.metadata["evaluation_assets"]
+    assert [path for path in staged if "/release-notes/" in path] == []
+    assert {".kilo/skills/debugging/SKILL.md", ".claude/skills/debugging/SKILL.md"} <= set(staged)
