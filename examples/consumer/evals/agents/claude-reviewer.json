@@ -2,6 +2,10 @@
   "version": 2,
   "source": ".claude/agents/reviewer.md",
   "title": "Claude Code reviewer agent followed: reviews without editing",
+  "targets": ["claude-code"],
+  "harness_permissions": {
+    "claude-code": {"allow": ["Bash", "Edit", "Write"], "deny": ["Skill(code-review)"]}
+  },
   "defaults": {
     "fixture": "till",
     "setup": [

@@ -131,7 +131,7 @@ Run C used `examples/consumer` itself, so it is the same project with that one l
 
 Of the four runs "How to tell" named, `add-changelog-entry` went from 1/3 to 2/3, `asks-what-changed` from 2/3 to 3/3 and `paste-the-list-time-pressure` from 1/3 to 3/3; `asks-for-a-bug-fix` went from 2/3 to 1/3, and that one turns on the `debugging` skill, which the change didn't touch.
 
-**Did it work? Every count tied to the description moved the right way, but at three epochs the difference is within noise.** Fisher's exact test, two-sided: template scenarios 2/6 against 5/6, p = 0.24; the skill loading in scenarios, 0/6 against 3/6, p = 0.18; the 12/18 against 15/18, p = 0.44. The baselines, which are the same project in B and C since both remove the skill, moved from 1/6 to 3/6 by chance alone, as far as the template's scenarios moved. So these runs don't show the advice helped, and don't show it didn't. The rule isn't dropped or reworded on this evidence; telling the two apart would take more epochs.
+**Did it work? Every count tied to the description moved the right way, but at three epochs the difference is within noise.** Fisher's exact test, two-sided: template scenarios 2/6 against 5/6, p = 0.24; the skill loading in scenarios, 0/6 against 3/6, p = 0.18; the 12/18 against 15/18, p = 0.44. The baselines, which are the same project in B and C since both remove the skill, moved from 1/6 to 3/6 by chance alone, nearly as far as the template's scenarios moved (2 runs against 3). So these runs don't show the advice helped, and don't show it didn't. The rule isn't dropped or reworded on this evidence; telling the two apart would take more epochs.
 
 C still exited 1, on its negative trigger prompts: `asks-for-a-bug-fix` failed in 2 of 3 because the `debugging` skill didn't load. In both runs the agent read the test, ran it, read `till.py` and fixed `refund()` itself. The release-notes skill stayed quiet in all six negative runs. The gate failure is the `debugging` skill's, inside `release-notes`' eval file.
 
@@ -210,7 +210,7 @@ Counted from each harness's stream in the log, and priced at Haiku 4.5's $1 per 
 | Task 39's two runs | 74 | 7,622 | 101,687 | 1,140,936 | 7,224,051 | $0.52 | **$2.66** |
 | **All five** | 152 | 12,694 | 186,921 | 2,044,153 | 14,321,159 | $0.95 | **$4.93** |
 
-The plan estimated $1.55 to $4.55 for these 152 runs; they cost $4.93 by these counts. Run A's figure is low by two Kilo subagent sessions, whose tokens aren't in Kilo's stream (the baseline's `prod-url-authority` handed a search to `explore` in epochs 1 and 2), and the Kilo Gateway's own bill isn't in the log.
+The plan estimated $1.55 to $4.55 for these 152 runs; they cost $4.93 by these counts, $0.38 over the top of the estimate, and that is a lower bound. Run A's figure is low by two Kilo subagent sessions, whose tokens aren't in Kilo's stream (the baseline's `prod-url-authority` handed a search to `explore` in epochs 1 and 2), and the Kilo Gateway's own bill isn't in the log.
 
 ## Saved logs for tests
 
@@ -227,7 +227,7 @@ Task 40's Evidence asks for a test of each kind of finding built from a saved lo
 ## What this doesn't show
 
 - **A real "nothing to change".** Run A's template failed once.
-- **That rule 1's advice helps.** B to C moved every description-linked count the right way, within noise at three epochs, and the baselines moved as far by chance.
+- **That rule 1's advice helps.** B to C moved every description-linked count the right way, within noise at three epochs, and the baselines moved nearly as far by chance.
 - **Rule 2 for real.** Runs D and E (`always-loaded-size` before and after, on a 209-line `CLAUDE.md`) weren't approved and weren't run.
 - **Rule 3's advice working.** Whitney can't test a hook: it stages no hooks, and runs Kilo with `--pure`. The only counts are the spike's.
 - **Rule 3 on `kilo`.** No Kilo run here missed loading a skill with a sound description.

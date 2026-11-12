@@ -199,3 +199,14 @@ def test_the_claude_code_reviewer_is_tested_on_claude_code_with_trigger_tests_an
     assert "\nname: reviewer\n" in text
     assert {scenario.agent for scenario in agent.resolved()} == {None}
     assert {e.check for scenario in agent.resolved() if scenario.trigger is None for e in scenario.expect} == {"no_file_edits"}
+
+
+def test_the_claude_reviewer_file_is_claude_codes_alone_and_keeps_the_built_in_review_skill_out():
+    # In the recorded run Haiku handed both scenarios to Claude Code's built-in code-review skill,
+    # so the project's reviewer was never the one tested (docs/results/2026-11-12-claude-code-example.md).
+    import json
+
+    eval_file = json.loads((CONSUMER / "evals/agents/claude-reviewer.json").read_text())
+
+    assert eval_file["targets"] == ["claude-code"]
+    assert "Skill(code-review)" in eval_file["harness_permissions"]["claude-code"]["deny"]

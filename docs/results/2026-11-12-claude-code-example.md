@@ -244,10 +244,11 @@ The plan estimated $0.75 to $2.20 for these 74 runs, at 1 to 3 cents each; they 
 
 What the Kilo figure leaves out: when the main agent hands work to a subagent with Kilo's `task` tool, the subagent runs in a session of its own, and its `step_finish` events aren't in the stream. Five Kilo runs did: the two positive reviewer prompts in the template and in the control, and the baseline's `prod-url-authority` in `rules/data-handling-md.json`, which handed a search to `explore`. So the Kilo total is low by those subagents' cost. The log also can't say what the Kilo Gateway billed; the figure is what Kilo computed.
 
-All five 2026-11-12 runs, these two and [Task 40's three](2026-11-12-improvement-report-runs.md#what-it-cost), cost $4.93 by these counts.
+All five 2026-11-12 runs, these two and [Task 40's three](2026-11-12-improvement-report-runs.md#what-it-cost), cost $4.93 by these counts, $0.38 over the top of the $1.55 to $4.55 estimate.
 
 ## Not shown
 
+- **The reviewer file with the built-in skill switched off.** After this run `evals/agents/claude-reviewer.json` gained `"deny": ["Skill(code-review)"]`, because both scenarios went to Claude Code's built-in `code-review` skill. It has not been run since.
 - **One epoch.** One sample per scenario, variant and prompt. A single pass or fail says little; the report says so for every file.
 - **One model and one harness version on each target.** Haiku only; Kilo 7.8.27 and Claude Code 2.1.322.
 - **Local execution only.** No `--execution docker` run.

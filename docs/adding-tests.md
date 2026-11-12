@@ -575,11 +575,11 @@ A **skill** is a folder of instructions, `.kilo/skills/<name>/SKILL.md`, that Ki
 | `kilo` | `skills/` and `skill/` in `.kilo/` and `.kilocode/`, `.claude/skills/`, `.agents/skills/` | `agents/` and `agent/` in `.kilo/` and `.kilocode/` |
 | `claude-code` | `.claude/skills/` | `.claude/agents/` |
 
-A project for both harnesses can keep a skill in `.kilo/skills/` for Kilo and a copy in `.claude/skills/` for Claude Code, as [`examples/consumer`](../examples/consumer/) does. Kilo reads both folders, so a Kilo run holds both copies, and which one Kilo uses when two skills share a name hasn't been tested. Then:
+A project for both harnesses can keep a skill in `.kilo/skills/` for Kilo and a copy in `.claude/skills/` for Claude Code, as [`examples/consumer`](../examples/consumer/) does. Kilo reads both folders, so a Kilo run holds both copies, and in the one recorded run Kilo used the `.kilo/` copy when both were there (4 loads; not shown in general). Then:
 
 - Give the Claude Code copy its own eval file with `"targets": ["claude-code"]`, named `skills/claude-<name>.json`.
 - In the Kilo copy's eval file, declare a baseline that removes both folders: `{"baseline": {"role": "baseline", "remove": [".kilo/skills/<name>/", ".claude/skills/<name>/"]}}`.
-- **Known gap:** the `trigger_control` Whitney adds removes only the source's folder, and can't be declared. In a Kilo run it keeps the `.claude/skills/` copy, so a positive trigger prompt can load that copy and pass where the control should fail. A Kilo trigger control that passes in such a project doesn't show the check can't fail; it shows the other copy loaded. In the example's recorded run it did: both control prompts loaded `.claude/skills/release-notes/` ([results](results/2026-11-12-claude-code-example.md#which-skill-copy-kilo-used)). `whitney validate` doesn't warn about it yet.
+- **Known gap:** the `trigger_control` Whitney adds removes only the source's folder, and can't be declared. In a Kilo run it keeps the `.claude/skills/` copy, so a positive trigger prompt can load that copy and pass where the control should fail. A Kilo trigger control that passes in such a project doesn't show the check can't fail; it shows the other copy loaded. In the example's recorded run it did: both control prompts loaded `.claude/skills/release-notes/` ([results](results/2026-11-12-claude-code-example.md#which-skill-copy-kilo-used)). `whitney validate` doesn't warn about it yet. Until that is fixed, don't rely on the Kilo `trigger_control` result for a skill that has a `.claude/` copy: rely on the control of the `claude-code` file, or keep one copy of the skill, in `.claude/skills/`, which both harnesses read.
 
 Each gets one eval file, which asks two different questions:
 
