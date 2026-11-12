@@ -79,7 +79,7 @@ def test_the_consumer_examples_push_rule_is_tested_on_each_harness_from_its_own_
 def test_the_consumer_example_validates_for_every_target_when_none_is_named(capsys):
     code = cli.main(["validate", "--project-path", str(CONSUMER), "--evals-path", str(CONSUMER / "evals")])
 
-    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 8 eval file(s), 0 problem(s), 0 warning(s)"
+    assert capsys.readouterr().out.splitlines()[-1] == f"{CONSUMER / 'evals'}: 9 eval file(s), 0 problem(s), 0 warning(s)"
     assert code == 0
 
 
@@ -113,12 +113,38 @@ def test_claude_code_stages_the_examples_claude_files_and_not_its_agents_md():
     }
 
 
-def test_each_harness_is_given_one_release_notes_skill():
+def test_each_harness_reads_its_own_folder_and_the_two_copies_of_each_skill_match():
     from whitney.project_files import load_project_files_for
 
-    for target in ("kilo", "claude-code"):
-        staged = load_project_files_for(target, CONSUMER, evals_path=CONSUMER / "evals")
-        assert [path for path in staged if path.endswith("/release-notes/SKILL.md")] == [".claude/skills/release-notes/SKILL.md"]
+    kilo = load_project_files_for("kilo", CONSUMER, evals_path=CONSUMER / "evals")
+    claude = load_project_files_for("claude-code", CONSUMER, evals_path=CONSUMER / "evals")
+
+    for skill in ("release-notes", "debugging"):
+        kilo_copy, claude_copy = f".kilo/skills/{skill}/SKILL.md", f".claude/skills/{skill}/SKILL.md"
+        assert kilo[kilo_copy] == claude[claude_copy]
+        assert kilo_copy not in claude
+        # Kilo reads .claude/skills/ too, so a Kilo run holds both copies.
+        assert claude_copy in kilo
+
+
+def test_the_kilo_skill_evals_baseline_removes_every_copy_kilo_stages_and_the_claude_one_runs_on_claude_code():
+    from whitney.checks import registry
+    from whitney.project_files import load_project_files_for
+    from whitney.variants import apply_variant, declared_variants
+
+    files = {f.source: f for f in discover(CONSUMER / "evals")}
+    kilo_skill, claude_skill = files[".kilo/skills/release-notes/SKILL.md"], files[".claude/skills/release-notes/SKILL.md"]
+    staged = load_project_files_for("kilo", CONSUMER, evals_path=CONSUMER / "evals")
+    without = apply_variant(staged, declared_variants(kilo_skill)["baseline"])
+
+    assert sorted(path for path in staged if "/release-notes/" in path) == [
+        ".claude/skills/release-notes/SKILL.md",
+        ".kilo/skills/release-notes/SKILL.md",
+    ]
+    assert not [path for path in without if "/release-notes/" in path]
+    assert {t for t in ("kilo", "claude-code") if cli.why_not_run(claude_skill, t, registry()) is None} == {"claude-code"}
+    assert {None, "positive", "negative"} <= {scenario.trigger for scenario in claude_skill.resolved()}
+    assert [prompt.owner for prompt in claude_skill.trigger.negative if prompt.owner] == ["debugging"]
 
 
 @pytest.mark.parametrize(
