@@ -291,7 +291,8 @@ def test_a_claude_code_project_without_instructions_is_told_which_files_were_loo
     assert str(raised.value) == (
         "project has no Claude Code instructions to stage (CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md; "
         "AGENTS.md is read only without a CLAUDE.md, and symlinks and files outside the project are skipped), "
-        f"and no skills or agents (.claude/skills/, .claude/agents/): {tmp_path.resolve()}"
+        "no skills or agents (.claude/skills/, .claude/agents/), "
+        f"and no permissions in .claude/settings.json: {tmp_path.resolve()}"
     )
 
 
@@ -1013,11 +1014,12 @@ def test_a_staged_file_has_no_reason(unsafe_project):
         "personal and not committed; on its owner's machine it also stops Claude Code reading AGENTS.md"
     )),
     (["AGENTS.md", ".claude/settings.json"], ".claude/settings.json", (
-        "the claude-code loader stages only what Claude Code reads, and this file is left out: rest of .claude/"
+        "the claude-code loader stages only what Claude Code reads, and this file is left out: "
+        "isn't a JSON object, so its permissions can't be read"
     )),
     (["AGENTS.md", "notes.md"], "notes.md", (
         "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md, "
-        "and the files under .claude/skills/ and .claude/agents/"
+        "the files under .claude/skills/ and .claude/agents/, and the permissions block of .claude/settings.json"
     )),
 ])
 def test_the_claude_code_reasons_are_the_reports(tmp_path, present, source, reason):
@@ -1632,7 +1634,7 @@ def test_a_file_outside_the_two_folders_is_told_what_the_claude_code_loader_stag
 
     assert not_staged_reason("claude-code", tmp_path, "docs/skills/x/SKILL.md", staged) == (
         "the claude-code loader stages only CLAUDE.md, .claude/CLAUDE.md, AGENTS.md, .claude/AGENTS.md, "
-        "and the files under .claude/skills/ and .claude/agents/"
+        "the files under .claude/skills/ and .claude/agents/, and the permissions block of .claude/settings.json"
     )
     assert not_staged_reason("claude-code", tmp_path, ".claude/skills/x/SKILL.md", staged) == "the project has no such file"
 
@@ -1644,3 +1646,146 @@ def test_a_claude_md_staged_under_another_spelling_has_no_reason_to_be_left_out(
 
     assert staged == ({"CLAUDE.md": "rule\n"} if case_insensitive else {"AGENTS.md": "other\n"})
     assert (not_staged_reason("claude-code", tmp_path, "claude.md", staged) is None) == case_insensitive
+
+
+# --- Claude Code: the project's .claude/settings.json (Phase 5 Task 37) --------------------------
+
+PUSH_DENIED = {"deny": ["Bash(git push:*)"]}
+
+
+def claude_project(tmp_path, settings: str) -> Path:
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/settings.json").write_text(settings)
+    return tmp_path
+
+
+def test_claude_code_stages_only_the_permissions_block_of_the_projects_settings(tmp_path):
+    settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "touch marker"}]}]}, "permissions": PUSH_DENIED, "env": {"A": "b"}}
+    project = claude_project(tmp_path, json.dumps(settings))
+
+    staged = load_project_files_for("claude-code", project)
+
+    assert list(staged) == ["AGENTS.md", ".claude/settings.json"]
+    assert json.loads(staged[".claude/settings.json"]) == {"permissions": PUSH_DENIED}
+    assert "marker" not in staged[".claude/settings.json"]
+
+
+def test_each_settings_key_left_out_is_named_with_its_reason(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"hooks": {}, "permissions": PUSH_DENIED, "env": {}}))
+
+    assert files_not_staged("claude-code", project) == [".claude/settings.json (env)", ".claude/settings.json (hooks)"]
+    assert files_not_staged_reasons("claude-code", project) == {
+        ".claude/settings.json (env)": "only the permissions block of the settings is staged",
+        ".claude/settings.json (hooks)": "hooks run commands, so only the permissions block of the settings is staged",
+    }
+
+
+def test_settings_holding_only_permissions_leave_nothing_out(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"permissions": PUSH_DENIED}))
+
+    assert files_not_staged("claude-code", project) == []
+
+
+def test_permissions_alone_are_enough_to_stage(tmp_path):
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/settings.json").write_text(json.dumps({"permissions": PUSH_DENIED}))
+
+    assert list(load_claude_code_project_files(tmp_path)) == [".claude/settings.json"]
+
+
+def test_settings_without_permissions_are_left_out_whole(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"hooks": {}}))
+
+    assert list(load_project_files_for("claude-code", project)) == ["AGENTS.md"]
+    assert files_not_staged_reasons("claude-code", project) == {".claude/settings.json": "rest of .claude/"}
+
+
+@pytest.mark.parametrize("text, reason", [
+    ("{not json", "isn't a JSON object, so its permissions can't be read"),
+    ("[]", "isn't a JSON object, so its permissions can't be read"),
+    ('{"permissions": ["Bash"]}', "its permissions block isn't an object"),
+])
+def test_settings_that_cant_be_read_are_left_out_and_say_why(tmp_path, text, reason):
+    project = claude_project(tmp_path, text)
+
+    assert list(load_project_files_for("claude-code", project)) == ["AGENTS.md"]
+    assert files_not_staged_reasons("claude-code", project) == {".claude/settings.json": reason}
+
+
+def test_settings_reached_through_a_link_are_never_staged(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / "elsewhere.json").write_text(json.dumps({"permissions": PUSH_DENIED}))
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/settings.json").symlink_to(tmp_path / "elsewhere.json")
+
+    assert list(load_project_files_for("claude-code", tmp_path)) == ["AGENTS.md"]
+    assert files_not_staged("claude-code", tmp_path) == [".claude/settings.json"]
+
+
+def test_settings_under_the_evals_path_are_never_staged(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"permissions": PUSH_DENIED}))
+
+    assert list(load_project_files_for("claude-code", project, evals_path=project / ".claude")) == ["AGENTS.md"]
+
+
+def test_the_kilo_loader_never_stages_claude_codes_settings(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"permissions": PUSH_DENIED}))
+    (project / "kilo.jsonc").write_text("{}")
+
+    assert ".claude/settings.json" not in load_project_files_for("kilo", project)
+
+
+def test_staged_settings_are_staged_for_validation_too(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"permissions": PUSH_DENIED, "hooks": {}}))
+    staged = load_project_files_for("claude-code", project)
+
+    assert not_staged_reason("claude-code", project, ".claude/settings.json", staged) is None
+
+
+def test_the_staged_settings_are_the_permissions_block_as_indented_json(tmp_path):
+    project = claude_project(tmp_path, json.dumps({"permissions": PUSH_DENIED, "hooks": {}}))
+
+    assert load_project_files_for("claude-code", project)[".claude/settings.json"] == (
+        '{\n  "permissions": {\n    "deny": [\n      "Bash(git push:*)"\n    ]\n  }\n}\n'
+    )
+
+
+def test_settings_in_a_dot_claude_that_is_a_link_are_never_staged(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("rule\n")
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real/settings.json").write_text(json.dumps({"permissions": PUSH_DENIED}))
+    (tmp_path / ".claude").symlink_to(tmp_path / "real", target_is_directory=True)
+
+    assert list(load_project_files_for("claude-code", tmp_path)) == ["AGENTS.md"]
+    assert files_not_staged("claude-code", tmp_path) == [".claude/"]
+
+
+def test_settings_that_arent_utf8_are_left_out_and_say_why(tmp_path):
+    project = claude_project(tmp_path, "{}")
+    (project / ".claude/settings.json").write_bytes(b'{"permissions": {"deny": ["\xff"]}}')
+
+    assert files_not_staged_reasons("claude-code", project) == {
+        ".claude/settings.json": "isn't a JSON object, so its permissions can't be read",
+    }
+
+
+def test_only_the_rule_lists_of_the_permissions_block_are_staged(tmp_path):
+    # defaultMode and additionalDirectories would widen what the agent may do on the machine running the evals.
+    permissions = {
+        "defaultMode": "bypassPermissions", "deny": ["Bash(git push:*)"], "additionalDirectories": ["/", "~"],
+        "ask": ["Bash(git tag:*)"], "allow": "Bash", "disableBypassPermissionsMode": "disable",
+    }
+    project = claude_project(tmp_path, json.dumps({"permissions": permissions}))
+
+    staged = load_project_files_for("claude-code", project)
+
+    assert json.loads(staged[".claude/settings.json"]) == {"permissions": {"deny": ["Bash(git push:*)"], "ask": ["Bash(git tag:*)"]}}
+    reason = "only the allow, ask and deny lists of the permissions block are staged"
+    assert files_not_staged_reasons("claude-code", project) == {
+        ".claude/settings.json (permissions.additionalDirectories)": reason,
+        ".claude/settings.json (permissions.allow)": reason,
+        ".claude/settings.json (permissions.defaultMode)": reason,
+        ".claude/settings.json (permissions.disableBypassPermissionsMode)": reason,
+    }
+

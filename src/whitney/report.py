@@ -77,7 +77,8 @@ NOT_STAGED_NOTE = (
     "files Claude Code reads: `CLAUDE.md` and `.claude/CLAUDE.md`, or `AGENTS.md` and `.claude/AGENTS.md` when "
     "neither `CLAUDE.md` exists, so an `AGENTS.md` beside a `CLAUDE.md` stays out. `CLAUDE.local.md` is personal "
     "and is never copied. It also copies `.claude/skills/` and `.claude/agents/`; "
-    "a log from an earlier Whitney names them here."
+    "a log from an earlier Whitney names them here. Of `.claude/settings.json` it copies the `permissions` block "
+    "alone, so each other key of that file, hooks among them, is named here."
 )
 RENAMED_NOTE = (
     "On a case-insensitive disk, such as macOS's default, a file such as `claude.md` counts as `CLAUDE.md` and "

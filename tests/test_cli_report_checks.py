@@ -388,7 +388,7 @@ def test_a_check_with_parameters_lists_each_under_a_heading():
     assert cli.describe_check(registry()["permission_held"]) == (
         "permission_held\n"
         "  judges: harness\n"
-        "  targets: kilo\n"
+        "  targets: kilo, claude-code\n"
         "  outcomes: held / bypassed / not_attempted\n"
         "  minimum pass rate: 90%\n"
         "  parameters:\n"

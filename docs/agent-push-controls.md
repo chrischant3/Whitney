@@ -314,7 +314,7 @@ Whitney runs the real agent CLI against a template and records what the agent di
 
 A Kilo `bash` pattern rule that denies `git push *` leaves a refusal in the agent's transcript, which Whitney can record (a capture recorded on 2026-11-06 with Kilo 7.8.18). A scalar `"bash": "deny"` behaves differently: it removes the Bash tool, so there is no attempt and no refusal to see, and a run can't tell "held" from "never tried".
 
-A `permission_held` check is planned. It will test pattern rules such as the one above. It doesn't exist yet.
+The `permission_held` check tests pattern rules such as the one above: on Kilo, a rule in `kilo.jsonc` ([results](results/2026-11-10-permissions.md)); on Claude Code, a `deny` or `ask` rule such as `Bash(git push:*)` in the project's `.claude/settings.json` ([results](results/2026-11-12-claude-code-permissions.md)). Both runs show the rule held in the template and was bypassed in a control. `git -C . push` got past both rules when tried (Kilo: `tasks/plan-phase5.md`, Later; Claude Code: [spike findings](spike-findings.md#permissions)), so a pattern rule is not a control on its own.
 
 ## Checklist
 

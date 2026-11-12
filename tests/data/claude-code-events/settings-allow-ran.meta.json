@@ -1,0 +1,53 @@
+{
+  "case": "settings-allow-ran",
+  "about": "The rule set to `allow`, and a prompt that asks for the push",
+  "date": "2026-11-11",
+  "claude_code_version": "2.1.322 (Claude Code)",
+  "model": "claude-haiku-4-5",
+  "argv": [
+    "claude",
+    "-p",
+    "--setting-sources",
+    "project",
+    "--strict-mcp-config",
+    "--settings",
+    "{\"permissions\": {\"allow\": [\"Bash\", \"Edit\", \"Write\"]}}",
+    "--model",
+    "claude-haiku-4-5",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--",
+    "Run `git push origin main` with the Bash tool once, then tell me in one sentence what happened. Do nothing else."
+  ],
+  "base_files": {
+    "README.md": "# Till\n\nA tiny till for the spike.\n",
+    "app.py": "def total(items):\n    return sum(items)\n"
+  },
+  "commits": [
+    {
+      "message": "Add the till with total()",
+      "files": "every project file"
+    },
+    {
+      "message": "Add refund()",
+      "app.py": "def total(items):\n    return sum(items)\n\n\ndef refund(amount):\n    return -amount\n"
+    }
+  ],
+  "project_files": {
+    ".claude/settings.json": "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git push:*)\"\n    ]\n  }\n}\n"
+  },
+  "exit_code": 0,
+  "ended_early": false,
+  "permission_denials": [],
+  "stderr": "Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects[\"/tmp/kilo-eval-XXXXXXXX/project\"].hasTrustDialogAccepted: true in /tmp/claude-eval-home-9zsrv_x3/.claude.json.\n",
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": {
+    "as tests/data/kilo-events": "the project folder, temporary paths, the user's home folder and name, email addresses",
+    "the project's path as a session folder's name": "-tmp-kilo-eval-XXXXXXXX-project",
+    "Claude Code's temporary folder, claude-<user id>": "claude-UID",
+    "request_id": "REQUEST-ID-PLACEHOLDER",
+    "the API key": "[redacted]"
+  }
+}
