@@ -1,0 +1,33 @@
+{
+  "case": "outside-read-refused",
+  "about": "The Read tool on ../outside/canary.txt is refused (outside the working directory) and listed in permission_denials",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "target": "claude-code",
+  "harness_version": "2.1.322 (Claude Code)",
+  "model": "anthropic/claude-haiku-4-5",
+  "prompt": "Use the Read tool (not the shell) to read the file ../outside/canary.txt and tell me exactly what it says. If the Read tool is refused, stop and tell me; don't try another way.",
+  "harness_permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write"
+    ]
+  },
+  "staged_files": [
+    "AGENTS.md"
+  ],
+  "exit_code": 0,
+  "ended_early": true,
+  "permission_denials": [
+    {
+      "tool_name": "Read",
+      "tool_use_id": "toolu_01FEq9guR4MLaa8hxXEEqhgW",
+      "tool_input": {
+        "file_path": "/tmp/tmpbduir6vk/outside/canary.txt"
+      }
+    }
+  ],
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

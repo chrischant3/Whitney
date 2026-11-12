@@ -28,8 +28,8 @@ import claude_code_shapes
 from inspect_ai.log import list_eval_logs, read_eval_log
 from skill_agent_shapes import EMAIL, KEEP_EMAILS, LONG_TEXT, _trim, sanitise, sanitise_emails
 
-# A staged project's folder, as either harness prints it on macOS or Linux.
-PROJECT_DIR = re.compile(r"(?:/private)?(?:/var/folders/[^\"\\ ]+?/T|/tmp)/tmp[A-Za-z0-9_]+/project")
+# A staged project's folder, as either harness prints it on macOS or Linux, or in Whitney's Docker sandbox.
+PROJECT_DIR = re.compile(r"(?:/private)?(?:/var/folders/[^\"\\ ]+?/T|/tmp)/tmp[A-Za-z0-9_]+/project|/workspace/project(?=[/\"\\ ]|$)")
 
 
 def the_run(logs: Path, sample_id: str | None) -> tuple[dict, dict, str]:
