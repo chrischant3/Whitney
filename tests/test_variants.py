@@ -13,6 +13,7 @@ import pytest
 from inspect_ai._eval.task.sandbox import read_sandboxenv_file
 
 from whitney import tasks as tasks_module
+from whitney import variants as variants_module
 from whitney.evalfile import EvalFile, V1File, Variant, load, read
 from whitney.project_files import load_project_files, set_external_directory, without_instructions
 from whitney.static_checks import parse_jsonc
@@ -519,3 +520,106 @@ def test_without_instructions_drops_agents_md_for_kilo_and_every_instruction_fil
     assert without_instructions("kilo", staged) == {"CLAUDE.md": "b\n", ".claude/AGENTS.md": "c\n", "kilo.jsonc": "{}"}
     assert without_instructions("claude-code", staged) == {"kilo.jsonc": "{}"}
     assert staged["AGENTS.md"] == "a\n"  # the files given are left as they were
+
+
+# Kilo reads a skill from any of its skill folders (project_files.KILO_SKILL_FOLDERS), so the automatic
+# trigger control and default baseline for a skill, on the kilo target, leave out every staged copy of it
+# with the same folder name, not only the source's folder (docs/adding-tests.md, "Testing a skill or an agent").
+
+SKILL_COPIES = {
+    ".kilo/skills/release-notes/SKILL.md": "kilo\n",
+    ".kilo/skills/release-notes/template.md": "# Notes\n",
+    ".kilo/skill/release-notes/SKILL.md": "kilo singular\n",
+    ".kilocode/skills/release-notes/SKILL.md": "kilocode\n",
+    ".kilocode/skill/release-notes/SKILL.md": "kilocode singular\n",
+    ".claude/skills/release-notes/SKILL.md": "claude\n",
+    ".agents/skills/release-notes/SKILL.md": "agents\n",
+    ".kilo/skills/debugging/SKILL.md": "debugging\n",
+    ".claude/skills/debugging/SKILL.md": "debugging copy\n",
+    ".claude/skills/release-notes-v2/SKILL.md": "another skill whose name starts the same\n",
+    "AGENTS.md": "- rule\n",
+}
+
+
+@pytest.mark.parametrize("source", [".kilo/skills/release-notes/SKILL.md", ".claude/skills/release-notes/SKILL.md"])
+def test_kilos_automatic_control_for_a_skill_leaves_out_every_staged_copy_of_it(source):
+    widened = variants_module.for_kilo_skill_copies(variants_module.trigger_control(source), SKILL_COPIES, source)
+
+    left = apply_variant(SKILL_COPIES, widened)
+
+    assert not [path for path in left if path.endswith("/release-notes/SKILL.md")]
+    assert ".kilo/skills/release-notes/template.md" not in left
+    assert sorted(left) == [
+        ".claude/skills/debugging/SKILL.md", ".claude/skills/release-notes-v2/SKILL.md",
+        ".kilo/skills/debugging/SKILL.md", "AGENTS.md",
+    ]
+    assert widened.role == "control"
+
+
+def test_the_widened_remove_names_the_source_first_then_each_staged_copy_once():
+    source = ".kilo/skills/release-notes/SKILL.md"
+    staged = {path: text for path, text in SKILL_COPIES.items() if not path.startswith(".kilo/skill/")}
+
+    widened = variants_module.for_kilo_skill_copies(default_baseline(source), staged, source)
+
+    assert widened.remove == [
+        ".kilo/skills/release-notes/", ".kilocode/skill/release-notes/", ".kilocode/skills/release-notes/",
+        ".claude/skills/release-notes/", ".agents/skills/release-notes/",
+    ]
+    assert widened.role == "baseline"
+
+
+def test_copies_that_arent_staged_are_not_removed_so_the_control_still_applies():
+    source = ".kilo/skills/release-notes/SKILL.md"
+    staged = {".kilo/skills/release-notes/SKILL.md": "kilo\n", "AGENTS.md": "- rule\n"}
+    control = variants_module.trigger_control(source)
+
+    widened = variants_module.for_kilo_skill_copies(control, staged, source)
+
+    assert widened is control
+    assert apply_variant(staged, widened) == {"AGENTS.md": "- rule\n"}
+
+
+def test_a_source_that_isnt_staged_is_left_for_apply_variant_to_report():
+    source = ".kilo/skills/release-notes/SKILL.md"
+    staged = {".claude/skills/release-notes/SKILL.md": "claude\n"}
+
+    widened = variants_module.for_kilo_skill_copies(variants_module.trigger_control(source), staged, source)
+
+    assert widened.remove == [".kilo/skills/release-notes/", ".claude/skills/release-notes/"]
+    with pytest.raises(VariantError, match="'.kilo/skills/release-notes/' isn't staged"):
+        apply_variant(staged, widened)
+
+
+def test_a_variant_that_doesnt_remove_the_skills_folder_is_kept_as_it_is():
+    source = ".kilo/skills/release-notes/SKILL.md"
+    own = Variant(remove=["AGENTS.md"])
+
+    assert variants_module.for_kilo_skill_copies(own, SKILL_COPIES, source) is own
+
+
+def test_a_source_that_isnt_a_skill_is_kept_as_it_is():
+    for source in (".kilo/agents/reviewer.md", "AGENTS.md"):
+        control = variants_module.trigger_control(source)
+        assert variants_module.for_kilo_skill_copies(control, {**SKILL_COPIES, source: "x\n"}, source) is control
+
+
+def test_only_the_variants_whitney_adds_itself_are_automatic(tmp_path):
+    def automatic(**fields):
+        data = {
+            "version": 2, "source": ".kilo/skills/release-notes/SKILL.md",
+            "defaults": {"fixture": "repo", "expect": [{"check": "no_file_edits"}]},
+            "scenarios": [{"id": "a", "prompt": "p"}],
+        } | fields
+        path = tmp_path / "skills" / "release-notes.json"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(data))
+        return variants_module.automatic_variants(load(path))
+
+    positive = {"positive": [{"id": "asks", "prompt": "Write the release notes."}]}
+    negative = {"negative": [{"id": "asks-the-time", "prompt": "What time is it?"}]}
+    assert automatic() == {"baseline"}
+    assert automatic(trigger=positive) == {"baseline", "trigger_control"}
+    assert automatic(trigger=negative) == {"baseline"}
+    assert automatic(trigger=positive, variants={"baseline": {"remove": ["AGENTS.md"]}}) == {"trigger_control"}
+    assert automatic(variants={}) == set()

@@ -363,6 +363,54 @@ def test_only_positive_prompts_run_in_the_control_and_the_skill_is_gone_there(pr
     assert ".kilo/skills/debugging/SKILL.md" in staged
 
 
+def add_copies(project):
+    """Same-named copies of the skills in other folders Kilo reads, as examples/consumer keeps one in .claude/skills/."""
+    for name, text in {
+        ".claude/skills/release-notes/SKILL.md": skill_md("release-notes"),
+        ".agents/skills/release-notes/SKILL.md": skill_md("release-notes"),
+        ".claude/skills/debugging/SKILL.md": skill_md("debugging"),
+    }.items():
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
+        (project / name).write_text(text)
+
+
+def release_notes_skills(staged):
+    return [path for path in staged if path.endswith("/release-notes/SKILL.md")]
+
+
+def test_on_kilo_the_control_leaves_out_every_copy_of_the_skill_and_the_report_lists_what_is_left(project):
+    """The log's evaluation_assets are the report's "Staged files" column for the variant."""
+    add_copies(project)
+    write(project, eval_file())
+
+    template = task_for(project, "template").metadata["evaluation_assets"]
+    control = task_for(project, TRIGGER_CONTROL).metadata["evaluation_assets"]
+
+    assert len(release_notes_skills(template)) == 3
+    assert release_notes_skills(control) == []
+    assert {".kilo/skills/debugging/SKILL.md", ".claude/skills/debugging/SKILL.md"} <= set(control)
+
+
+def test_on_kilo_the_default_baseline_of_a_skill_leaves_out_every_copy_of_it(project):
+    add_copies(project)
+    write(project, eval_file())
+
+    baseline = task_for(project, "baseline").metadata["evaluation_assets"]
+
+    assert release_notes_skills(baseline) == []
+    assert ".claude/skills/debugging/SKILL.md" in baseline
+
+
+def test_a_baseline_the_file_declares_runs_as_written(project):
+    add_copies(project)
+    write(project, eval_file(variants={"baseline": {"role": "baseline", "remove": [".kilo/skills/release-notes/"]}}))
+
+    baseline = task_for(project, "baseline").metadata["evaluation_assets"]
+
+    assert sorted(release_notes_skills(baseline)) == [".agents/skills/release-notes/SKILL.md", ".claude/skills/release-notes/SKILL.md"]
+    assert release_notes_skills(task_for(project, TRIGGER_CONTROL).metadata["evaluation_assets"]) == []
+
+
 def test_the_task_records_what_is_under_test(project):
     write(project, eval_file())
     write(project, {"version": 2, "source": "AGENTS.md", "defaults": {"fixture": "repo", "expect": [{"check": "no_file_edits"}]},

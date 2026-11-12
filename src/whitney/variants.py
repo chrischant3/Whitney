@@ -27,8 +27,15 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from whitney.evalfile import TRIGGER_CONTROL, EvalFile, V1File, Variant, location, version_1_variants
-from whitney.project_files import CLAUDE_PERMISSIONS, CLAUDE_RULE_LISTS, CLAUDE_SETTINGS, CONFIG_PATHS, claude_code_instructions
+from whitney.evalfile import TRIGGER_CONTROL, EvalFile, V1File, Variant, location, under_test, version_1_variants
+from whitney.project_files import (
+    CLAUDE_PERMISSIONS,
+    CLAUDE_RULE_LISTS,
+    CLAUDE_SETTINGS,
+    CONFIG_PATHS,
+    KILO_SKILL_FOLDERS,
+    claude_code_instructions,
+)
 from whitney.static_checks import parse_jsonc
 
 # The staged files as supplied. Every eval file runs it, so no declared variant may take the name.
@@ -76,15 +83,33 @@ def declared_variants(eval_file: EvalFile | V1File) -> dict[str, Variant]:
     read (not upgraded) gets the variants the upgrade would give it, so a
     file the upgrade refuses, such as one with no token keys, still has them.
     """
-    if isinstance(eval_file, V1File):
-        upgraded = version_1_variants(eval_file)
-        declared = None if upgraded is None else {name: Variant.model_validate(v) for name, v in upgraded.items()}
-    else:
-        declared = eval_file.variants
+    declared = _declared(eval_file)
     variants = {"baseline": default_baseline(eval_file.source)} if declared is None else dict(declared)
-    if getattr(eval_file, "trigger", None) is not None and eval_file.trigger.positive:
+    if _has_positive_prompts(eval_file):
         variants[TRIGGER_CONTROL] = trigger_control(eval_file.source)
     return variants
+
+
+def automatic_variants(eval_file: EvalFile | V1File) -> set[str]:
+    """The names of the variants in declared_variants that Whitney adds itself: the default baseline and the trigger control.
+
+    These are fitted to the target's staged files where they run
+    (for_kilo_skill_copies); a variant the file declares runs as written.
+    """
+    automatic = {"baseline"} if _declared(eval_file) is None else set()
+    return automatic | ({TRIGGER_CONTROL} if _has_positive_prompts(eval_file) else set())
+
+
+def _declared(eval_file: EvalFile | V1File) -> dict[str, Variant] | None:
+    """The file's own variants, or for a version 1 file the upgrade's; None if it leaves them out."""
+    if isinstance(eval_file, V1File):
+        upgraded = version_1_variants(eval_file)
+        return None if upgraded is None else {name: Variant.model_validate(v) for name, v in upgraded.items()}
+    return eval_file.variants
+
+
+def _has_positive_prompts(eval_file: EvalFile | V1File) -> bool:
+    return getattr(eval_file, "trigger", None) is not None and bool(eval_file.trigger.positive)
 
 
 def trigger_control(source: str) -> Variant:
@@ -351,6 +376,38 @@ def for_claude_code_instructions(variant: Variant, files: Mapping[str, str]) -> 
     widened = [name for path in variant.remove for name in (claude_code_instructions(path, files) or [path])]
     unique = list(dict.fromkeys(widened))
     return variant if unique == variant.remove else variant.model_copy(update={"remove": unique})
+
+
+def for_kilo_skill_copies(variant: Variant, files: Mapping[str, str], source: str) -> Variant:
+    """`variant` with a `remove` of the skill folder `source` is in widened to every staged copy of the skill, for the kilo target.
+
+    Kilo reads skills from each of project_files.KILO_SKILL_FOLDERS and
+    offers one by its folder's name (evalfile.under_test), so a project that
+    keeps the same skill in `.kilo/skills/` and `.claude/skills/` still has
+    it after only the source's folder is removed: a positive trigger prompt
+    would load the other copy and pass in a control where it must fail. A
+    copy is a staged folder `<skill folder>/<name>/`; only staged ones are
+    added, since apply_variant refuses a remove of a path that isn't. The
+    source's own entry is kept, staged or not, for apply_variant to report.
+
+    Use it on the variants Whitney adds itself (automatic_variants). The
+    claude-code target reads only `.claude/skills/`, so it doesn't need this.
+
+    Returns:
+        `variant` itself if `source` isn't a skill, the variant doesn't remove
+        its folder, or no other copy is staged.
+    """
+    skill = SKILL_SOURCE.fullmatch(source)
+    own_folder = skill.group(1) if skill else None
+    if own_folder not in variant.remove:
+        return variant
+    _, name = under_test(source)
+    copies = [f"{folder}/{name}/" for folder in KILO_SKILL_FOLDERS]
+    staged_copies = [copy for copy in copies if copy != own_folder and staged_matches(files, copy)]
+    if not staged_copies:
+        return variant
+    widened = [entry for path in variant.remove for entry in ([path, *staged_copies] if path == own_folder else [path])]
+    return variant.model_copy(update={"remove": widened})
 
 
 def spread_over_kilo_configs(variant: Variant, files: Mapping[str, str], source: str) -> Variant:
