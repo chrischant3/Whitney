@@ -69,6 +69,9 @@ CLAUDE_MODEL = "claude-haiku-4-5"
 ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
 GATEWAY_UPSTREAM = "https://api.kilo.ai"
 GATEWAY_PATH = "/api/gateway"  # credentials.DEFAULT_GATEWAY_URL's path, kept so the proxy forwards to the same place
+# 2026-11-12, spikes/capture_followups.py: wrong for the proxy. With this path Kilo's model list got 405 and its chat
+# call fell back to the OpenAI format at /api/openrouter/chat/completions; with the origin alone the list loads and the
+# chat call is Anthropic's format at /api/openrouter/messages, as without a proxy. Use the origin alone.
 # Headers the proxy doesn't pass on: hop-by-hop ones, and those it sets itself.
 HOP_HEADERS = {"host", "connection", "keep-alive", "transfer-encoding", "content-length", "accept-encoding", "proxy-connection"}
 CAPTURE_PLUGIN_ID = "whitney-capture"

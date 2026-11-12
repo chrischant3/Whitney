@@ -541,7 +541,7 @@ Only the last three lines are the hook. The lines above them saved what the spik
 - **A reminder hook worked.** With a `UserPromptSubmit` or `SessionStart` reminder the skill loaded in 7 of 7 runs, against 1 of 6 without.
 - **The gate worked the one time it was needed.** The refusal reached the model, and its next call was `Skill`.
 - **Not shown: a `Stop` hook making a skill load.** It never had to block.
-- **Not explained:** in the tool gate and stop block cases the hooks told the model nothing before its first call, yet `Skill` came first in 6 of 7 runs, against 1 of 6 with no hook. The thinking blocks in the stream are empty, and the stream doesn't show what the model was sent (Task 31), so the spike can't say why. Seven runs is too few to rule out chance. (2026-11-12, Task 31 spike: the blocks are empty because Claude Code 2.1.322 asks for thinking with `"display": "updates"`, which returns no text; `showThinkingSummaries: true` brings the text into the stream. See [Phase 5 Task 31](#phase-5-task-31-what-was-sent-to-the-model-2026-11-12).)
+- **Not explained:** in the tool gate and stop block cases the hooks told the model nothing before its first call, yet `Skill` came first in 6 of 7 runs, against 1 of 6 with no hook. The thinking blocks in the stream are empty, and the stream doesn't show what the model was sent (Task 31), so the spike can't say why. Seven runs is too few to rule out chance. (2026-11-12, Task 31 spike: the blocks are empty because Claude Code 2.1.322 asks for thinking with `"display": "updates"`, which returns no text; `showThinkingSummaries: true` brings the text into the stream. See [Phase 5 Task 31](#phase-5-task-31-what-was-sent-to-the-model-2026-11-12). Christopher decided the same day that a captured run's log states the thinking level each run set, so a later run will say this one thought with its text withheld.)
 - All of this is one skill, one prompt and Haiku.
 
 ### Claude Code: what the stream shows
@@ -874,7 +874,7 @@ Task 31 wants a run's log to hold the request the model was sent and the agent's
 
 | Mechanism | Sees | Lets in | Worked |
 |---|---|---|---|
-| Proxy, Gateway route | The whole request: system prompt (as `messages[0]`, OpenAI format), messages, 24 tool definitions, `reasoning` | Nothing: `--pure` stays (`kilo-variant-only`) | Yes. **The note of 2026-11-10 that a proxy works only on the provider key route was wrong for this setup**: with `provider.kilo.options.baseURL` set to the proxy, the chat call came as `POST /api/openrouter/chat/completions` and was answered when forwarded to `https://api.kilo.ai`. Two `GET /api/gateway/api/openrouter/models` calls got 405, because the overlay's base URL carried `/api/gateway`; the run still worked |
+| Proxy, Gateway route | The whole request: system prompt (as `messages[0]`, OpenAI format), messages, 24 tool definitions, `reasoning` | Nothing: `--pure` stays (`kilo-variant-only`) | Yes. **The note of 2026-11-10 that a proxy works only on the provider key route was wrong for this setup**: with `provider.kilo.options.baseURL` set to the proxy, the chat call came as `POST /api/openrouter/chat/completions` and was answered when forwarded to `https://api.kilo.ai`. Two `GET /api/gateway/api/openrouter/models` calls got 405, because the overlay's base URL carried `/api/gateway`; the run still worked. (2026-11-12, [follow-up](#phase-5-task-31-follow-up-gateway-base-url-and-claudemd-imports-2026-11-12): the 405 also changed the request. With the origin alone the list loads and the chat call is `POST /api/openrouter/messages` in Anthropic's format; the OpenAI format and `messages[0]` system prompt here came from the wrong base URL) |
 | Proxy, provider key route | The whole request in Anthropic format: `system`, messages, 23 tools | Nothing | Yes |
 | Plugin, either route | The system prompt (the same text, word for word, as the proxy's), Kilo's own message objects (`info`, `parts`), and the agent, model and provider in `chat.params` | Every plugin Kilo finds once `--pure` is dropped (below), and the hook is handed the credentials | Yes, once on the Gateway route as the task asked. No tool definitions |
 
@@ -907,7 +907,7 @@ No debug flag shows the request: `claude --help` lists `--debug`, `--debug-file`
 
 ### Extended thinking
 
-- **Kilo:** off unless asked. `--variant high` sent `"reasoning": {"effort": "high"}` on the Gateway route, and `step_finish`'s `tokens.reasoning` counted 109 to 137. The thinking text is in the stream only with `--thinking` as well: two `reasoning` events, the text in `part.text`. Without `--thinking` it was only in the proxy's record of the response.
+- **Kilo:** off unless asked. `--variant high` sent `"reasoning": {"effort": "high"}` on the Gateway route (2026-11-12: in the OpenAI format the `/api/gateway` base URL caused; with the origin alone Kilo sends Anthropic's format with `"thinking": {"type": "disabled"}` and no variant, and what `--variant high` sends there isn't checked), and `step_finish`'s `tokens.reasoning` counted 109 to 137. The thinking text is in the stream only with `--thinking` as well: two `reasoning` events, the text in `part.text`. Without `--thinking` it was only in the proxy's record of the response.
 - **Claude Code:** on by default for `claude-haiku-4-5`, and hidden. With no setting, every request asked for `{"type": "enabled", "budget_tokens": 31999, "display": "updates"}`, the response carried 53 thinking tokens and an empty `thinking` block with a `signature`, and the stream had the same empty block. `--settings '{"showThinkingSummaries": true}'` alone dropped `display` and put the thinking text in the stream's `thinking` block. `MAX_THINKING_TOKENS` sets `budget_tokens`; the docs give `MAX_THINKING_TOKENS=0` as the way to turn it off. This explains the empty blocks Task 40 saw.
 - **Docker:** Inspect's `call.request` had no `thinking`, so the eval's generate config, not Claude Code, decides thinking there.
 - **Cost:** a few hundred output tokens on these prompts, against 17,600 (Kilo) to 22,100 (Claude Code) input tokens per request. Claude Code already pays for the thinking it hides.
@@ -919,7 +919,7 @@ The rule's text was found the same way in every capture: the file's whole text a
 | Kind of `source` | What "found" can honestly mean |
 |---|---|
 | `AGENTS.md`, `CLAUDE.md`, a rules file | The whole text, under the harness's header naming that file, in the first request |
-| `AGENTS.md` on claude-code with a `CLAUDE.md` beside it | Claude Code doesn't read it, and the loader doesn't stage it, so not found, truly. If the `CLAUDE.md` imports it with `@AGENTS.md`, Claude Code sends its text under its own `Contents of …/AGENTS.md` header (`cc-claude-md-import`), but the loader doesn't stage imported files ([load-order.md](load-order.md#what-each-target-stages-side-by-side)), so a Whitney run would find nothing to import |
+| `AGENTS.md` on claude-code with a `CLAUDE.md` beside it | Claude Code doesn't read it, and the loader doesn't stage it, so not found, truly. If the `CLAUDE.md` imports it with `@AGENTS.md`, Claude Code sends its text under its own `Contents of …/AGENTS.md` header (`cc-claude-md-import`), but the loader didn't stage imported files, so a Whitney run found nothing to import. (2026-11-12: run and fixed; the loader now stages imports, [follow-up](#phase-5-task-31-follow-up-gateway-base-url-and-claudemd-imports-2026-11-12)) |
 | A skill | Its name and description are in every request (Kilo's system prompt; Claude Code's skills `<system-reminder>`); its body only after it is loaded, as a tool result in a later request. So two lines: description sent, body sent |
 | `kilo.jsonc`, `.claude/settings.json` (permissions) | Never sent as text. The harness enforces the rule; the request can show only its effects, such as a tool missing from `tools`. The report should say "not sent: enforced by the harness" and point at `permission_held` |
 
@@ -930,6 +930,38 @@ The first request was 65.5 to 67.5 KB on Kilo and 87 to 89 KB on Claude Code. To
 ### Not shown
 
 See [the results page](results/2026-11-12-prompt-capture-spike.md#not-shown). Most of all: one run per case on Haiku, and no multi-step run.
+
+## Phase 5 Task 31 follow-up: Gateway base URL and `CLAUDE.md` imports (2026-11-12)
+
+Christopher's answers to Task 31's decisions 6 and 7 asked for runs before anything was settled. [`spikes/capture_followups.py`](../spikes/capture_followups.py) ran Kilo 7.8.27 and Claude Code 2.1.322 through Whitney's own runners with the logging proxy (header names only, never values; no Kilo plugin). Ten Haiku runs, about $0.20; the runs, tables and costs are in [results/2026-11-12-capture-followups.md](results/2026-11-12-capture-followups.md).
+
+### The Gateway proxy's base URL (decision 6)
+
+Kilo's config docs give no `options` for the `kilo` provider, and its bundled code shows only `KILO_API_URL` (default `https://api.kilo.ai`), from which it builds its own service URLs; the chat path isn't in the bundle's plain text. So each form was run:
+
+| `baseURL` | Model list | Chat call | Format | What it means |
+|---|---|---|---|---|
+| proxy + `/api/gateway` | `GET /api/gateway/api/openrouter/models` → 405, twice; `kilo models kilo` fell back to a list of 368 | `POST /api/openrouter/chat/completions` → 200 | OpenAI | Kilo builds the list path from the whole base URL and the chat path from the origin. With no list it sends another format, so the capture records a request a run without capture wouldn't send |
+| proxy origin alone | `GET /api/openrouter/models` → 200; 321 listed | `POST /api/openrouter/messages` → 200 | Anthropic, `"thinking": {"type": "disabled"}` | Every call reaches the path it would without a proxy |
+| proxy + `/api/openrouter` | the same as the origin | the same | the same | Kilo takes `/api/openrouter` as already there, so this works too, but it depends on that |
+
+**Recommendation: the origin alone.** It is the only form whose calls all match a run without capture, it needs no knowledge of Kilo's paths, and the proxy then forwards each path unchanged to `https://api.kilo.ai`. `/api/openrouter` works today but leans on Kilo recognising its own path. `/api/gateway` must not be used: it changes what is sent. Setting `KILO_API_URL` instead wasn't tried, since Kilo uses it for sign-in and its other services too. The earlier spike's Gateway fixture, `tests/data/prompt-capture/kilo-gateway.request.json`, is the OpenAI-format request the wrong URL caused; `kilo-gateway-origin.request.json` beside it is the request a captured run will hold.
+
+### `CLAUDE.md` imports (decision 7)
+
+Claude Code's [memory docs](https://code.claude.com/docs/en/memory.md) (read 2026-11-12): `@path` imports in a `CLAUDE.md` are expanded, relative to the file holding them, absolute paths allowed, recursively to four hops, not in code spans or fenced blocks; a backslash escapes a space and a quoted path isn't imported. An import resolving outside the working folder is external, and needs a person's approval in a dialog the first time; declined, it stays off. Imports in an `AGENTS.md` are expanded too, and a `CLAUDE.md` that imports `AGENTS.md` is the documented way to share one file. `claude --help` says `-p` skips the workspace trust dialog; it says nothing of imports.
+
+What Claude Code sent, run in the project folder and in what the loader staged from it:
+
+- **Lost in a Whitney run before the fix:** everything imported. A `CLAUDE.md` that is just `@AGENTS.md` sent nothing but that line: the rule set was silently missing, so an eval could fail, or a baseline match the template, for a reason that isn't in the real project. Own text plus imports sent the own text only. Nested imports, imports from `.claude/CLAUDE.md` (`@../docs/x.md`), absolute paths inside the project, a symlink inside the project, and an `AGENTS.md`'s own imports were all sent by the real run and lost.
+- **The same both ways:** code spans and fenced blocks aren't followed; hops 5 and 6 weren't sent; `@~/…`, an absolute path outside the project and `@../outside/…` weren't sent, since `-p` in a fresh HOME has no approval; `@config/.env.shared` wasn't sent (why isn't shown).
+- **A separate gap:** `.claude/rules/*.md` was sent by the real run, as the docs say (rules without `paths` load at launch). The loader doesn't stage `.claude/rules/`; it names it "rest of .claude/". Not part of this fix.
+
+**What Whitney does now:** the `claude-code` loader stages each file an instruction file imports, and each file those import, to four hops, by the loader's safety rules (`project_files._claude_code_imports`). An import outside the project, of a `.env` file or of `CLAUDE.local.md` is left out and named in the report as `<file>: @<path>`, with its reason. An import Claude Code would read but Whitney can't stage safely (a symlink, inside `node_modules/` or another excluded folder, under the evals path, unreadable or not UTF-8) stops the run with a message naming the importing file, rather than run without it. Re-run after the fix, the `@AGENTS.md`-only project and the `AGENTS.md`-with-an-import project sent what the real project sent.
+
+### Not shown
+
+See [the results page](results/2026-11-12-capture-followups.md#not-shown).
 
 ## Not yet done
 

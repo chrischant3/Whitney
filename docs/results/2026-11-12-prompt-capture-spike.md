@@ -43,6 +43,8 @@ Total: nine model runs, about $0.18.
 | `cc-claude-md-import` (OTEL) | 1 | 88.8 KB | 28,824 chars | 12 | exact, after its own "Contents of …/AGENTS.md" header | yes / no | no |
 | `cc-docker` (Inspect log) | 1 model event | `call.request` 86.6 KB, with attachments resolved | in `system` | 12 | exact | yes / no | no |
 
+(2026-11-12, [follow-up](2026-11-12-capture-followups.md#decision-6-the-gateway-base-url): the `kilo-gateway` and `kilo-thinking` requests went out in the OpenAI format because the proxy's base URL carried `/api/gateway`, which made Kilo's model list fail with 405. With the origin alone the list loads and Kilo sends Anthropic's format to `/api/openrouter/messages`, as it does without a proxy.)
+
 "Exact" means the file's whole text was a substring of the request's text. Normalising line endings and trailing spaces changed no result.
 
 ## Thinking
