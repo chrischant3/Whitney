@@ -579,7 +579,7 @@ A project for both harnesses can keep a skill in `.kilo/skills/` for Kilo and a 
 
 - Give the Claude Code copy its own eval file with `"targets": ["claude-code"]`, named `skills/claude-<name>.json`.
 - In the Kilo copy's eval file, declare a baseline that removes both folders: `{"baseline": {"role": "baseline", "remove": [".kilo/skills/<name>/", ".claude/skills/<name>/"]}}`.
-- **Known gap:** the `trigger_control` Whitney adds removes only the source's folder, and can't be declared. In a Kilo run it keeps the `.claude/skills/` copy, so a positive trigger prompt can load that copy and pass where the control should fail. A Kilo trigger control that passes in such a project doesn't show the check can't fail; it shows the other copy loaded. `whitney validate` doesn't warn about it yet.
+- **Known gap:** the `trigger_control` Whitney adds removes only the source's folder, and can't be declared. In a Kilo run it keeps the `.claude/skills/` copy, so a positive trigger prompt can load that copy and pass where the control should fail. A Kilo trigger control that passes in such a project doesn't show the check can't fail; it shows the other copy loaded. In the example's recorded run it did: both control prompts loaded `.claude/skills/release-notes/` ([results](results/2026-11-12-claude-code-example.md#which-skill-copy-kilo-used)). `whitney validate` doesn't warn about it yet.
 
 Each gets one eval file, which asks two different questions:
 
