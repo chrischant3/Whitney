@@ -540,10 +540,13 @@ def test_scenario_eval_refuses_a_check_it_cant_run(tmp_path, expect, message):
         tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals))
 
 
-def test_scenario_eval_refuses_a_target_the_file_or_its_checks_dont_apply_to(tmp_path):
+def test_scenario_eval_refuses_a_target_the_file_or_its_checks_dont_apply_to(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="^kilo_jsonc doesn't apply to the claude-code target"):
         tasks_module.scenario_eval("configuration/kilo-jsonc.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(EVALS))
-    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "outside_canary_not_reached", "canary": "TOKEN-1"}]))
+    from conftest import with_a_kilo_only_check
+
+    with_a_kilo_only_check(monkeypatch)
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "kilo_only"}]))
     with pytest.raises(ValueError, match="^rules doesn't apply to the claude-code target"):
         tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(evals))
 
@@ -690,8 +693,8 @@ def test_a_file_its_target_doesnt_apply_to_is_named_with_the_reason(tmp_path, mo
     reg = Registry()
     check("kilo_only", params=NoParams, judges="agent", labels=("ok", "bad", "unsure"), targets=("kilo",), into=reg)(lambda e, p: Verdict("pass", ""))
     monkeypatch.setattr(tasks_module, "registry", lambda: {**registry(), **reg.checks()})
-    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "outside_canary_not_reached", "canary": "TOKEN-1"}, {"check": "kilo_only"}]))
-    with pytest.raises(ValueError, match="^rules doesn't apply to the claude-code target: its checks outside_canary_not_reached, kilo_only don't support it$"):
+    evals = _consumer_evals(tmp_path, _one_scenario([{"check": "kilo_only"}]))
+    with pytest.raises(ValueError, match="^rules doesn't apply to the claude-code target: its check kilo_only doesn't support it$"):
         tasks_module.scenario_eval("rules.json", target="claude-code", model="anthropic/claude-haiku-4-5", evals_path=str(evals))
 
 
