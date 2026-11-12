@@ -71,6 +71,45 @@ def test_a_rule_that_says_what_to_do_is_left_alone(line):
     assert "say-what-to-do" not in text_rules("AGENTS.md", f"# Rules\n\n{line}\n")
 
 
+@pytest.mark.parametrize("text, rule, fires", [
+    # Code, quoted text and a word inside them direct nothing.
+    ("- Python 3.11, no external services\n", "give-a-reason", False),
+    ("- Run `git push --no-verify` to skip hooks\n", "give-a-reason", False),
+    ("- `no-cache` on every response\n", "say-what-to-do", False),
+    ("- `no-cache` on every response\n", "give-a-reason", False),
+    ('- The old rules said "Never push to main".\n', "give-a-reason", False),
+    ("- The old rules said “Never push to main”.\n", "give-a-reason", False),
+    ("- No force pushes.\n", "give-a-reason", True),
+    # A second clause that tells the agent what to do is the alternative; a list of names isn't.
+    ("- Don't use npm, use pnpm.\n", "say-what-to-do", False),
+    ("- Avoid mocks; use fakes.\n", "say-what-to-do", False),
+    ("- Never use eval, exec or compile\n", "say-what-to-do", True),
+    # A nested sub-bullet is read with its parent, and is still an item of its own.
+    ("- Never commit .env\n  - Why: they hold secrets\n", "give-a-reason", False),
+    ("- Never edit vendor/\n  - Use the wrapper instead.\n", "say-what-to-do", False),
+    ("- Rules:\n  - Never push to main\n", "say-what-to-do", True),
+    # A label's colon isn't a reason, and "e.g." doesn't end a sentence.
+    ("- **Never:** commit secrets\n", "give-a-reason", True),
+    ("- Never hardcode values, e.g. API keys\n", "say-what-to-do", True),
+    ("- Never hardcode values, e.g. API keys\n", "give-a-reason", True),
+])
+def test_the_text_rules_read_what_an_item_says_not_its_code_or_quotes(text, rule, fires):
+    assert (rule in text_rules("AGENTS.md", text)) is fires
+
+
+def test_a_prohibition_in_a_sub_bullet_is_quoted_from_its_own_line():
+    [finding] = [f for f in text_findings("AGENTS.md", {"AGENTS.md": "- Rules:\n  - Never push to main\n"}) if f.rule == "say-what-to-do"]
+
+    assert finding.evidence == ("line 2: `Never push to main`",)
+
+
+def test_the_advice_cites_no_recorded_run_its_rule_wouldnt_have_caught():
+    report = improvement_report(failing_rules()) + improvement_report(CASES["vague-skills"]())
+
+    assert "say-what-to-do" in report and "description-says-when" in report
+    assert "docs/results/" not in report and "recorded run" not in report
+
+
 def test_a_bullet_with_no_reason_is_named_and_one_with_a_reason_is_not():
     assert "give-a-reason" in text_rules("AGENTS.md", "- Always use 2-space indentation.\n")
     assert "give-a-reason" not in text_rules("AGENTS.md", "- Always use 2-space indentation, because the linter checks it.\n")
@@ -256,8 +295,53 @@ def test_text_quoted_from_a_file_cant_break_the_markdown():
 def unloaded(target="claude-code", description=SOUND_SKILL):
     """Logs where the skill loaded in 2 of 4 scenario runs and 1 of 2 positive trigger runs."""
     samples = [run("a", used=True), run("a", used=True), run("b", "violated", used=False), run("b", "violated", used=False)]
-    samples += [run("asks", "followed", trigger="positive"), run("asks", "violated", trigger="positive")]
+    samples += [run("asks", "followed", used=True, trigger="positive"), run("asks", "violated", used=False, trigger="positive")]
     return [log(samples, source=SKILL, files={SKILL: description}, target=target)]
+
+
+def test_the_runs_to_try_again_are_those_that_should_have_loaded_the_skill_each_named_once():
+    [only] = unloaded()
+    only.samples += [run("unrelated", used=False, trigger="negative")] * 2
+
+    report = improvement_report([only])
+
+    assert "Add the hook, then run `asks`, `b` in Claude Code itself," in report
+    assert "loaded in 3 of 6" in report
+
+
+@pytest.mark.parametrize("used, missed, fires", [
+    (3, 1, True),  # 4 runs could tell, and a quarter missed
+    (2, 1, False),  # only 3 runs could tell
+    (4, 1, False),  # a fifth missed
+    (6, 2, True),
+    (7, 2, False),  # 2 of 9 missed, under a quarter
+])
+def test_the_hook_needs_four_runs_that_could_tell_and_a_quarter_of_them_missed(used, missed, fires):
+    samples = [run("a", used=True)] * used + [run("b", "violated", used=False)] * missed
+
+    report = improvement_report([log(samples, source=SKILL, files={SKILL: SOUND_SKILL})])
+
+    assert ("`hook-to-load-skill`" in report) is fires
+
+
+def test_a_known_gaps_runs_dont_count_toward_the_hook():
+    gap = [run("b", "violated", used=False), run("asks", "violated", used=False, trigger="positive")] * 2
+    for sample in gap:
+        sample.metadata["known_gap"] = "E3: the harness can't tell"
+    samples = [run("a", used=True)] * 4 + gap
+
+    assert "hook-to-load-skill" not in improvement_report([log(samples, source=SKILL, files={SKILL: SOUND_SKILL})])
+
+
+def test_a_skill_named_in_validates_near_duplicate_warning_gets_the_warning_and_no_hook():
+    later = ".claude/skills/zz-notes/SKILL.md"
+    [only] = unloaded()
+    only.eval.metadata["evaluation_assets"] = {SKILL: SOUND_SKILL, later: SOUND_SKILL.replace("release-notes", "zz-notes", 1)}
+
+    report = improvement_report([only])
+
+    assert f"`whitney validate`, on `{later}`: `its description is nearly the same as {SKILL}'s" in report
+    assert "hook-to-load-skill" not in report
 
 
 def test_a_sound_skill_that_didnt_load_gets_the_claude_code_hook_not_tested_by_whitney():
@@ -455,6 +539,33 @@ def test_the_checks_explanation_of_a_failing_run_is_quoted():
 
     assert "- `a`: 1/2. The check said: `` CHANGELOG.md gained OPS-4417 | `x` ``" in report
     assert "no ticket id added" not in report
+
+
+def test_the_users_home_folder_in_the_checks_explanation_is_shown_as_a_tilde(monkeypatch):
+    monkeypatch.setenv("HOME", "/Users/someone")
+    samples = [run("a"), run("a", "violated", said="wrote /Users/someone/app/.env, not /Users/someoneelse/x")]
+
+    report = improvement_report([log(samples)])
+
+    assert "The check said: `wrote ~/app/.env, not /Users/someoneelse/x`" in report
+
+
+def test_an_explanation_of_only_spaces_is_left_out_and_one_of_only_backticks_is_quoted():
+    blank = improvement_report([log([run("a"), run("a", "violated", said="  ")])])
+    ticks = improvement_report([log([run("a"), run("a", "violated", said="``")])])
+
+    assert "- `a`: 1/2\n" in blank
+    assert "- `a`: 1/2. The check said: ``` `` ```\n" in ticks
+
+
+def test_blank_text_to_quote_is_shown_as_empty():
+    report = improvement_report([log([run("a", pressure=" "), run("a", "violated", pressure=" ")])])
+
+    assert "- `a` (pressure: (empty)): 1/2\n" in report
+
+
+def test_a_skill_that_starts_with_a_byte_order_mark_still_has_frontmatter():
+    assert "skill-body-size" not in text_rules(SKILL, "﻿" + SOUND_SKILL + "Line.\n" * 496)
 
 
 def test_an_empty_file_has_no_findings():

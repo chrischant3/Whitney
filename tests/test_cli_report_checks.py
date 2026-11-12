@@ -392,6 +392,23 @@ def test_the_report_says_how_to_improve_each_file_under_test(tmp_path, monkeypat
     assert report.index("## How to improve") < report.index("## Evaluation Instructions and Assets")
 
 
+def test_an_improvement_section_that_cant_be_built_is_noted_and_the_report_and_gate_stand(tmp_path, monkeypatch):
+    logs = [file_log("template", "template", ["followed"] * 3 + ["violated"], evaluation_assets={"AGENTS.md": "- Never push\n"})]
+    (tmp_path / "ok").mkdir()
+    (tmp_path / "broken").mkdir()
+    code, report = whitney_report(tmp_path / "ok", monkeypatch, logs)
+
+    def broken(*args):
+        raise ValueError("bad `x`\nsecond line")
+
+    monkeypatch.setattr(cli, "improvement_report", broken)
+    broken_code, broken_report = whitney_report(tmp_path / "broken", monkeypatch, logs)
+
+    assert broken_code == code
+    assert "## How to improve the files under test\n\nThis section couldn't be built: `` ValueError: bad `x` second line ``\n" in broken_report
+    assert "## Evaluation Instructions and Assets" in broken_report
+
+
 def test_logs_from_before_phase_5_get_no_improvement_section(tmp_path, monkeypatch):
     code, report = whitney_report(tmp_path, monkeypatch, OLD_LOGS)
 

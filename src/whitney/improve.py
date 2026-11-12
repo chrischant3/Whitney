@@ -21,6 +21,7 @@ inside it can close (_quote), so it can't break the report's Markdown.
 
 from __future__ import annotations
 
+import os
 import posixpath
 import re
 from collections import defaultdict
@@ -30,7 +31,7 @@ from pathlib import Path
 
 from whitney.report import TEMPLATE_VARIANT, Cell, EvalSummary, Record, records_from_log, summarise
 from whitney.thresholds import MIN_CONCLUSIVE
-from whitney.validate import STAGED, frontmatter_value, skill_description, skill_description_warnings
+from whitney.validate import BOM, STAGED, frontmatter_value, skill_description, skill_description_warnings
 
 HEADING = "## How to improve the files under test"
 RULES_DOC = "docs/improvement-rules.md"
@@ -46,16 +47,14 @@ SOURCES = {
     "hooks": f"[Claude Code hooks reference](https://code.claude.com/docs/en/hooks), {READ_ON}",
     "plugins": f"[Kilo plugins](https://kilo.ai/docs/automate/extending/plugins), {READ_ON}",
     "spike": "Whitney's spike, `docs/spike-findings.md`, \"Phase 5 Task 40: hooks to enforce a skill\"",
-    "reworded": "the recorded run `docs/results/2026-11-10-kilo-prompt-capture.md`",
-    "described": "the recorded run `docs/results/2026-11-10-skills-agents.md`",
 }
 # Rule id -> (what it found, its sources). The ids are stable, so a reader can look each up in RULES_DOC.
 RULES = {
-    "say-what-to-do": ("a rule says what not to do, and not what to do instead", ("prompting", "reworded")),
+    "say-what-to-do": ("a rule says what not to do, and not what to do instead", ("prompting",)),
     "give-a-reason": ("a rule gives no reason", ("prompting",)),
     "no-shouting": ("capitals such as MUST and NEVER are used often", ("prompting",)),
     "whitney-validate": ("`whitney validate` warns about the skill's description", ("skills",)),
-    "description-says-when": ("the skill's description doesn't say when to use it", ("skills", "described")),
+    "description-says-when": ("the skill's description doesn't say when to use it", ("skills",)),
     "always-loaded-size": ("an instruction file loaded in every session is over 200 lines", ("memory",)),
     "skill-body-size": ("the SKILL.md body is over 500 lines", ("skills",)),
     "one-level-deep": ("a skill's file other than SKILL.md links to another of its files", ("skills",)),
@@ -70,18 +69,33 @@ SKILL_BODY_LIMIT = 500  # lines; the skill authoring page: "Keep the SKILL.md bo
 SHOUT_LIMIT = 3
 QUOTED_ITEMS = 3  # lines quoted as one finding's evidence; the rest are counted
 QUOTE_LIMIT = 200  # characters of a quoted line
+# Whitney's own numbers, not a source's: below 4 runs one miss is too much chance, and under a quarter
+# missed the skill loads often enough that a hook's cost (it runs as the user) may not be worth it.
+HOOK_MIN_RUNS = 4  # runs that could tell whether the skill loaded
+HOOK_MIN_MISSED = 0.25  # the share of them in which it didn't
 
 FENCE = re.compile(r"\s*(```|~~~)")
-ITEM = re.compile(r"\s*([-*+]|\d+[.)])\s+(.*)")
+ITEM = re.compile(r"(\s*)([-*+]|\d+[.)])\s+(.*)")
 CODE_SPAN = re.compile(r"(`+).*?\1")
-FORBIDS = re.compile(r"[*_`\s]*(never|don't|do not|avoid|no)\b", re.IGNORECASE)  # after any emphasis or code mark
+QUOTED = re.compile(r"\"[^\"]*\"|“[^”]*”")  # double quotes only: a single one is often an apostrophe
+FORBIDS = re.compile(r"[*_\s]*(never|don't|do not|avoid|no)\b", re.IGNORECASE)  # after any emphasis
 ALTERNATIVE = re.compile(r"\b(instead|rather|unless|but|only|except)\b", re.IGNORECASE)
+# A second clause starting with one of these verbs tells the agent what to do: "Don't use npm, use pnpm."
+# A list of verbs, not a guess at any word, so a list of names ("never use eval, exec or compile") isn't one.
+DOES_INSTEAD = re.compile(
+    r"[,;]\s*(?:and |then |always |just )?(add|ask|call|check|choose|commit|copy|create|keep|leave|let|make|mark|move|"
+    r"name|open|pass|pick|prefer|put|raise|read|return|run|say|send|set|stop|store|tell|try|update|use|wait|write)\b",
+    re.IGNORECASE,
+)
 REASON = re.compile(r"\b(because|since|so|otherwise|which|why|in order to)\b|[:;(–—]", re.IGNORECASE)
+LABEL = re.compile(r"^[*_]*\s*[:–—]")  # "**Never:** ...": a mark straight after the directing word labels it
 # A bullet with one of these words directs the agent; one without, such as "The file under test: ...", describes.
-DIRECTS = re.compile(r"\b(never|always|must|should|shall|don't|do not|avoid|no)\b", re.IGNORECASE)
+# "No" directs only at the start ("No force pushes."); later it describes ("Python 3.11, no external services").
+DIRECTS = re.compile(r"\b(never|always|must|should|shall|don't|do not|avoid)\b|^[*_\s]*no\b", re.IGNORECASE)
 SHOUTED = re.compile(r"\b(MUST|NEVER|ALWAYS|CRITICAL|IMPORTANT|REQUIRED)\b")
 SAYS_WHEN = re.compile(r"\b(when|whenever|before|after|if|while)\b", re.IGNORECASE)
 SENTENCE_END = re.compile(r"[.!?][*_\"')]*(?:\s+|$)")  # emphasis or a quote can close after the stop
+ABBREVIATION = re.compile(r"\b(e\.g|i\.e|etc|vs|cf)\.", re.IGNORECASE)  # a stop that ends no sentence
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 SAFE_NAME = re.compile(r"[A-Za-z0-9._-]+")  # a skill name that can go into the hook's shell script and code as it is
 DESCRIPTION_RULES = ("whitney-validate", "description-says-when")
@@ -111,12 +125,14 @@ class Finding:
     sources: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Item:
     line: int  # 1-based, in the file
     numbered: bool
-    text: str
-    end: int  # the last line the item reaches
+    text: str  # the item's own, with the indented lines that continue it
+    end: int  # the last line the item, or an item nested in it, reaches
+    indent: int
+    nested: str = ""  # the text of the items nested in it, which may give its reason or alternative
 
 
 @dataclass
@@ -167,6 +183,14 @@ def improvement_report(
         if summary.file
     ]
     return "\n".join([HEADING, "", INTRO, "", *sections]) if sections else ""
+
+
+def improvement_failed(error: Exception) -> str:
+    """The section in place of improvement_report's when building it raised `error`: one line naming the error.
+
+    The section only advises, so the report and the gate go on without it.
+    """
+    return f"{HEADING}\n\nThis section couldn't be built: {_quote(f'{type(error).__name__}: {error}')}\n"
 
 
 def _templates(logs: list) -> dict[str, _Template]:
@@ -256,7 +280,15 @@ def _pressure(records: list[Record], scenario: str) -> str:
 def _said(template_log: _Template, scenario: str, failing: str) -> str:
     """What the check said of the scenario's first failing run in the template, quoted; "" if the log has nothing."""
     said = next((text for outcome, text in template_log.said.get(scenario, []) if outcome == failing), None)
-    return f". The check said: {_quote(said)}" if said else ""
+    return f". The check said: {_quote(_home_as_tilde(said))}" if said and said.strip() else ""
+
+
+def _home_as_tilde(text: str) -> str:
+    """`text` with the user's home folder written `~`, so a quoted path doesn't name the user who ran it."""
+    home = os.path.expanduser("~").rstrip("/")
+    if not home or home == "~":  # no home to hide: os.path.expanduser leaves "~" as it is
+        return text
+    return re.sub(re.escape(home) + r"(?![\w.-])", "~", text)
 
 
 def _count(cell: Cell) -> str:
@@ -334,7 +366,7 @@ def _render(finding: Finding, label: str) -> list[str]:
 
 def _frontmatter_end(lines: list[str]) -> int:
     """The index of the first line after the frontmatter, or 0 if the file has none."""
-    if not lines or lines[0].strip() != "---":
+    if not lines or lines[0].removeprefix(BOM).strip() != "---":
         return 0
     return next((i + 1 for i, line in enumerate(lines[1:], 1) if line.rstrip() == "---"), 0)
 
@@ -353,19 +385,39 @@ def _body(text: str) -> list[tuple[int, str]]:
 
 
 def _items(text: str) -> list[_Item]:
-    """The file's list items, each with the indented lines straight after it that continue it."""
+    """The file's list items, each with the indented lines straight after it that continue it.
+
+    An item indented under another, with no gap between, is an item of its
+    own and also part of the text nested in each item it sits under.
+    """
     items: list[_Item] = []
+    chain: list[_Item] = []  # the last item read, and the items it is nested in
     for number, line in _body(text):
         match = ITEM.fullmatch(line)
         if match:
-            items.append(_Item(number, match.group(1)[0].isdigit(), match.group(2).strip(), number))
-        elif items and items[-1].end == number - 1 and line.strip() and line[0].isspace():
-            items[-1] = replace(items[-1], text=f"{items[-1].text} {line.strip()}", end=number)
+            indent = len(match.group(1))
+            chain = [item for item in chain if item.end == number - 1 and item.indent < indent]
+            item = _Item(number, match.group(2)[0].isdigit(), match.group(3).strip(), number, indent)
+            for parent in chain:
+                parent.nested, parent.end = f"{parent.nested} {item.text}", number
+            items.append(item)
+            chain.append(item)
+        elif chain and chain[-1].end == number - 1 and line.strip() and line[0].isspace():
+            chain[-1].text = f"{chain[-1].text} {line.strip()}"
+            for parent in chain[:-1]:
+                parent.nested = f"{parent.nested} {line.strip()}"
+            for item in chain:
+                item.end = number
     return items
 
 
+def _plain(text: str) -> str:
+    """`text` with each code span and double-quoted passage replaced by a word: a word inside them directs nothing."""
+    return QUOTED.sub("quote", CODE_SPAN.sub("code", text))
+
+
 def _sentences(text: str) -> int:
-    return len([part for part in SENTENCE_END.split(CODE_SPAN.sub("code", text)) if part.strip()])
+    return len([part for part in SENTENCE_END.split(ABBREVIATION.sub("abbreviation", _plain(text))) if part.strip()])
 
 
 def _evidence(lines: list[tuple[int, str]]) -> tuple[str, ...]:
@@ -375,24 +427,35 @@ def _evidence(lines: list[tuple[int, str]]) -> tuple[str, ...]:
     return (*shown, f"and {more} more like {'it' if more == 1 else 'them'}") if more > 0 else tuple(shown)
 
 
+def _only_forbids(item: _Item) -> bool:
+    """An item that starts with a prohibition and, with what is nested in it, is one sentence naming nothing to do instead."""
+    whole = _plain(f"{item.text} {item.nested}")
+    return bool(
+        FORBIDS.match(_plain(item.text)) and _sentences(whole) == 1
+        and not ALTERNATIVE.search(whole) and not DOES_INSTEAD.search(whole)
+    )
+
+
 def _say_what_to_do(path: str, text: str, files: Mapping[str, str]) -> list[Finding]:
-    """A list item that only forbids: one sentence, starting with a prohibition, naming no alternative or exception."""
-    hits = [
-        (item.line, item.text) for item in _items(text)
-        if FORBIDS.match(item.text) and _sentences(item.text) == 1 and not ALTERNATIVE.search(item.text)
-    ]
+    """A list item that only forbids (_only_forbids); the code and quotes in it are left out (_plain)."""
+    hits = [(item.line, item.text) for item in _items(text) if _only_forbids(item)]
     return [Finding("say-what-to-do", path, _evidence(hits), (
-        "add what to do in its place, as well as what not to do. In a recorded run, rewording a rule that way "
-        "took its scenarios from 0 of 6 to 6 of 6 on Claude Code."
+        "add what to do in its place, as well as what not to do."
     ))] if hits else []
 
 
+def _no_reason(item: _Item) -> bool:
+    """A bullet whose own text directs (DIRECTS) and which, with what is nested in it, is one sentence giving no reason after the directing word."""
+    directs = DIRECTS.search(_plain(item.text))
+    if item.numbered or not directs:
+        return False
+    after = LABEL.sub("", _plain(item.text)[directs.end():])
+    return _sentences(f"{item.text} {item.nested}") == 1 and not REASON.search(f"{after} {_plain(item.nested)}")
+
+
 def _give_a_reason(path: str, text: str, files: Mapping[str, str]) -> list[Finding]:
-    """A bullet of one sentence that directs (DIRECTS) with no word that gives a reason. Numbered items are steps, which need none."""
-    hits = [
-        (item.line, item.text) for item in _items(text)
-        if not item.numbered and _sentences(item.text) == 1 and DIRECTS.search(item.text) and not REASON.search(item.text)
-    ]
+    """A bullet that directs with no reason (_no_reason). Numbered items are steps, which need none."""
+    hits = [(item.line, item.text) for item in _items(text) if _no_reason(item)]
     return [Finding("give-a-reason", path, _evidence(hits), (
         "say why the rule matters, so the model can apply it to cases the rule doesn't name."
     ))] if hits else []
@@ -412,13 +475,22 @@ def _no_shouting(path: str, text: str, files: Mapping[str, str]) -> list[Finding
 
 
 def _validate_warnings(path: str, text: str, files: Mapping[str, str]) -> list[Finding]:
-    """`whitney validate`'s warnings about this skill's description, as validate words them."""
+    """`whitney validate`'s warnings about this skill's description, as validate words them.
+
+    Validate names a near-duplicate pair at the later skill's path only, so
+    a warning there that names this skill counts for this one too.
+    """
     skills = {name: body for name, body in files.items() if STAGED["skill"].fullmatch(name)}
-    return [
-        Finding("whitney-validate", path, (f"`whitney validate`: {_quote(w.message)}",), "fix what the warning names.")
-        for w in skill_description_warnings(skills, Path())
-        if w.file == Path(path)
-    ]
+    findings = []
+    for w in skill_description_warnings(skills, Path()):
+        if w.file == Path(path):
+            evidence = f"`whitney validate`: {_quote(w.message)}"
+        elif f" {path}'s " in w.message:
+            evidence = f"`whitney validate`, on {_quote(w.file.as_posix())}: {_quote(w.message)}"
+        else:
+            continue
+        findings.append(Finding("whitney-validate", path, (evidence,), "fix what the warning names."))
+    return findings
 
 
 def _description_says_when(path: str, text: str, files: Mapping[str, str]) -> list[Finding]:
@@ -428,8 +500,7 @@ def _description_says_when(path: str, text: str, files: Mapping[str, str]) -> li
         return []
     return [Finding("description-says-when", path, (f"description: {_quote(description)}",), (
         "add when to use the skill, naming the requests and files it covers, such as \"Use when the user asks for …\". "
-        "The model picks a skill by its description; in a recorded run a skill went from never loading to "
-        "loading in 3 of 6 runs once its description said when."
+        "The model picks a skill by its description."
     ))]
 
 
@@ -492,34 +563,34 @@ TEXT_RULES: tuple[Callable[[str, str, Mapping[str, str]], list[Finding]], ...] =
 
 
 def _hook_findings(s: EvalSummary, records: list[Record], source: str, texts: list[Finding], target: str | None) -> list[Finding]:
-    """`hook-to-load-skill`, when the skill's description is sound and the template's runs show it didn't always load.
+    """`hook-to-load-skill`, when the skill's description is sound and the template's runs show it often didn't load.
 
     The description is sound when neither validate's warnings nor
-    `description-says-when` speak about it. The runs counted are the
-    template's scenario runs that say whether the skill loaded, and its
-    positive trigger prompts, which pass when it loads. The caller has
+    `description-says-when` speak about it. The runs counted (_could_tell)
+    are the template's, outside known gaps, where the skill should have
+    loaded and the run says whether it did. At least HOOK_MIN_RUNS of them
+    must, and in at least HOOK_MIN_MISSED of them it didn't. The caller has
     already judged that the runs are enough to say (_not_enough).
     """
     if not s.file.under_test or s.file.under_test[0] != "skill" or target not in HOOKS:
         return []
     if any(f.rule in DESCRIPTION_RULES for f in texts):
         return []
-    positive = [(name, cells.get(TEMPLATE_VARIANT, Cell())) for name, cells in sorted(s.rows.items()) if s.triggers.get(name) == "positive"]
-    loaded = s.usage.get("used", 0) + sum(cell.passed for _, cell in positive)
-    missed = s.usage.get("unused", 0) + sum(cell.failed for _, cell in positive)
-    if not missed:
+    runs = _could_tell(records, s.file.labels[0], s.file.labels[1])
+    missed = [name for name, loaded in runs if not loaded]
+    if len(runs) < HOOK_MIN_RUNS or len(missed) < HOOK_MIN_MISSED * len(runs):
         return []
     name = s.file.under_test[1]
-    unloaded = sorted({r.scenario for r in records if r.variant == TEMPLATE_VARIANT and r.use == "unused"})
-    retry = ", ".join(_quote(n) for n in [*(n for n, _ in positive), *unloaded])
+    prompts = sorted({r.scenario for r in records if r.variant == TEMPLATE_VARIANT and r.trigger == "positive"})
+    retry = ", ".join(_quote(n) for n in dict.fromkeys([*prompts, *sorted(missed)]))
     hook = HOOKS[target]
     filled = name if SAFE_NAME.fullmatch(name) else "<skill>"
     return [Finding(
         "hook-to-load-skill", source,
         (
-            f"the skill {_quote(name)} loaded in {loaded} of {loaded + missed} runs that could tell "
+            f"the skill {_quote(name)} loaded in {len(runs) - len(missed)} of {len(runs)} runs that could tell "
             "(the template's scenario runs and its positive trigger prompts)",
-            "its description passes `whitney validate`'s checks and `description-says-when`, "
+            "neither validate's description warnings nor `description-says-when` speak about its description, "
             "so the description alone can't be relied on to load it",
         ),
         f"**not tested by Whitney.** {hook['change']}",
@@ -528,6 +599,24 @@ def _hook_findings(s: EvalSummary, records: list[Record], source: str, texts: li
         tuple(block(filled) for block in hook["blocks"]),
         hook["sources"],
     )]
+
+
+def _could_tell(records: list[Record], passing: str, failing: str) -> list[tuple[str, bool]]:
+    """(scenario, whether the skill loaded) for each template run outside known gaps where it should have.
+
+    A scenario's run says so in its score (Record.use); a positive trigger
+    prompt's passes when the skill loads. A negative prompt is left out: the
+    skill shouldn't load for it.
+    """
+    runs = []
+    for r in records:
+        if r.variant != TEMPLATE_VARIANT or r.metadata.get("known_gap"):
+            continue
+        if r.trigger == "positive" and r.outcome in (passing, failing):
+            runs.append((r.scenario, r.outcome == passing))
+        elif r.trigger is None and r.use in ("used", "unused"):
+            runs.append((r.scenario, r.use == "used"))
+    return runs
 
 
 def _fenced(language: str, text: str) -> str:
@@ -616,6 +705,8 @@ HOOKS: dict[str, dict] = {
 def _quote(text: str) -> str:
     """`text` on one line in a code span no backtick inside it can close, so nothing in it is read as Markdown."""
     text = " ".join(str(text).split())
+    if not text:
+        return "(empty)"
     if len(text) > QUOTE_LIMIT:
         text = text[:QUOTE_LIMIT] + "…"
     runs = re.findall(r"`+", text)

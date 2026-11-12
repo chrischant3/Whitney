@@ -17,9 +17,9 @@ No failing run is behind these, so each is a suggestion: the file's text shows i
 **Suggestion: `say-what-to-do`** in `AGENTS.md`: a rule says what not to do, and not what to do instead.
 
 - Evidence: line 1: `Never push to main`
-- Try: add what to do in its place, as well as what not to do. In a recorded run, rewording a rule that way took its scenarios from 0 of 6 to 6 of 6 on Claude Code.
+- Try: add what to do in its place, as well as what not to do.
 - How to tell: Run `team.json` again with as many epochs: the template, now 2/2, should hold at least as often.
-- Source: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), read 2026-11-11; the recorded run `docs/results/2026-11-10-kilo-prompt-capture.md`.
+- Source: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), read 2026-11-11.
 
 **Suggestion: `give-a-reason`** in `AGENTS.md`: a rule gives no reason.
 

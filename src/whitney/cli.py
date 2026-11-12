@@ -54,7 +54,7 @@ from whitney.checks import CheckSpec, registry
 from whitney.credentials import CredentialsError, resolve_gateway_credentials
 from whitney.evidence import run_secrets
 from whitney.evalfile import EvalFile, Problem
-from whitney.improve import improvement_report
+from whitney.improve import improvement_failed, improvement_report
 from whitney.report import (
     ROLE_ORDER,
     check_thresholds,
@@ -592,8 +592,9 @@ def write_report(
     eval files, any replaced minimum and a changed min_conclusive), one
     table per eval file, the IFEvalCode and Harbor tables if those ran, the
     files not run for this target and those --only left out, how to improve
-    each file under test (whitney.improve), the staged files' provenance and
-    the gate's problems.
+    each file under test (whitney.improve, or one line naming the error if
+    that section can't be built), the staged files' provenance and the
+    gate's problems.
 
     Args:
         logs: Inspect logs, from this run or read back.
@@ -628,7 +629,10 @@ def write_report(
         report += "\n## Not run for this target\n\n" + "".join(f"- `{path}`: {why}\n" for path, why in not_run.items())
     if left_out:
         report += "\n## Left out by --only\n\n" + "".join(f"- `{path}`\n" for path in left_out)
-    improvements = improvement_report(succeeded, min_conclusive, records)
+    try:
+        improvements = improvement_report(succeeded, min_conclusive, records)
+    except Exception as error:  # anything at all: the section advises, so a fault in it costs neither report nor gate
+        improvements = improvement_failed(error)
     report += f"\n{improvements}" if improvements else ""
     report += "\n" + render_asset_provenance_markdown(logs)
     header = render_header(logs, evals_path, min_rates)

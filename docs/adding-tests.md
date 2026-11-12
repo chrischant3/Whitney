@@ -168,7 +168,7 @@ Each time you add or reword a rule:
 3. Run the changed eval file once with `--only` and `--epochs 1`, and read the explanations in `inspect view`.
 4. Run everything with `--epochs 3`.
 5. Compare the report with your last one in `results/`. Read the Δ column first, then the template column.
-6. Read "How to improve the files under test" at the end of the report ([Reading the improvement report](#reading-the-improvement-report)), and change one thing it names before the next run.
+6. Read "How to improve the files under test", the section just before "Evaluation Instructions and Assets" ([Reading the improvement report](#reading-the-improvement-report)), and change one thing it names before the next run.
 
 If you reworded a rule, keep its old scenarios: they show whether the new wording still holds.
 
@@ -644,7 +644,7 @@ The report's last section before the staged files, "How to improve the files und
 - "The template failed in N of M conclusive runs", then each failing scenario with its count, its `pressure` and what the check said of its first failing run. A rule that fails only under one kind of pressure needs scenarios, or wording, for that pressure.
 - "Nothing to change": the template held and a baseline failed. The text rules are left out, because the runs show the file working.
 - "The template held, but no baseline ran" (or none failed): the runs can't credit the file. Add a baseline variant that removes the rule, so the next run can show whether it matters.
-- `hook-to-load-skill`, for a skill whose description passes every check and still didn't load in some runs. It gives a hook for the run's target, labelled **not tested by Whitney**: Whitney stages no hooks, so check it by running the skill's trigger prompts in the harness itself. Read what the report says a hook can do before you add one: on Claude Code it is a shell command run as you, with your API key in its environment.
+- `hook-to-load-skill`, for a skill whose description draws no warning and still didn't load in at least a quarter of 4 or more runs that could tell. It gives a hook for the run's target, labelled **not tested by Whitney**: Whitney stages no hooks, so check it by running the skill's trigger prompts in the harness itself. Read what the report says a hook can do before you add one: on Claude Code it is a shell command run as you, with your API key in its environment.
 
 **What the file's text suggests** comes second, from the file as the run staged it. Each finding quotes the lines it found, says what to try, and says how to tell whether it worked: run the same eval file again with as many epochs, and the template should hold at least as often, with the failing scenarios failing less. When no run failed, each finding is labelled **Suggestion**, because the runs don't show it matters. The text rules match words, not meaning, so read the quoted lines before you change anything.
 

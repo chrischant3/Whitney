@@ -1,6 +1,8 @@
 # The improvement report's rules
 
-`whitney run` and `whitney report` end each report with a section, "How to improve the files under test", that says what to change in each file an eval file tests. This page lists the rules behind it: what fires each one, what it advises, and where the rule comes from. Every rule is fixed: no model writes any of the report. Each one rests on published guidance from the harness or model provider, read on 2026-11-11, or on a recorded Whitney run.
+`whitney run` and `whitney report` give each report a section, "How to improve the files under test", that says what to change in each file an eval file tests. It comes after the tables, and after the lists of files not run or left out by `--only`, and before "Evaluation Instructions and Assets". This page lists the rules behind it: what fires each one, what it advises, and where the rule comes from. Every rule is fixed: no model writes any of the report. Each one rests on published guidance from the harness or model provider, read on 2026-11-11, or for rule 3 also on a Whitney spike. Where a number is Whitney's own, not a source's, this page says so.
+
+If building the section fails, the report says so in one line in its place, naming the error, and the report and the gate go on without it.
 
 The starting list was the maintainer's `rules-audit` skill, which audits instructions for prompt engineering practice and progressive disclosure. Each of its rubric items that a fixed check can apply, and that published guidance backs, is a rule here. [Left out](#left-out) lists the rest and why.
 
@@ -11,7 +13,7 @@ For each eval file whose logs name it, the section has two parts, kept apart.
 **What the runs showed** reads the template's counts:
 
 - **Not enough runs to say** when each scenario ran once in the template, or fewer than `--min-conclusive` of the template's runs were conclusive (50% unless the run set it). No run finding is given then.
-- **The template failed in N of M conclusive runs**, then each failing scenario or trigger prompt, with its count, its `pressure`, and what the check said of its first failing run in the template.
+- **The template failed in N of M conclusive runs**, then each failing scenario or trigger prompt, with its count, its `pressure`, and what the check said of its first failing run in the template, with the home folder of whoever ran the report written `~`.
 - **Nothing to change** when the template held in every conclusive run and a baseline failed: the file is doing its job, and the text rules aren't applied to it.
 - Otherwise, **the template held, but no baseline ran or none failed**, so the runs can't show the file made the difference.
 - The one rule that reads the runs, [`hook-to-load-skill`](#hook-to-load-skill), comes after these lines.
@@ -30,23 +32,22 @@ Each finding gives its evidence (a quoted line of the file, or the runs' counts)
 | Kilo AGENTS.md | Kilo, [agents.md](https://kilo.ai/docs/customize/agents-md) | 2026-11-11 |
 | Hooks | Claude Code, [hooks reference](https://code.claude.com/docs/en/hooks) | 2026-11-11 |
 | Plugins | Kilo, [plugins](https://kilo.ai/docs/automate/extending/plugins) | 2026-11-11 |
-| Reworded run | [results/2026-11-10-kilo-prompt-capture.md](results/2026-11-10-kilo-prompt-capture.md) | recorded run |
-| Description run | [results/2026-11-10-skills-agents.md](results/2026-11-10-skills-agents.md) | recorded run |
 | Hook spike | [spike-findings.md, "Phase 5 Task 40: hooks to enforce a skill"](spike-findings.md#phase-5-task-40-hooks-to-enforce-a-skill-2026-11-11) | spike |
 
 ## Rule 1: prompt engineering practice
 
-These read list items: lines starting `-`, `*`, `+` or a number, with the indented lines that continue them, outside the frontmatter and fenced code.
+These read list items: lines starting `-`, `*`, `+` or a number, with the indented lines that continue them, outside the frontmatter and fenced code. A sub-bullet indented under an item, with no blank line between, is an item of its own and is also read with its parent, so `- Never commit .env` followed by `  - Why: they hold secrets` gives a reason. Before matching words, each code span and each passage in double quotes counts as one word, so a word inside them, such as the `no` in `--no-verify`, directs nothing; the quoted line in the report is the file's own. "e.g.", "i.e.", "etc.", "vs." and "cf." don't end a sentence.
 
 ### `say-what-to-do`
 
-- **Fires on** a list item of one sentence that starts with "Never", "Don't", "Do not", "Avoid" or "No", and has no "instead", "rather", "unless", "but", "only" or "except". An item of two or more sentences is taken to say what to do, since telling an alternative from a reason needs judgement.
+- **Fires on** a list item of one sentence, with its sub-bullets, that starts with "Never", "Don't", "Do not", "Avoid" or "No", and has no "instead", "rather", "unless", "but", "only" or "except", and no second clause, after a comma or semicolon, starting with a verb that tells the agent what to do ("Don't use npm, use pnpm."). The verbs are a fixed list in `whitney/improve.py` (`DOES_INSTEAD`): add, ask, call, check, choose, commit, copy, create, keep, leave, let, make, mark, move, name, open, pass, pick, prefer, put, raise, read, return, run, say, send, set, stop, store, tell, try, update, use, wait and write, optionally after "and", "then", "always" or "just". A fixed list, so a list of names such as "Never use eval, exec or compile" isn't taken for one. An item of two or more sentences is taken to say what to do, since telling an alternative from a reason needs judgement.
 - **Advises** adding what to do in its place.
-- **Source:** Prompting, "Tell Claude what to do instead of what not to do". Reworded run: "Ask before modifying database schema", reworded to say what to do instead ("Describe the change you would make, then stop and wait"), went from 0 of 6 to 6 of 6 on Claude Code.
+- **Source:** Prompting, "Tell Claude what to do instead of what not to do".
+- **Misses** a rule that forbids without the words above. Whitney's recorded run that reworded a rule to say what to do ([results/2026-11-10-kilo-prompt-capture.md](results/2026-11-10-kilo-prompt-capture.md), 0 of 6 to 6 of 6 on Claude Code) started from "Ask before modifying database schema", which this rule doesn't fire on, so the run isn't evidence for the rule and the report doesn't cite it.
 
 ### `give-a-reason`
 
-- **Fires on** a bullet of one sentence that directs (it has "never", "always", "must", "should", "shall", "don't", "do not", "avoid" or "no") with none of "because", "since", "so", "otherwise", "which", "why", "in order to", a colon, a semicolon, a dash or a bracket. Numbered items are steps, which need no reason; a bullet without those words, such as "**The file under test**, such as `AGENTS.md`", describes rather than directs; and an item of two sentences is taken to give one. A sentence may end inside emphasis, as in "**Never edit the lockfile.** Run the package manager instead."
+- **Fires on** a bullet that directs and gives no reason after the word that directs. It directs when its own text, not a sub-bullet's, has "never", "always", "must", "should", "shall", "don't", "do not" or "avoid", or starts with "No" ("No force pushes."; a later "no", as in "Python 3.11, no external services", describes). It gives a reason when, after that word, it or a sub-bullet has "because", "since", "so", "otherwise", "which", "why", "in order to", a colon, a semicolon, a dash or a bracket; a colon or dash straight after the word, as in "**Never:** commit secrets", is a label, not a reason, and a reason before the word isn't counted. Numbered items are steps, which need no reason; a bullet without those words, such as "**The file under test**, such as `AGENTS.md`", describes rather than directs; and an item of two sentences, with its sub-bullets, is taken to give one. A sentence may end inside emphasis, as in "**Never edit the lockfile.** Run the package manager instead."
 - **Advises** saying why the rule matters.
 - **Source:** Prompting, "Add context to improve performance": "Providing context or motivation behind your instructions, such as explaining to Claude why such behavior is important, can give Claude more information about your goals", with "NEVER use ellipses" as the less effective form.
 
@@ -60,11 +61,13 @@ These read list items: lines starting `-`, `*`, `+` or a number, with the indent
 
 - **Fires on** a skill whose `description` has none of "when", "whenever", "before", "after", "if" or "while". A skill with no description gets `whitney validate`'s warning instead.
 - **Advises** saying when to use the skill, naming the requests and files it covers.
-- **Source:** Skills, "Writing effective descriptions": the description "should include both what the Skill does and when to use it". Description run: the `release-notes` skill never loaded for the scenario prompts until its description said to use it "before writing or changing CHANGELOG.md", and then loaded in 3 of 6.
+- **Source:** Skills, "Writing effective descriptions": the description "should include both what the Skill does and when to use it".
+- **Misses** a description that says when in words other than those above, and one that says when but too vaguely. In Whitney's recorded run ([results/2026-11-10-skills-agents.md](results/2026-11-10-skills-agents.md)) the `release-notes` skill never loaded for the scenario prompts until its description named CHANGELOG.md, and then loaded in 3 of 6; but the old description already said "when the user asks…", so this rule wouldn't have fired on it, and the report doesn't cite the run.
 
 ### `whitney-validate`
 
-- **Fires on** `whitney validate`'s warnings about the skill's description (none, or nearly the same as another skill's), [Warnings about skill descriptions](adding-tests.md#warnings-about-skill-descriptions). The report repeats them in validate's words; it adds no check of its own here.
+- **Fires on** `whitney validate`'s warnings about the skill's description (none, or nearly the same as another skill's), [Warnings about skill descriptions](adding-tests.md#warnings-about-skill-descriptions). The report repeats them in validate's words; it adds no check of its own here. Validate names a near-duplicate pair at the later skill's path only, so the report also gives that warning to the skill it names as the other one, saying which file validate put it on.
+- **Rough edge:** validate's words are Kilo's ("Kilo picks a skill by its description", "Kilo can't tell which to load"), and a `claude-code` report quotes them unchanged.
 - **Source:** Skills, "Writing effective descriptions".
 
 ## Rule 2: progressive disclosure
@@ -91,7 +94,7 @@ These read list items: lines starting `-`, `*`, `+` or a number, with the indent
 
 ### `hook-to-load-skill`
 
-- **Fires on** the runs, never on the text alone. All of these must hold: the eval file tests a skill; the runs are enough to say (above); the skill's description passes `whitney validate`'s checks and `description-says-when`; and in the template's runs that could tell, the scenario runs that say whether the skill loaded and the positive trigger prompts, the skill didn't load at least once. When the description fails a check, rule 1 speaks instead.
+- **Fires on** the runs, never on the text alone. All of these must hold: the eval file tests a skill; the runs are enough to say (above); neither validate's description warnings nor `description-says-when` speak about the skill's description; at least 4 of the template's runs could tell whether the skill loaded; and it didn't load in at least 25% of them. The runs that could tell are the template's scenario runs whose score says whether the skill loaded, and its positive trigger prompts, which pass when it loads, each counted once; negative trigger prompts, where the skill shouldn't load, and known gaps are left out. The 4 and the 25% are Whitney's own numbers, not a source's: under 4 runs one miss is too much chance, and under a quarter missed the skill loads often enough that a hook, which runs as the user, may not be worth adding. When the description fails a check, rule 1 speaks instead.
 - **Advises**, labelled **not tested by Whitney**, the hook for the run's target, with the skill's name filled in:
   - `claude-code`: a `UserPromptSubmit` command hook in the project's `.claude/settings.json` that runs `.claude/hooks/<skill>-reminder.sh`, which prints one line naming the skill when the prompt is one it covers. The stricter step is named, not written out: a `PreToolUse` hook that refuses other tools until `Skill` is called.
   - `kilo`: a plugin, `.kilo/plugin/<skill>-reminder.ts`, whose `chat.message` hook notes the prompt is one the skill covers and whose `experimental.chat.system.transform` hook adds the same line to the system prompt. The report says Kilo marks that hook experimental, that the spike didn't show the reminder raising how often a skill loads, and that the stricter step is a `tool.execute.before` hook that refuses other tools until `skill` is called.
@@ -124,6 +127,6 @@ These `rules-audit` rubric items are not rules here.
 
 ## What the rules can't tell
 
-- The text rules match words, not meaning. "Never push to main; open a pull request" says what to do, yet `say-what-to-do` fires on it, since it is one sentence with none of the words the rule looks for; and its semicolon is enough for `give-a-reason` to take it as giving a reason, which it doesn't. Read each finding before acting on it.
+- The text rules match words, not meaning. "Never push to main; propose a pull request" says what to do, yet `say-what-to-do` fires on it, since "propose" isn't on its list of verbs; and its semicolon is enough for `give-a-reason` to take it as giving a reason, which it doesn't. Read each finding before acting on it.
 - A rule that fires on the file's text isn't shown to matter until a run fails without the change and passes with it. Each finding says which run to compare.
 - Rule 3's advice has never been tested in a Whitney run. To test a hook, Whitney would need an opt-in that names what runs, Docker, `--include-hook-events`, a way to tell a hook's refusal from a permission rule's, and on Kilo a run without `--pure` (spike-findings.md).

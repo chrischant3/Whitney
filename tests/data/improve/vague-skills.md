@@ -36,6 +36,6 @@ No failing run is behind these, so each is a suggestion: the file's text shows i
 **Suggestion: `description-says-when`** in `.kilo/skills/debug/SKILL.md`: the skill's description doesn't say when to use it.
 
 - Evidence: description: `Debugging help.`
-- Try: add when to use the skill, naming the requests and files it covers, such as "Use when the user asks for …". The model picks a skill by its description; in a recorded run a skill went from never loading to loading in 3 of 6 runs once its description said when.
+- Try: add when to use the skill, naming the requests and files it covers, such as "Use when the user asks for …". The model picks a skill by its description.
 - How to tell: Run `skills/debug.json` again with as many epochs: the template, now 2/2, should hold at least as often.
-- Source: [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices), read 2026-11-11; the recorded run `docs/results/2026-11-10-skills-agents.md`.
+- Source: [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices), read 2026-11-11.

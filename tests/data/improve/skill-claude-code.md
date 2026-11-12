@@ -16,7 +16,7 @@ The template failed in 3 of 6 conclusive runs:
 **`hook-to-load-skill`** in `.claude/skills/release-notes/SKILL.md`: the skill's description is sound, and the skill still didn't load.
 
 - Evidence: the skill `release-notes` loaded in 3 of 6 runs that could tell (the template's scenario runs and its positive trigger prompts)
-- Evidence: its description passes `whitney validate`'s checks and `description-says-when`, so the description alone can't be relied on to load it
+- Evidence: neither validate's description warnings nor `description-says-when` speak about its description, so the description alone can't be relied on to load it
 - Try: **not tested by Whitney.** Add a `UserPromptSubmit` command hook to the project's `.claude/settings.json`, below, which prints one line naming the skill when the prompt is one the skill covers; replace `<words from the trigger prompts>` with words from the prompts that should load it. The stricter step, if that isn't enough, is a `PreToolUse` hook that refuses other tools until `Skill` is called. A hook is a shell command Claude Code runs as the user, with the API key in its environment, and a `claude -p` run starts it without asking. Whitney stages no hooks, so a Whitney run leaves the hook out. In Whitney's spike (Claude Code 2.1.322, Haiku, one skill and one prompt) the skill loaded in 1 of 6 runs with no hook, and in 7 of 7 with a `UserPromptSubmit` or `SessionStart` reminder.
 - How to tell: Add the hook, then run `asks`, `b` in Claude Code itself, since a Whitney run leaves the hook out: the skill should load in each.
 - Source: [Claude Code hooks reference](https://code.claude.com/docs/en/hooks), read 2026-11-11; Whitney's spike, `docs/spike-findings.md`, "Phase 5 Task 40: hooks to enforce a skill".
