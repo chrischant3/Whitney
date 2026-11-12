@@ -31,12 +31,13 @@ from pathlib import Path
 from inspect_ai import Task, task
 from inspect_ai.agent import Agent, as_solver
 from inspect_ai.dataset import MemoryDataset, Sample
+from inspect_ai.model import GenerateConfig
 from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import Solver, TaskState, solver
 from inspect_ai.util import sandbox, store
 from pydantic import ValidationError
 
-from whitney import evalfile, evidence, refusals, setup_steps, shipped_evals, targets
+from whitney import capture, evalfile, evidence, refusals, setup_steps, shipped_evals, targets
 from whitney.agent import COMPOSE_FILE, PROJECT_DIR, RUN_STORE_KEY, bridge_kilo_model, redact
 from whitney.checks import OUTCOMES, CheckSpec, Evidence, FolderSnapshot, Verdict, combine, registry
 from whitney.checks.skills import was_used
@@ -188,6 +189,8 @@ def scenario_eval(
     api_key_env: str | None = None,
     base_url: str | None = None,
     harness_version: str | None = None,
+    capture_prompt: bool = False,
+    thinking: bool = False,
 ) -> Task:
     """One eval file's scenarios in one variant, each scored by the checks it names.
 
@@ -213,6 +216,12 @@ def scenario_eval(
         harness_version: what the harness's `--version` printed, recorded in
             the metadata for the report's header; `whitney run` checks it
             before the first sample. None when nobody checked.
+        capture_prompt: record what was sent to the model in each run
+            (whitney.capture), looking for the text of the template's
+            `source` (capture.texts_to_find), in every variant.
+        thinking: tell the harness to think and show it (whitney.capture);
+            in Docker the task also asks Inspect for
+            capture.DOCKER_THINKING_TOKENS of reasoning, which the bridge applies.
 
     The task is named <eval name>_<variant> and its metadata names the eval
     file, its title, the variant's role and each check's labels (see
@@ -254,6 +263,7 @@ def scenario_eval(
     return _scenario_task(
         plan, variant, target=target, model=model, execution=execution, project_path=project_path,
         api_key_env=api_key_env, base_url=base_url, harness_version=harness_version,
+        capture_prompt=capture_prompt, thinking=thinking,
     )
 
 
@@ -493,6 +503,8 @@ def _scenario_task(
     base_url: str | None,
     sample_metadata: Callable[[Sample], dict] | None = None,
     harness_version: str | None = None,
+    capture_prompt: bool = False,
+    thinking: bool = False,
 ) -> Task:
     """The Inspect task for `plan` in `variant`: what scenario_eval, agents_md and kilo_jsonc each return.
 
@@ -509,6 +521,8 @@ def _scenario_task(
     Args:
         sample_metadata: extra metadata for each sample, from the sample as loaded.
         harness_version: as scenario_eval's, recorded as harness_version.
+        capture_prompt, thinking: as scenario_eval's. The texts the agent
+            looks for are redacted, since Inspect logs an agent's arguments.
 
     The metadata holds, besides the run's settings and staged files:
     eval_file (relative to the evals root), eval_file_sha256 (of the bytes
@@ -563,13 +577,14 @@ def _scenario_task(
     labels = list(label_sets.pop() if len(label_sets) == 1 else OUTCOMES)
     metrics = list(dict.fromkeys(metric for spec in checks.values() for metric in spec.metrics))
     checks_scorer = scorer(metrics={name: [mean()] for name in (*labels, *metrics)}, name="scenario_checks")(_checks_scorer)
+    watched = _watched(capture_prompt, thinking, target, plan.source, template_staged, secrets)
     return Task(
         name=f"{plan.eval_name}_{variant}",
         dataset=MemoryDataset(samples, name=plan.path.stem),
         setup=solver(name="before_snapshots")(_before_snapshots)(folders, python, target, execution, api_key_env),
         solver=_agent_for(chosen, lambda **named: targets.build_agent(
             target, model, {target: plan.harness_permissions[target]}, execution=execution,
-            api_key_env=api_key_env, base_url=base_url, **named,
+            api_key_env=api_key_env, base_url=base_url, **watched, **named,
         )),
         scorer=checks_scorer(
             plan.expect, labels, metrics, target, execution, api_key_env, python, plan.under_test, chosen,
@@ -577,6 +592,8 @@ def _scenario_task(
         ),
         cleanup=_forget_before,
         sandbox=_sandbox_config(execution, target),
+        # In Docker the bridge drops the harness's own thinking setting, and applies the eval's.
+        **({"config": GenerateConfig(reasoning_tokens=capture.DOCKER_THINKING_TOKENS)} if thinking and execution == "docker" else {}),
         metadata={
             "variant": variant,
             "target": target,
@@ -608,6 +625,21 @@ def _scenario_task(
             "min_pass_rate": plan.min_pass_rate,
         },
     )
+
+
+def _watched(
+    capture_prompt: bool, thinking: bool, target: str, source: str | None, template: dict[str, str], secrets: list[str]
+) -> dict:
+    """The agent's capture and thinking options, only those set: with neither, {}, so the agent is built as it always was.
+
+    The texts to look for come from the template, so a baseline that
+    removes the source is searched for it too, and can say it wasn't sent.
+    """
+    watched: dict = {}
+    if capture_prompt:
+        found = capture.texts_to_find(target, source, template)
+        watched = {"capture_prompt": True, "capture_texts": {label: redact(text, secrets) for label, text in found.items()}}
+    return watched | ({"thinking": True} if thinking else {})
 
 
 def _agent_for(chosen: dict[str, dict[str, str]], build: Callable[..., Agent]) -> Agent | Solver:
@@ -814,6 +846,7 @@ def _scenario_score(
             # A Docker run's harness is the image's, so its version comes from the run, not the host (claude_code).
             **({"harness_version": redact(run["harness_version"], secrets)} if run.get("harness_version") else {}),
             **({"refusals": [_redacted_refusal(item, secrets) for item in refused]} if refused is not None else {}),
+            **capture.score_entries(run),
         },
     )
 

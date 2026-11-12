@@ -319,6 +319,25 @@ def run_entries(watch: Watch | None, sent: dict | None, events: str, *, docker: 
     return {**kept, "thinking": thinking_record(watch.told, sent_level(sent), events, docker=docker)}
 
 
+def score_entries(run: Mapping) -> dict:
+    """What a run's score keeps of its `sent` and `thinking` entries, for the report: {} for a run without them.
+
+    The score keeps how the requests were read, how many there were and
+    which texts were found in which (and, from Inspect's log, how many calls
+    it didn't log), not the request bodies, which stay in the run's record.
+    """
+    kept: dict = {}
+    sent, thinking = run.get("sent"), run.get("thinking")
+    if isinstance(sent, dict):
+        kept["sent"] = {
+            "via": sent.get("via"), "requests": len(sent.get("requests") or []), "found": sent.get("found") or {},
+            **({"unlogged": sent["unlogged"]} if "unlogged" in sent else {}),
+        }
+    if isinstance(thinking, dict):
+        kept["thinking"] = thinking
+    return kept
+
+
 def from_inspect_log(events: Iterable, attachments: Mapping[str, str], texts: Mapping[str, str], redact: Callable[[str], str] = str) -> dict:
     """A Docker run's `sent` entry, from its transcript's model events (requests_from_inspect_log).
 

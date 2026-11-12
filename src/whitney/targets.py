@@ -48,6 +48,9 @@ def build_agent(
     base_url: str | None = None,
     kilo_agent: str | None = None,
     kilo_command: str | None = None,
+    capture_prompt: bool = False,
+    thinking: bool = False,
+    capture_texts: dict[str, str] | None = None,
 ) -> Agent:
     """The agent that runs `target`'s harness on `model`.
 
@@ -59,6 +62,9 @@ def build_agent(
             ANTHROPIC_API_KEY. Refused in Docker mode by either agent.
         kilo_agent, kilo_command: kilo only: run with `kilo run --agent NAME`
             or `--command NAME` (the kilo agent's agent_name and command_name).
+        capture_prompt, thinking, capture_texts: either agent's (whitney.capture).
+            Each is passed on only when set, so a run without them builds
+            the agent, and logs its arguments, as it always did.
         Other arguments are passed through to the kilo or claude_code agent.
 
     Raises:
@@ -67,6 +73,9 @@ def build_agent(
     check_target(target, execution, base_url)
     if target != "kilo" and (kilo_agent or kilo_command):
         raise ValueError(f"only the kilo target runs a named agent or command; got them for {target}")
+    watched = {
+        key: value for key, value in (("capture_prompt", capture_prompt), ("thinking", thinking), ("capture_texts", capture_texts)) if value
+    }
     if target == "claude-code":
         return claude_code(
             model=model,
@@ -77,6 +86,7 @@ def build_agent(
             # given only for Docker, so a local run builds the agent as it always did.
             **({"api_key_env": api_key_env, "execution": execution} if execution == "docker"
                else {"api_key_env": api_key_env or "ANTHROPIC_API_KEY"}),
+            **watched,
         )
     return kilo(
         model=model,
@@ -88,6 +98,7 @@ def build_agent(
         base_url=base_url,
         # Given only when set, so a run without a name builds the agent as it always did.
         **{key: value for key, value in (("agent_name", kilo_agent), ("command_name", kilo_command)) if value},
+        **watched,
     )
 
 
