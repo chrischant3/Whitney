@@ -44,7 +44,12 @@ Gathered 2026-11-12, after the decisions of 2026-11-11 and 2026-11-12. Each is a
 11. **Checkpoint E.** Tasks 34 to 40 are merged and `whitney checks` lists `claude-code` for all nine checks, but no Checkpoint E review is recorded. From `plan-phase5.md`'s task order.
 12. **Task 40, rule 2.** Runs D and E (rule 2 before and after) weren't approved on 2026-11-12. Approve them, or leave rule 2 shown by tests only? From Task 40.
 13. **Task 32's remaining work: here or in the skill's repository?** The round log, the "never run without asking" rule for every run and the fresh-session tests are about the external skill; only the README and `docs/adding-tests.md` pointers are Whitney's. Those pointers would name another repository, which the working rules in `plan-phase5.md` say Whitney never does: allow it for Christopher's own public repository? From Task 32 (decision 7).
-14. Still open from before: `MIN_HELD` 0.9 or 1.0 (Task 27); whether a run may drop `--pure` for capture (Task 31).
+14. Still open from before: `MIN_HELD` 0.9 or 1.0 (Task 27). *(2026-11-12: whether a run may drop `--pure` for capture is decided: no, Task 31 decision 1.)*
+15. From Task 31 (2026-11-12): confirm the import caps of 100 files and 8 MiB in all, which are the agent's numbers.
+16. From Task 31: confirm the agent's reading of decision 4, that a Docker run records the thinking level asked for and the level that reached the model.
+17. From Task 31's reviews: keep staging any UTF-8 text file an instruction file imports, as built, or narrow imports to Markdown instruction files only.
+18. From Task 31's spike: `.claude/rules/*.md` are read by Claude Code but not staged, so a rule kept there is missing from a run. Stage them?
+19. From Task 31's spike: re-check how Kilo's `--variant high` reaches the model with the proxy's origin-alone address (one or two Haiku runs); the first finding came from the wrong address.
 
 Follow-ups recorded but not yet tasks: one shared reader of Claude Code's stream (Task 38); a check that judges only a named subagent's edits, "one for the future" (Task 39, decision 6); a spike on same-named Kilo agents (Task 39, decision 5); tests from the 2026-11-12 saved logs (Task 40).
 
