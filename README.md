@@ -78,6 +78,8 @@ What "without" means depends on what you're testing:
 
 Some runs prove nothing either way: the agent stopped before it decided, or never tried the thing being tested. Those count as inconclusive. The report shows how many there were and keeps them out of the rates.
 
+The report ends with a section on how to improve each file under test. It keeps what the runs showed (which scenarios failed, or "nothing to change" when the template held and a baseline failed) apart from what the file's text suggests, such as a rule that says what not to do and never what to do instead, an `AGENTS.md` over 200 lines, or a skill description that doesn't say when to use it. With one epoch, or too few conclusive runs, it says there aren't enough runs to say. When a skill with a sound description still didn't load, it gives a hook to add, labelled "not tested by Whitney". Fixed rules write all of it, no model: [docs/improvement-rules.md](docs/improvement-rules.md) lists them with their sources, and [Reading the improvement report](docs/adding-tests.md#reading-the-improvement-report) says how to use it.
+
 ## What you can test today
 
 Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are nine checks so far, plus two benchmark evals:

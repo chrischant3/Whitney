@@ -54,6 +54,7 @@ from whitney.checks import CheckSpec, registry
 from whitney.credentials import CredentialsError, resolve_gateway_credentials
 from whitney.evidence import run_secrets
 from whitney.evalfile import EvalFile, Problem
+from whitney.improve import improvement_report
 from whitney.report import (
     ROLE_ORDER,
     check_thresholds,
@@ -590,8 +591,9 @@ def write_report(
     and on `stopped`. The report is the header (target, model, versions,
     eval files, any replaced minimum and a changed min_conclusive), one
     table per eval file, the IFEvalCode and Harbor tables if those ran, the
-    files not run for this target and those --only left out, the staged
-    files' provenance and the gate's problems.
+    files not run for this target and those --only left out, how to improve
+    each file under test (whitney.improve), the staged files' provenance and
+    the gate's problems.
 
     Args:
         logs: Inspect logs, from this run or read back.
@@ -608,7 +610,9 @@ def write_report(
     core_logs = [log for log in logs if not _benchmark(log.eval.task)]
     ifeval_logs = [log for log in logs if log.eval.task.startswith("ifevalcode_")]
     harbor_logs = [log for log in logs if log.eval.task.startswith("bigcodebench_hard_complete_")]
-    summary = summarise([r for log in core_logs if log.status == "success" for r in records_from_log(log)])
+    succeeded = [log for log in core_logs if log.status == "success"]
+    records = [r for log in succeeded for r in records_from_log(log)]
+    summary = summarise(records)
     failed_runs = [f"{log.eval.task}: {log.status}" for log in logs if log.status != "success"]
     problems = failed_runs + check_thresholds(summary, min_conclusive=min_conclusive, min_rates=min_rates)
     read = {s.file.eval_name if s.file else key for key, s in summary.items()}
@@ -624,6 +628,8 @@ def write_report(
         report += "\n## Not run for this target\n\n" + "".join(f"- `{path}`: {why}\n" for path, why in not_run.items())
     if left_out:
         report += "\n## Left out by --only\n\n" + "".join(f"- `{path}`\n" for path in left_out)
+    improvements = improvement_report(succeeded, min_conclusive, records)
+    report += f"\n{improvements}" if improvements else ""
     report += "\n" + render_asset_provenance_markdown(logs)
     header = render_header(logs, evals_path, min_rates)
     if min_conclusive != MIN_CONCLUSIVE:

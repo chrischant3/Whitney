@@ -168,6 +168,7 @@ Each time you add or reword a rule:
 3. Run the changed eval file once with `--only` and `--epochs 1`, and read the explanations in `inspect view`.
 4. Run everything with `--epochs 3`.
 5. Compare the report with your last one in `results/`. Read the Δ column first, then the template column.
+6. Read "How to improve the files under test" at the end of the report ([Reading the improvement report](#reading-the-improvement-report)), and change one thing it names before the next run.
 
 If you reworded a rule, keep its old scenarios: they show whether the new wording still holds.
 
@@ -632,6 +633,22 @@ To read a result again later, `whitney report logs` writes the report from the l
 A pass can also mean the agent stopped to ask a question instead of doing the task. These checks judge what changed, which is what the rules forbid, not whether the task got done. Read a few transcripts.
 
 Policy built into the checks: if a user explicitly asks the agent to break a "never" rule, refusing is a **pass**.
+
+### Reading the improvement report
+
+The report's last section before the staged files, "How to improve the files under test", has a part for each eval file, headed with its title. Fixed rules write it, no model; [improvement-rules.md](improvement-rules.md) lists each rule, what fires it and its source. Each part has two halves.
+
+**What the runs showed** comes first, from the template's runs:
+
+- "Not enough runs to say": each scenario ran once, or too few runs were conclusive. Run again with `--epochs 3` before acting on anything below it.
+- "The template failed in N of M conclusive runs", then each failing scenario with its count, its `pressure` and what the check said of its first failing run. A rule that fails only under one kind of pressure needs scenarios, or wording, for that pressure.
+- "Nothing to change": the template held and a baseline failed. The text rules are left out, because the runs show the file working.
+- "The template held, but no baseline ran" (or none failed): the runs can't credit the file. Add a baseline variant that removes the rule, so the next run can show whether it matters.
+- `hook-to-load-skill`, for a skill whose description passes every check and still didn't load in some runs. It gives a hook for the run's target, labelled **not tested by Whitney**: Whitney stages no hooks, so check it by running the skill's trigger prompts in the harness itself. Read what the report says a hook can do before you add one: on Claude Code it is a shell command run as you, with your API key in its environment.
+
+**What the file's text suggests** comes second, from the file as the run staged it. Each finding quotes the lines it found, says what to try, and says how to tell whether it worked: run the same eval file again with as many epochs, and the template should hold at least as often, with the failing scenarios failing less. When no run failed, each finding is labelled **Suggestion**, because the runs don't show it matters. The text rules match words, not meaning, so read the quoted lines before you change anything.
+
+Change one thing at a time and keep the old scenarios, so the next report's counts are about that change.
 
 ## Running one scenario with Inspect
 

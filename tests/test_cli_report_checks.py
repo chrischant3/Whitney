@@ -379,3 +379,20 @@ def test_a_check_with_parameters_lists_each_under_a_heading():
         "    forbidden_input: required\n"
         "  shown to fail in a real run: docs/results/2026-11-10-permissions.md"
     )
+
+
+def test_the_report_says_how_to_improve_each_file_under_test(tmp_path, monkeypatch):
+    rules = {"AGENTS.md": "# Rules\n\n- Never commit .env files or secrets\n"}
+    logs = [file_log("template", "template", ["followed"] * 3 + ["violated"], evaluation_assets=rules)]
+
+    code, report = whitney_report(tmp_path, monkeypatch, logs)
+
+    improve = report.split("## How to improve the files under test\n")[1]
+    assert "line 3: `Never commit .env files or secrets`" in improve
+    assert report.index("## How to improve") < report.index("## Evaluation Instructions and Assets")
+
+
+def test_logs_from_before_phase_5_get_no_improvement_section(tmp_path, monkeypatch):
+    code, report = whitney_report(tmp_path, monkeypatch, OLD_LOGS)
+
+    assert "How to improve" not in report
