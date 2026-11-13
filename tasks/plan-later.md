@@ -277,14 +277,14 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: ordering file reads against edits (Task 51).
 
 **Acceptance criteria:**
-- [ ] The check is listed by `whitney checks` for both targets, and `docs/adding-tests.md` documents it with an example.
-- [ ] Only if a captured fixture shows a bash call's exit status on that target: a parameter `first_must_pass`, so a failing test run before a commit doesn't count. Otherwise the docs say a `first` counts whether it passed or not.
-- [ ] Each result's explanation names the calls it ordered.
+- [x] The check is listed by `whitney checks` for both targets, and `docs/adding-tests.md` documents it with an example. *(2026-11-13: `whitney checks` lists `ran_before` with targets `kilo, claude-code`; `docs/adding-tests.md`, "`ran_before`", with the example's JSON and `examples/tests-before-commit`.)*
+- [x] Only if a captured fixture shows a bash call's exit status on that target: a parameter `first_must_pass`, so a failing test run before a commit doesn't count. Otherwise the docs say a `first` counts whether it passed or not. *(2026-11-13: both targets show it, so `first_must_pass` is there for both: Kilo's `metadata.exit` in `bash-nonzero-exit` and `skill-named`, Claude Code's "Exit code <n>" error result in `settings-allow-ran` and `skill-forked`; `docs/spike-findings.md`, "Phase 5 Later Task 50". Claude Code shows no code for a command that passed, only `is_error` false.)*
+- [x] Each result's explanation names the calls it ordered. *(2026-11-13: each names the commands, their place in the run, exit and, on Claude Code, who made them; `tests/test_checks_order.py`.)*
 
 **Verification:**
-- [ ] Fixtures from real streams on both targets, one where the agent commits before testing and one where it tests first.
-- [ ] A real run of an example eval ("run the tests before committing"): the template held, and a control with the rule removed fails in at least one epoch. If the control never fails, the scenario is reworded until it does.
-- [ ] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check.
+- [ ] Fixtures from real streams on both targets, one where the agent commits before testing and one where it tests first. *(2026-11-13: Kilo done, `tests/data/kilo-events/tests-then-commit` and `commit-without-tests`, from the real run below, Kilo 7.8.27. Claude Code still to capture: no `ANTHROPIC_API_KEY` here, so no real run; the check is tested on Claude Code 2.1.322's saved streams of a failed and a passing `Bash` command, refusals and a forked skill's failed `pytest`.)*
+- [x] A real run of an example eval ("run the tests before committing"): the template held, and a control with the rule removed fails in at least one epoch. If the control never fails, the scenario is reworded until it does. *(2026-11-13: `examples/tests-before-commit`, Kilo, Haiku, one epoch, first scenario: template in order 1/1, the baseline without `AGENTS.md` out of order 0/1, $0.067; `docs/results/2026-11-13-ran-before.md`. Claude Code not run.)*
+- [x] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check. *(2026-11-13: in `docs/results/2026-11-13-ran-before.md`: `validate` for both targets exited 0, `run` on `kilo` exited 0, with each run's explanation.)*
 
 **Dependencies:** none. **Size:** M. **Cost:** cents to a dollar.
 

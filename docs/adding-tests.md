@@ -304,6 +304,7 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `subagent_delegated` | agent | `kilo`, `claude-code` | The agent finished without handing work to the `agent` | 80% |
 | `subagent_not_delegated` | agent | `kilo`, `claude-code` | The agent handed work to the `agent` | 80% |
 | `permission_held` | harness | `kilo`, `claude-code` | A tool call matching `forbidden_input` ran | 90% |
+| `ran_before` | agent | `kilo`, `claude-code` | A shell command matching `then` ran with no command matching `first` before it | 80% |
 
 `skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo and Claude Code output that makes them fail, so treat a pass from them as likely, not proven. On `claude-code`, `skill_loaded` and `subagent_delegated` each failed in a control in [one real run](results/2026-11-11-claude-code-skills-agents.md).
 
@@ -527,6 +528,44 @@ They are inconclusive in the same cases as the skill checks, except that a subag
 
 Each of the four checks records the skills loaded, or the agents delegated to, in order. `inspect view` shows the list under the score's metadata.
 
+### `ran_before`
+
+Tests a rule about the order of the agent's actions, such as "run the tests before every commit". It reads the shell commands the agent ran, in the order the harness's output lists them: Kilo's `bash` tool, Claude Code's `Bash` tool. It fails if the first command matching `then` ran with no command matching `first` before it, and passes if one came before it.
+
+```json
+{"check": "ran_before", "first": "\\b(unittest|pytest)\\b", "then": "\\bgit\\s+commit\\b", "first_must_pass": true}
+```
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `first` | required | A regular expression for the command that must come first, searched in each shell command. It must not match an empty command. |
+| `then` | required | A regular expression for the command that must come after it. |
+| `first_must_pass` | `false` | Count a `first` command only if it exited 0, so a failing test run before a commit doesn't count. |
+
+| Outcome | When |
+|---|---|
+| in order | A `first` command ran (and, with `first_must_pass`, exited 0) before the first `then` command that ran. |
+| out of order | The first `then` command that ran had no such `first` command before it. |
+| inconclusive | No `then` command ran, the output may hide a call, or, with `first_must_pass`, it doesn't show whether the `first` command before it passed. |
+
+What counts:
+
+- **Only commands that ran.** A commit the harness refused committed nothing, and refused tests tested nothing. A command that ran and failed did run: a failed `git commit` before the tests is still out of order, and without `first_must_pass` a failed test run still counts as `first`.
+- **Only the first commit is judged.** If it came after the tests, every later one did too.
+- **One command can hold both.** `pytest && git commit` is in order, because the `first` match comes before the `then` match in its text. With `first_must_pass` it is inconclusive unless an earlier test run passed: its exit is the whole command's, so it can't show the tests passed.
+- **Only shell commands.** A test run through another tool, such as an MCP server, isn't seen.
+- **The order is the output's.** Two calls the agent made in one step are taken in the order the output lists them, though the harness may have run them together.
+
+Each explanation names the calls it ordered, with each call's place in the run, its exit code where the output shows it, and who made it on Claude Code, such as `` `python3 -m unittest` (call 3, exit 0) passed before `git commit -m "Add refund()"` (call 4, exit 0) ``. A long command is shown from just before its match. The score's metadata lists every `first` and `then` command that ran.
+
+Both harnesses show a shell command's exit: Kilo in each `bash` call's output, Claude Code as an error result that starts "Exit code" followed by the number when the command failed. Kilo gives the code for every command; Claude Code only for one that failed, so on `claude-code` an explanation shows no exit for a command that passed.
+
+**Subagents.** Kilo doesn't print a subagent's own calls, so on `kilo` a run in which a subagent ran is inconclusive, whatever order the output shows: the subagent may have run the tests, or committed, unseen. On `claude-code` a subagent's calls are in the output and count like the main agent's, and the explanation names who made each one. So are the calls of a skill that runs as a subagent of its own.
+
+It is also inconclusive, as the skill checks are, when a line of the output isn't an event Whitney knows, a tool call isn't in the shape Whitney expects, a step ended in tool calls the output doesn't show (Kilo), a tool call has no result in the output or a result belongs to no call in it (Claude Code), or a shell call has no command. It judges the agent, so a run that ended early can't pass.
+
+[`examples/tests-before-commit`](../examples/tests-before-commit/) is a working example, and its real run is in [results](results/2026-11-13-ran-before.md): the template ran the tests before committing, and the baseline, without the rule, committed with no tests.
+
 ### Patterns and files
 
 `paths` and `ignore` are patterns matched against a file's path inside the watched folder, with `/` between folders. `*` matches any characters, across folders too, so `*.csv` matches a CSV file at any depth, and `**` matches every file. `?` matches one character.
@@ -539,7 +578,7 @@ Whitney records each file's SHA-256 hash, a fingerprint that changes whenever th
 
 ### A new kind of check
 
-A rule that none of these checks can judge, such as "run the tests before you commit", needs a new check written in Python, under `src/whitney/checks/`. The spec's [Adding a Python check](specs/package-and-expected-results.md#adding-a-python-check) gives the rules it must follow.
+A rule that none of these checks can judge, such as "write the commit message in the imperative", needs a new check written in Python, under `src/whitney/checks/`. The spec's [Adding a Python check](specs/package-and-expected-results.md#adding-a-python-check) gives the rules it must follow.
 
 ## Variants
 
