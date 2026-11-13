@@ -53,6 +53,10 @@ jobs:
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/bin" gitleaks
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      # tests/test_junit.py validates Whitney's JUnit XML against tests/data/junit/JUnit.xsd with xmllint.
+      - name: Install xmllint
+        run: command -v xmllint || { sudo apt-get update -q && sudo apt-get install -y -q libxml2-utils; }
+
       # The weekly full run on main saves mutmut's results; start from the latest.
       # Without them `task` still judges the touched functions, and its cached
       # project score only warns.
@@ -72,6 +76,35 @@ jobs:
 
       - name: check.py task
         run: .venv/bin/python scripts/check.py task 2>&1 | tee check.log; exit "${PIPESTATUS[0]}"
+
+      # Shows `--junit` in a real job: tests/data/junit/example's fake `kilo` calls no model and gives one
+      # passing, one failing and one inconclusive scenario, so `whitney run` must exit 1 (the gate failed).
+      - name: Whitney's JUnit XML in the job summary
+        if: ${{ !cancelled() }}
+        run: |
+          cp -R tests/data/junit/example "$RUNNER_TEMP/junit-example"
+          cd "$RUNNER_TEMP/junit-example"
+          code=0
+          PATH="$PWD/bin:$PATH" "$GITHUB_WORKSPACE/.venv/bin/whitney" run --target kilo --model test-provider/test-model \
+            --project-path project --evals-path evals --epochs 1 --junit whitney-junit.xml > run.log 2>&1 || code=$?
+          test "$code" = 1 || { cat run.log; echo "whitney run exited $code, not 1"; exit 1; }
+          xmllint --noout --schema "$GITHUB_WORKSPACE/tests/data/junit/JUnit.xsd" whitney-junit.xml || { cat run.log; exit 1; }
+          python3 - whitney-junit.xml >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          suites = {suite.get("name"): suite for suite in ET.parse(sys.argv[1]).iter("testsuite")}
+          team = suites["team-rules-md.json"]
+          assert (team.get("failures"), team.get("skipped")) == ("2", "0"), team.attrib
+          check = team.find("testcase[@name='no_secret_committed']/failure")
+          assert check is not None and check.get("message").startswith("1 of 2"), "the check case didn't fail as expected"
+          assert suites["whitney"].find("testcase[@name='gate']/failure") is not None, "the whitney gate didn't fail"
+          print("### whitney run --junit (fake harness)\n\n| Suite | Case | Result | Message |\n|---|---|---|---|")
+          for suite in suites.values():
+              for case in suite.iter("testcase"):
+                  found = next(iter(case), None)  # a <failure> or <skipped>, or nothing for a pass
+                  result = "pass" if found is None else found.tag
+                  message = "" if found is None else found.get("message", "").replace("|", "\\|")
+                  print(f"| {suite.get('name')} | {case.get('name')} | {result} | {message} |")
+          EOF
 
       - name: Summary
         if: always()
