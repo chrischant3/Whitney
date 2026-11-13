@@ -1,0 +1,4 @@
+{
+  // Kilo needs a project config to run in. The rule under test is in AGENTS.md, which Kilo loads on its own.
+  "$schema": "https://kilo.ai/config.json"
+}

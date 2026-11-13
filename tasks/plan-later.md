@@ -312,16 +312,16 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 **Description:** Every check today watches for what mustn't happen. Turned round, "no test file in a separate folder" also passes a run that writes no test at all. A `file_added` check fails when no new file matches a pattern, so a rule such as "colocate tests next to the source" can be tested the right way round.
 
 **Scope:**
-- In: a check with a path pattern and an optional `near` pattern. The `near` pattern requires the new file to sit beside a changed file (for colocation). It is decided from git, so it works on both targets.
+- In: a check with a path pattern and an optional `near` pattern. The `near` pattern requires the new file to sit beside a changed file (for colocation). It is decided from git, so it works on both targets. *(2026-11-13: decided from the fixture's before-and-after snapshots instead, which `no_file_edits` reads and both targets take: the git state Whitney collects holds only committed paths, and an agent asked for a test seldom commits it.)*
 - Out: checking the new file's content; `no_string_added` already covers some of that.
 
 **Acceptance criteria:**
-- [ ] Listed by `whitney checks`, and documented with the colocation example.
-- [ ] A run that changed no files is inconclusive.
+- [x] Listed by `whitney checks`, and documented with the colocation example. *(2026-11-13: `whitney checks` lists `file_added` with `paths`, `near`, `where` and its write-up, and `test_each_check_says_where_a_real_run_made_it_fail_or_that_none_has` names it; `docs/adding-tests.md`, "`file_added`", has the colocation example, and `examples/colocated-tests/` is it as a project.)*
+- [x] A run that changed no files is inconclusive. *(2026-11-13: `test_a_run_that_changed_no_file_is_inconclusive`; bytecode, `.git/` and Kilo's `"$schema"` rewrite alone count as no change, and an early end without a match is inconclusive too.)*
 
 **Verification:**
-- [ ] A real run of an example eval for colocated tests: the template held, and a control fails at least once. If the plain control (no rule) never fails, the control pushes the other way (a rule "put tests under `tests/`"), so the check is seen failing in a real run.
-- [ ] `whitney run` output showing the check's explanation on a fail.
+- [x] A real run of an example eval for colocated tests: the template held, and a control fails at least once. If the plain control (no rule) never fails, the control pushes the other way (a rule "put tests under `tests/`"), so the check is seen failing in a real run. *(2026-11-13: [docs/results/2026-11-13-file-added.md](../docs/results/2026-11-13-file-added.md), Kilo 7.8.27, Haiku 4.5, one epoch: template 1/1 added, baseline without the rule 0/1, $0.084. The plain control failed, so the opposite-rule control wasn't run.)*
+- [ ] `whitney run` output showing the check's explanation on a fail. *(2026-11-13: not ticked. `whitney run` printed the baseline's `not_added 1.000` and the report's 0/1, but neither shows a check's explanation; the fail's explanation, "no new file matches \*test_\*.py", was read from the log with `read_eval_log` and is in `inspect view`. Showing explanations in `whitney run`'s output would be a change to the report, not part of this task.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** cents.
 
