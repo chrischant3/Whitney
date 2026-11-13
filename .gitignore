@@ -25,3 +25,5 @@ coverage.lcov
 coverage.xml
 # A personal instructions file for agents working in tasks/; not part of the project.
 /tasks/AGENTS.md
+# Verdict files an independent verifier writes; they are never committed.
+.verifier/

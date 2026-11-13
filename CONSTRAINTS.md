@@ -118,6 +118,16 @@ without its category in `interference._parses` and
 `unicode_escape` decode, which raise no warning but the `SyntaxWarning` or
 `DeprecationWarning` already named, so ignoring every warning there ignores
 the same one.
+Task 31's pre-PR review fixes (2026-11-12) add mutants that change only how
+much memory the capture proxy uses, never what it forwards or records:
+`tempfile.SpooledTemporaryFile(max_size=None)` in `capture_proxy._Body`,
+which keeps a body in memory instead of moving it to disk past
+SPOOLED_IN_MEMORY; `self.spool.read(None)` in `_Body.pieces`, which sends the
+whole body in one piece; and in
+`capture._read`, `decompress(body, )` without its bound and with
+`MAX_STORED_BODY + 2`, which decode more of a gzip body but keep and judge
+the same MAX_STORED_BODY bytes. `zlib.MAX_WBITS | 33` there is the same
+number as `| 32` (MAX_WBITS is 15, whose low bit is already set).
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11

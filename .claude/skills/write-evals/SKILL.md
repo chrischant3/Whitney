@@ -111,6 +111,8 @@ whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 \
 
 Without a Kilo login, use a provider key: `--model anthropic/claude-haiku-4-5 --api-key-env ANTHROPIC_API_KEY`. For `claude-code`, use `--target claude-code --model anthropic/claude-haiku-4-5`, which reads `ANTHROPIC_API_KEY`.
 
+To see whether the rule reached the model at all, the person can add `--capture-prompt`: the report then says, for each eval file, whether its `source` text was in the run's first model call, which is what the harness sent as instructions, or only in a later request such as a file the agent read. `--thinking` also records the agent's reasoning. Both are off by default, and a captured log holds the instruction files and prompts as sent ("Seeing what was sent to the model" in `docs/adding-tests.md`).
+
 ## What to hand back
 
 1. The table from step 2: each rule, its scenarios and check, and each rule that can't be tested yet, with the reason.

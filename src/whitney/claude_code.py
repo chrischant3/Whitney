@@ -23,14 +23,17 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
+from inspect_ai.log import transcript
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
+from whitney import capture, capture_proxy
 from whitney.agent import (
     PROJECT_DIR,
     RUN_STORE_KEY,
     check_no_inherited_instructions,
     copy_outputs,
+    redact,
     redact_run,
     run_process,
     staged_project,
@@ -57,6 +60,9 @@ def claude_code(
     timeout: int = 300,
     api_key_env: str | None = "ANTHROPIC_API_KEY",
     execution: str = "local",
+    capture_prompt: bool = False,
+    thinking: bool = False,
+    capture_texts: dict[str, str] | None = None,
 ) -> Agent:
     """Run `claude -p` once on the sample's prompt, in the project folder.
 
@@ -80,6 +86,13 @@ def claude_code(
             Anthropic API key; it reaches Claude Code as ANTHROPIC_API_KEY.
             Must be None in Docker mode.
         execution: "local" or "docker".
+        capture_prompt: record what was sent to the model (whitney.capture):
+            locally through the logging proxy, as ANTHROPIC_BASE_URL; in
+            Docker from Inspect's own log of the bridged calls.
+        thinking: tell Claude Code to show its thinking (CLAUDE_CODE_THINKING
+            in --settings), so the text is in the stream; its level stays
+            Claude Code's own. The task asks Inspect for a budget in Docker.
+        capture_texts: what to look for in the requests (capture.texts_to_find), redacted.
 
     Side effects: stores exit_code, the stream-json events, stderr,
     ended_early, permission_denials and api_key_source under RUN_STORE_KEY,
@@ -88,6 +101,9 @@ def claude_code(
     `Skill(<name>)` rule in harness_permissions' `deny` list switched off
     doesn't make ended_early true (see _outcome). A Docker run also stores
     harness_version, what the container's `claude --version` printed.
+    With capture_prompt or thinking, it also stores `sent` (capture only)
+    and `thinking` (capture.run_entries); with neither, a run records only
+    the fields above and starts no proxy.
 
     Raises:
         ValueError: model isn't anthropic/<model>, execution is neither, or
@@ -105,8 +121,10 @@ def claude_code(
         )
     if execution == "docker" and local_project_files is not None:
         raise ValueError("files staged on the host can't be used in Docker mode, where the project is the container's")
-    command = _claude_command(model.removeprefix(MODEL_PREFIX), harness_permissions or {})
+    command = _claude_command(model.removeprefix(MODEL_PREFIX), harness_permissions or {}, thinking)
     asked_for = asked("claude-code", harness_permissions or {})
+    told = capture.told_harness(f"--settings {json.dumps(capture.CLAUDE_CODE_THINKING)}", execution == "docker")
+    watch = capture.watch_for(capture_prompt, thinking, capture_texts, told, model)
 
     async def execute_in_docker(state: AgentState) -> AgentState:
         # "inspect" is the bridge's own name for the eval's --model. Claude Code is told the model's real
@@ -122,14 +140,21 @@ def claude_code(
             }
             await sbox.exec(["mkdir", "-p", DOCKER_HOME])
             version = await _container_version(sbox)
+            # The container was never given the host's key, so this should find nothing. The record goes
+            # into the eval log, so it is redacted as a local run's is.
+            secrets = list(filter(None, [os.environ.get("ANTHROPIC_API_KEY")]))
+            start = len(transcript().events) if watch else 0
             try:
                 result = await sbox.exec([*command, "--", state.messages[-1].text], cwd=PROJECT_DIR, env=env, timeout=timeout)
                 run = {"exit_code": result.returncode, "events": result.stdout, "stderr": result.stderr}
             except TimeoutError:  # Inspect's Docker exec raises; a local run records 124 (agent.run_process)
                 run = {"exit_code": 124, "events": "", "stderr": f"claude -p timed out after {timeout}s"}
-            # The container was never given the host's key, so this should find nothing. The record goes
-            # into the eval log, so it is redacted as a local run's is.
-            run = redact_run(run, list(filter(None, [os.environ.get("ANTHROPIC_API_KEY")])))
+            if watch:
+                sent = capture.from_inspect_log(
+                    list(transcript().events)[start:], transcript().attachments, watch.texts, lambda text: redact(text, secrets)
+                )
+                run |= capture.run_entries(watch, sent, run["events"], docker=True)
+            run = redact_run(run, secrets)
             store().set(RUN_STORE_KEY, {**run, **_outcome(run["events"], asked_for), **({"harness_version": version} if version else {})})
         return bridge.state
 
@@ -141,10 +166,10 @@ def claude_code(
         prompt = [*command, "--", state.messages[-1].text]  # "--": a prompt such as "--version" stays the prompt
         if local_project_files is None:
             project_dir = Path((await sbox.exec(["pwd"], cwd=PROJECT_DIR)).stdout.strip())
-            run = await _run(prompt, project_dir, key, timeout, asked_for)
+            run = await _run(prompt, project_dir, key, timeout, asked_for, watch)
         else:
             with staged_project(local_project_files) as project_dir:
-                run = await _run(prompt, project_dir, key, timeout, asked_for)
+                run = await _run(prompt, project_dir, key, timeout, asked_for, watch)
                 if local_output_targets:
                     run["copied_outputs"], run["missing_outputs"] = await copy_outputs(
                         sbox, project_dir, local_output_targets
@@ -167,23 +192,31 @@ async def _container_version(sbox) -> str | None:
     return lines[0].strip()[:MAX_VERSION_LENGTH] or None if lines else None
 
 
-def _claude_command(model_id: str, harness_permissions: dict[str, list[str]]) -> list[str]:
+def _claude_command(model_id: str, harness_permissions: dict[str, list[str]], thinking: bool) -> list[str]:
+    settings = {"permissions": harness_permissions, **(capture.CLAUDE_CODE_THINKING if thinking else {})}
     return [
         "claude", "-p",
         "--setting-sources", "project",
         "--strict-mcp-config",  # no --mcp-config, so no MCP servers at all
-        "--settings", json.dumps({"permissions": harness_permissions}),
+        "--settings", json.dumps(settings),
         "--model", model_id,
         "--output-format", "stream-json", "--verbose",  # stream-json needs --verbose with -p
     ]  # fmt: skip
 
 
-async def _run(command: list[str], project_dir: Path, key: str, timeout: int, asked_for: Sequence[Rule] = ()) -> dict:
+async def _run(
+    command: list[str], project_dir: Path, key: str, timeout: int, asked_for: Sequence[Rule] = (),
+    watch: capture.Watch | None = None,
+) -> dict:
     check_no_inherited_instructions(project_dir, claude_code=True)
-    with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home:
+    proxy = capture_proxy.proxied(watch, capture_proxy.CLAUDE_CODE_UPSTREAM, lambda text: redact(text, [key]))
+    with tempfile.TemporaryDirectory(prefix="claude-eval-home-") as home, proxy as (origin, captured):
         env = {"PATH": os.environ["PATH"], "HOME": home, "PWD": str(project_dir), "ANTHROPIC_API_KEY": key}
+        if origin:
+            env["ANTHROPIC_BASE_URL"] = origin
         # stdin closed: with it open, claude -p waits for piped input before starting.
         run = await run_process(command, project_dir, {**env, **isolated_git_env(project_dir)}, timeout, "claude -p", asyncio.subprocess.DEVNULL)
+    run |= capture.run_entries(watch, captured.record() if captured else None, run["events"], docker=False)
     run = redact_run(run, [key])  # its Bash tool can print the key, and the transcript goes into the eval log
     return {**run, **_outcome(run["events"], asked_for)}
 

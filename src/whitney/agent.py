@@ -24,9 +24,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
+from inspect_ai.log import transcript
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.util import sandbox, store
 
+from whitney import capture, capture_proxy
 from whitney.credentials import kilo_auth_path
 from whitney.git_env import ISOLATED_GIT_ENV, isolated_git_env  # ISOLATED_GIT_ENV: callers import it from here too
 from whitney.project_files import CLAUDE_CODE_ASSET_DIRS, KILO_CONFIG_DIRS, KILO_SKILL_DIRS, ROOT_INSTRUCTIONS
@@ -43,6 +45,8 @@ DOCKER_HOME = "/home/node"  # the sandbox image's unprivileged user (sandbox/Doc
 # programs, set the locale and reach the network through a proxy. The agent's
 # shell inherits Kilo's environment, and its tool output is stored in the eval
 # log, so provider keys, cloud and CI tokens and GIT_* variables stay out.
+# The host's keys Inspect may answer a bridged Docker call with, which a Docker Kilo run's record is redacted of.
+DOCKER_HOST_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "KILO_API_KEY")
 # Variables the run's config names as {env:NAME} are added to these.
 LOCAL_ENV_PASSTHROUGH = (
     "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "SHELL", "USER", "LOGNAME",
@@ -106,6 +110,9 @@ def kilo(
     base_url: str | None = None,
     agent_name: str | None = None,
     command_name: str | None = None,
+    capture_prompt: bool = False,
+    thinking: bool = False,
+    capture_texts: dict[str, str] | None = None,
 ) -> Agent:
     """Run `kilo run` once on the sample's prompt, in PROJECT_DIR.
 
@@ -134,6 +141,14 @@ def kilo(
             name isn't a primary agent's (docs/spike-findings.md, "Case 4").
         command_name: run with `--command NAME`, the prompt being the
             command's arguments. Kilo exits 1 if there is no such command.
+        capture_prompt: record what was sent to the model (whitney.capture):
+            locally through the logging proxy, given to Kilo as the
+            provider's baseURL, the proxy's origin alone; in Docker from
+            Inspect's own log of the bridged calls.
+        thinking: run with `--variant high --thinking` (capture.KILO_THINKING),
+            so the model thinks and its text is in the stream. The task asks
+            Inspect for a budget in Docker, where the bridge drops the variant.
+        capture_texts: what to look for in the requests (capture.texts_to_find), redacted.
 
     Side effects: stores the exit code, JSON event stream and stderr under
     RUN_STORE_KEY, with the values of any keys the run was given redacted.
@@ -141,22 +156,33 @@ def kilo(
     mode runs Kilo in a temporary HOME (see kilo_home) with a temporary
     KILO_CONFIG overlay (see local_config_overlay), only the environment
     variables in LOCAL_ENV_PASSTHROUGH plus those the overlay references,
-    and git without the user's git config (whitney.git_env).
+    and git without the user's git config (whitney.git_env). With
+    capture_prompt or thinking it also stores `sent` (capture only) and
+    `thinking` (capture.run_entries), and in Docker redacts the whole
+    record of the host's keys (docker_secrets), as claude_code does; with
+    neither, a run records only the fields above and starts no proxy.
 
     Raises:
         ValueError: api_key_env or base_url given in Docker mode, where
             Inspect serves --model through the bridge instead; or, in Docker
-            mode, a model bridge_kilo_model can't map.
+            mode, a model bridge_kilo_model can't map; or, with
+            capture_prompt locally, a base_url, which capture sets, or a
+            provider whose address capture_proxy.kilo_upstream doesn't know.
     """
     if execution == "docker" and (api_key_env or base_url):
         raise ValueError(
             "api_key_env and base_url apply to local execution; in Docker mode Inspect serves --model "
             "through the bridge with its own credentials"
         )
+    if capture_prompt and base_url:
+        raise ValueError("base_url and capture_prompt can't be used together: capture sets the base URL, to its proxy")
     kilo_cli_model = bridge_kilo_model(model) if execution == "docker" else model
-    # Passed on only when a name is given, so a run without one calls the runners as it always did.
-    names = {key: value for key, value in (("agent_name", agent_name), ("command_name", command_name)) if value}
-    named = {"named": names} if names else {}
+    upstream = capture_proxy.kilo_upstream(model, global_provider_settings()) if capture_prompt and execution == "local" else ""
+    # The `kilo run` options (_kilo_command's), passed on only when given, so a run without them calls the runners as it always did.
+    options = {key: value for key, value in (("agent_name", agent_name), ("command_name", command_name), ("thinking", thinking)) if value}
+    named = {"named": options} if options else {}
+    told = capture.told_harness(f"kilo run {' '.join(capture.KILO_THINKING)}", execution == "docker")
+    watch = capture.watch_for(capture_prompt, thinking, capture_texts, told, model)
 
     async def execute(state: AgentState) -> AgentState:
         if execution == "docker":
@@ -171,7 +197,14 @@ def kilo(
                     global_config["permission"] = harness_permissions
                 await sbox.exec(["mkdir", "-p", f"{DOCKER_HOME}/.config/kilo"])
                 await sbox.write_file(f"{DOCKER_HOME}/.config/kilo/kilo.json", json.dumps(global_config))
+                start = len(transcript().events) if watch else 0
                 run = await _run_kilo(sbox, state, kilo_cli_model, auto, {"HOME": DOCKER_HOME}, timeout, **named)
+                if watch:  # the run is given no secret, but the record goes into the eval log, so it is redacted as Claude Code's is
+                    secrets = docker_secrets()
+                    sent = capture.from_inspect_log(
+                        list(transcript().events)[start:], transcript().attachments, watch.texts, lambda text: redact(text, secrets)
+                    )
+                    run = redact_run(run | capture.run_entries(watch, sent, run["events"], docker=True), secrets)
                 store().set(RUN_STORE_KEY, run)
             return bridge.state
 
@@ -179,27 +212,39 @@ def kilo(
             raise ValueError("execution must be 'local' or 'docker'")
 
         sbox = sandbox()
-        env = None
-        overlay = local_config_overlay(
-            model, harness_permissions, api_key_env, base_url, global_provider=global_provider_settings()
-        )
-        if overlay:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8") as config:
-                json.dump(overlay, config)
-                config.flush()
-                env = {"KILO_CONFIG": config.name, **referenced_env(overlay)}
-                run = await _run_local(
-                    sbox, state, model, auto, env, timeout, local_project_files, local_output_targets, **named
-                )
+        global_provider = global_provider_settings()
+        overlay = local_config_overlay(model, harness_permissions, api_key_env, base_url, global_provider=global_provider)
+        if watch is None:
+            run = await _run_with_overlay(sbox, state, model, auto, overlay, timeout, local_project_files, local_output_targets, **named)
         else:
-            run = await _run_local(
-                sbox, state, model, auto, env, timeout, local_project_files, local_output_targets, **named
-            )
+            # The run's secrets, as _run_local_process redacts them, for the record this adds.
+            secrets = [*referenced_env(overlay or {}).values(), *login_secrets()]
+            with capture_proxy.proxied(watch, upstream, lambda text: redact(text, secrets)) as (origin, captured):
+                if origin:  # the proxy's origin alone, so each path Kilo sends is the one it would send without it
+                    overlay = local_config_overlay(model, harness_permissions, api_key_env, origin, global_provider=global_provider)
+                run = await _run_with_overlay(sbox, state, model, auto, overlay, timeout, local_project_files, local_output_targets, **named)
+            run = redact_run(run | capture.run_entries(watch, captured.record() if captured else None, run["events"], docker=False), secrets)
         store().set(RUN_STORE_KEY, run)
         _append_final_message(state, run, model)
         return state
 
     return execute
+
+
+async def _run_with_overlay(
+    sbox, state: AgentState, model: str, auto: bool, overlay: dict | None, timeout: int,
+    local_project_files: dict[str, str] | None, local_output_targets: dict[str, str] | None,
+    named: dict | None = None,
+) -> dict:
+    """A local run, with `overlay` written to a temporary KILO_CONFIG for the length of the run if there is one."""
+    passed = {"named": named} if named else {}
+    if not overlay:
+        return await _run_local(sbox, state, model, auto, None, timeout, local_project_files, local_output_targets, **passed)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8") as config:
+        json.dump(overlay, config)
+        config.flush()
+        env = {"KILO_CONFIG": config.name, **referenced_env(overlay)}
+        return await _run_local(sbox, state, model, auto, env, timeout, local_project_files, local_output_targets, **passed)
 
 
 def bridge_kilo_model(model: str) -> str:
@@ -344,6 +389,15 @@ def kilo_home(environ: Mapping[str, str] = os.environ) -> Iterator[KiloHome]:
         )
 
 
+def docker_secrets(environ: Mapping[str, str] = os.environ) -> list[str]:
+    """The host's credentials a Docker Kilo run's record is redacted of: the keys in DOCKER_HOST_KEYS and the Kilo login.
+
+    The container is given none of them (Inspect's bridge answers it), so
+    this should find nothing; the record goes into the eval log all the same.
+    """
+    return [*(environ[name] for name in DOCKER_HOST_KEYS if environ.get(name)), *login_secrets(environ)]
+
+
 def login_secrets(environ: Mapping[str, str] = os.environ) -> list[str]:
     """The values in the user's Kilo login (kilo_auth_path), which a local run's copy of it holds; [] without one."""
     login = kilo_auth_path(environ)
@@ -377,8 +431,24 @@ def redact(text: str, secrets: list[str]) -> str:
 
 
 def redact_run(run: dict, secrets: list[str]) -> dict:
-    """`run` with the secrets redacted from its events and stderr, which go into the eval log."""
-    return {**run, "events": redact(run["events"], secrets), "stderr": redact(run["stderr"], secrets)}
+    """A copy of `run` with the secrets redacted from every string in it, names included, since it goes into the eval log.
+
+    Every field, not only events and stderr: a captured request (`sent`)
+    can hold a key in a field of its own, such as a tool result the agent's
+    shell printed it into (docs/spike-findings.md, "Phase 5 Task 31").
+    """
+    return _redacted(run, secrets)
+
+
+def _redacted(value, secrets: list[str]):
+    """`value`, a JSON-like value, with `secrets` redacted from each string in it; other values are kept."""
+    if isinstance(value, str):
+        return redact(value, secrets)
+    if isinstance(value, dict):
+        return {_redacted(name, secrets): _redacted(item, secrets) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_redacted(item, secrets) for item in value]
+    return value
 
 
 async def _run_kilo(
@@ -579,12 +649,14 @@ def _kill_process_group(pid: int) -> None:
 
 
 def _kilo_command(
-    state: AgentState, model: str, auto: bool, agent_name: str | None = None, command_name: str | None = None
+    state: AgentState, model: str, auto: bool, agent_name: str | None = None, command_name: str | None = None,
+    thinking: bool = False,
 ) -> list[str]:
     """The `kilo run` command for the state's last message.
 
     `--agent NAME` and `--command NAME` go before the `--`, in the form plan
-    Task 16 captured (docs/spike-findings.md, "Case 4").
+    Task 16 captured (docs/spike-findings.md, "Case 4"), and so does
+    `--variant high --thinking` with `thinking` (docs/spike-findings.md, "Phase 5 Task 31").
     """
     command = ["kilo", "run", "--pure", "--format", "json", "-m", model]
     if auto:
@@ -593,6 +665,8 @@ def _kilo_command(
         command += ["--agent", agent_name]
     if command_name:
         command += ["--command", command_name]
+    if thinking:
+        command += capture.KILO_THINKING
     # "--" ends the options: without it, a prompt such as "--version" is read as one.
     return [*command, "--", state.messages[-1].text]
 

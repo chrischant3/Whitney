@@ -50,6 +50,8 @@ from inspect_ai._util.dotenv import init_dotenv
 
 from whitney import targets
 from whitney.agent import redact
+from whitney.capture import thinking_warnings
+from whitney.capture_report import render_capture_markdown
 from whitney.checks import CheckSpec, registry
 from whitney.credentials import CredentialsError, resolve_gateway_credentials
 from whitney.evidence import run_secrets
@@ -107,6 +109,17 @@ HELP = {
     "--api-key-env": "local mode: the variable (shell or .env) holding the API key for --model's provider; "
     "kilo without it uses your global Kilo config, claude-code defaults to ANTHROPIC_API_KEY",
     "--base-url": "kilo local mode: base URL for --model's provider (e.g. a proxy)",
+    "--capture-prompt": (
+        "record what was sent to the model in each run, and say in the report whether each file's source text was in it: "
+        "locally through a proxy on 127.0.0.1, in Docker from Inspect's log of every model call. Off by default"
+    ),
+    "--thinking": (
+        "tell the harness to think and show it (kilo: --variant high --thinking; claude-code: showThinkingSummaries; "
+        "Docker: Inspect's reasoning_tokens too). The log and report give what Whitney told the harness, and the level "
+        "the run's first model call carried: with --capture-prompt, or in Docker, read from that request; without "
+        "--capture-prompt a local run records only what Whitney told the harness. On kilo/ models Kilo's Gateway route "
+        "didn't apply it in real runs (2026-11-12); a warning says so. Off by default"
+    ),
     "--epochs": "runs of each scenario",
     "--limit": "at most this many scenarios per eval file and variant",
     "--sample-shuffle": f"shuffle the scenarios reproducibly (seed {SAMPLE_SHUFFLE_SEED}, the same for every variant)",
@@ -152,6 +165,8 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--execution", choices=("local", "docker"), default="local", help=HELP["--execution"])
     run.add_argument("--api-key-env", help=HELP["--api-key-env"])
     run.add_argument("--base-url", help=HELP["--base-url"])
+    run.add_argument("--capture-prompt", action="store_true", help=HELP["--capture-prompt"])
+    run.add_argument("--thinking", action="store_true", help=HELP["--thinking"])
     run.add_argument("--epochs", type=int, default=3, help=HELP["--epochs"])
     run.add_argument("--limit", type=int, help=HELP["--limit"])
     run.add_argument("--sample-shuffle", action="store_true", help=HELP["--sample-shuffle"])
@@ -348,6 +363,8 @@ def _run(args: argparse.Namespace) -> int:
         CannotRun: anything that stops the run before its first sample.
     """
     _check_target(args)
+    warnings = thinking_warnings(args.target, args.model, args.execution, args.capture_prompt, args.thinking)
+    _print_findings(ValidationResult(warnings=warnings), sys.stderr)
     evals, project = Path(args.evals_path), Path(args.project_path)
     result = validate_evals(evals, constraints=_constraints(args))
     _print_findings(result, sys.stderr)
@@ -385,6 +402,8 @@ def _run(args: argparse.Namespace) -> int:
                 max_samples=args.max_samples,
                 log_dir=args.log_dir,
                 display="plain",
+                # Inspect keeps the API calls of a sample's first 5 model calls only, unless told otherwise.
+                **({"log_model_api": True} if args.capture_prompt and args.execution == "docker" else {}),
             )
         except Exception as e:  # anything at all: the report still says what ran before it, and why it stopped
             stopped = f"stopped after {done} of {len(tasks)} tasks: {type(e).__name__}: {e}"
@@ -423,6 +442,7 @@ def _task(eval_file: str, variant: str, args: argparse.Namespace, version: str |
             eval_file, variant, evals_path=args.evals_path, target=args.target, model=args.model,
             execution=args.execution, project_path=args.project_path, api_key_env=args.api_key_env,
             base_url=args.base_url, harness_version=version,
+            **{name: True for name in ("capture_prompt", "thinking") if getattr(args, name)},
         )
     except ValueError as e:
         raise CannotRun(str(e)) from e
@@ -603,8 +623,9 @@ def write_report(
     table per eval file, the IFEvalCode and Harbor tables if those ran, the
     files not run for this target and those --only left out, how to improve
     each file under test (whitney.improve, or one line naming the error if
-    that section can't be built), the staged files' provenance and the
-    gate's problems.
+    that section can't be built), what was sent to the model if any run
+    captured it or its thinking (whitney.capture_report), the staged
+    files' provenance and the gate's problems.
 
     Args:
         logs: Inspect logs, from this run or read back.
@@ -644,6 +665,8 @@ def write_report(
     except Exception as error:  # anything at all: the section advises, so a fault in it costs neither report nor gate
         improvements = improvement_failed(error)
     report += f"\n{improvements}" if improvements else ""
+    sent = render_capture_markdown(core_logs)
+    report += f"\n{sent}" if sent else ""
     report += "\n" + render_asset_provenance_markdown(logs)
     header = render_header(logs, evals_path, min_rates)
     if min_conclusive != MIN_CONCLUSIVE:

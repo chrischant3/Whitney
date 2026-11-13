@@ -54,6 +54,8 @@ Total: nine model runs, about $0.18.
 | Kilo, no variant (`kilo-gateway`, `kilo-key`) | no reasoning parameter | nothing | nothing |
 | `kilo-variant-only` | `"reasoning": {"effort": "high"}` | no `reasoning` event; `step_finish` counts 137 reasoning tokens | the reasoning text, in the proxy's record |
 | `kilo-thinking` | the same | two `reasoning` events with the text in `part.text`; 109 reasoning tokens | the same |
+
+(2026-11-12, corrected: the two `kilo-variant-only` and `kilo-thinking` rows were sent in the OpenAI format the `/api/gateway` base URL caused. With the proxy's origin alone, on the Gateway route `--variant high --thinking` sends `"thinking": {"type": "disabled"}`, the model doesn't think, and there is no thinking text in the stream: [runs](2026-11-12-prompt-capture-runs.md#kilos---variant-high-with-the-origin-alone-address-open-decision-19), and the correction in [spike-findings.md](../spike-findings.md#extended-thinking).)
 | Claude Code, no setting (`cc-local`, `cc-claude-md-import`) | `"thinking": {"type": "enabled", "budget_tokens": 31999, "display": "updates"}` | a `thinking` block whose `thinking` is `""`, with a `signature` | `""` (proxy); `"<REDACTED>"` (OTEL); 53 thinking tokens |
 | `cc-summaries-only` | `{"type": "enabled", "budget_tokens": 31999}` (no `display`) | the thinking text | the text (OTEL still `"<REDACTED>"`) |
 | `cc-thinking` | `{"type": "enabled", "budget_tokens": 2048}` | the thinking text | the text (proxy) |
