@@ -50,6 +50,7 @@ if [ -n "$FAKE_PRINT" ]; then  # an agent that echoes a variable, e.g. its API k
   echo "$leaked" >&2
 fi
 [ -n "$FAKE_CAT_LOGIN" ] && tr -d '\n' < "$HOME/.local/share/kilo/auth.json" && echo
+[ -n "$FAKE_CAT_CONFIG" ] && tr -d '\n' < "$KILO_CONFIG" && echo && env | grep -i proxy
 exit "${FAKE_EXIT:-0}"
 """
 
@@ -419,6 +420,41 @@ def test_global_provider_settings_carry_over_without_the_rest_of_the_global_conf
         "provider": {"corp": {"options": {"baseURL": "https://llm.corp.example/v1", "apiKey": "{env:CORP_LLM_KEY}"}}},
     }
     assert _env(project)["CORP_LLM_KEY"] == "not-a-real-corp-key"  # the variable the carried settings name
+
+
+def test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_from_what_the_eval_stores(
+    fake_kilo, user_home, monkeypatch
+):
+    # Task 41: the agent can read the run's KILO_CONFIG and its environment, as `cat "$KILO_CONFIG"; env | grep -i proxy` does.
+    (user_home / ".config" / "kilo" / "kilo.json").write_text(json.dumps({"provider": {"corp": {
+        "name": "Corp Gateway",
+        "options": {"baseURL": "https://llm.corp.example/v1", "apiKey": "sk-literal-corp-0123", "headers": {"X-Team": "team-header-0123"}},
+    }}}))
+    monkeypatch.setenv("HTTP_PROXY", "http://eve:pw@proxy.corp.example:3128")
+    fake_kilo.control(FAKE_CAT_CONFIG="1")
+
+    _run(kilo(model="corp/model-x", timeout=30))
+
+    assert _env(fake_kilo.sandbox.project)["HTTP_PROXY"] == "http://eve:pw@proxy.corp.example:3128"  # Kilo still gets it
+    events = fake_kilo.stored[RUN_STORE_KEY]["events"]
+    for secret in ("sk-literal-corp-0123", "team-header-0123", "eve:pw@"):
+        assert secret not in events
+    assert '"apiKey": "[redacted]"' in events and "HTTP_PROXY=[redacted]" in events
+    assert "https://llm.corp.example/v1" in events and "Corp Gateway" in events
+
+
+def test_a_run_with_an_overlay_still_copies_its_outputs_and_reads_the_overlay_from_a_json_file(fake_kilo, user_home):
+    fake_kilo.control(FAKE_WRITE="solution.py", FAKE_PRINT="KILO_CONFIG")
+    agent = kilo(
+        model=MODEL, harness_permissions={"bash": "allow"}, local_project_files={"AGENTS.md": "rules"},
+        local_output_targets={"solution.py": "/workspace/solution.py"}, timeout=30,
+    )
+
+    _run(agent)
+
+    run = fake_kilo.stored[RUN_STORE_KEY]
+    assert run["copied_outputs"] == ["/workspace/solution.py"]
+    assert run["stderr"].splitlines()[-1].endswith(".json")  # the fake printed the overlay's path
 
 
 def test_the_runs_own_key_and_base_url_win_over_global_provider_settings():

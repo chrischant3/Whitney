@@ -128,6 +128,12 @@ whole body in one piece; and in
 `MAX_STORED_BODY + 2`, which decode more of a gzip body but keep and judge
 the same MAX_STORED_BODY bytes. `zlib.MAX_WBITS | 33` there is the same
 number as `| 32` (MAX_WBITS is 15, whose low bit is already set).
+Task 41 (2026-11-13) touches `agent._run_with_overlay`, whose older lines
+leave four equivalent mutants: `encoding=None`, no `encoding`, and
+`encoding="UTF-8"` on the overlay's temporary file, which `json.dump`
+writes in ASCII only (its default `ensure_ascii`), so every codec writes the
+same bytes; and `{"named": named} if named or True`, which passes
+`named=None` to `_run_local`, its own default.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
