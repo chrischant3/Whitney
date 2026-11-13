@@ -477,12 +477,12 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: changes to the runner, unless the test finds a fault.
 
 **Acceptance criteria:**
-- [ ] The test runs for both targets.
-- [ ] The fake does at least what `FAKE_KILO` does to its working folder, plus writing into `.claude/`, which a real run may.
+- [x] The test runs for both targets. *(2026-11-13: `test_the_project_is_unchanged_after_a_claude_code_run` in `tests/test_safe_staging.py` runs the claude-code `agents_md` template and baseline tasks; the kilo test is unchanged. They are two tests, not one parametrised, so the kilo test's name and assertions stay as they were.)*
+- [x] The fake does at least what `FAKE_KILO` does to its working folder, plus writing into `.claude/`, which a real run may. *(2026-11-13: `FAKE_CLAUDE` deletes everything but `.git`, rewrites `AGENTS.md`, and writes `.claude/settings.local.json` and `.claude/CLAUDE.md`; it prints the init and result events the existing fake in `tests/test_claude_code.py` uses.)*
 
 **Verification:**
-- [ ] A real `claude -p` run through Whitney's runner, with a listing of the project folder before and after, kept as background for what a real run writes.
-- [ ] The test shown able to fail: with the runner pointed at the project itself instead of its temporary copy (a local change, not committed), the new test fails.
+- [ ] A real `claude -p` run through Whitney's runner, with a listing of the project folder before and after, kept as background for what a real run writes. *(2026-11-13: open. It needs an Anthropic API key, which this session didn't have.)*
+- [x] The test shown able to fail: with the runner pointed at the project itself instead of its temporary copy (a local change, not committed), the new test fails. *(2026-11-13: with `claude_code.execute` given the project folder in place of the sandbox's `pwd`, the new test failed on its last assertion: `AGENTS.md` read "Always commit .env files.", `.claude/`, `.claude/CLAUDE.md` and `.claude/settings.local.json` had appeared and the project's other files were gone. The runner restored, it passes.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** cents.
 
