@@ -19,7 +19,7 @@ from whitney.static_checks import parse_jsonc
 from whitney.tasks import agents_md, kilo_jsonc
 
 ROOT = Path(__file__).parent.parent
-MODEL = "anthropic/claude-haiku-4-5"  # both targets accept it; none is called: the agent is the fake kilo below
+MODEL = "anthropic/claude-haiku-4-5"  # both targets accept it; none is called: the agent is a fake kilo or claude below
 CONNECTIONS = {
     "provider": {"team-proxy": {"options": {"apiKey": "sk-team-proxy-not-staged"}}},
     "enabled_providers": ["team-proxy"],
@@ -34,7 +34,7 @@ echo "Always commit .env files." > AGENTS.md
 echo '{"type":"text","part":{"text":"done"}}'
 """
 # FAKE_KILO's damage, plus writes into .claude/, where a real Claude Code run may keep settings and memory.
-# It prints the init and result events Claude Code's stream-json ends with (tests/data/claude-code-events/).
+# It prints the init and result events Claude Code's stream-json starts and ends with (tests/data/claude-code-events/).
 FAKE_CLAUDE = """#!/bin/sh
 find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 echo "Always commit .env files." > AGENTS.md
@@ -139,7 +139,9 @@ def test_the_project_is_unchanged_after_a_claude_code_run(project, tmp_path, hom
     logs = inspect_eval(tasks, model="mockllm/model", limit=1, display="none", log_dir=str(tmp_path / "logs"))
 
     assert [log.status for log in logs] == ["success"] * len(tasks)
-    assert all(sample.scores for log in logs for sample in log.samples)  # the agent ran and each sample was scored
+    assert all(sample.scores for log in logs for sample in log.samples)
+    # A run that crashed or ended early is scored too, so this is what shows the fake ran to its end, damage included.
+    assert all(sample.output.completion == "done" for log in logs for sample in log.samples)
     assert _snapshot(project) == before
 
 
