@@ -77,8 +77,14 @@ def test_the_levels_change_at_three_and_six_points():
     dependency = diff_adding("package.json", ["{}"])
     untested_auth_code = diff_adding("src/auth/login.py", ["x = 1"])
     forty_nine_lines = diff_adding("docs/a.md", ["x"] * 49)
-    scores = [score(diff) for diff in (dependency, dependency + forty_nine_lines, untested_auth_code, untested_auth_code + forty_nine_lines)]
-    assert [(r["score"], r["level"]) for r in scores] == [(2, "low"), (3, "medium"), (5, "medium"), (6, "high")]
+    diffs = [
+        dependency,
+        dependency + forty_nine_lines,
+        untested_auth_code,
+        untested_auth_code + forty_nine_lines,
+    ]
+    levels = [(r["score"], r["level"]) for r in map(score, diffs)]
+    assert levels == [(2, "low"), (3, "medium"), (5, "medium"), (6, "high")]
 
 
 def test_a_large_diff_adds_points_for_size():
