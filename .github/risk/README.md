@@ -32,3 +32,24 @@ git -c core.quotePath=false diff --no-color --no-ext-diff --find-renames origin/
 Don't edit `score.py` to make one pull request score differently. Change it in
 a pull request of its own, with a test in `tests/test_risk_score.py`, and say in
 the description why the rule was wrong.
+
+## Decisions
+
+Decided 2026-11-13 (Christopher), when this was added:
+
+- **The script is copied in, not installed.** CI needs no API key, no model call and no outside repository, and the score can't change under us. The cost is that upstream fixes don't arrive on their own: to take one, copy the new `score.py` over this one in a pull request of its own. Installing the plugin's repository at a pinned commit in the workflow would also work, at the price of depending on that repository being reachable.
+- **The workflow labels and never blocks.** The label tells a reviewer how much care a pull request needs. A rule that failed high-scoring pull requests would stop most large ones here, and a maintainer can't approve their own, so there would be no one to act on a "second reviewer" rule.
+- **It uses `pull_request`, not `pull_request_target`,** so code from a fork never runs next to a write token. The price is that a fork's pull request is scored but not labelled. `floor-guard.yml` uses `pull_request_target` because it must not be editable by the change it judges. The score only informs, so the weaker guard (the base branch's `score.py`, read by SHA) is enough.
+
+## After it merges
+
+Open the next pull request into main and check, in its Actions run:
+
+- the `Risk score` job passes and its summary shows the JSON, with no "No score.py on main yet" note (that note only belongs on the pull request that adds the script);
+- the pull request carries exactly one of `risk:low`, `risk:medium` or `risk:high`, matching the summary's level.
+
+A pull request from a fork gets the summary but no label; that is expected.
+
+## Rolling back
+
+Revert the commit that added `.github/workflows/risk-score.yml`; nothing else depends on it. Labels already on pull requests stay, and are harmless. To remove them, run `gh label delete risk:low`, `gh label delete risk:medium` and `gh label delete risk:high`.
