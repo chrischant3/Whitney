@@ -128,6 +128,11 @@ whole body in one piece; and in
 `MAX_STORED_BODY + 2`, which decode more of a gzip body but keep and judge
 the same MAX_STORED_BODY bytes. `zlib.MAX_WBITS | 33` there is the same
 number as `| 32` (MAX_WBITS is 15, whose low bit is already set).
+Later plan Task 53 (2026-11-13) adds two in `checks.skips`: `autojunk=None`
+in place of `False` in `_added_skips`, which `SequenceMatcher` reads only for
+truth; and `None` in place of `""` as `_marked`'s default, which stands for
+the end of the file either way, since a real result is never a blank line,
+and is only compared with other `_marked` results.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
