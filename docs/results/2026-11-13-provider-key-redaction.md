@@ -63,6 +63,27 @@ and, among the files in `$TMPDIR`, the run's own config:
 
 (The permission lines are condensed here. In the log they're indented, as Kilo printed them.)
 
+## Red, then green
+
+Before the code, the new tests failed, for example (from the run):
+
+```
+FAILED tests/test_agent_local_run.py::test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_from_what_the_eval_stores
+E           assert 'sk-literal-corp-0123' not in '{"type":"st...ample:3128\n'
+FAILED tests/test_capture_agents.py::test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted
+E       assert ('sk-literal-...e-0123456789' not in '{"exit_code...he events"}}'
+```
+
+The review fixes' tests failed first too, for example `ValueError: Invalid IPv6 URL` for `http://[::1` in the provider settings, `assert ['pw'] == ['user:pw@', ...]` for a short password in a provider URL, and a scenario whose setup mentions `https://github.com` refused because an `HTTP-Referer` header's value counted as a secret.
+
+## After the review
+
+The review (2026-11-13) changed what these runs tested, without a new run:
+
+- The overlay is now `kilo.json` in a `kilo-eval-config-*` folder of its own (0700), not a `tmp*.json` beside every other file in `$TMPDIR`. The agent can still list `$TMPDIR` and read it, so the redaction is what protects the log.
+- `kilo debug config` with `KILO_CONFIG` pointing at a `.txt` file loaded it as well as a `.json` one, and Kilo rewrote the file with a `$schema` line, which confirms the rewrite seen in run 2.
+- Header values are now secrets only when the header's name is (`Authorization`, `X-Api-Key`, `Cookie`), and a URL's user and password are hidden with its host in the provider settings and `--base-url` as in proxy variables.
+
 ## What the runs found besides
 
 - **`$KILO_CONFIG` is empty in the agent's shell.** Kilo 7.8.27 is given `KILO_CONFIG`, but `cat "$KILO_CONFIG"` printed `cat: : No such file or directory` in both runs. The file is still easy to find: it is a `tmp*.json` in `$TMPDIR`, which is in `LOCAL_ENV_PASSTHROUGH`.
@@ -81,4 +102,4 @@ From the code, not from a run: the Docker branch of `agent.kilo` writes the cont
 - The captured-request path (`--capture-prompt`) was tested with fakes only (`test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted`), not in a real run.
 - A key the agent can see can still be used or sent somewhere. Redaction only cleans what Whitney stores.
 - A proxy password is hidden with its user (`eve:t41pw@`, `eve:t41pw@proxy.invalid:3128` and the whole value). A password printed on its own, or percent-decoded, isn't. When the `user:pass@` part is under 8 characters, it's hidden only where it's printed with its host.
-- A password in a `--base-url` given on the command line is redacted from the run's record (it goes through `provider_secrets` with the overlay), but not by `evidence.run_secrets`, which isn't given `--base-url`.
+- A proxy or URL password with an unencoded `/`, `?` or `#` in it is cut short where it's matched.

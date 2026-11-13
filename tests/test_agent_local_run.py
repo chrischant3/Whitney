@@ -428,7 +428,7 @@ def test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_fr
     # Task 41: the agent can read the run's KILO_CONFIG and its environment, as `cat "$KILO_CONFIG"; env | grep -i proxy` does.
     (user_home / ".config" / "kilo" / "kilo.json").write_text(json.dumps({"provider": {"corp": {
         "name": "Corp Gateway",
-        "options": {"baseURL": "https://llm.corp.example/v1", "apiKey": "sk-literal-corp-0123", "headers": {"X-Team": "team-header-0123"}},
+        "options": {"baseURL": "https://llm.corp.example/v1", "apiKey": "sk-literal-corp-0123", "headers": {"X-Api-Key": "team-header-0123", "X-Team": "Platform"}},
     }}}))
     monkeypatch.setenv("HTTP_PROXY", "http://eve:pw@proxy.corp.example:3128")
     fake_kilo.control(FAKE_CAT_CONFIG="1")
@@ -440,7 +440,7 @@ def test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_fr
     for secret in ("sk-literal-corp-0123", "team-header-0123", "eve:pw@"):
         assert secret not in events
     assert '"apiKey": "[redacted]"' in events and "HTTP_PROXY=[redacted]" in events
-    assert "https://llm.corp.example/v1" in events and "Corp Gateway" in events
+    assert "https://llm.corp.example/v1" in events and "Corp Gateway" in events and '"X-Team": "Platform"' in events
 
 
 def test_a_run_with_an_overlay_still_copies_its_outputs_and_reads_the_overlay_from_a_json_file(fake_kilo, user_home):
@@ -455,6 +455,37 @@ def test_a_run_with_an_overlay_still_copies_its_outputs_and_reads_the_overlay_fr
     run = fake_kilo.stored[RUN_STORE_KEY]
     assert run["copied_outputs"] == ["/workspace/solution.py"]
     assert run["stderr"].splitlines()[-1].endswith(".json")  # the fake printed the overlay's path
+
+
+def test_every_secret_is_redacted_in_one_pass_so_a_key_inside_a_longer_one_hides_all_of_it(fake_kilo, user_home, monkeypatch):
+    # Two passes would redact the shorter key first and leave the rest of the longer literal in the log.
+    (user_home / ".config" / "kilo" / "kilo.json").write_text(json.dumps({"provider": {"corp": {"options": {
+        "apiKey": "sk-shared-prefix-0123-and-the-rest",
+    }}}}))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-shared-prefix-0123")
+    fake_kilo.control(FAKE_CAT_CONFIG="1")
+
+    _run(kilo(model="anthropic/claude-haiku-4-5", api_key_env="ANTHROPIC_API_KEY", timeout=30))
+
+    events = fake_kilo.stored[RUN_STORE_KEY]["events"]
+    assert "and-the-rest" not in events and '"apiKey": "[redacted]"' in events
+
+
+def test_the_overlay_is_written_in_a_folder_of_its_own_only_the_user_can_open_and_removed_after(fake_kilo, user_home, monkeypatch):
+    seen = {}
+    original = agent_module._run_local_process
+
+    async def spy(project_dir, state, kilo_model, auto, env, timeout):
+        folder = Path(env["KILO_CONFIG"]).parent
+        seen.update(folder=folder, mode=folder.stat().st_mode & 0o777, others=sorted(p.name for p in folder.iterdir()))
+        return await original(project_dir, state, kilo_model, auto, env, timeout)
+
+    monkeypatch.setattr(agent_module, "_run_local_process", spy)
+    _run(kilo(model=MODEL, harness_permissions={"bash": "allow"}, timeout=30))
+
+    assert seen["folder"].name.startswith("kilo-eval-config-") and seen["mode"] == 0o700
+    assert seen["others"] == [Path(seen["others"][0]).name] and seen["others"][0].endswith(".json")
+    assert not seen["folder"].exists()
 
 
 def test_the_runs_own_key_and_base_url_win_over_global_provider_settings():

@@ -22,7 +22,6 @@ import tempfile
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from inspect_ai.agent import Agent, AgentState, agent, sandbox_agent_bridge
 from inspect_ai.log import transcript
@@ -86,12 +85,19 @@ USERS_OWN = {".claude/CLAUDE.md": "the file if it isn't your own Claude Code mem
     folder: f"the folder if it isn't your own {folder.split('/')[1]}" for folder in (*KILO_SKILL_DIRS, *CLAUDE_CODE_ASSET_DIRS)
 }
 MIN_SECRET_LENGTH = 8  # shorter values would redact ordinary words
-# A word in an option's name (apiKey, auth_token, X-Session-Id) that marks its value as a secret.
-SECRET_IN_A_NAME = ("apikey", "token", "secret", "password")  # found anywhere in a name written in one case
-SECRET_OPTION_WORDS = {"key", "token", "secret", "password", "credential", "credentials", "auth", "bearer", "session", "cookie"}
+# The last word of a setting's name (apiKey, auth_token, X-Api-Key, Authorization) that marks its value as a
+# secret. The last word, so tokenUrl and sessionId are kept; a URL among them is still read for a password.
+SECRET_OPTION_WORDS = {
+    "key", "token", "secret", "password", "passphrase", "credential", "credentials", "auth", "authorization", "bearer",
+    "session", "cookie",
+}  # fmt: skip
+# The end of a name written in one case with no word breaks (apikey, ACCESSTOKEN), which is one word; not
+# anywhere in it, so tokenizer is kept.
+SECRET_IN_A_NAME = ("apikey", "token", "secret", "password", "passphrase")
+# A URL's user, password and host, after a scheme that a proxy variable may leave out, up to its path.
+URL_AUTHORITY = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]*)")
+URL_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 # The variables in LOCAL_ENV_PASSTHROUGH that can hold a proxy's user and password.
-# A proxy URL's user, password and host, after a scheme a proxy variable may leave out.
-PROXY_AUTHORITY = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]*)")
 PROXY_VARIABLES = tuple(name for name in LOCAL_ENV_PASSTHROUGH if name.lower() in ("http_proxy", "https_proxy", "all_proxy"))
 
 # Kilo providers whose request format Inspect's bridge serves, each with how a
@@ -247,17 +253,21 @@ async def _run_with_overlay(
     """A local run, with `overlay` written to a temporary KILO_CONFIG for the length of the run if there is one.
 
     The agent can read that file, so the run is also redacted of the literal
-    secrets in it (provider_secrets).
+    secrets in it (provider_secrets), in the same pass as the run's other secrets.
     """
     passed = {"named": named} if named else {}
     if not overlay:
         return await _run_local(sbox, state, model, auto, None, timeout, local_project_files, local_output_targets, **passed)
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8") as config:
-        json.dump(overlay, config)
-        config.flush()
-        env = {"KILO_CONFIG": config.name, **referenced_env(overlay)}
-        run = await _run_local(sbox, state, model, auto, env, timeout, local_project_files, local_output_targets, **passed)
-    return redact_run(run, provider_secrets(overlay))
+    copied = provider_secrets(overlay)
+    if copied:  # passed only when there are some, as `named` is, so a run without them calls the runners as before
+        passed["secrets"] = copied
+    # A folder of its own (0700, as TemporaryDirectory makes it), so the file isn't one of many tmp*.json in TMPDIR.
+    # Kilo 7.8.27 reads KILO_CONFIG whatever the file's name; .json says what it holds.
+    with tempfile.TemporaryDirectory(prefix="kilo-eval-config-") as folder:
+        config = Path(folder) / "kilo.json"
+        config.write_text(json.dumps(overlay), encoding="utf-8")
+        env = {"KILO_CONFIG": str(config), **referenced_env(overlay)}
+        return await _run_local(sbox, state, model, auto, env, timeout, local_project_files, local_output_targets, **passed)
 
 
 def bridge_kilo_model(model: str) -> str:
@@ -441,12 +451,14 @@ def provider_secrets(overlay: dict | None) -> list[str]:
 
     A literal `apiKey` there goes into the run's KILO_CONFIG, which the agent
     can read, so the run's output is redacted of it, as of a key from the
-    environment. Only `options` are read, a provider's and each model's:
-    every string under `options.headers`, every string under an option whose
-    name holds a word in SECRET_OPTION_WORDS (or, written in one case, one in
-    SECRET_IN_A_NAME), and the password in a URL. Provider and model names,
-    ids and plain URLs are kept, since the report reads them, and so is a
-    whole `{env:NAME}` reference, whose value referenced_env redacts.
+    environment. Every setting of every provider is read, at any depth (its
+    `options`, `headers`, `api`, and each model's, with their `variants`):
+    every string under a name that marks a secret (_secret_name), such as
+    `apiKey` or an `Authorization` header, and the user and password in any
+    URL (url_credentials). Other names and values are kept, since the report
+    and the evidence read them: provider and model names and ids, URLs without
+    a user, a header such as `Content-Type`, and a whole `{env:NAME}`
+    reference, whose value referenced_env redacts.
 
     Args:
         overlay: from local_config_overlay, or None.
@@ -454,26 +466,29 @@ def provider_secrets(overlay: dict | None) -> list[str]:
     Returns:
         The secret strings, in no particular order; [] for no provider settings.
     """
-    options = []
-    for provider in ((overlay or {}).get("provider") or {}).values():
-        if isinstance(provider, dict):
-            options.append(provider.get("options"))
-            models = provider.get("models")
-            options += [model.get("options") for model in (models.values() if isinstance(models, dict) else [])
-                        if isinstance(model, dict)]
     found: list[str] = []
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        for name, value in option.items():
-            words = {word.lower() for word in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])", name)}
-            # A name in one case (apikey, ACCESSTOKEN) is one word, so it is also searched as a whole.
-            whole = name.lower()
-            if whole == "headers" or words & SECRET_OPTION_WORDS or any(word in whole for word in SECRET_IN_A_NAME):
-                found += _strings(value)
-            elif isinstance(value, str) and urlsplit(value).password:
-                found.append(urlsplit(value).password)
+    pending: list[object] = [(overlay or {}).get("provider") or {}]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            for name, item in value.items():
+                if _secret_name(str(name)):
+                    found += _strings(item)
+                else:
+                    pending.append(item)
+        elif isinstance(value, list):
+            pending.extend(value)
+        elif isinstance(value, str) and URL_SCHEME.match(value):
+            found += url_credentials(value)
     return [text for text in found if not ENV_REFERENCE.fullmatch(text)]
+
+
+def _secret_name(name: str) -> bool:
+    """Whether a setting called `name` holds a secret: its last word is in SECRET_OPTION_WORDS, or it is one word ending in one of SECRET_IN_A_NAME."""
+    words = [word.lower() for word in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])", name)]
+    if not words:
+        return False
+    return words[-1] in SECRET_OPTION_WORDS or (len(words) == 1 and words[0].endswith(SECRET_IN_A_NAME))
 
 
 def _strings(value: object) -> list[str]:
@@ -487,21 +502,29 @@ def _strings(value: object) -> list[str]:
     return []
 
 
+def url_credentials(url: str) -> list[str]:
+    """The pieces of `url` that hide its `user:pass@` part: that part, the part with its host, and the whole URL; [] without one.
+
+    A password alone can be shorter than MIN_SECRET_LENGTH, which redact
+    skips; these longer pieces hide it wherever it is printed with its user,
+    as a URL, an error or an `env` line shows it. The URL is read with a
+    pattern, not a parser, so a malformed one (`http://[::1`) raises nothing
+    and its user is still found. Up to the last `@` before the first `/`,
+    `?` or `#`: an unencoded `@` in a password is covered, but an unencoded
+    `/`, `?` or `#` cuts it short, and a password printed percent-decoded or
+    on its own isn't matched.
+    """
+    authority = URL_AUTHORITY.match(url).group(1)
+    userinfo = authority.rpartition("@")[0]
+    return list(dict.fromkeys([f"{userinfo}@", authority, url])) if userinfo else []
+
+
 def proxy_secrets(environ: Mapping[str, str] = os.environ) -> list[str]:
     """The credentials in the proxy variables (PROXY_VARIABLES) a local run passes Kilo, which the agent's shell can print.
 
-    For each proxy URL with a `user:pass@` part, that part, the part with its
-    host, and the whole value. A password alone can be shorter than
-    MIN_SECRET_LENGTH, which redact skips; these longer pieces hide it
-    wherever it is printed with its user, as a URL or an `env` line shows it.
+    Each value's url_credentials; a proxy variable may leave out the scheme.
     """
-    found: list[str] = []
-    for value in (environ[name] for name in PROXY_VARIABLES if name in environ):
-        authority = PROXY_AUTHORITY.match(value).group(1)
-        userinfo = authority.rpartition("@")[0]  # the last @, since a password may hold one unencoded
-        if userinfo:
-            found += dict.fromkeys([f"{userinfo}@", authority, value])
-    return found
+    return [piece for name in PROXY_VARIABLES if name in environ for piece in url_credentials(environ[name])]
 
 
 def redact(text: str, secrets: list[str]) -> str:
@@ -547,9 +570,11 @@ async def _run_kilo(
 async def _run_local(
     sbox, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int,
     local_project_files: dict[str, str] | None, local_output_targets: dict[str, str] | None = None,
-    named: dict[str, str] | None = None,
+    named: dict[str, str] | None = None, secrets: list[str] | None = None,
 ) -> dict:
     passed = {"named": named} if named else {}
+    if secrets:
+        passed["secrets"] = secrets
     if local_project_files is None:
         project_dir = Path((await sbox.exec(["pwd"], cwd=PROJECT_DIR)).stdout.strip())
         return await _run_local_process(project_dir, state, model, auto, env, timeout, **passed)
@@ -563,8 +588,15 @@ async def _run_local(
 
 async def _run_local_process(
     project_dir: Path, state: AgentState, model: str, auto: bool, env: dict | None, timeout: int,
-    named: dict[str, str] | None = None,
+    named: dict[str, str] | None = None, secrets: list[str] | None = None,
 ) -> dict:
+    """Run Kilo on the host in `project_dir`, in a temporary HOME, and return its record redacted of the run's secrets.
+
+    Args:
+        secrets: more values to redact, such as the literal ones in the
+            overlay (provider_secrets), so every secret goes in one
+            longest-first pass and none is left half-redacted.
+    """
     check_no_inherited_instructions(project_dir)
     run_env = env or {}
     with kilo_home() as home:
@@ -577,8 +609,8 @@ async def _run_local_process(
         }
         command = _kilo_command(state, model, auto, **(named or {}))
         run = await run_process(command, project_dir, process_env, timeout, "kilo run")
-    secrets = [value for name, value in run_env.items() if name != "KILO_CONFIG"] + home.secrets + proxy_secrets()
-    return redact_run(run, secrets)
+    every = [value for name, value in run_env.items() if name != "KILO_CONFIG"] + home.secrets + proxy_secrets() + (secrets or [])
+    return redact_run(run, every)
 
 
 def check_no_inherited_instructions(project_dir: Path, *, claude_code: bool = False) -> None:

@@ -331,20 +331,21 @@ def test_a_named_agent_reaches_kilo_when_the_project_is_staged_locally(monkeypat
 # Literal secrets in the provider settings a local run copies, and proxy passwords it passes on (Task 41)
 
 
-def test_provider_secrets_are_read_from_options_and_headers_only():
+def test_provider_secrets_are_read_by_name_and_from_urls_with_a_user():
     from whitney.agent import provider_secrets
 
     overlay = {"provider": {"turkey": {
         "name": "Turkey Large Model",
         "options": {
             "apiKey": "sk-literal-0123", "authToken": ["token-in-a-list-0123"], "baseURL": "https://user:url-pass-0123@host/v1",
-            "headers": {"X-Title": "my-header-0123"}, "timeout": 30,
+            "headers": {"X-Api-Key": "not-a-real-header", "X-Title": "Turkey"}, "timeout": 30,
         },
         "models": {"turkey-large": {"id": "vendor/turkey-large", "options": {"sessionKey": "model-key-0123"}}},
     }}}
-    assert sorted(provider_secrets(overlay)) == sorted(
-        ["sk-literal-0123", "token-in-a-list-0123", "url-pass-0123", "my-header-0123", "model-key-0123"]
-    )
+    assert sorted(provider_secrets(overlay)) == sorted([
+        "sk-literal-0123", "token-in-a-list-0123", "not-a-real-header", "model-key-0123",
+        "user:url-pass-0123@", "user:url-pass-0123@host", "https://user:url-pass-0123@host/v1",
+    ])
     assert provider_secrets(None) == [] and provider_secrets({"permission": {}}) == []
 
 
@@ -440,3 +441,68 @@ def test_a_secret_word_starting_a_later_part_of_a_camel_case_name_marks_a_secret
 
     overlay = {"provider": {"p": {"options": {"userSession": "session-value-0123", "customBearer": "bearer-value-0123"}}}}
     assert sorted(provider_secrets(overlay)) == ["bearer-value-0123", "session-value-0123"]
+
+
+def test_a_malformed_url_in_the_provider_settings_raises_nothing_and_its_user_is_still_a_secret():
+    from whitney.agent import provider_secrets
+
+    overlay = {"provider": {"p": {"options": {"baseURL": "http://[::1", "fallback": "https://u:pw@[::1"}}}}
+    assert sorted(provider_secrets(overlay)) == ["https://u:pw@[::1", "u:pw@", "u:pw@[::1"]
+
+
+def test_a_short_password_in_a_provider_url_is_hidden_with_its_user_and_host():
+    from whitney.agent import provider_secrets, redact
+
+    overlay = {"provider": {"p": {"options": {"baseURL": "https://user:pw@llm.example/v1"}}}}
+    secrets = provider_secrets(overlay)
+    assert secrets == ["user:pw@", "user:pw@llm.example", "https://user:pw@llm.example/v1"]
+    assert redact("calling https://user:pw@llm.example/v1/messages", secrets) == "calling [redacted]/messages"
+
+
+def test_only_headers_named_as_secrets_are_secrets():
+    from whitney.agent import provider_secrets
+
+    headers = {
+        "Content-Type": "application/json", "HTTP-Referer": "https://github.com", "X-Title": "Whitney", "User-Agent": "kilo-evals",
+        "Authorization": "Bearer not-a-real-token", "x-api-key": "not-a-real-api-key", "Cookie": "c=not-a-real-cookie",
+        "X-Upstream": "https://u:pw@upstream.example",
+    }
+    overlay = {"provider": {"p": {"options": {"headers": headers}}}}
+    assert sorted(provider_secrets(overlay)) == sorted([
+        "Bearer not-a-real-token", "not-a-real-api-key", "c=not-a-real-cookie", "u:pw@", "u:pw@upstream.example", "https://u:pw@upstream.example",
+    ])
+
+
+def test_a_name_is_a_secret_by_its_last_word_or_whole_so_tokenizer_and_token_url_are_kept():
+    from whitney.agent import provider_secrets
+
+    options = {"tokenizer": "cl100k-base", "tokenUrl": "https://auth.example/token", "sessionId": "session-id-0123",
+               "passphrase": "phrase-value-0123", "authorization": "auth-value-0123", "clientsecret": "client-value-0123"}
+    overlay = {"provider": {"p": {"options": options}}}
+    assert sorted(provider_secrets(overlay)) == ["auth-value-0123", "client-value-0123", "phrase-value-0123"]
+
+
+def test_secrets_anywhere_in_a_provider_are_found_its_api_url_model_headers_and_variants():
+    from whitney.agent import provider_secrets
+
+    overlay = {"provider": {"p": {
+        "api": "https://u:api-pw-0123@api.example/v1",
+        "models": {"m": {
+            "headers": {"Authorization": "Bearer model-header-0123"},
+            "provider": {"api": "https://v:model-api-0123@model.example"},
+            "variants": {"high": {"options": {"apiKey": "variant-key-0123"}}},
+        }},
+    }}}
+    assert sorted(provider_secrets(overlay)) == sorted([
+        "u:api-pw-0123@", "u:api-pw-0123@api.example", "https://u:api-pw-0123@api.example/v1",
+        "Bearer model-header-0123",
+        "v:model-api-0123@", "v:model-api-0123@model.example", "https://v:model-api-0123@model.example",
+        "variant-key-0123",
+    ])
+
+
+def test_a_name_with_no_letters_is_not_a_secret_and_a_secret_name_hides_everything_under_it():
+    from whitney.agent import provider_secrets
+
+    overlay = {"provider": {"p": {"options": {"0": "plain-value-0123", "credentials": {"user": "nested-user-0123", "more": ["nested-pass-0123"]}}}}}
+    assert sorted(provider_secrets(overlay)) == ["nested-pass-0123", "nested-user-0123"]
