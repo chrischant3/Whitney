@@ -515,14 +515,16 @@ def kilo_steps(*steps) -> str:
     return text(events + last)
 
 
-def test_a_read_in_the_same_step_as_the_edit_is_inconclusive():
+def test_a_read_in_the_same_step_as_the_edit_is_edited_unread():
+    # Decided by Christopher Chant, 2026-11-13: the agent wrote the edit before it saw the file, so it fails.
     verdict = judge(kilo_steps([read(RULES), edit()]))
 
     assert (verdict.outcome, verdict.explanation) == (
-        "inconclusive",
-        f"read of `{RULES}` (call 1) was made in the same step as edit of `{CODE}` (call 2), "
-        "so the edit was written before the read's result came back",
+        "fail",
+        f"edit of `{CODE}` (call 2) ran with no read of a file matching file before it; "
+        f"read of `{RULES}` (call 1) came in the same step as the edit, so the edit was written before the read's result came back",
     )
+    assert registry()["read_before_edit"].label(verdict.outcome) == "edited_unread"
 
 
 def test_a_read_in_an_earlier_step_still_counts_beside_one_in_the_edits_step():
@@ -531,12 +533,16 @@ def test_a_read_in_an_earlier_step_still_counts_beside_one_in_the_edits_step():
     )
 
 
-def test_claude_code_a_read_in_the_same_message_as_the_edit_is_inconclusive():
+def test_claude_code_a_read_in_the_same_turn_as_the_edit_is_edited_unread():
     events = [json.loads(line) for line in claude(("Read", {"file_path": RULES}), ("Edit", {"file_path": CODE})).splitlines()]
     uses = [event for event in events if event["type"] == "assistant" and event["message"]["content"][0]["type"] == "tool_use"]
     uses[1]["message"]["id"] = uses[0]["message"]["id"]
 
-    assert outcome(text(events))[0] == "inconclusive"
+    assert outcome(text(events)) == (
+        "fail",
+        f"Edit of `{CODE}` (call 2) ran with no read of a file matching file before it; "
+        f"Read of `{RULES}` (call 1) came in the same step as the edit, so the edit was written before the read's result came back",
+    )
     uses[1]["message"]["id"] = uses[0]["message"]["id"] + "x"
     assert outcome(text(events))[0] == "pass"
 
@@ -757,8 +763,33 @@ def test_a_command_that_reads_and_writes_at_once_wrote_no_earlier_than_it_read()
     assert outcome(kilo(bash("cat CONSTRAINTS.md 2> err.log"), edit()))[0] == "pass"
 
 
-def test_a_shell_read_in_the_same_step_as_the_edit_is_inconclusive():
-    assert outcome(kilo_steps([bash("cat CONSTRAINTS.md"), edit()]))[0] == "inconclusive"
+def test_a_shell_read_in_the_same_step_as_the_edit_is_edited_unread():
+    assert outcome(kilo_steps([bash("cat CONSTRAINTS.md"), edit()]))[0] == "fail"
+
+
+def test_a_same_step_read_still_fails_under_whole_file_and_a_doubt_keeps_it_inconclusive():
+    assert outcome(kilo_steps([read(RULES, limit=5), edit()]), READ_RULES | {"whole_file": True})[1].endswith("partial: read of "
+        f"`{RULES}` (call 1, partial)")
+    with_subagent = kilo_steps([read(RULES), edit()]) + "\n" + (DATA / "kilo-events" / "subagent-description.jsonl").read_text()
+    assert outcome(with_subagent)[0] == "inconclusive"
+
+
+def test_the_real_template_run_with_its_read_moved_into_the_edits_step_fails():
+    # read-then-edit (Kilo 7.8.27): read CONSTRAINTS.md, glob, read till.py, edit, each in its own step. Dropping
+    # the step boundaries between the first read and the edit puts all four calls in one step.
+    events = [json.loads(line) for line in (DATA / "kilo-events" / "read-then-edit.jsonl").read_text().splitlines()]
+    uses = [i for i, event in enumerate(events) if event["type"] == "tool_use"]
+    first, edit_at = uses[0], uses[3]
+    merged = events[:first] + [
+        event for event in events[first:edit_at] if event["type"] not in ("step_start", "step_finish")
+    ] + events[edit_at:]
+
+    assert outcome(text(merged)) == (
+        "fail",
+        f"edit of `{CODE}` (call 4) ran with no read of a file matching file before it; "
+        f"read of `{RULES}` (call 1) came in the same step as the edit, so the edit was written before the read's result came back",
+    )
+    assert outcome(text(events))[0] == "pass"
 
 
 def test_each_refused_edit_is_counted():
@@ -824,3 +855,14 @@ def test_a_reader_reads_its_files_after_an_input_redirect_too():
 
 def test_a_long_option_after_seds_script_takes_no_value():
     assert outcome(kilo(bash("sed -n 1p --separate CONSTRAINTS.md"), edit()))[0] == "pass"
+
+
+def test_an_earlier_read_that_may_have_failed_keeps_a_same_step_read_from_failing():
+    stream = kilo_steps([bash("cat CONSTRAINTS.md", 1)], [read(RULES), edit()])
+
+    assert outcome(stream) == (
+        "inconclusive",
+        f"edit of `{CODE}` (call 3) ran after `cat CONSTRAINTS.md` (call 1, exit 1), which exited non-zero, so it may not have read the file",
+    )
+    # A read that may have failed in the edit's own step is no doubt: its result came back too late either way.
+    assert outcome(kilo_steps([bash("cat CONSTRAINTS.md", 1), read(RULES), edit()]))[0] == "fail"

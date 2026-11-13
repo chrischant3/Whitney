@@ -133,7 +133,7 @@ Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
 function reads only through `not` and `and`, where `None` and `False` give the
 same answer.
 Later plan Task 51 (2026-11-13) adds eight in `checks.reads`. In `_ordered`,
-`<=` for `<` in `kept` and `partial` and `>=` for `>` in `after`: they compare
+`<=` for `<` in `before` and `partial` and `>=` for `>` in `after`: they compare
 a read's call number with the judged edit's, and a read and an edit are never
 the same call. `Simple.program` returning `"XXXX"` for `""` when every word
 was an assignment, keyword or wrapper: no reader or writer has that name.

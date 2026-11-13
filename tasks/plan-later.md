@@ -305,6 +305,10 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - [x] A real run of an example eval: the template held, and a control without the rule fails at least once. *(2026-11-13: `examples/read-before-edit`, Kilo, Haiku, one epoch: the baseline edited unread in all four of its runs; the template held in run 3 (1/1), after failing with two softer wordings of the rule in runs 1 and 2; $0.231 in all; `docs/results/2026-11-13-read-before-edit.md`. Claude Code not run.)*
 - [x] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check. *(2026-11-13: in `docs/results/2026-11-13-read-before-edit.md`: `validate` for both targets exited 0; `run` on `kilo` exited 1, 1, then 0, with each run's explanation.)*
 
+**Decisions (Christopher Chant, 2026-11-13):**
+- A read of the file made in the same step (Kilo) or turn (Claude Code) as the first edit is a fail, not inconclusive: the agent wrote the edit before it saw the file. The explanation says the read came in the same step as the edit.
+- `cat X | head` keeps counting as a read: a pipe doesn't mask the reader's exit, so a failed `cat` before it isn't caught.
+
 **Dependencies:** Task 50, for the shared stream reader. **Size:** M. **Cost:** cents to a dollar.
 
 ### Task 52: Check `file_added`: something the agent must do

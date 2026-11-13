@@ -21,8 +21,8 @@ What counts as a read (docs/adding-tests.md, "`read_before_edit`"):
 A partial read counts unless `whole_file` is set. A search, `grep` or `rg` in
 the shell or Kilo's `grep` and `glob` tools, isn't a read: it shows a few
 lines, or only names. A read made in the same step (Kilo) or turn (Claude
-Code) as the edit doesn't count as before it: the edit was written before the
-read's result came back.
+Code) as the edit doesn't count as before it, and makes the run fail: the
+edit was written before the read's result came back.
 
 What counts as an edit: the harness's edit tools in EDIT_TOOLS, on a path
 `edits` matches (any path if `edits` isn't given). A shell command can write
@@ -158,9 +158,9 @@ def read_before_edit(evidence: Evidence, params: Params) -> Verdict:
     """Was a file matching `file` read before the first edit?
 
     Fail if the first edit that ran (of a path `edits` matches) had no read
-    of the file before it. Pass if it had one, in an earlier step or turn.
-    Otherwise inconclusive: no edit ran, the only reads before it were made in
-    its own step or were shell reads that may have failed, a shell command
+    of the file in an earlier step or turn: none before it, or only one made in
+    its own step. Pass if it had one. Otherwise inconclusive: no edit ran, the
+    only reads before it were shell reads that may have failed, a shell command
     before the read may have written a file, the stream may hide or mis-show
     a call (a subagent on Kilo included), or a read, edit or shell call has no
     path or command. An early end keeps a pass from standing (CheckSpec.run).
@@ -238,23 +238,27 @@ def _ordered(seen: Seen, params: Params) -> Verdict:
         return Verdict("inconclusive", words)
     judged = seen.edits[0]
     counted = [act for act in seen.reads if not (whole_file and act.partial)]
-    kept = [act for act in counted if act.n < judged.n]
-    sure = [act for act in kept if act.unsure is None]
-    earlier = [act for act in sure if act.step is None or act.step != judged.step]
+    before = [act for act in counted if act.n < judged.n]
+    same_step = [act for act in before if act.step is not None and act.step == judged.step]
+    kept = [act for act in before if act not in same_step]  # reads whose result came back before the edit was asked for
+    earlier = [act for act in kept if act.unsure is None]
     if earlier:
         said = f"{earlier[-1].shown} came before {judged.shown}"
         risky = [act for act in seen.writes if (act.n, act.at) < (earlier[0].n, earlier[0].at)]
         if risky:
             return Verdict("inconclusive", f"{said}, but a shell command before the read may have written a file: {risky[0].shown}")
         return Verdict("pass", said)
-    if sure:
-        return Verdict(
-            "inconclusive",
-            f"{sure[-1].shown} was made in the same step as {judged.shown}, so the edit was written before the read's result came back",
-        )
     if kept:
         doubtful = kept[-1]
         return Verdict("inconclusive", f"{judged.shown} ran after {doubtful.shown}, {doubtful.unsure}, so it may not have read the file")
+    if same_step:
+        # The agent asked for the edit before the read's result came back, so it edited without having seen the file
+        # (Christopher Chant, 2026-11-13).
+        return Verdict(
+            "fail",
+            f"{judged.shown} ran with no read of a file matching file before it; {same_step[-1].shown} came in the same step "
+            "as the edit, so the edit was written before the read's result came back",
+        )
     partial = [act.shown for act in seen.reads if act.n < judged.n]
     if partial:
         return Verdict("fail", f"{judged.shown} ran with no whole read of a file matching file before it; partial: {_listed(partial)}")
