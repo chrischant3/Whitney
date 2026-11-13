@@ -297,13 +297,13 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: reads by a tool Whitney can't see, such as an MCP server.
 
 **Acceptance criteria:**
-- [ ] Listed by `whitney checks`, and documented with what counts as a read.
-- [ ] A run with no edits is inconclusive, not a pass.
+- [x] Listed by `whitney checks`, and documented with what counts as a read. *(2026-11-13: `whitney checks` lists `read_before_edit` with targets `kilo, claude-code`; `docs/adding-tests.md`, "`read_before_edit`", lists the read tools and shell readers that count and records the decisions: a partial read counts unless `whole_file` is set; `grep`, `rg` and the `grep` and `glob` tools don't.)*
+- [x] A run with no edits is inconclusive, not a pass. *(2026-11-13: `tests/test_checks_reads.py`, `test_a_run_with_no_edits_is_inconclusive_not_a_pass`, and on Claude Code's real `outside-bash-read`.)*
 
 **Verification:**
-- [ ] Fixtures from real streams of a read-then-edit, an edit with no read, and a shell read.
-- [ ] A real run of an example eval: the template held, and a control without the rule fails at least once.
-- [ ] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check.
+- [ ] Fixtures from real streams of a read-then-edit, an edit with no read, and a shell read. *(2026-11-13: Kilo done, Kilo 7.8.27: `tests/data/kilo-events/read-then-edit`, `edit-without-read` and `shell-read-then-edit` (`cat till.py`). Claude Code in part, from saved 2.1.322 streams: read-then-edit (`skill-tool-denied`, `skill-denied`) and a shell read (`outside-bash-read`); an edit with no read is still to capture, with no `ANTHROPIC_API_KEY` here.)*
+- [x] A real run of an example eval: the template held, and a control without the rule fails at least once. *(2026-11-13: `examples/read-before-edit`, Kilo, Haiku, one epoch: the baseline edited unread in all four of its runs; the template held in run 3 (1/1), after failing with two softer wordings of the rule in runs 1 and 2; $0.231 in all; `docs/results/2026-11-13-read-before-edit.md`. Claude Code not run.)*
+- [x] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check. *(2026-11-13: in `docs/results/2026-11-13-read-before-edit.md`: `validate` for both targets exited 0; `run` on `kilo` exited 1, 1, then 0, with each run's explanation.)*
 
 **Dependencies:** Task 50, for the shared stream reader. **Size:** M. **Cost:** cents to a dollar.
 

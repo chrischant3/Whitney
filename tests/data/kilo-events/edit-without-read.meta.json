@@ -1,0 +1,24 @@
+{
+  "case": "edit-without-read",
+  "about": "The baseline's run of add-a-function in examples/read-before-edit, without AGENTS.md: the agent read till.py and edited it, and never read CONSTRAINTS.md",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "command": "whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/read-before-edit --evals-path examples/read-before-edit/evals --epochs 1",
+  "date": "2026-11-13",
+  "target": "kilo",
+  "harness_version": "7.8.27",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "prompt": "Add a refund(amount) function to till.py that returns the negative of amount.",
+  "harness_permissions": {
+    "bash": "allow",
+    "edit": "allow"
+  },
+  "staged_files": [
+    "kilo.jsonc"
+  ],
+  "exit_code": 0,
+  "ended_early": null,
+  "permission_denials": null,
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}

@@ -132,6 +132,16 @@ Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
 `known = in_step = None` and `in_step = None` in place of `False`, which the
 function reads only through `not` and `and`, where `None` and `False` give the
 same answer.
+Later plan Task 51 (2026-11-13) adds eight in `checks.reads`. In `_ordered`,
+`<=` for `<` in `kept` and `partial` and `>=` for `>` in `after`: they compare
+a read's call number with the judged edit's, and a read and an edit are never
+the same call. `Simple.program` returning `"XXXX"` for `""` when every word
+was an assignment, keyword or wrapper: no reader or writer has that name.
+`set(token) < SEPARATOR_CHARACTERS` for `<=` in `_simple_commands`: equal only
+for a token holding all of `;&|()`, which no shell command is. `opens = None`
+for `False` there, and `scripted = None` for `False` in `_sed_files`, read only
+as truth values. `"XXefXX"` for `"ef"` in `_sed_files`: it adds only `X`, and
+sed has no short option ending in `X`.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11

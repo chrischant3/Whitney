@@ -973,6 +973,13 @@ See [the results page](results/2026-11-12-capture-followups.md#not-shown).
 
 The order is the order of the calls in the stream. On Claude Code that is the order of the `tool_use` blocks, so a forked skill's `Skill` call comes before the calls its subagent made (`skill-forked`). Kilo prints a call's `tool_use` event once the call has finished.
 
+## Phase 5 Later Task 51: reads and edits in order (2026-11-13)
+
+`read_before_edit` reads the same stream as `ran_before` (`src/whitney/checks/stream.py`) and needs each read and edit tool's path. No new event field is read:
+
+- **Kilo 7.8.27**: a `read` call's `part.state.input.filePath`, an absolute path (a folder too: `commit-without-tests` read the project folder first), and an `edit` or `write` call's `filePath`, in the real runs saved as `tests/data/kilo-events/edit-without-read` (`read` of `till.py`, then `edit`) and `shell-read-then-edit` (`cat till.py` in `bash`, an `edit`, then `cat till.py` again). The tool list (`tools-default.debug.json`) has `read`, `edit`, `write`, `glob` and `grep`, and no `apply_patch` or `multiedit`. No saved call sets `offset` or `limit`; the check takes either, when set, as a partial read, from the tool's documented input.
+- **Claude Code 2.1.322**: `Read`'s `input.file_path` and `Edit`'s, in `skill-denied` and `skill-tool-denied` (three `Read`s, then an `Edit` of `CHANGELOG.md`); a shell read in `outside-bash-read` (`cat ../outside/canary.txt`). The init event's `tools` lists `Edit`, `Write`, `NotebookEdit` and `Read`, and no `MultiEdit`. `Write`'s and `NotebookEdit`'s input keys (`file_path`, `notebook_path`) are from Claude Code's tool docs; no saved stream holds either. A `Read` whose result is an error, such as `skill-denied`'s `Read` of the project folder, didn't run. Calls made in one turn share their `assistant` event's `message.id`: `skill-tool-denied`'s second and third `Read`s do, so the reader now keeps it as each call's `turn`, and a read in the edit's turn doesn't count as before it. On Kilo the same is the call's step.
+
 ## Not yet done
 
 - **Hooks and plugins (Task 40).** A `Stop` hook making a skill load; a hook's effect with a model other than Haiku or a skill other than `release-notes`; why silent hooks went with more `Skill` calls; a Kilo plugin's effect apart from chance; plugins in the VS Code extension.

@@ -52,7 +52,7 @@ may have run them together.
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from whitney.checks.skills import (
@@ -100,6 +100,10 @@ class ToolCall:
         step: on Kilo, the number of the step the call was made in, counting
             `step_start` events from 1. None on Claude Code, which prints each
             content block as an event of its own.
+        turn: on Claude Code, the id of the assistant message that made the
+            call (`message.id`): calls made in one turn share it, as the two
+            `Read`s in skill-tool-denied do. None on Kilo, or if the event has
+            no id. Left out of comparisons, so a call equals one built without it.
     """
 
     tool: str
@@ -111,6 +115,7 @@ class ToolCall:
     error: str | None = None
     call_id: str | None = None
     step: int | None = None
+    turn: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -189,7 +194,7 @@ def _kilo_exit(event: dict) -> int | None:
 
 def _claude_tool_calls(events: str) -> ToolCalls:
     """tool_calls for Claude Code's stream. A call with no result in the stream is left out, and is a doubt."""
-    uses: list[tuple[str, str, dict[str, Any], str | None]] = []  # each call: id, tool, input, parent call's id
+    uses: list[tuple[str, str, dict[str, Any], str | None, str | None]] = []  # each call: id, tool, input, parent call's id, turn
     results: dict[str, str | None] = {}  # a result's call id -> its text if it is an error, else None
     unparsed = unreadable = 0
     for line in events.splitlines():
@@ -207,21 +212,27 @@ def _claude_tool_calls(events: str) -> ToolCalls:
             if block["type"] == "tool_use":
                 use = _tool_use(block)
                 unreadable += use is None
-                uses += [(*use, parent)] if use else []
+                uses += [(*use, parent, _turn(event))] if use else []
             elif block["type"] == "tool_result":
                 result = _tool_result(block)
                 unreadable += result is None
                 if result:
                     results[result[0]] = _words(block.get("content")) if result[1] else None
-    agents = {use_id: given.get("subagent_type") for use_id, tool, given, _ in uses if tool == "Agent"}
+    agents = {use_id: given.get("subagent_type") for use_id, tool, given, *_ in uses if tool == "Agent"}
     calls = tuple(
-        _claude_call(use_id, tool, given, results[use_id], _caller(parent, agents))
-        for use_id, tool, given, parent in uses
+        replace(_claude_call(use_id, tool, given, results[use_id], _caller(parent, agents)), turn=turn)
+        for use_id, tool, given, parent, turn in uses
         if use_id in results
     )
     pending = sum(use_id not in results for use_id, *_ in uses)
     orphans = len(results.keys() - {use_id for use_id, *_ in uses})
     return ToolCalls("claude-code", calls, _claude_doubt(unparsed, unreadable, pending, orphans))
+
+
+def _turn(event: dict) -> str | None:
+    """An `assistant` event's `message.id`, or None if it has none."""
+    turn = event["message"].get("id")
+    return turn if isinstance(turn, str) and turn else None
 
 
 def _claude_call(use_id: str, tool: str, given: dict[str, Any], error: str | None, by: str | None) -> ToolCall:

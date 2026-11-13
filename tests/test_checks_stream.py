@@ -341,3 +341,21 @@ def test_a_kilo_call_that_ran_has_no_error_whatever_its_state_holds():
     [call] = tool_calls(kilo_bash(lambda state: state.update(error="left over"))).calls
 
     assert (call.ran, call.error) == (True, None)
+
+
+def test_each_claude_code_call_carries_its_turn_and_kilos_none():
+    calls = tool_calls(claude("skill-tool-denied")).calls
+
+    assert [call.tool for call in calls] == ["Bash", "Read", "Read", "Read", "Edit"]
+    # The second and third Reads were made in one turn; the others each in their own.
+    turns = [call.turn for call in calls]
+    assert turns[2] == turns[3] and len(set(turns)) == 4 and None not in turns
+    assert {call.turn for call in tool_calls(kilo_bash(lambda state: None)).calls} == {None}
+
+
+def test_a_claude_code_turn_without_an_id_is_none():
+    events = [json.loads(line) for line in claude("settings-allow-ran").splitlines()]
+    for event in events:
+        if event["type"] == "assistant":
+            event["message"]["id"] = 7
+    assert [call.turn for call in tool_calls("\n".join(map(json.dumps, events))).calls] == [None]

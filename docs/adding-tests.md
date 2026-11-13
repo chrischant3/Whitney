@@ -305,6 +305,7 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `subagent_not_delegated` | agent | `kilo`, `claude-code` | The agent handed work to the `agent` | 80% |
 | `permission_held` | harness | `kilo`, `claude-code` | A tool call matching `forbidden_input` ran | 90% |
 | `ran_before` | agent | `kilo`, `claude-code` | A shell command matching `then` ran with no command matching `first` before it | 80% |
+| `read_before_edit` | agent | `kilo`, `claude-code` | The first edit ran with no read of a file matching `file` before it | 80% |
 
 `skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo and Claude Code output that makes them fail, so treat a pass from them as likely, not proven. On `claude-code`, `skill_loaded` and `subagent_delegated` each failed in a control in [one real run](results/2026-11-11-claude-code-skills-agents.md).
 
@@ -568,6 +569,51 @@ Both harnesses show a shell command's exit: Kilo in each `bash` call's output, C
 It is also inconclusive, as the skill checks are, when a line of the output isn't an event Whitney knows, a tool call isn't in the shape Whitney expects, a step ended in tool calls the output doesn't show (Kilo), a tool call has no result in the output or a result belongs to no call in it (Claude Code), or a shell call has no command. It judges the agent, so a run that ended early can't pass.
 
 [`examples/tests-before-commit`](../examples/tests-before-commit/) is a working example, and its real run is in [results](results/2026-11-13-ran-before.md): the template ran the tests before committing, and the baseline, without the rule, committed with no tests.
+
+### `read_before_edit`
+
+Tests a rule such as "read `CONSTRAINTS.md` before you edit any file". It reads the agent's tool calls in the order the harness's output lists them, and fails if the first edit ran with no read of a file matching `file` before it. It passes if a read came before it.
+
+```json
+{"check": "read_before_edit", "file": "(^|/)CONSTRAINTS\\.md$"}
+```
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `file` | required | A regular expression searched in the path of each file read, such as `(^|/)CONSTRAINTS\.md$`. Paths are as the agent gave them: the read tools get an absolute path, a shell command often a relative one, so anchor the pattern on the file's name, not on a folder. It must not match an empty path. |
+| `edits` | every edit | A regular expression searched in each edited path, such as `\.py$`. Only edits it matches are judged, so "read the style guide before editing Python" leaves the agent free to edit a note first. |
+| `whole_file` | `false` | Count only a read of the whole file, not a partial one (below). |
+
+| Outcome | When |
+|---|---|
+| read first | A read of the file came before the first edit that ran. |
+| edited unread | The first edit that ran had no read of the file before it. |
+| inconclusive | No edit ran, the only reads before the edit were made in its own step or were shell reads that may have failed, a shell command before the read may have written a file, or the output may hide a call. |
+
+**What counts as a read:**
+
+- **The harness's read tool**: Kilo's `read` (`filePath`) and Claude Code's `Read` (`file_path`).
+- **A shell reader**, in Kilo's `bash` or Claude Code's `Bash`, whose output the agent saw: `cat`, `less` and `more`, which read the whole file, and `head`, `tail` and `sed -n`, which read part of it. A reader counts wherever it stands in the command: `cd src && cat CONSTRAINTS.md`, `cat < CONSTRAINTS.md`, after a variable set in front, a path such as `/bin/cat`, a keyword (`then cat X`, `do cat X`, `{ cat X; }`, `time`, `!`) or a program that runs another (`sudo`, `env`, `command`, `nohup`, `exec`, `xargs`). `sed` counts only with `-n` and without `-i`, and its script, given or after `-e`, `-f`, `--expression` or `--file`, isn't taken for a file, nor is the value of `head`'s or `tail`'s `-n` or `-c`.
+- **Only output the agent saw.** A reader whose output went elsewhere isn't a read: redirected (`cat X > /dev/null`, `cat X >> notes`), inside `$(...)` (`x=$(cat X)`), or piped into another program (`cat X | grep rule`, `cat X | wc -l`). Piped into a pager (`cat`, `less`, `more`) it is still a whole read, into `head` or `tail` a partial one. A redirect of another stream, such as `2>&1` or `2>/dev/null`, hides nothing.
+- **A shell read that may have failed** makes neither a pass nor a fail: one whose command exited non-zero (the file may not exist), and one whose exit may be another command's, because `||`, `&`, or `;` or a new line with another command after it, follows the reader (`cat X || true`, `cat X; echo done`). `&&` after it doesn't: exit 0 then means the reader passed too. Nor does a pipe, so `cat X | head` that exits 0 counts even if `cat` failed; Whitney takes the reader as passed there.
+- **How a command is split.** Lines are joined where one ends in `\` or leaves a quote open, then each is split as the shell would split it, and a heredoc's body is skipped. A command whose quote is open to the end is split line by line on spaces. File names are matched as written: a glob or brace such as `cat CONST*.md` isn't expanded, so it doesn't match a pattern for `CONSTRAINTS.md`.
+- **A partial read counts**, unless `whole_file` is set: a read tool's call with an `offset` or a `limit`, and `head`, `tail` and `sed -n`. The decision: an agent that opened the file and read from it has read it, as far as the output can show, and a read tool stops at a line limit of its own anyway, so even a plain read of a long file is partial. Set `whole_file` when the rule means the whole file, such as a short checklist. The explanation marks a partial read.
+- **A read in the same step as the edit doesn't count as before it.** An agent can ask for a read and an edit at once: one Kilo step, or one Claude Code turn (calls with the same `message.id`). The edit was written before the read's result came back, so a run whose only read before the edit was made in its step is inconclusive.
+- **Not a read**: a search, `grep` and `rg` in the shell and Kilo's `grep` and `glob` tools, which show a few lines or only names; `ls`, `wc`, `echo` and `git show`; any other program, such as a Python script, that opens the file; a subagent's calls on Kilo (below); and a tool Whitney can't see, such as an MCP server's.
+
+**What counts as an edit:** Kilo's `edit` and `write`, and Claude Code's `Edit`, `Write` and `NotebookEdit`, on a path `edits` matches. Only calls that ran count, on either side: a refused edit edited nothing, and a refused read read nothing. On Kilo an edit that failed when it ran, say because its old text wasn't found, is expected to have the same `error` status as a refused one, so it wouldn't count either; no saved Kilo stream holds one. Only the first edit is judged: if it came after the read, every later one did too.
+
+**Edits through the shell.** A shell command can write a file, but which file it wrote can't be read reliably from its text. So a command that may write, and ran before the read (an earlier call, or earlier in the same command, as in `sed -i … till.py; cat CONSTRAINTS.md`), keeps a pass from standing: the edit it may have made came before the read. It never makes a fail. A command is taken as maybe writing if it redirects output into a file (`>`, `>>`, `&>`, `>&file`, but not into `/dev/null`, and not `2>&1` or `>&2`), runs `tee`, `cp`, `mv`, `rm`, `touch`, `patch`, `truncate`, `dd`, `install` or `ln`, runs `sed -i`, `perl -i` or `awk -i inplace`, or runs a `git` subcommand that changes the working tree (`apply`, `am`, `checkout`, `restore`, `switch`, `reset`, `stash`, `merge`, `rebase`, `pull`, `cherry-pick`, `mv`, `rm`, `clean`, `revert`), behind a keyword or wrapper too. Any other program that writes, such as a Python script or a formatter (`black`, `ruff --fix`, `prettier --write`), isn't seen. A run whose only edits were through the shell is inconclusive, and says how many commands may have written a file.
+
+**Shell commands Whitney can't read.** Kilo's `background_process` and Claude Code's `Monitor` run shell commands too. Whitney doesn't read their input, so a run in which either ran is inconclusive.
+
+Each explanation names the read and the edit it ordered, with each call's place in the run, a shell command's exit where the output shows it, and who made it on Claude Code, such as ``read of `/…/project/CONSTRAINTS.md` (call 1) came before edit of `/…/project/till.py` (call 4)``. A long path is shown by its end, a long command by its start. The score's metadata lists every read of the file and every judged edit that ran.
+
+**Subagents.** As for `ran_before`: on `kilo` a run in which a subagent ran is inconclusive, since the subagent may have read or edited unseen; on `claude-code` a subagent's calls count like the main agent's.
+
+It is also inconclusive in the same cases as `ran_before` (a line Whitney doesn't know, a call in a shape it doesn't expect, a call the output may hide), when a shell call has no command, and when a read or edit call has no file path. It judges the agent, so a run that ended early can't pass.
+
+[`examples/read-before-edit`](../examples/read-before-edit/) is a working example, and its real runs are in [results](results/2026-11-13-read-before-edit.md): the baseline, without the rule, edited `till.py` with no read of `CONSTRAINTS.md` in every run, and the template read it first only once the rule said "your first action in every task is to read `CONSTRAINTS.md`". Haiku ignored the softer "read it before you edit" twice, so word such a rule as the first thing to do.
 
 ### Patterns and files
 
