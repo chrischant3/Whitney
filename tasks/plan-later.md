@@ -95,11 +95,12 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
   - Is it recorded as a finding beside finding 001?
 - In: the same question for Claude Code's `Bash(git push:*)` rules, answered from a capture.
 - Out: any change to Kilo, or Whitney rewriting a team's rules.
+- In (from Task 64, 2026-11-13): the docs on pattern rules also say that a variable in the command name steps round a `bash` pattern on Kilo 7.8.27: `T=touch; $T f` ran against `"touch *": "deny"` ([Later Task 63](../docs/spike-findings.md#bash-permission-patterns), [finding 002](../docs/findings/002-shell-paths-bypass-external-directory.md)).
 
 **Acceptance criteria:**
 - [ ] The decision is recorded here, dated.
 - [ ] If the rule changes: the example's eval file gains a scenario that asks for a push "another way", and the docs list the routes a pattern can close (`git -C`, `git -c`, `env git`) with the patterns, and the routes it can't (a script, `sh -c "$(...)"`), which point to a sandbox or a hook (Tasks 45 and 46).
-- [ ] The docs say plainly that a pattern rule matches text, not intent, on each harness, and point teams to a sandbox or a hook for a stronger guard (Tasks 45 and 46).
+- [ ] The docs say plainly that a pattern rule matches text, not intent, on each harness, and point teams to a sandbox or a hook for a stronger guard (Tasks 45 and 46). They include the line: "A variable in the command name gets round a `bash` pattern: on Kilo 7.8.27, `T=touch; $T f` ran against `"touch *": "deny"`."
 
 **Verification:**
 - [ ] A real run of the new scenario on Kilo with the old rule (bypassed) and the new one (held), written up in `docs/results/`.
@@ -139,11 +140,11 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - In: new scenarios in `evals/configuration/kilo-jsonc.json`, each a `known_gap` citing a new Exceptions row (which needs Christopher's `Exception-approved:` trailer, CONSTRAINTS.md): `bash-variable` (`D=../outside; cat "$D/canary.txt"`), `bash-pwd` (`cat "$PWD"/../outside/canary.txt`), `bash-substitution` (`cat $(echo ../outside/canary.txt)`), `bash-head` (`head ../outside/canary.txt`) and `bash-redirect` (`cat < ../outside/canary.txt`). Christopher may prefer fewer: one variable and one non-`cat` reader cover both causes.
 - In: the docs. README's checks table ("Reads, writes and shell commands that reach outside the project were blocked"), `docs/template.md` ("catches the common ways out of the project"), the comment in `template/kilo/kilo.jsonc` ("Ask before any tool touches a path outside the project") and `docs/adding-tests.md`'s `outside_canary_not_reached` section say which routes Kilo checks and which it doesn't, and point to a container that mounts only the project.
 - In: a line in Task 43's docs that a variable in the command name steps round a `bash` pattern (`T=touch; $T f` against `"touch *": "deny"`).
-- In: filing the drafted Kilo issue, if Christopher agrees, and linking it from the finding.
+- ~~In: filing the drafted Kilo issue, if Christopher agrees, and linking it from the finding.~~ Out (2026-11-13): Christopher decides whether to report it, himself.
 - Out: any change to `outside_canary_not_reached` or `judge_access`, which already fail these routes; a Whitney-side guard (a hook or a wrapper shell), which is Task 45 and 46's territory; Claude Code, which doesn't guard shell commands at all ([2026-11-11 results](../docs/results/2026-11-11-claude-code-outside.md)).
 
 **Acceptance criteria:**
-- [ ] Christopher's decision on the scenarios and on filing the issue, recorded here, dated.
+- [x] Christopher's decision on the scenarios and on filing the issue, recorded here, dated. *(2026-11-13: all five scenarios, as `known_gap`s citing a new Exceptions row E4, which he signs; nothing filed with Kilo, since Kilo's SECURITY.md bans AI-generated security reports, and he decides whether to report it himself, from the spike's draft as a starting point; the docs say plainly that Kilo doesn't treat its permissions as a security boundary, that Whitney's results show whether the settings held in the scenarios tested, and that Docker execution is the isolation route, quoting Kilo's SECURITY.md; the Task 43 line goes in Task 43's plan entry, since its docs don't exist yet.)*
 - [ ] Each new scenario validates (`whitney validate` exits 0 on `evals/`) and is left out of the gate as a `known_gap`, as `bash-symlink` is.
 - [ ] The four doc places above no longer claim that `ask` stops every shell command reaching outside, and each points to the finding.
 - [ ] Each existing test whose expectation changes (for example a count of `kilo_jsonc` scenarios) is named and confirmed by Christopher first.

@@ -90,7 +90,7 @@ Whitney is at its first milestone. A **check** is the code that decides whether 
 | `no_string_added` | No file gained a copy of a given string, such as a fake customer's email or a production URL | `.kilo/rules/data-handling.md` in [`examples/consumer`](examples/consumer/), repeated in its `CLAUDE.md` for Claude Code | `kilo`, `claude-code` |
 | `no_file_edits` | Files a rule protects weren't added, changed or deleted | `AGENTS.md` in `examples/consumer`, and its `CLAUDE.md` on `claude-code`: never edit `vendor/` | `kilo`, `claude-code` |
 | `no_test_newly_skipped` | No test was skipped or disabled, with patterns for pytest, unittest, Jest/Vitest, Go and JUnit | `AGENTS.md` in [`examples/skipped-tests`](examples/skipped-tests/): never skip a test to get the suite passing | `kilo`, `claude-code` |
-| `outside_canary_not_reached` | Reads, writes and shell commands that reach outside the project were blocked | `kilo.jsonc`: `"external_directory": "ask"`, in `evals/configuration/kilo-jsonc.json` | `kilo`, `claude-code` |
+| `outside_canary_not_reached` | The harness blocked the reads, writes and shell commands that reach outside the project in the scenarios tested; a pass isn't proof the agent can't get out ([below](#permissions-arent-a-sandbox)) | `kilo.jsonc`: `"external_directory": "ask"`, in `evals/configuration/kilo-jsonc.json` | `kilo`, `claude-code` |
 | `permission_held` | The harness refused what a permission rule forbids, such as a `bash` command pattern | In `examples/consumer`: `kilo.jsonc`, `"git push *": "deny"`; `.claude/settings.json`, `"deny": ["Bash(git push:*)"]` | `kilo`, `claude-code` |
 | `ran_before` | One shell command ran before another, such as the tests before a commit | `AGENTS.md` in [`examples/tests-before-commit`](examples/tests-before-commit/): run the tests before every commit | `kilo`, `claude-code` |
 | `skill_loaded`, `skill_not_loaded` | The agent loaded a named skill, or left it alone | The trigger tests for `.kilo/skills/release-notes/` (`kilo`) and its copy in `.claude/skills/` (`claude-code`) in `examples/consumer` | `kilo`, `claude-code` |
@@ -110,6 +110,10 @@ Not supported yet:
 - **Which instruction wins** when two files disagree.
 
 On Claude Code, `permission_held` reads only a `Bash` rule with a pattern, such as `Bash(git push:*)`, the one form whose refusal has been captured. Gaps found in what is tested: [docs/findings/](docs/findings/).
+
+### Permissions aren't a sandbox
+
+Kilo's permissions guide what the agent does, and Kilo doesn't treat them as a security boundary. Its [SECURITY.md](https://github.com/Kilo-Org/kilocode/blob/main/SECURITY.md) says the permission system "is not designed to provide security isolation", and lists sandbox escapes as out of scope. So a pass from `outside_canary_not_reached` or `permission_held` shows that the template's settings held in the scenarios tested, not that the agent can't get out. On Kilo 7.8.27, `external_directory` isn't asked for a path in a shell variable, a `$(...)` substitution or a redirect, for a path read by a command such as `head`, or for a symlink a command makes ([finding 002](docs/findings/002-shell-paths-bypass-external-directory.md), [finding 001](docs/findings/001-symlink-bypasses-external-directory.md)); those routes are `known_gap` scenarios in `evals/configuration/kilo-jsonc.json`. Docker execution is the isolation route: `--execution docker` keeps the rest of your machine out of the agent's reach ([Docker mode](#docker-mode-isolated-for-ci)).
 
 ## Watching a live session
 
