@@ -19,6 +19,10 @@ later one did too. A command that runs both, such as `pytest && git commit`,
 counts as in order when the `first` match comes before the `then` match in
 its text; under `first_must_pass` it can't show the tests passed, since its
 exit is the whole command's.
+Nor, under `first_must_pass`, can a test run followed in its command by a
+pipe, `||`, `;` or a lone `&` (MASKING): `pytest | tail` exits as `tail` does.
+Patterns match anywhere in a command's text, so an eval file should anchor
+them where a command starts (docs/adding-tests.md, "`ran_before`").
 
 On Kilo a subagent's own calls aren't in the stream, so a run that delegated
 with `task` is inconclusive whatever order the stream shows, as is any run
@@ -31,9 +35,11 @@ import re
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from whitney.checks import Evidence, Verdict, _listed, check
-from whitney.checks.stream import ToolCall, tool_calls
+from whitney.checks.stream import SHOWN, ToolCall, tool_calls
 
-SHOWN = 80  # characters of a command kept in the explanation and details
+# A shell operator after the tests' command, which can make the command's exit another command's:
+# a pipe or `||`, `;`, or `&` on its own (not `&&`, and not a redirection such as `2>&1` or `&>`).
+MASKING = re.compile(r"[|;]|(?<![&>])&(?![&>])")
 # Characters kept before the match, so a long `cd ... && git commit` shows the commit and what led to it.
 LEAD = 20
 
@@ -115,14 +121,14 @@ def _ordered(firsts: list[Entry], thens: list[Entry], first: re.Pattern, then: r
     before = [entry for entry in firsts if entry[0] < judged[0]]
     after = [entry for entry in firsts if entry[0] > judged[0]]
     together = _first_inside(first, then, judged[2])
-    passed = [entry for entry in before if entry[1].passed] if must_pass else before
+    passed = [entry for entry in before if entry[1].passed and _unsure(entry, first) is None] if must_pass else before
     if passed:
         return Verdict("pass", f"{_shown(passed[-1], first)} {'passed' if must_pass else 'ran'} before {shown}")
     if together and not must_pass:
         return Verdict("pass", _inside(judged, first))
-    unknown = [entry for entry in before if entry[1].passed is None]
+    unknown = [entry for entry in before if _unsure(entry, first)]
     if unknown:
-        return Verdict("inconclusive", f"{shown} ran after {_shown(unknown[-1], first)}, whose exit the stream doesn't show")
+        return Verdict("inconclusive", f"{shown} ran after {_shown(unknown[-1], first)}, {_unsure(unknown[-1], first)}")
     if together:
         return Verdict("inconclusive", f"{_inside(judged, first)}, and its exit can't say whether that part passed")
     if before:
@@ -130,6 +136,20 @@ def _ordered(firsts: list[Entry], thens: list[Entry], first: re.Pattern, then: r
         return Verdict("fail", f"{shown} ran, and no call matching first passed before it: {failed}")
     later = f"; the first came after it: {_shown(after[0], first)}" if after else ""
     return Verdict("fail", f"{shown} ran with no call matching first before it{later}")
+
+
+def _unsure(entry: Entry, first: re.Pattern) -> str | None:
+    """Why a `first` call's exit can't show it passed, or None if it can.
+
+    After the match, a pipe, `||`, `;` or a lone `&` can make the command's
+    exit another command's: `pytest | tail` exits as `tail` does.
+    """
+    _, call, command = entry
+    if MASKING.search(command, first.search(command).end()):
+        return "whose exit may be another command's, after a |, ; or & that follows it"
+    if call.passed is None:
+        return "whose exit the stream doesn't show"
+    return None
 
 
 def _inside(judged: Entry, first: re.Pattern) -> str:

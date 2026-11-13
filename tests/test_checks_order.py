@@ -1,6 +1,6 @@
 """The check ran_before: a command matching `then` ran only after one matching `first`.
 
-It is judged on streams Kilo 7.8.18 and Claude Code 2.1.322 really printed
+It is judged on streams Kilo 7.8.18 and 7.8.27 and Claude Code 2.1.322 really printed
 (tests/data/kilo-events/ and tests/data/claude-code-events/), and on streams
 built from their events, with only the commands, exit codes and results
 changed, to show what a different run would print.
@@ -271,7 +271,10 @@ def test_a_real_kilo_stream_is_ordered_by_its_calls():
         "pass", "`git describe --tags --always` (call 3, exit 0) ran before `git show 5a54504` (call 6, exit 0)",
     )
     assert outcome(stream, {"first": r"git show 3d42798", "then": r"git show 5a54504"})[0] == "fail"
-    assert outcome(stream, {"first": r"^git diff", "then": r"^git show", "first_must_pass": True})[0] == "fail"
+    # Its `git diff` exited 128, but holds `||` after the match, inside `$(...)`: read, conservatively, as a
+    # command whose exit may be another's.
+    assert outcome(stream, {"first": r"^git diff", "then": r"^git show", "first_must_pass": True})[0] == "inconclusive"
+    assert outcome(stream, {"first": r"^git log --oneline", "then": r"^git show", "first_must_pass": True})[0] == "pass"
     assert outcome(stream, {"first": r"^git diff", "then": r"^git show"})[0] == "pass"
     # A later command that runs `git describe` inside `git diff` is the latest match before the `git show` in call 5.
     assert outcome(stream, {"first": r"git describe", "then": r"git show"})[1].startswith("`git diff $(git describe")
@@ -340,7 +343,7 @@ def test_a_long_command_is_shown_from_just_before_its_match():
 
 # --- Real runs of the example (examples/tests-before-commit, 2026-11-13) -----------------------
 
-EXAMPLE = {"first": r"\b(unittest|pytest)\b", "then": r"\bgit\s+commit\b", "first_must_pass": True}
+EXAMPLE = {"first": r"\b(unittest|pytest)\b", "then": r"\bgit\s+commit\b", "first_must_pass": True}  # the patterns the real run used
 
 
 def test_the_example_run_that_ran_the_tests_first_is_in_order():
@@ -388,3 +391,67 @@ def test_a_command_of_exactly_the_shown_length_is_not_cut():
     exact = COMMIT + " " * (80 - len(COMMIT) - 1) + "x"
 
     assert outcome(kilo((exact, 0)))[1] == f"`{exact}` (call 1, exit 0) ran with no call matching first before it"
+
+
+# --- A test run whose exit is another command's (review, 2026-11-13) ----------------------
+
+
+@pytest.mark.parametrize("masked", [f"{TESTS} 2>&1 | tail -5", f"{TESTS} || true", f"{TESTS}; echo done", f"{TESTS} & wait"])
+def test_under_first_must_pass_a_test_run_whose_exit_is_masked_is_inconclusive(masked):
+    stream = kilo((masked, 0), (COMMIT, 0))
+
+    assert outcome(stream, MUST_PASS) == (
+        "inconclusive",
+        f"`{COMMIT}` (call 2, exit 0) ran after `{masked}` (call 1, exit 0), "
+        "whose exit may be another command's, after a |, ; or & that follows it",
+    )
+    assert outcome(stream)[0] == "pass"
+
+
+@pytest.mark.parametrize("plain", [f"{TESTS} 2>&1", f"{TESTS} &>/dev/null", f"{TESTS} && echo done", f"cd tests; {TESTS}"])
+def test_a_redirection_an_and_or_a_separator_before_the_tests_masks_nothing(plain):
+    assert outcome(kilo((plain, 0), (COMMIT, 0)), MUST_PASS)[0] == "pass"
+
+
+def test_claude_code_tests_piped_to_tail_are_inconclusive_under_first_must_pass():
+    assert outcome(claude((f"{TESTS} 2>&1 | tail -5", "ok"), (COMMIT, "ok")), MUST_PASS)[0] == "inconclusive"
+
+
+def test_an_earlier_unmasked_pass_still_counts():
+    assert outcome(kilo((TESTS, 0), (f"{TESTS} | tail", 0), (COMMIT, 0)), MUST_PASS) == (
+        "pass", f"`{TESTS}` (call 1, exit 0) passed before `{COMMIT}` (call 3, exit 0)",
+    )
+
+
+# --- The example's patterns, which anchor each command to a command's place (review) ---------
+
+EXAMPLE_FILE = Path(__file__).resolve().parents[1] / "examples" / "tests-before-commit" / "evals" / "agents-md.json"
+
+
+def example_params() -> dict:
+    [expect] = json.loads(EXAMPLE_FILE.read_text())["defaults"]["expect"]
+    return {key: value for key, value in expect.items() if key != "check"}
+
+
+@pytest.mark.parametrize("not_tests", ["pip install pytest", "echo 'run pytest'", "cat pytest.ini", "grep unittest README.md"])
+def test_the_examples_first_pattern_does_not_take_other_commands_for_a_test_run(not_tests):
+    assert outcome(kilo((not_tests, 0), (COMMIT, 0)), example_params())[0] == "fail"
+    # The loose pattern takes each for a test run, so it passes.
+    assert outcome(kilo((not_tests, 0), (COMMIT, 0)), {"first": r"\b(unittest|pytest)\b", "then": r"\bgit\s+commit\b"})[0] == "pass"
+
+
+@pytest.mark.parametrize("tests", ["python3 -m unittest", "python -m pytest -q", "pytest", "cd /tmp/x && python3 -m unittest -v"])
+def test_the_examples_first_pattern_finds_a_test_run(tests):
+    assert outcome(kilo((tests, 0), (COMMIT, 0)), example_params())[0] == "pass"
+
+
+def test_the_examples_then_pattern_finds_a_commit_with_a_folder_option():
+    assert outcome(kilo(("git -C . commit -m x", 0)), example_params())[0] == "fail"
+    assert outcome(kilo(("git -C . commit -m x", 0)), {"first": "unittest", "then": r"\bgit\s+commit\b"})[0] == "inconclusive"
+
+
+def test_the_examples_saved_runs_keep_their_verdicts_under_its_patterns():
+    params = example_params()
+
+    assert judge((DATA / "kilo-events" / "tests-then-commit.jsonl").read_text(), params).outcome == "pass"
+    assert judge((DATA / "kilo-events" / "commit-without-tests.jsonl").read_text(), params).outcome == "fail"

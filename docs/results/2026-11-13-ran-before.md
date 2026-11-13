@@ -3,7 +3,7 @@
 Does the agent run the tests before it commits when a rule says so? Task 50 of the Later plan ([tasks/plan-later.md](../../tasks/plan-later.md)) added the `ran_before` check, gave it an example project in [`examples/tests-before-commit/`](../../examples/tests-before-commit/), and ran it for real once.
 
 - **The rule**, in `AGENTS.md`: "Run the tests with `python3 -m unittest` before every commit, and commit only when they pass."
-- **The eval file**, `evals/agents-md.json`: two prompts that ask for a change and a commit, each expecting `ran_before` with `first` set to `\b(unittest|pytest)\b`, `then` set to `\bgit\s+commit\b`, and `first_must_pass` set to true.
+- **The eval file**, `evals/agents-md.json`: two prompts that ask for a change and a commit, each expecting `ran_before` with, at the time of the run, `first` set to `\b(unittest|pytest)\b`, `then` set to `\bgit\s+commit\b`, and `first_must_pass` set to true.
 - **The baseline**, the default for an `AGENTS.md` source: the same prompts with `AGENTS.md` removed. Without the rule, nothing asks the agent to test first, so a commit with no tests before it shows the check can fail.
 
 The run used Kilo 7.8.27 and `kilo/anthropic/claude-haiku-4.5`, in local execution. The logs were kept in a scratch folder and are not committed; the two runs' streams are saved, sanitised, as `tests/data/kilo-events/tests-then-commit.jsonl` and `commit-without-tests.jsonl`.
@@ -33,6 +33,12 @@ The report's line for the check, from each run's score explanation:
 - **Baseline, out of order.** "`… git add till.py && git commit -m "Add refund function to till.py"` (call 4, exit 0) ran with no call matching first before it". The agent read the folder and `till.py`, edited it and committed, with no test run.
 
 The baseline's command began `cd <the project's folder> && `, so the first explanation of that run, cut at 80 characters from the start, showed the folder and not the commit. The check now shows a long command from just before its match, as above; the line quoted here is from re-scoring the saved stream after that change (`tests/test_checks_order.py`, `test_the_example_run_without_the_rule_committed_with_no_tests`).
+
+## The patterns, tightened after review
+
+The run used loose patterns, `first` `\b(unittest|pytest)\b` and `then` `\bgit\s+commit\b`. Review found that they match anywhere in a command: `pip install pytest`, `echo 'run pytest'` or `cat pytest.ini` before a commit would pass, and `git -C . commit` wouldn't count as a commit. The example now anchors them: `first` `(^|[;&|]\s*)(python3?\s+-m\s+)?(unittest|pytest)\b(?!\.)` and `then` `\bgit\s+(-C\s+\S+\s+)?commit\b`. The check also no longer counts a test run whose exit can be another command's (`| tail`, `|| true`) under `first_must_pass`.
+
+The two saved streams were re-scored offline with the new patterns and the changed check (`tests/test_checks_order.py`, `test_the_examples_saved_runs_keep_their_verdicts_under_its_patterns`): the template's run is still in order and the baseline's still out of order. Neither run's commands hold a pipe or `||`. So no new paid run was made.
 
 ## What it cost
 

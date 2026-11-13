@@ -1,6 +1,6 @@
 """whitney.checks.stream: one reader of each harness's stream, every tool call in order.
 
-It is judged on the streams Kilo 7.8.18 and Claude Code 2.1.322 really
+It is judged on the streams Kilo 7.8.18 and 7.8.27 and Claude Code 2.1.322 really
 printed (tests/data/kilo-events/ and tests/data/claude-code-events/), and on
 those streams changed by hand to show what a different run would print.
 """
@@ -55,7 +55,7 @@ def test_a_kilo_bash_command_that_ran_and_failed_has_its_exit_code():
 
     assert read.harness == "kilo"
     assert read.calls == (
-        ToolCall("bash", {"command": "ls does-not-exist", "description": "List non-existent directory"}, True, False, 1),
+        ToolCall("bash", {"command": "ls does-not-exist", "description": "List non-existent directory"}, True, False, 1, step=1),
     )
     assert read.doubt is None
     assert read.shell() == ("bash", "command") == SHELL["kilo"]
@@ -139,7 +139,11 @@ def test_a_claude_code_bash_command_that_ran_and_failed_has_its_exit_code():
 
     assert read.harness == "claude-code"
     assert read.calls == (
-        ToolCall("Bash", {"command": "git push origin main", "description": "Push to origin main branch"}, True, False, 1),
+        ToolCall(
+            "Bash", {"command": "git push origin main", "description": "Push to origin main branch"}, True, False, 1,
+            error="Exit code 1\nerror: src refspec main does not match any\nerror: failed to push some refs to 'origin'",
+            call_id="toolu_01LcXxsaWCzEpaPVeU8s6azS",
+        ),
     )
     assert read.doubt is None
     assert read.shell() == ("Bash", "command") == SHELL["claude-code"]
@@ -297,3 +301,43 @@ def test_a_subagents_refused_call_says_who_made_it():
     assert [(call.tool, call.ran, call.exit_code, call.by) for call in calls] == [
         ("Agent", True, None, None), ("Bash", False, None, "a subagent"),
     ]
+
+
+# --- What each call carries for later checks (review, 2026-11-13) --------------------------
+
+
+def test_each_kilo_call_carries_its_step_and_a_refusals_words():
+    [refused] = tool_calls(kilo("bash-deny-pattern")).calls
+    calls = tool_calls(kilo("skill-named")).calls
+
+    assert refused.error.startswith("The user has specified a rule which prevents you from using this specific tool call.")
+    assert (refused.call_id, calls[0].call_id) == (None, None)
+    assert {call.error for call in calls} == {None}
+    assert [call.step for call in calls] == [1, 2, 2, 2, 3, 4, 4]
+
+
+def test_a_kilo_error_that_is_not_text_is_left_out():
+    def refused(state):
+        state.update(status="error", error={"message": "no"})
+
+    [call] = tool_calls(kilo_bash(refused)).calls
+
+    assert (call.ran, call.error) == (False, None)
+
+
+def test_each_claude_code_call_carries_its_id_and_its_error_text():
+    [failed] = tool_calls(claude("settings-allow-ran")).calls
+    [refused] = tool_calls(claude("settings-deny-held")).calls
+    [worked] = tool_calls(claude("outside-bash-read")).calls
+
+    assert failed.call_id == "toolu_01LcXxsaWCzEpaPVeU8s6azS"
+    assert failed.error.startswith("Exit code 1\nerror: src refspec main")
+    assert refused.error.startswith("Permission to use Bash with command git push origin main has been denied.")
+    assert (worked.error, worked.step) == (None, None)
+    assert (refused.call_id, worked.call_id) == ("toolu_015X76mRukQrZseatSDqnoas", "toolu_0138LjpMfxMeuECAeMufLDcM")
+
+
+def test_a_kilo_call_that_ran_has_no_error_whatever_its_state_holds():
+    [call] = tool_calls(kilo_bash(lambda state: state.update(error="left over"))).calls
+
+    assert (call.ran, call.error) == (True, None)

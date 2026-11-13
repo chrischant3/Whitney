@@ -8,13 +8,19 @@ still read the stream with their own readers in whitney.checks.skills and
 whitney.checks.permissions, and this module uses those readers' small shape
 helpers rather than copying them.
 
-Kilo 7.8.18 (`kilo run --format json`; docs/spike-findings.md, "Phase 5:
-confirmed fields"; fixtures under tests/data/kilo-events/):
+Kilo 7.8.18, and 7.8.27 in the two Task 50 fixtures (`kilo run --format
+json`; docs/spike-findings.md, "Phase 5: confirmed fields" and "Phase 5
+Later Task 50"; fixtures under tests/data/kilo-events/):
 
 - each call is a `tool_use` event whose `part.tool` names the tool and
   `part.state` holds `status` and `input`;
-- `status` "completed" ran, and "error" was refused or failed before it ran
-  (bash-deny-pattern, task-deny);
+- `status` "completed" ran, and "error" was refused (bash-deny-pattern,
+  task-deny) or aborted: a lost run recorded in docs/spike-findings.md had a
+  `read` call that had started, with `state.error` "Tool execution aborted"
+  and `state.metadata.interrupted` true. No saved fixture holds an aborted
+  call, so `interrupted` isn't read and an aborted call counts as not run;
+  `state.error`'s words are kept in the call's `error`;
+- each call's step is counted from the `step_start` events;
 - a completed `bash` call's exit code is `part.state.metadata.exit`: 0, 1 in
   bash-nonzero-exit, 128 for a failed `git diff` in skill-named.
 
@@ -30,9 +36,14 @@ under tests/data/claude-code-events/):
   event; a subagent's calls are there too, in events whose
   `parent_tool_use_id` is the call that started it (subagent-loads-skill);
 - a result that isn't an error ran. A `Bash` call that ran and exited
-  non-zero has an error result whose text starts with the line "Exit code <n>" (settings-allow-ran: 1; skill-forked: 127). Any other error result
-  didn't run: a permission rule's refusal (settings-deny-held), a hook's
-  (hook-pretooluse-deny) or a tool's own error.
+  non-zero has an error result whose text starts with the line
+  "Exit code <n>" (settings-allow-ran: 1; skill-forked: 127). Any other
+  error result didn't run: a permission rule's refusal (settings-deny-held),
+  a hook's (hook-pretooluse-deny) or a tool's own error;
+- a `Bash` result that isn't an error is taken as passed: no fixture shows a
+  non-zero exit without `is_error`. A command started with
+  `run_in_background` returns before it ends, so its result can't say
+  whether it passed; no fixture holds one, and the field isn't read.
 
 The order is the order in which the stream lists the calls. Two calls made
 in one step are taken in the order the step lists them, though the harness
@@ -44,7 +55,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from whitney.checks.permissions import _words
 from whitney.checks.skills import (
     CLAUDE_BLOCK_TYPES,
     CLAUDE_EVENT_TYPES,
@@ -60,6 +70,7 @@ from whitney.checks.skills import (
     _tool_use,
 )
 
+SHOWN = 80  # characters of a call's input or command that a check's explanation and details keep
 # Each harness's shell tool, and the key of its input that holds the command.
 SHELL = {"kilo": ("bash", "command"), "claude-code": ("Bash", "command")}
 # How Claude Code's result of a Bash command that exited non-zero begins (settings-allow-ran, skill-forked):
@@ -81,6 +92,14 @@ class ToolCall:
             Claude Code gives it only for a command that failed.
         by: who made the call: None for the main agent, else "the subagent
             <its name>" or "a subagent" (Claude Code only).
+        error: the harness's words for a call that didn't run, or for a
+            Claude Code call whose result is an error: Kilo's `state.error`,
+            Claude Code's result text. None otherwise.
+        call_id: Claude Code's `tool_use` id, which its result names. None on
+            Kilo, whose call and result are one event.
+        step: on Kilo, the number of the step the call was made in, counting
+            `step_start` events from 1. None on Claude Code, which prints each
+            content block as an event of its own.
     """
 
     tool: str
@@ -89,6 +108,9 @@ class ToolCall:
     passed: bool | None = None
     exit_code: int | None = None
     by: str | None = None
+    error: str | None = None
+    call_id: str | None = None
+    step: int | None = None
 
 
 @dataclass(frozen=True)
@@ -125,7 +147,7 @@ def tool_calls(events: str) -> ToolCalls:
 def _kilo_tool_calls(events: str) -> ToolCalls:
     """tool_calls for Kilo's stream."""
     calls: list[ToolCall] = []
-    unparsed = unreadable = hidden = subagents = 0
+    unparsed = unreadable = hidden = subagents = steps = 0
     known = in_step = False  # as in whitney.checks.skills._kilo_calls
     for line in events.splitlines():
         event = _event(line)
@@ -135,6 +157,7 @@ def _kilo_tool_calls(events: str) -> ToolCalls:
         known = True
         if event["type"] == "step_start":
             in_step = False
+            steps += 1
         elif event["type"] == "step_finish":
             hidden += _ended_in_tool_calls(event) and not in_step
         if event["type"] != "tool_use":
@@ -148,7 +171,11 @@ def _kilo_tool_calls(events: str) -> ToolCalls:
         ran = status == "completed"
         subagents += tool == "task" and ran
         exit_code = _kilo_exit(event) if ran and tool == SHELL["kilo"][0] else None
-        calls.append(ToolCall(tool, given, ran, None if exit_code is None else exit_code == 0, exit_code))
+        error = None if ran else event["part"]["state"].get("error")
+        calls.append(ToolCall(
+            tool, given, ran, None if exit_code is None else exit_code == 0, exit_code,
+            error=error if isinstance(error, str) else None, step=steps,
+        ))
     return ToolCalls("kilo", tuple(calls), _doubt(known, unparsed, unreadable, hidden, subagents))
 
 
@@ -188,7 +215,7 @@ def _claude_tool_calls(events: str) -> ToolCalls:
                     results[result[0]] = _words(block.get("content")) if result[1] else None
     agents = {use_id: given.get("subagent_type") for use_id, tool, given, _ in uses if tool == "Agent"}
     calls = tuple(
-        _claude_call(tool, given, results[use_id], _caller(parent, agents))
+        _claude_call(use_id, tool, given, results[use_id], _caller(parent, agents))
         for use_id, tool, given, parent in uses
         if use_id in results
     )
@@ -197,12 +224,20 @@ def _claude_tool_calls(events: str) -> ToolCalls:
     return ToolCalls("claude-code", calls, _claude_doubt(unparsed, unreadable, pending, orphans))
 
 
-def _claude_call(tool: str, given: dict[str, Any], error: str | None, by: str | None) -> ToolCall:
-    """One Claude Code call, from its result's text if that is an error (`error`), else None."""
+def _claude_call(use_id: str, tool: str, given: dict[str, Any], error: str | None, by: str | None) -> ToolCall:
+    """One Claude Code call, from its id and its result's text if that is an error (`error`), else None."""
     shell = tool == SHELL["claude-code"][0]
     if error is None:
-        return ToolCall(tool, given, True, True if shell else None, None, by)
+        return ToolCall(tool, given, True, True if shell else None, None, by, call_id=use_id)
     exited = CLAUDE_EXIT.match(error) if shell else None
     if exited is None:
-        return ToolCall(tool, given, False, None, None, by)
-    return ToolCall(tool, given, True, False, int(exited.group(1)), by)
+        return ToolCall(tool, given, False, None, None, by, error, use_id)
+    return ToolCall(tool, given, True, False, int(exited.group(1)), by, error, use_id)
+
+
+def _words(content: Any) -> str:
+    """A tool result's content as text: the string, or its text blocks run together."""
+    if isinstance(content, str):
+        return content
+    blocks = content if isinstance(content, list) else []
+    return "".join(str(block.get("text", "")) for block in blocks if isinstance(block, dict))

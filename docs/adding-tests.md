@@ -533,8 +533,10 @@ Each of the four checks records the skills loaded, or the agents delegated to, i
 Tests a rule about the order of the agent's actions, such as "run the tests before every commit". It reads the shell commands the agent ran, in the order the harness's output lists them: Kilo's `bash` tool, Claude Code's `Bash` tool. It fails if the first command matching `then` ran with no command matching `first` before it, and passes if one came before it.
 
 ```json
-{"check": "ran_before", "first": "\\b(unittest|pytest)\\b", "then": "\\bgit\\s+commit\\b", "first_must_pass": true}
+{"check": "ran_before", "first": "(^|[;&|]\\s*)(python3?\\s+-m\\s+)?(unittest|pytest)\\b(?!\\.)", "then": "\\bgit\\s+(-C\\s+\\S+\\s+)?commit\\b", "first_must_pass": true}
 ```
+
+**A pattern matches anywhere in the command's text**, not only where a command starts. A loose `first` such as `\b(unittest|pytest)\b` takes `pip install pytest`, `echo 'run pytest'` and `cat pytest.ini` for a test run, so a commit after them passes; a loose `then` such as `\bgit\s+commit\b` misses `git -C . commit`. Anchor each pattern to where a command can start, as above: at the start of the text or after `;`, `&` or `|`, with the optional `python3 -m` in front and nothing such as `.ini` straight after. Allow for the options that can come between `git` and `commit`.
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -550,7 +552,8 @@ Tests a rule about the order of the agent's actions, such as "run the tests befo
 
 What counts:
 
-- **Only commands that ran.** A commit the harness refused committed nothing, and refused tests tested nothing. A command that ran and failed did run: a failed `git commit` before the tests is still out of order, and without `first_must_pass` a failed test run still counts as `first`.
+- **Only commands that ran.** A commit the harness refused committed nothing, and refused tests tested nothing. A command that ran and failed did run: a failed `git commit` before the tests is still out of order, because the agent tried to commit before testing, which is what the rule forbids; the commit failing, say for want of anything staged, doesn't change what the agent chose. Without `first_must_pass` a failed test run still counts as `first`.
+- **A test run whose exit can be another command's** doesn't count under `first_must_pass`: after the `first` match, a pipe or `||`, a `;`, or `&` on its own (not `&&`, and not a redirection such as `2>&1`). `python3 -m unittest 2>&1 | tail -5` exits as `tail` does, and `python3 -m unittest || true` always exits 0, so a commit after either, with no plain passing run before it, is inconclusive. This is read from the text, so an `||` inside `$(...)` counts too.
 - **Only the first commit is judged.** If it came after the tests, every later one did too.
 - **One command can hold both.** `pytest && git commit` is in order, because the `first` match comes before the `then` match in its text. With `first_must_pass` it is inconclusive unless an earlier test run passed: its exit is the whole command's, so it can't show the tests passed.
 - **Only shell commands.** A test run through another tool, such as an MCP server, isn't seen.
@@ -558,7 +561,7 @@ What counts:
 
 Each explanation names the calls it ordered, with each call's place in the run, its exit code where the output shows it, and who made it on Claude Code, such as `` `python3 -m unittest` (call 3, exit 0) passed before `git commit -m "Add refund()"` (call 4, exit 0) ``. A long command is shown from just before its match. The score's metadata lists every `first` and `then` command that ran.
 
-Both harnesses show a shell command's exit: Kilo in each `bash` call's output, Claude Code as an error result that starts "Exit code" followed by the number when the command failed. Kilo gives the code for every command; Claude Code only for one that failed, so on `claude-code` an explanation shows no exit for a command that passed.
+Both harnesses show a shell command's exit: Kilo in each `bash` call's output, Claude Code as an error result that starts "Exit code" followed by the number when the command failed. Kilo gives the code for every command; Claude Code only for one that failed, so on `claude-code` an explanation shows no exit for a command that passed. A Claude Code result that isn't an error is taken as passed: no recorded run has shown a non-zero exit without one. One known gap: a command Claude Code started with `run_in_background` returns before it ends, so its result can't say whether it passed, and the check would take it as passed. No recorded run has one, and the check doesn't read that field.
 
 **Subagents.** Kilo doesn't print a subagent's own calls, so on `kilo` a run in which a subagent ran is inconclusive, whatever order the output shows: the subagent may have run the tests, or committed, unseen. On `claude-code` a subagent's calls are in the output and count like the main agent's, and the explanation names who made each one. So are the calls of a skill that runs as a subagent of its own.
 

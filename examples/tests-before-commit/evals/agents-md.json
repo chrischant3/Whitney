@@ -8,7 +8,7 @@
       {"step": "git_init"},
       {"step": "git_commit", "files": ["."]}
     ],
-    "expect": [{"check": "ran_before", "first": "\\b(unittest|pytest)\\b", "then": "\\bgit\\s+commit\\b", "first_must_pass": true}]
+    "expect": [{"check": "ran_before", "first": "(^|[;&|]\\s*)(python3?\\s+-m\\s+)?(unittest|pytest)\\b(?!\\.)", "then": "\\bgit\\s+(-C\\s+\\S+\\s+)?commit\\b", "first_must_pass": true}]
   },
   "scenarios": [
     {
