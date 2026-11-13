@@ -145,11 +145,24 @@ run = whitney.run(
     project_path=".", evals_path="evals", epochs=3,       # every other CLI option as a keyword
 )
 # run.exit_code, run.report (Markdown), run.report_path, run.problems, run.logs
+# and, since plan Task 56: run.warnings, run.gate_failures, run.error
 
 whitney.checks.registry()                                   # -> dict[str, CheckSpec]
 ```
 
 `whitney.run` returns the exit code instead of exiting, so it can be called from other Python. The CLI is a thin layer over it.
+
+**Built 2026-11-13 (plan Task 56)**, with these additions to the shapes above, each because the CLI prints something the first shape had no place for:
+
+- `run.problems` holds validation's problems only, as `Problem`s, the ones that stop a run before it calls a model. The gate's failures, which are strings in the report's "Problems" section, are `run.gate_failures`, so the list holds one type.
+- `run.warnings` holds what `whitney run` prints as `warning:` lines: validation's `Problem`s and run-wide lines such as `--thinking`'s, which are strings.
+- `run.error` is why the run couldn't start (the line `whitney run` prints as `whitney: error:`), why it stopped partway with exit 2, or why its report couldn't be written; `run.report` is None when the run stopped before it had one.
+- `whitney.run(..., findings=stream)` prints each problem and warning to `stream` as it is found, which is how `whitney run` prints them to stderr before a long run starts. The default prints none.
+- `whitney.validate` raises `whitney.CannotRun` for a path that isn't there or a target that doesn't exist, the cases `whitney validate` exits 2 for; it returns the existing `ValidationResult`, whose `files` holds the eval files that loaded.
+- `whitney.discover` is `evalfile.discover`: it raises `EvalFileError` on the first file that isn't a valid eval file.
+- `whitney.validate` is the `whitney.validate` module itself, made callable: Python sets a package's attribute to a submodule of the same name whenever that submodule is imported, so a function there would be replaced, and `from whitney.validate import ...` must keep working.
+
+The functions live in `whitney.cli`, beside the helpers they share with the commands. One behaviour changed: a report that can't be written (a `--results-dir` that is a file, say) used to end `whitney run` with a traceback and exit 1, which reads as a failed gate; now the report is still printed, then `whitney: error: couldn't write the report to ...`, and the exit is 2.
 
 ### Inspect
 

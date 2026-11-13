@@ -128,6 +128,19 @@ whole body in one piece; and in
 `MAX_STORED_BODY + 2`, which decode more of a gzip body but keep and judge
 the same MAX_STORED_BODY bytes. `zlib.MAX_WBITS | 33` there is the same
 number as `| 32` (MAX_WBITS is 15, whose low bit is already set).
+Task 56 (2026-11-13) moved code into new functions, so mutants that survived
+in the old ones now survive under new names: `targets.check_target(target, None)`
+and `(target, )` in `cli._check_target`, and `_check_target(args.target, None)`
+in `cli._run_steps`, since `check_target` refuses by target and base URL and
+never reads the execution mode; the same in `cli.validate`, which passes
+`"local"` (`None`, `"XXlocalXX"`, `"LOCAL"`); `missing_package(None, ...)` and
+`(..., None)` in `_run_steps`, which only a Docker run of claude-code reaches;
+`improvement_report(..., None)` and without `records` in `cli.render_report`
+(the old `write_report`), whose default reads the same records again; and the
+codec name's case in `cli.report_file`. Not equivalent, and left as they were
+in the old `_validate`: `skill_copy_warnings(..., evals_path=None)` and without
+it in `cli.validate`, which differ only for an evals root inside the project
+holding a skill folder, which no test builds.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11

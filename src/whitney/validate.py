@@ -36,6 +36,8 @@ Each problem names the file and the location, such as
 
 import json
 import re
+import sys
+import types
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -1110,3 +1112,27 @@ def _min_pass_rate_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec]
         "a file can raise its bar, never lower it"
     ))]
 
+
+
+class _CallableModule(types.ModuleType):
+    """This module, made callable so that `whitney.validate(...)` is the API's validate (whitney.cli.validate).
+
+    The spec names the function `whitney.validate`, and this module already
+    has that name: Python sets a package's attribute to its submodule each
+    time the submodule is first imported, so a function of that name in
+    whitney/__init__.py would be replaced by this module. Calling the module
+    instead keeps both `whitney.validate(...)` and `from whitney.validate
+    import ...` working. The CLI is imported only when it is called, since
+    importing this module mustn't load Inspect.
+    """
+
+    def __call__(
+        self, project_path: str | Path, evals_path: str | Path, target: str | None = None, constraints: str | Path | None = None
+    ) -> ValidationResult:
+        """whitney.cli.validate: the eval files and the project checked for `target`, as `whitney validate` checks them."""
+        from whitney.cli import validate
+
+        return validate(project_path, evals_path, target, constraints)
+
+
+sys.modules[__name__].__class__ = _CallableModule
