@@ -963,6 +963,91 @@ What Claude Code sent, run in the project folder and in what the loader staged f
 
 See [the results page](results/2026-11-12-capture-followups.md#not-shown).
 
+## Later Task 48: the instruction hierarchy, nested `AGENTS.md` (2026-11-13)
+
+The proposal's future work starts with "test hierarchy": instruction files at more than one level, and a nearer file overriding a farther one. Whitney stages one project root and refuses inherited files above it, and neither harness's order for nested files was recorded. This spike records which nested files each harness loads, when, and in what order. The order found is in [load-order.md](load-order.md#nested-agentsmd-the-instruction-hierarchy); the follow-on task is drafted in [tasks/plan-later.md](../tasks/plan-later.md) (Task 62).
+
+### Kilo: setup
+
+- **Harness:** Kilo 7.8.27 (`/opt/homebrew/bin/kilo`), local, `kilo run --pure --format json`, model `kilo/anthropic/claude-haiku-4.5` through the Kilo Gateway with the user's Kilo login.
+- **How:** a scratch driver, the approach of [Task 60](results/2026-11-13-capture-retention.md), not committed. It builds a tree under `$TMPDIR`, runs Kilo once with Whitney's temporary HOME (`kilo_home`), its `KILO_CONFIG` overlay (`local_config_overlay`, the harness permissions) and its git isolation, with the `kilo` provider's `baseURL` set to the spike's logging proxy (`spikes/prompt_capture.py`, `logging_proxy`), which forwards to `https://api.kilo.ai` and keeps every request body in full. `GIT_CEILING_DIRECTORIES` is the tree's own folder, so git finds the scratch repository from a subfolder but nothing above the tree. Whitney's own runner wasn't used because it refuses a file above the project (`check_no_inherited_instructions`) and runs only at the project root, which are the two things under test.
+- **Files:** each file has a marker and a rule that conflicts with the others: "Every file you create must start with the line `owner: <level>`", where the level is `parent` (`outer/AGENTS.md`, above the project), `root` (`outer/proj/AGENTS.md`), `sub` (`outer/proj/sub/AGENTS.md`, "in this folder") or `deep` (`outer/proj/sub/deep/AGENTS.md`). `sub/notes.txt` (and `sub/more.txt`) give the agent something to read.
+- **Prompt:** "Read sub/notes.txt. Then create the file sub/summary.txt holding one sentence that sums it up, following this project's rules. Reply with the first line of sub/summary.txt", or the variant each case names.
+- **Runs:** seven, one per case, each two to four model calls. **Cost:** $0.19, the sum of the Gateway's `upstream_inference_cost` over the 21 model calls and one title call.
+- **Raw output** (the proxy's requests and responses, the overlay, the stream) stayed in the session's scratch folder: it holds provider settings and local paths. Only the counts and the short excerpts below are here.
+
+### Kilo: what reached the model
+
+"First request" is the run's first model call, before the agent has done anything; "later" are the calls after each tool step.
+
+| Case | Git root | Launched in | Agent does | First request (system prompt) | Later requests | First line written |
+|---|---|---|---|---|---|---|
+| `root-read` | `proj` | `proj` | reads `sub/notes.txt`, writes `sub/summary.txt` | `proj/AGENTS.md` | `sub/AGENTS.md` added, inside the `read` tool's result; system prompt unchanged | `owner: sub` |
+| `root-write` | `proj` | `proj` | writes `sub/summary.txt`, reads nothing | `proj/AGENTS.md` | nothing added | `owner: root` |
+| `deep-read` | `proj` | `proj` | reads `sub/deep/notes.txt`, writes there | `proj/AGENTS.md` | `sub/deep/AGENTS.md` then `sub/AGENTS.md`, both in that one `read` result | `owner: deep` |
+| `two-reads` | `proj` | `proj` | reads `sub/notes.txt`, then `sub/more.txt` | `proj/AGENTS.md` | `sub/AGENTS.md` in the first `read` result only; the second has none | `owner: sub` |
+| `from-sub` | `proj` | `proj/sub` | reads and writes in `sub` | `sub/AGENTS.md` then `proj/AGENTS.md` | nothing added | `owner: sub` |
+| `no-git` | none | `proj` | as `root-read` | `proj/AGENTS.md` | `sub/AGENTS.md` added in the `read` result | `owner: sub` |
+| `no-git-from-sub` | none | `proj/sub` | reads and writes in `sub` | `sub/AGENTS.md` only | nothing added | `owner: sub` |
+
+In every case the parent folder's `outer/AGENTS.md` (in `root-read`, `no-git` and `no-git-from-sub`) never reached the model, at launch or later. Its marker was in none of the 21 requests.
+
+What this shows:
+
+- **At launch, Kilo walks up from the launch folder to the git root**, and puts each `AGENTS.md` it finds in the system prompt, the nearest first, each under its own `Instructions from: <absolute path>` line. With no git repository, it loaded only the launch folder's own `AGENTS.md`: neither the project's (`no-git-from-sub`) nor the parent's, though the environment block named `/` as the "Workspace root folder".
+- **A subfolder's `AGENTS.md` loads when the agent reads a file in that folder**, not when it writes one. It is appended to that `read` call's result in a `<system-reminder>` block, under the same `Instructions from:` line, and stays there in every later request, since Kilo resends the history. The system prompt and tool list never changed: all 14 later calls had the first call's, `cache_control` markers aside.
+- **One read loads every unloaded `AGENTS.md` between the file and the files already loaded**, nearest first (`deep-read`: `sub/deep/` then `sub/`). A file already loaded, in the system prompt or an earlier result, isn't sent again (`two-reads`, and `proj/AGENTS.md` in every case).
+- **Kilo's stream says so too.** The `tool_use` event of that `read` has `part.state.metadata.loaded`, a list of the absolute paths it loaded (`["…/proj/sub/deep/AGENTS.md", "…/proj/sub/AGENTS.md"]` in `deep-read`, `[]` for `two-reads`' second read), and its `part.state.output` holds the `<system-reminder>`. So a check can find a lazy load without a capture.
+- **The nearer rule won whenever it reached the model**, in each of the six runs where it did; in `root-write`, where it never reached it, the agent followed the root rule. In `root-read` the model said why: "Since the file is being created in the sub/ directory, I'll follow the sub/ rule which is more specific to that location." One run per case, on Haiku: this is what happened, not a rate.
+- **Neither loader stages a nested file today.** For a project holding `sub/AGENTS.md` (and `sub/CLAUDE.md`), `load_project_files_for` staged only the root files on both targets, and `files_not_staged_reasons` named neither nested file, so the report doesn't say they were left out.
+
+Excerpt, the `read` result in `root-read`'s second request (paths shortened):
+
+```
+<path>…/outer/proj/sub/notes.txt</path>
+<type>file</type>
+<content>
+1: Notes for sub/: the build is run with make.
+
+(End of file - total 1 lines)
+</content>
+
+<system-reminder>
+Instructions from: …/outer/proj/sub/AGENTS.md
+# Rules for sub/
+
+- Marker: T48-SUB-7740
+- Every file you create in this folder must start with the line `owner: sub`.
+
+</system-reminder>
+```
+
+### Claude Code: what the docs say
+
+No capture: this session had no `ANTHROPIC_API_KEY`. Claude Code 2.1.325 is installed. From the [memory docs](https://code.claude.com/docs/en/memory.md), read 2026-11-13:
+
+- **At launch:** `CLAUDE.md` and `CLAUDE.local.md` "from your current working directory and every directory above it". "All discovered files are concatenated into context rather than overriding each other … content is ordered from the filesystem root down to your working directory … so instructions closer to where you launched Claude are read last." In each folder `CLAUDE.local.md` comes after `CLAUDE.md`.
+- **In subfolders:** `CLAUDE.md` and `CLAUDE.local.md` below the working folder load "once Claude reads, writes, or edits another file in that subdirectory", a Bash `cat` or `head` of a single file counting as a read.
+- **`AGENTS.md`**, by default only when there is no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in the working folder or above it: "at session start: every `AGENTS.md` and `.claude/AGENTS.md` in your working directory and the directories above it", and "as Claude works in subdirectories: a subdirectory's `AGENTS.md`, when Claude opens a file there with the Read tool and that subdirectory has none of the three `CLAUDE.md` files of its own". So, unlike a nested `CLAUDE.md`, a nested `AGENTS.md` isn't said to load on a write, an edit or a Bash read.
+- **Conflicts:** "if two instructions contradict each other, Claude may pick one arbitrarily." The docs give an order, not a precedence.
+- **After `/compact`:** the project root's `CLAUDE.md` is re-read and re-injected; "nested CLAUDE.md files in subdirectories … load again on demand."
+- Not said: how a lazily loaded file is placed in the request (a `<system-reminder>`, a tool result or the system prompt), and whether the walk above the working folder stops at a git root. Whitney's refusal of these files above the project (`check_no_inherited_instructions`) fits a walk to the filesystem root.
+
+**Capture: open.** A run with a key, as in Kilo's cases, would settle the placement, the write and Bash-read triggers for `AGENTS.md`, and whether a `CLAUDE.md` in a subfolder hides that folder's `AGENTS.md`.
+
+| Target | Harness | Captured | Note |
+|---|---|---|---|
+| `kilo` (Gateway) | Kilo 7.8.27 | 7 runs, 21 model calls, every request in full | above |
+| `claude-code` | Claude Code 2.1.325 | not run | no `ANTHROPIC_API_KEY`; docs only |
+
+### Not shown
+
+- One run per case, on Haiku, through the Gateway only: not a provider key, Docker or the VS Code extension.
+- Reads through `bash` (`cat sub/notes.txt`), `grep` or `glob`, edits of an existing file, and a subagent's reads: whether they load a nested `AGENTS.md` wasn't tried. Only the `read` tool did, and the `write` tool didn't.
+- A nested `CLAUDE.md` or `CONTEXT.md` beside or instead of a nested `AGENTS.md`, `.kilo/rules/` in a subfolder, and a subfolder that is its own git repository.
+- What happens to a lazily loaded file when Kilo compacts the conversation, since it lives in a tool result.
+- Why Kilo doesn't walk up without git; only that it didn't, twice.
+
 ## Not yet done
 
 - **Hooks and plugins (Task 40).** A `Stop` hook making a skill load; a hook's effect with a model other than Haiku or a skill other than `release-notes`; why silent hooks went with more `Skill` calls; a Kilo plugin's effect apart from chance; plugins in the VS Code extension.

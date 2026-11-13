@@ -1,6 +1,6 @@
 # Where Kilo loads instructions from
 
-**Draft from the T2 spike.** Kilo CLI 7.8.18 in Docker, 2026-11-02, one run per location. Re-run [`spikes/load_order.py`](../spikes/load_order.py) after any Kilo upgrade. The skill, agent and command folders were added on 2026-11-06 from Phase 5 Task 16 ([below](#skills-agents-and-commands)); re-run [`spikes/skill_agent_shapes.py`](../spikes/skill_agent_shapes.py) for those. The rules folders, skills above the project and `instructions` globs were added the same day from Phase 5 Task 8 ([below](#rules-skill-folders-and-instructions-globs)).
+**Draft from the T2 spike.** Kilo CLI 7.8.18 in Docker, 2026-11-02, one run per location. Re-run [`spikes/load_order.py`](../spikes/load_order.py) after any Kilo upgrade. The skill, agent and command folders were added on 2026-11-06 from Phase 5 Task 16 ([below](#skills-agents-and-commands)); re-run [`spikes/skill_agent_shapes.py`](../spikes/skill_agent_shapes.py) for those. The rules folders, skills above the project and `instructions` globs were added the same day from Phase 5 Task 8 ([below](#rules-skill-folders-and-instructions-globs)). Nested `AGENTS.md` files were added on 2026-11-13 from the later plan's Task 48 ([below](#nested-agentsmd-the-instruction-hierarchy)).
 
 ## How this was tested
 
@@ -150,10 +150,50 @@ With `"skills": {"paths": ["./my-skills", "<a folder outside the project>"]}` in
 
 On Linux, node-glob matches case-sensitively. **What Whitney does:** it expands `*`, `?`, `**`, `[...]`, `[!...]` and `{a,b}` as node-glob does, with case-blind names on macOS and Windows (`project_files._instruction_matches`), and refuses a pattern with any other glob syntax, naming it. The tests in `tests/test_project_files.py` pin each row. Whitney still leaves out what its safety rules leave out (`.env` files, symlinks, `node_modules/` and the other excluded folders), and the evals path. Kilo reads those, but the staged copy never holds them.
 
+## Nested AGENTS.md (the instruction hierarchy)
+
+**From the later plan's Task 48.** Kilo 7.8.27 on the host, 2026-11-13, through the Kilo Gateway, every model request captured in full by the spike's logging proxy; seven runs on Haiku. Claude Code from its docs only. Full write-up, with each case's capture, in [spike-findings.md](spike-findings.md#later-task-48-the-instruction-hierarchy-nested-agentsmd-2026-11-13).
+
+### Kilo
+
+| File | When it reaches the model | Where |
+|---|---|---|
+| `AGENTS.md` in the launch folder | at launch | system prompt, under `Instructions from: <absolute path>` |
+| `AGENTS.md` in each folder above the launch folder, up to the git root | at launch | system prompt, after the launch folder's: **nearest first** |
+| The same, with no git repository | never: only the launch folder's own file loaded | |
+| `AGENTS.md` above the git root (a parent folder of the project) | never | |
+| `AGENTS.md` in a subfolder of the launch folder | when the agent reads a file in that subfolder with the `read` tool; not when it writes one there | appended to that `read` result in a `<system-reminder>`, under `Instructions from: <absolute path>`; it stays in the history from then on |
+| Several unloaded `AGENTS.md` between the file read and the launch folder (`sub/deep/notes.txt`) | the same read | one `<system-reminder>`, **nearest first** (`sub/deep/`, then `sub/`) |
+| A subfolder's `AGENTS.md` already loaded | not sent again on a later read there | |
+
+The system prompt doesn't change when a nested file loads. Kilo's stream records each lazy load: the `read` event's `part.state.metadata.loaded` lists the paths it loaded. In each run where a nearer file's conflicting rule reached the model, the model followed it; where it didn't reach it (a write with no read), the model followed the root's.
+
+### Claude Code
+
+From the [memory docs](https://code.claude.com/docs/en/memory.md), read 2026-11-13; not captured (no `ANTHROPIC_API_KEY`):
+
+| File | When it loads | Order |
+|---|---|---|
+| `CLAUDE.md`, `CLAUDE.local.md` in the launch folder and every folder above it | at launch | from the filesystem root down: the nearest is read **last**; `CLAUDE.local.md` after `CLAUDE.md` in each folder |
+| `AGENTS.md`, `.claude/AGENTS.md` in the launch folder and above, when none of the three `CLAUDE.md` files is there or above | at launch | not stated beyond this |
+| `CLAUDE.md`, `CLAUDE.local.md` in a subfolder | once Claude reads, writes or edits a file there; a Bash `cat` or `head` of one file counts as a read | not stated |
+| `AGENTS.md` in a subfolder that has none of the three `CLAUDE.md` files | when Claude opens a file there with the Read tool | not stated |
+| A nested `CLAUDE.md` after `/compact` | loads again on demand | |
+
+The docs say contradicting instructions may be resolved "arbitrarily"; they give an order, not a precedence. Where a lazily loaded file sits in the request is not stated.
+
+### The two side by side
+
+- At launch Kilo puts the nearest file **first**; Claude Code's docs put it **last**.
+- Kilo stops at the git root (and, without git, at the launch folder); Claude Code's docs walk to the filesystem root, which is why `check_no_inherited_instructions` refuses these files above a project.
+- Both load a subfolder's file only once the agent works there. On Kilo, writing a file there isn't enough; on Claude Code a write loads a nested `CLAUDE.md`, but the docs name only the Read tool for a nested `AGENTS.md`.
+
+**What Whitney does:** neither loader stages a nested `AGENTS.md`, `CLAUDE.md` or `CLAUDE.local.md`, and the report's "Not Staged" table doesn't name them. A run always starts at the staged project's root. The follow-on task (Task 62 in [tasks/plan-later.md](../tasks/plan-later.md)) would stage them and let an eval name one as its `source`.
+
 ## Not yet tested
 
-- **Precedence when several sources conflict.** Kilo's docs rank: agent prompt > project `instructions` > root `AGENTS.md` > global `instructions`. That ordering is out of MVP scope (it's "test hierarchy" in the proposal's future work), but the same token method extends to it.
-- Per-directory `AGENTS.md` files, which the docs say load lazily when the agent reads files in that folder.
+- **Precedence when several sources conflict.** Kilo's docs rank: agent prompt > project `instructions` > root `AGENTS.md` > global `instructions`. Only nested `AGENTS.md` files against each other have been tried ([above](#nested-agentsmd-the-instruction-hierarchy)); the other sources haven't.
+- Nested `CLAUDE.md`, `CONTEXT.md` and `.kilo/rules/` on Kilo, and a nested file loaded by a `bash` read, `grep`, `glob` or an edit. Per-directory `AGENTS.md` loaded by the `read` tool was tested in Task 48 ([above](#nested-agentsmd-the-instruction-hierarchy)).
 - Whether the VS Code extension resolves the same files. That's T9.
 - Agents and commands in folders above a staged project. Skills above it were checked in Task 8 ([above](#rules-skill-folders-and-instructions-globs)); `check_no_inherited_instructions` refuses a run with `.kilo/` or `.kilocode/` above the project, and with `.claude/skills/` or `.agents/skills/` above it inside a git repository ([above](#rules-skill-folders-and-instructions-globs)).
 
@@ -221,6 +261,7 @@ Claude Code 2.1.322 offers the skills in the project's `.claude/skills/` and the
 | In the project | `kilo` | `claude-code` |
 |---|---|---|
 | Root `AGENTS.md` | staged | staged only when there is no `CLAUDE.md` or `.claude/CLAUDE.md` |
+| `AGENTS.md`, `CLAUDE.md` in a subfolder | not staged, and not named as left out; Kilo reads a subfolder's `AGENTS.md` when a file there is read ([above](#nested-agentsmd-the-instruction-hierarchy)) | not staged, and not named as left out; Claude Code's docs say it reads them when the agent works there |
 | Root `CLAUDE.md` | staged. Whether Kilo reads it beside an `AGENTS.md` hasn't been tested here | staged, with `.claude/CLAUDE.md` |
 | `kilo.jsonc`, `.kilo/rules/`, `.kilo/skills/`, `.kilo/agents/` | staged | not staged |
 | `.claude/skills/` | staged | staged |

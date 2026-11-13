@@ -24,7 +24,7 @@ Real runs cost money. Each task gives a rough cost, and anything over a few cent
 
 1. Fixes first, since they change results users already see or keep secrets out: Tasks 41, 42, 43 and 61.
 2. Then the safety design that both kinds of hook need: Task 44 (spike), then Tasks 45 (Claude Code hooks) and 46 (Kilo plugins).
-3. Task 60 (what a capture keeps) before Tasks 47 and 48, which need later requests in full.
+3. Task 60 (what a capture keeps) before Tasks 47 and 48, which need later requests in full. Task 62 after Task 48, which drafted it.
 4. Task 50 before Task 51, which uses the same stream reader.
 5. The other items in any order. Each says what it needs.
 
@@ -238,14 +238,47 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: building it. That would be a follow-on task.
 
 **Acceptance criteria:**
-- [ ] `docs/spike-findings.md` has a section for each harness, with its version, the files used and the captures.
-- [ ] `docs/load-order.md` records the order found.
-- [ ] A short proposal here for the follow-on task, with its own scope, criteria and verification.
+- [x] `docs/spike-findings.md` has a section for each harness, with its version, the files used and the captures. 2026-11-13: "Later Task 48" there; Kilo 7.8.27 with seven captured runs, Claude Code 2.1.325 from its memory docs (read 2026-11-13) with no capture, since there was no `ANTHROPIC_API_KEY`.
+- [x] `docs/load-order.md` records the order found. 2026-11-13: "Nested AGENTS.md (the instruction hierarchy)", both harnesses, and a row in the side-by-side table.
+- [x] A short proposal here for the follow-on task, with its own scope, criteria and verification. 2026-11-13: Task 62 below.
 
 **Verification:**
-- [ ] Captures of what reached the model from each harness, with `AGENTS.md` at the root and in a subfolder holding conflicting rules, before and after the agent works in the subfolder. The later requests come from the spike proxy's full raw capture, as in Task 47.
+- [ ] Captures of what reached the model from each harness, with `AGENTS.md` at the root and in a subfolder holding conflicting rules, before and after the agent works in the subfolder. The later requests come from the spike proxy's full raw capture, as in Task 47. 2026-11-13: **Kilo done**: seven runs, 21 model calls, each request kept in full by the spike proxy behind a scratch driver (Task 60's approach), raw output kept outside the repo; cost $0.19. **Claude Code open**: no `ANTHROPIC_API_KEY` in the session, so only its docs are recorded.
+
+**Found** (2026-11-13): Kilo loads the launch folder's `AGENTS.md` and each one above it up to the git root at launch, nearest first in the system prompt, and none above the git root (none above the launch folder without git). A subfolder's `AGENTS.md` loads only when the agent reads a file there with `read`, appended to that tool result, nearest first, once; a write there doesn't load it. The stream's `read` event lists what it loaded (`part.state.metadata.loaded`). Claude Code's docs give the opposite order at launch (nearest last), a walk to the filesystem root, and a lazy load of a nested `CLAUDE.md` on a read, write or edit, of a nested `AGENTS.md` on a Read. Neither Whitney loader stages a nested file, and the report doesn't name one as left out.
 
 **Dependencies:** Task 31's capture; Task 60 or the raw spike capture. **Size:** S to M. **Cost:** cents.
+
+### Task 62: Nested instruction files as an eval's `source`
+
+**Description:** Task 48 found that both harnesses read an `AGENTS.md` in a subfolder once the agent works there, and that the nearer file's rule won whenever it reached the model. Whitney stages only the project root's instruction files and drops a nested one without naming it, so a team whose rules live in `services/api/AGENTS.md` can't test them, and its report doesn't say they were left out.
+
+**Scope:**
+- In:
+  - Both loaders stage each nested instruction file the harness reads: on `kilo`, `AGENTS.md` in any subfolder (Task 48's runs); on `claude-code`, a subfolder's `CLAUDE.md`, and its `AGENTS.md` only when that folder has no `CLAUDE.md` of its own (the docs), never `CLAUDE.local.md`. They follow the safety rules every staged file follows, including the excluded folders and the evals path.
+  - An eval file's `source` can name one (`"source": "sub/AGENTS.md"`, a path from the project root), and its default baseline removes only that file, so the farther file's rule is what the control gets.
+  - A nested file a loader doesn't stage is named in the report's "Not Staged" table with its reason, as other files are.
+  - A run says whether the nested `source` reached the model. On `kilo`, from the stream: a `read` event whose `part.state.metadata.loaded` lists the file. A run where it never loaded is inconclusive for a check on that rule, not a pass or a fail, since the agent never got it. On `claude-code`, only once a capture shows where a lazy load appears (below).
+  - A worked example of the "nearer file wins" pattern in `docs/adding-tests.md`: the root and the subfolder give conflicting rules, the prompt makes the agent read and write in the subfolder, a check fails if the root's version appears, and the baseline without the subfolder's file is the control.
+- Out:
+  - Files above the project: `check_no_inherited_instructions` keeps refusing them (Claude Code's docs walk to the filesystem root).
+  - Launching the harness in a subfolder (a scenario `workdir`): Task 48's `from-sub` case shows the order it gives, but no scenario needs it yet.
+  - Nested `CONTEXT.md`, nested `.kilo/rules/` and Claude Code's `paths` rules (Task 47).
+
+**Acceptance criteria:**
+- [ ] `whitney validate` accepts a nested `source` on both targets, refuses one the loader didn't stage, naming why, and `docs/adding-tests.md` documents the field with the worked example.
+- [ ] The report's file list shows each staged nested file, and "Not Staged" names each one left out.
+- [ ] On `kilo`, the result's explanation says whether the nested `source` loaded, and from which `read`; a run where it didn't is inconclusive.
+- [ ] `docs/load-order.md`'s side-by-side row for nested files says what each loader stages.
+- [ ] Before building the `claude-code` half: a capture with a key, as in Task 48's Kilo cases, recording where a lazily loaded `CLAUDE.md` and `AGENTS.md` appear in the request, and which actions load them (a Read, a write, a Bash `cat`). If a capture isn't possible, the `claude-code` half is left out and the docs say so.
+
+**Verification:**
+- [ ] A real run on each target of the worked example: the template held (the nearer rule followed) in each epoch where the nested file loaded, and the baseline without it fails in at least one epoch. If the baseline never fails, the scenario is reworded until it does.
+- [ ] A real run where the prompt never touches the subfolder, showing the inconclusive result and its explanation on `kilo`.
+- [ ] `whitney validate` and `whitney run` on the example, with exit codes, the report's lines for the staged file and the check, and the "Not Staged" line for a nested `CLAUDE.local.md`.
+- [ ] Task 31's capture of the run, with the spike proxy's raw requests beside it, showing the nested file's text in the `read` result of a later request.
+
+**Dependencies:** Task 48. Task 47 for the `claude-code` capture of a lazy load, if it has run by then; an `ANTHROPIC_API_KEY` for the `claude-code` half. **Size:** M. **Cost:** cents to a dollar.
 
 ### Task 49: Spike: Kilo's code review and `REVIEW.md`
 
