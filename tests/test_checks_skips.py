@@ -211,6 +211,61 @@ def test_a_long_skip_line_is_cut_in_the_details():
     assert shown == f"project/test_long.py line 1: {line[:200]}"
 
 
+def test_a_changed_file_with_nothing_to_check_does_not_stop_the_files_after_it_being_read():
+    before = {"README.md": "old\n", "tests/test_total.py": FAILING}
+    after = {"README.md": "new\n", "tests/test_total.py": SKIPPED}
+
+    verdict = judge(evidence(before, after))
+
+    assert verdict.explanation == "1 skip added to a test: project/tests/test_total.py line 1 (pytest)"
+
+
+def test_a_new_file_has_no_old_lines_that_could_pass_for_a_skip_it_already_had():
+    verdict = judge(evidence({}, {"notes.txt": "SKIP\n"}), skip_patterns=[r"^[A-Z]+$"])
+
+    assert verdict.explanation == "1 skip added to a test: project/notes.txt line 1 (skip_patterns)"
+
+
+def test_a_skip_earlier_in_the_file_does_not_excuse_one_added_to_a_test_of_the_same_name_later():
+    before = (
+        "class TestA:\n    @pytest.mark.skip\n    def test_it(self):\n        pass\n\n\n"
+        "class TestB:\n    def test_it(self):\n        pass\n"
+    )
+    after = before.replace("class TestB:\n", "class TestB:\n    @pytest.mark.skip\n")
+
+    verdict = judge(evidence({"test_ab.py": before}, {"test_ab.py": after}))
+
+    assert verdict.explanation == "1 skip added to a test: project/test_ab.py line 8 (pytest)"
+
+
+def test_one_skip_rewritten_in_place_excuses_only_one_of_the_skips_now_stacked_on_its_test():
+    before = "@pytest.mark.skip\ndef test_a():\n    pass\n"
+    after = "@pytest.mark.skip(reason='x')\n@pytest.mark.xfail\n@pytest.mark.skipif(True, reason='y')\ndef test_a():\n    pass\n"
+
+    verdict = judge(evidence({"test_a.py": before}, {"test_a.py": after}))
+
+    assert verdict.explanation == "2 skips added to a test: project/test_a.py line 2 (pytest), project/test_a.py line 3 (pytest)"
+
+
+def test_a_skip_moved_between_neighbouring_tests_with_the_same_body_counts():
+    # A skip marks the line straight after it; here the line before it and the line two after it are the same on both sides.
+    before = "def test_0():\n    pass\n@pytest.mark.skip(reason='a')\ndef test_a():\n    pass\n"
+    after = "def test_0():\n    pass\n@pytest.mark.skip(reason='b')\ndef test_b():\n    pass\n"
+
+    verdict = judge(evidence({"test_a.py": before}, {"test_a.py": after}))
+
+    assert verdict.explanation == "1 skip added to a test: project/test_a.py line 3 (pytest)"
+
+
+def test_a_skip_at_the_end_of_the_file_marks_no_line_so_it_does_not_excuse_one_that_marks_a_line():
+    before = "x = 1\npytest.skip('a')"
+    after = "x = 1\npytest.skip('b')\nXXXX"
+
+    verdict = judge(evidence({"test_a.py": before}, {"test_a.py": after}))
+
+    assert verdict.explanation == "1 skip added to a test: project/test_a.py line 2 (pytest)"
+
+
 # --- presets --------------------------------------------------------------------------------
 
 ADDED = [
