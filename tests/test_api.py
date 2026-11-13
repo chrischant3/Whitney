@@ -6,6 +6,7 @@ The runs here use a fake `kilo` on PATH, or a stand-in for Inspect, so no
 model is called.
 """
 
+import inspect
 import io
 import json
 import subprocess
@@ -19,7 +20,7 @@ import whitney
 from whitney import cli
 from whitney.evalfile import EvalFile, EvalFileError, Problem
 from whitney.thresholds import MIN_CONCLUSIVE
-from whitney.validate import ValidationResult
+from whitney.validation import ValidationResult
 
 TOKEN = "CANARY-TEAM-TOKEN-5d21"
 FOLLOWS = (
@@ -120,23 +121,26 @@ def test_the_three_functions_are_importable_from_whitney_with_docstrings():
         assert callable(function)
         assert function.__doc__
     assert whitney.RunResult.__doc__ and whitney.CannotRun.__doc__
-    assert "whitney validate" in type(whitney.validate).__call__.__doc__
+    assert "whitney validate" in whitney.validate.__doc__
 
 
-def test_whitney_validate_is_still_the_module_its_names_are_imported_from():
-    from whitney.validate import validate_evals
-
-    import whitney.validate as module
-
-    assert module is whitney.validate
-    assert module.validate_evals is validate_evals
+def test_whitney_validate_is_a_plain_function_the_cli_calls_too():
+    assert inspect.isfunction(whitney.validate)
+    assert whitney.validate is cli.validate
 
 
-def test_whitney_validate_is_found_before_its_module_is_bound_to_the_package(monkeypatch):
-    module = sys.modules["whitney.validate"]
-    monkeypatch.delattr(whitney, "validate")  # as in a fresh interpreter, before anything imported whitney.validate
+def test_whitney_validate_works_after_its_rules_module_is_imported(consumer):
+    # A submodule import binds the submodule to the package, which once replaced a function named validate.
+    script = (
+        "import sys, whitney.validation, whitney; "
+        "result = whitney.validate(sys.argv[1], sys.argv[2], target='kilo'); "
+        "print([f.eval_name for f in result.files], result.problems, result.warnings)"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script, str(consumer.project), str(consumer.evals)], capture_output=True, text=True, check=True
+    )
 
-    assert whitney.validate is module
+    assert done.stdout.strip() == "['team_rules_md'] [] []"
 
 
 def test_a_name_whitney_doesnt_have_is_an_attribute_error():
@@ -145,7 +149,7 @@ def test_a_name_whitney_doesnt_have_is_an_attribute_error():
 
 
 def test_importing_whitney_loads_neither_inspect_nor_the_cli():
-    # `import whitney.validate` mustn't load inspect_ai (test_validate), and every submodule import runs this package first.
+    # `import whitney.validation` mustn't load inspect_ai (test_validate), and every submodule import runs this package first.
     done = subprocess.run(
         [sys.executable, "-c", "import sys, whitney; print(sorted(m for m in sys.modules if m.startswith(('inspect_ai', 'whitney.cli'))))"],
         capture_output=True, text=True, check=True,

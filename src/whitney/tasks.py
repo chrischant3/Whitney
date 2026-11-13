@@ -54,7 +54,7 @@ from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state, run_completed
 from whitney.setup_steps import SetupError, SetupStep
 from whitney.target_names import TARGETS
-from whitney.validate import _spread_by_the_wrapper, staged_names, tested_permissions
+from whitney.validation import _spread_by_the_wrapper, staged_names, tested_permissions
 from whitney.variants import (
     TEMPLATE,
     apply_variant,

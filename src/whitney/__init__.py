@@ -16,10 +16,11 @@ every `import whitney.<module>` runs first, loads neither Inspect nor the CLI.
 
 import importlib
 
-# Name -> the module that defines it. `validate` is the whitney.validate module itself, which can be called
-# (see the end of validate.py): a function of that name here would be replaced by the module whenever it is imported.
+# Name -> the module that defines it. No submodule may share a name with one of these: importing a submodule
+# binds it to the package under its own name, which would hide the function here.
 _API = {
     "run": "whitney.cli",
+    "validate": "whitney.cli",
     "RunResult": "whitney.cli",
     "CannotRun": "whitney.cli",
     "discover": "whitney.evalfile",
@@ -28,8 +29,6 @@ _API = {
 
 def __getattr__(name: str):
     """The API's names, imported on first use (PEP 562); AttributeError for any other name."""
-    if name == "validate":
-        return importlib.import_module("whitney.validate")
     if name in _API:
         return getattr(importlib.import_module(_API[name]), name)
     raise AttributeError(f"module 'whitney' has no attribute {name!r}")

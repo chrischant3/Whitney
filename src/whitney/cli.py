@@ -77,7 +77,7 @@ from whitney.report import (
 from whitney.target_names import TARGETS
 from whitney.tasks import _whitney_version, scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
-from whitney.validate import (
+from whitney.validation import (
     ValidationResult,
     permission_warnings,
     skill_copy_warnings,
@@ -259,10 +259,10 @@ def validate(
     The project is checked for `target`, or for every target when it is
     None, against the eval files that apply to that target. For the kilo
     target it also warns about the project's skill descriptions
-    (validate.skill_warnings), whether or not an eval file tests a skill,
-    about permission rules (validate.permission_warnings), and about a
+    (validation.skill_warnings), whether or not an eval file tests a skill,
+    about permission rules (validation.permission_warnings), and about a
     declared variant that leaves a copy of its skill staged
-    (validate.skill_copy_warnings). Nothing is printed.
+    (validation.skill_copy_warnings). Nothing is printed.
 
     Args:
         project_path: the project whose config and instruction files are under test; read, never written.

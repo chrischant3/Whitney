@@ -92,7 +92,7 @@ The mutation score measured 99.7% on 2026-11-08, in a from-scratch `check.py ful
 
 Equivalent mutants found since, on 2026-11-06 (the same kinds, in code added
 later): more codec-name cases (`project_files._load_kilo`, `_read_text`,
-`evalfile.fixture_files`, `validate.exception_ids`);
+`evalfile.fixture_files`, `validation.exception_ids`);
 `_linked_below(None, ...)` in `not_staged_reason`, `_walk_files`,
 `_direct_md_files` and `_is_kilo_file`, which walks on past the project root
 to `/` but finds no symlink there, since the root is already resolved; and

@@ -48,7 +48,7 @@ Summed from the `cost` field of Kilo's step events in each log (each event is st
 
 ## Review
 
-A code review of the branch found nothing blocking. Fixed: `_run_steps`' `found` read its arguments twice (a generator would be kept but not printed); `run`'s docstring now says it loads `.env` into the environment and what it can still raise; the callable module's `__call__` has type hints and the README says a type checker may call `whitney.validate` not callable; the docstring test now reads `__call__`'s own docstring. Not changed: argument types aren't checked (`epochs="3"` raises a `TypeError`, as the type hints say it would); the error messages keep the command's option names (`--project-path`), so they match `whitney validate`'s; `validate` takes positional arguments and `run` keyword-only ones, as the spec shows; `dir(whitney)` doesn't list the lazy names.
+A code review of the branch found nothing blocking. Fixed: `_run_steps`' `found` read its arguments twice (a generator would be kept but not printed); `run`'s docstring now says it loads `.env` into the environment and what it can still raise; `whitney.validate` was first the validation module made callable, with type hints on its `__call__`; after the review the module was renamed `whitney.validation` and `whitney.validate` became a plain function (`whitney.cli.validate`), which a type checker reads as it reads `run`. Not changed: argument types aren't checked (`epochs="3"` raises a `TypeError`, as the type hints say it would); the error messages keep the command's option names (`--project-path`), so they match `whitney validate`'s; `validate` takes positional arguments and `run` keyword-only ones, as the spec shows; `dir(whitney)` doesn't list the lazy names.
 
 ## The gate
 

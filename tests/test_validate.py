@@ -17,10 +17,10 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from whitney import tasks
-from whitney import validate as validate_module
+from whitney import validation as validate_module
 from whitney.checks import CheckError, Registry, Verdict, check, registry
 from whitney.evalfile import Problem
-from whitney.validate import exception_ids, validate_evals, validate_project, validate_variants
+from whitney.validation import exception_ids, validate_evals, validate_project, validate_variants
 
 ROOT = Path(__file__).parent.parent
 TOKEN, CANARY = "CANARY-TOKEN-1", "CANARY-OUTSIDE-2"
@@ -530,7 +530,7 @@ def test_the_exceptions_ids_are_read_as_utf_8_whatever_the_locale(tmp_path):
     # CONSTRAINTS.md holds non-ASCII text (≥, —), which an ASCII locale's default encoding can't read.
     path = write_constraints(tmp_path, "| E1 | naïve ≥ rule | café — reason |")
     code = (
-        "import locale, sys; from whitney.validate import exception_ids; "
+        "import locale, sys; from whitney.validation import exception_ids; "
         "print(locale.getencoding()); print(sorted(exception_ids(sys.argv[1])))"
     )
     import os
@@ -861,9 +861,9 @@ def test_apply_pending_in_a_scenarios_own_setup_is_named_there(evals):
 
 
 def test_validation_names_the_shipped_kilo_jsonc_file_without_loading_inspect():
-    # whitney.validate and whitney.tasks share the path through whitney.shipped_evals; importing tasks would load inspect_ai.
+    # whitney.validation and whitney.tasks share the path through whitney.shipped_evals; importing tasks would load inspect_ai.
     loaded = subprocess.run(
-        [sys.executable, "-c", "import sys, whitney.validate; print(sorted(m for m in sys.modules if m.split('.')[0] == 'inspect_ai'))"],
+        [sys.executable, "-c", "import sys, whitney.validation; print(sorted(m for m in sys.modules if m.split('.')[0] == 'inspect_ai'))"],
         capture_output=True, text=True, check=True,
     )
     assert loaded.stdout.strip() == "[]"
