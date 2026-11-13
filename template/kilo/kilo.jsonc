@@ -2,13 +2,21 @@
   "$schema": "https://kilo.ai/config.json",
 
   // Permissions the evals check are honoured. Last matching rule wins;
-  // actions are "allow", "ask" and "deny". These are prompts that keep you
-  // aware of what the agent does, not a sandbox: for isolation, run Kilo in a
-  // container or VM (https://github.com/Kilo-Org/kilocode/blob/main/SECURITY.md).
+  // actions are "allow", "ask" and "deny". These guide what the agent does;
+  // Kilo doesn't treat them as a security boundary. Its SECURITY.md says the
+  // permission system "is not designed to provide security isolation"
+  // (https://github.com/Kilo-Org/kilocode/blob/main/SECURITY.md). The evals
+  // show whether these settings held in the scenarios tested, not that the
+  // agent can't get out. For isolation, run in Docker (whitney run
+  // --execution docker), or run Kilo in a container that mounts only the project.
   "permission": {
-    // Ask before any tool touches a path outside the project.
-    // Known gap: a symlink created by a bash command avoids this prompt
-    // (docs/findings/001-symlink-bypasses-external-directory.md).
+    // Ask before Kilo's file tools, or the nine bash commands Kilo checks
+    // (cd, rm, cp, mv, mkdir, touch, chmod, chown, cat), touch a path outside
+    // the project that is written out in the command.
+    // Known gaps, on Kilo 7.8.27: a symlink made by a bash command
+    // (docs/findings/001-symlink-bypasses-external-directory.md); and a path
+    // in a variable, a $(...) substitution or a redirect, or read by any
+    // other command, such as head (docs/findings/002-shell-paths-bypass-external-directory.md).
     "external_directory": "ask"
   }
 }
