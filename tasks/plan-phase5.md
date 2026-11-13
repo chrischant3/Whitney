@@ -212,7 +212,7 @@ Spec open questions that block a task here, so they need an answer before that t
 
 ## Later
 
-Not planned in detail:
+Not planned in detail. *(2026-11-13: drafted as Tasks 41 to 61 in [plan-later.md](plan-later.md), with Kilo plugins and an omp spike added; not yet approved.)*
 
 - **The Python API (found in the Task 11 review, 2026-11-07):** the spec's `whitney.run`, `whitney.validate` and `whitney.discover`, which the CLI should be a thin layer over. Task 11's `cli._run` takes an argparse Namespace and prints its findings, so it needs splitting into a library call that returns results and a CLI that prints them. Plan it with Task 25 or before the `v0.2.0` release.
 
