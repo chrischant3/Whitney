@@ -63,6 +63,44 @@ and, among the files in `$TMPDIR`, the run's own config:
 
 (The permission lines are condensed here. In the log they're indented, as Kilo printed them.)
 
+## The control and the Docker run, after the review
+
+Two more runs on 2026-11-13, at Christopher's request, with the same throwaway config, `HTTP_PROXY` and `NO_PROXY` as above.
+
+| # | Code | Prompt | Exit code | Cost the harness reported |
+|---|---|---|---|---|
+| 3 (control) | `main` at `fa7f5dd`, as run 1 | run 2's: first `env \| grep -i proxy`, then `cat "$KILO_CONFIG" "$TMPDIR"/tmp*.json` | 0 | $0.0332 |
+| 4 (Docker) | `task-41` at `1b4811c`, plus the id fix below | first `env \| grep -i proxy`, then `cat "$HOME"/.config/kilo/kilo.json`, with `--execution docker` | 0 | $0.0211 |
+
+All four runs since the first come to about $0.159, including run 0's $0.045, which isn't evidence.
+
+**Run 3, the control.** In `main`'s log, the made-up key, `t41pw` and `eve:t41pw@` were each found 10 times in `samples/print-config-and-proxy_epoch_1.json`. The agent printed `HTTP_PROXY=http://eve:t41pw@proxy.invalid:3128` and, among the `tmp*.json` files, the run's config with `"apiKey": "sk-ant-madeup-t41-LITERAL-0000000000"`. With run 2, this shows the search fails on both values without the change and finds nothing with it.
+
+**Run 4, Docker.** `env | grep -i proxy` printed nothing (`(no output)`): the container has no proxy variable. The container's global config, as the agent printed it:
+
+```
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "provider": {
+    "anthropic": {
+      "options": {
+        "baseURL": "http://localhost:13131/v1",
+        "apiKey": "sk-none"
+      }
+    }
+  },
+  "permission": {
+    "bash": "allow",
+    "edit": "allow",
+    "read": {
+      "*": "allow"
+    }
+  }
+}
+```
+
+Only the bridge's settings, which Whitney writes: none of the host's provider settings. The made-up key, `t41pw`, `eve:t41pw@` and `proxy.invalid` were not found in the log or the report. `cat "$HOME"/...` asked for no permission here either, while run 0's `cat ~/.config/...` did, which supports the guess that Kilo doesn't expand variables when it checks a bash command's paths. The file had a `$schema` line that Whitney doesn't write, so Kilo rewrites its global config too.
+
 ## Red, then green
 
 Before the code, the new tests failed, for example (from the run):
@@ -82,6 +120,7 @@ The review (2026-11-13) changed what these runs tested, without a new run:
 
 - The overlay is now `kilo.json` in a `kilo-eval-config-*` folder of its own (0700), not a `tmp*.json` beside every other file in `$TMPDIR`. The agent can still list `$TMPDIR` and read it, so the redaction is what protects the log.
 - `kilo debug config` with `KILO_CONFIG` pointing at a `.txt` file loaded it as well as a `.json` one, and Kilo rewrote the file with a `$schema` line, which confirms the rewrite seen in run 2.
+- The secret-word rule judges setting names only, not provider, model or variant ids, so a provider called `my-key` keeps its name and URL (`test_a_provider_model_or_variant_id_ending_in_a_secret_word_keeps_its_settings`, which failed first with `'Corp Key Gateway' != 'provider-key-0123'`).
 - Header values are now secrets only when the header's name is (`Authorization`, `X-Api-Key`, `Cookie`), and a URL's user and password are hidden with its host in the provider settings and `--base-url` as in proxy variables.
 
 ## What the runs found besides
@@ -93,12 +132,11 @@ The review (2026-11-13) changed what these runs tested, without a new run:
 
 ## Docker copies neither
 
-From the code, not from a run: the Docker branch of `agent.kilo` writes the container's `~/.config/kilo/kilo.json` from scratch, as `{"provider": {<provider>: {"options": {"baseURL": <the bridge's URL>, "apiKey": "sk-none"}}}}` plus `harness_permissions`. It never calls `global_provider_settings`. `_run_kilo` gives the process `HOME` and `PWD` only, and `LOCAL_ENV_PASSTHROUGH` is used only in `_run_local_process`. `sandbox/compose.yaml` sets no `environment` and runs with `network_mode: none`, and `sandbox/Dockerfile` sets no `ENV`. `evidence.run_secrets` returns `[]` for a Docker Kilo run (`test_a_local_kilo_run_is_given_the_literal_secrets_in_its_global_provider_settings_and_proxy_passwords` checks this with a literal key and a proxy password set). The file's text, as printed from a container, wasn't recorded, because it needs another agent run. It is still to do.
+From the code, not from a run: the Docker branch of `agent.kilo` writes the container's `~/.config/kilo/kilo.json` from scratch, as `{"provider": {<provider>: {"options": {"baseURL": <the bridge's URL>, "apiKey": "sk-none"}}}}` plus `harness_permissions`. It never calls `global_provider_settings`. `_run_kilo` gives the process `HOME` and `PWD` only, and `LOCAL_ENV_PASSTHROUGH` is used only in `_run_local_process`. `sandbox/compose.yaml` sets no `environment` and runs with `network_mode: none`, and `sandbox/Dockerfile` sets no `ENV`. `evidence.run_secrets` returns `[]` for a Docker Kilo run (`test_a_local_kilo_run_is_given_the_literal_secrets_in_its_global_provider_settings_and_proxy_passwords` checks this with a literal key and a proxy password set). Run 4 below printed the file's text from a container.
 
 ## What this doesn't show
 
 - One run of each, on one model and one Kilo version.
-- On a real run, the control shows the proxy password leaking on `main` but not the literal key. The key was out of the agent's reach through `$KILO_CONFIG`, and the `$TMPDIR` route was found only in run 2.
 - The captured-request path (`--capture-prompt`) was tested with fakes only (`test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted`), not in a real run.
 - A key the agent can see can still be used or sent somewhere. Redaction only cleans what Whitney stores.
 - A proxy password is hidden with its user (`eve:t41pw@`, `eve:t41pw@proxy.invalid:3128` and the whole value). A password printed on its own, or percent-decoded, isn't. When the `user:pass@` part is under 8 characters, it's hidden only where it's printed with its host.

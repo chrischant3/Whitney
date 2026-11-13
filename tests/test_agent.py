@@ -506,3 +506,21 @@ def test_a_name_with_no_letters_is_not_a_secret_and_a_secret_name_hides_everythi
 
     overlay = {"provider": {"p": {"options": {"0": "plain-value-0123", "credentials": {"user": "nested-user-0123", "more": ["nested-pass-0123"]}}}}}
     assert sorted(provider_secrets(overlay)) == ["nested-pass-0123", "nested-user-0123"]
+
+
+def test_a_provider_model_or_variant_id_ending_in_a_secret_word_keeps_its_settings():
+    from whitney.agent import provider_secrets
+
+    overlay = {"provider": {"my-key": {
+        "name": "Corp Key Gateway", "options": {"baseURL": "https://llm.example/v1", "apiKey": "provider-key-0123"},
+        "models": {"model-token": {"id": "vendor/model-token", "name": "Token Model",
+                                   "variants": {"session": {"options": {"temperature": "low", "authToken": "variant-tok-0123"}}}}},
+    }}}
+    assert sorted(provider_secrets(overlay)) == ["provider-key-0123", "variant-tok-0123"]
+
+
+def test_a_secret_named_setting_inside_a_list_is_still_a_secret():
+    from whitney.agent import provider_secrets
+
+    overlay = {"provider": {"p": {"options": {"fallbacks": [{"name": "backup", "apiKey": "list-item-key-0123"}]}}}}
+    assert provider_secrets(overlay) == ["list-item-key-0123"]

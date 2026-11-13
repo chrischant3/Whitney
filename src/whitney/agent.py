@@ -94,6 +94,9 @@ SECRET_OPTION_WORDS = {
 # The end of a name written in one case with no word breaks (apikey, ACCESSTOKEN), which is one word; not
 # anywhere in it, so tokenizer is kept.
 SECRET_IN_A_NAME = ("apikey", "token", "secret", "password", "passphrase")
+# Settings whose keys are ids (a model's, a variant's), which the secret-word rule doesn't judge: a provider or
+# model called my-key keeps its settings. The provider ids at the top are treated the same way.
+ID_KEYED_SETTINGS = ("models", "variants")
 # A URL's user, password and host, after a scheme that a proxy variable may leave out, up to its path.
 URL_AUTHORITY = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/?#]*)")
 URL_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
@@ -453,8 +456,9 @@ def provider_secrets(overlay: dict | None) -> list[str]:
     can read, so the run's output is redacted of it, as of a key from the
     environment. Every setting of every provider is read, at any depth (its
     `options`, `headers`, `api`, and each model's, with their `variants`):
-    every string under a name that marks a secret (_secret_name), such as
-    `apiKey` or an `Authorization` header, and the user and password in any
+    every string under a setting whose name marks a secret (_secret_name),
+    such as `apiKey` or an `Authorization` header, but not a provider, model
+    or variant id (ID_KEYED_SETTINGS), and the user and password in any
     URL (url_credentials). Other names and values are kept, since the report
     and the evidence read them: provider and model names and ids, URLs without
     a user, a header such as `Content-Type`, and a whole `{env:NAME}`
@@ -467,17 +471,18 @@ def provider_secrets(overlay: dict | None) -> list[str]:
         The secret strings, in no particular order; [] for no provider settings.
     """
     found: list[str] = []
-    pending: list[object] = [(overlay or {}).get("provider") or {}]
+    # Each entry: a value, and whether its keys are ids (a provider's, model's or variant's) rather than setting names.
+    pending: list[tuple[object, bool]] = [((overlay or {}).get("provider") or {}, True)]
     while pending:
-        value = pending.pop()
+        value, keyed_by_id = pending.pop()
         if isinstance(value, dict):
             for name, item in value.items():
-                if _secret_name(str(name)):
+                if not keyed_by_id and _secret_name(str(name)):
                     found += _strings(item)
                 else:
-                    pending.append(item)
+                    pending.append((item, not keyed_by_id and name in ID_KEYED_SETTINGS))
         elif isinstance(value, list):
-            pending.extend(value)
+            pending.extend((item, False) for item in value)
         elif isinstance(value, str) and URL_SCHEME.match(value):
             found += url_credentials(value)
     return [text for text in found if not ENV_REFERENCE.fullmatch(text)]
