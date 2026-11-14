@@ -509,6 +509,7 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 **Scope:**
 - In: applying `SECRET_NAMES` wherever `_is_safe_file` is used: `_walk_files`, `_direct_md_files`, Kilo `instructions` matches, the rules folders and `load_template_files` (used by `harbor_tasks` and `interference`), on both targets. Each file left out is named in the report's "Not Staged" table with the reason.
 - In: a decision by Christopher first. `SECRET_NAMES` holds `secrets.*`, `secret.*`, `credentials*`, `*.key` and `*.asc`, so a skill about handling secrets would lose a file such as `references/secrets.md`, which changes what the run tests. The options: exempt Markdown, or stop the run with a message rather than leave such a file out, as an unsafe import does.
+- **Decided 2026-11-14 (Christopher):** exempt Markdown. A `.md` file is staged even if its name matches `SECRET_NAMES`, so a skill about handling secrets can still be tested; every other match is left out and named in "Not Staged". The first slice is [secret-files-not-staged.md](../docs/specs/secret-files-not-staged.md). It leaves out the `whitney validate` warning, which stays owed under this task.
 - Out: scanning file contents for secrets; the secrets check in `check.py` already does that for Whitney's own repo.
 
 **Acceptance criteria:**
