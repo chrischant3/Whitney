@@ -43,10 +43,10 @@ Tasks and checkpoints are tracked in [todo.md](todo.md).
 
 ### Phase 3: Reporting, VS Code, docs
 - [x] T8: Runner and report (tests/test_run_evals.py, tests/test_report*.py)
-- [ ] T9: VS Code parity check and manual checklist — parity check built and unit-tested; run against the extension on 2026-11-12 (`parity OK`, Phase 5 Task 30); **open:** the manual checklist (needs a person in the extension), and whether the check should also catch a changed `AGENTS.md`
-- [ ] T10: Docs and README — written; **open:** someone new follows docs/adding-tests.md from a clean clone
+- [ ] T9: VS Code parity check and manual checklist — parity check built and unit-tested; run against the extension on 2026-11-12 (`parity OK`, Phase 5 Task 30); **open:** the manual checklist (needs a person in the extension), and whether the check should also catch a changed `AGENTS.md` *(2026-11-13, audit: both still open: `docs/vscode-manual-check.md` has no results row, and `src/whitney/parity.py` still compares only `permission` and `instructions`; open decision 1 in [todo-phase5.md](todo-phase5.md#open-decisions-for-the-maintainer) is undecided.)*
+- [ ] T10: Docs and README — written; **open:** someone new follows docs/adding-tests.md from a clean clone *(2026-11-13, audit: still open. Fresh sessions followed the docs on 2026-11-09 (Phase 5 Task 15) and 2026-11-12 (`docs/results/2026-11-12-claude-code-example.md`), but neither started from a clean clone with its commands, output and friction log kept, and no person has; see Task 10 in [todo.md](todo.md).)*
 - [x] T11 (optional): IFEvalCode interference check
-- [ ] Checkpoint: MVP complete — **open:** T9, T10 (CI runs `check.py task` on every pull request; see `.github/workflows/`)
+- [ ] Checkpoint: MVP complete — **open:** T9, T10 (CI runs `check.py task` on every pull request; see `.github/workflows/`) *(2026-11-13, audit: still open on T9 and T10, and no MVP review with Christopher is recorded; see the checkpoint in [todo.md](todo.md).)*
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
