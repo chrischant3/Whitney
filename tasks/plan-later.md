@@ -488,6 +488,8 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 
 **Follow-up (2026-11-13, from Task 59's review):** a run that crashed or ended early is still scored, so `sample.scores` alone doesn't show the fake ran. The claude-code test also checks each sample's completion is the fake's `done`, and fails with a fake that only exits 1. The kilo test, `test_the_project_is_unchanged_after_a_run`, has the same gap; it was left untouched, as the task says, and needs Christopher's confirmation to add the same line.
 
+- [x] Add the same completion check to the kilo test. *(2026-11-14: Christopher approved ("yes"). `test_the_project_is_unchanged_after_a_run` now also asserts each sample's completion is `FAKE_KILO`'s `done`, with the claude-code test's comment; nothing else in the test changed. With `exit 1` as the fake's first command, the test without the check still passed and the test with it failed on the new line. The fake restored, it passes.)*
+
 ### Task 60: Look again at how much of each captured request is kept
 
 **Description:** Task 31 decision 5 keeps the first request in full plus each later request's size and a "changed" flag. Christopher asked to look at it again once multi-step captures show how often a later request's system prompt or tools change.
