@@ -232,5 +232,5 @@ Not planned in detail. *(2026-11-13: drafted as Tasks 41 to 61 in [plan-later.md
 - ~~Claude Code skills and agents: its own capture of `--output-format stream-json`, and staging `.claude/skills/` and `.claude/agents/` without `.claude/settings.json`, whose hooks run commands.~~ Done in milestone E: Task 36 (2026-11-11) captured the stream and stages both folders; Task 37 (2026-11-12) stages the permission lists of `.claude/settings.json`, never its hooks.
 - `--junit` output; model-graded checks (spec open question 13); check plugins (spec open question 9).
 - The proposal's other future work: instruction hierarchy, `REVIEW.md`, hooks.
-- A fake `claude` for `tests/test_safe_staging.py::test_the_project_is_unchanged_after_a_run`, so the claude-code target's run is checked too, not only its staging (from the Task 8 review).
+- ~~A fake `claude` for `tests/test_safe_staging.py::test_the_project_is_unchanged_after_a_run`, so the claude-code target's run is checked too, not only its staging (from the Task 8 review).~~ Done in Task 59 of [plan-later.md](plan-later.md) (2026-11-13): `test_the_project_is_unchanged_after_a_claude_code_run`. A real run's listing is still open there.
 - Whether `_is_safe_file` should also refuse `.envrc` and similar files that hold secrets without the `.env` name (from the Task 8 review).

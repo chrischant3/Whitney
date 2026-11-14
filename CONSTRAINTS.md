@@ -134,6 +134,10 @@ leave four equivalent mutants: `encoding=None`, no `encoding`, and
 `json.dumps` makes ASCII only (its default `ensure_ascii`), so every codec
 writes the same bytes; and `{"named": named} if named or True`, which passes
 `named=None` to `_run_local`, its own default.
+Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
+`known = in_step = None` and `in_step = None` in place of `False`, which the
+function reads only through `not` and `and`, where `None` and `False` give the
+same answer.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
