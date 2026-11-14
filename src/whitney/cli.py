@@ -4,6 +4,7 @@
         --project-path . --evals-path evals --epochs 3
     whitney validate --project-path . --evals-path evals [--target kilo] [--constraints CONSTRAINTS.md]
     whitney report logs [--evals-path evals]      # render a report from saved logs; calls no model
+    whitney report logs --junit whitney.xml       # run and report also write JUnit XML (whitney.junit)
     whitney checks                                # list the checks an eval file can name
 
 Exit codes, for every subcommand (docs/specs/package-and-expected-results.md):
@@ -57,6 +58,7 @@ from whitney.credentials import CredentialsError, resolve_gateway_credentials
 from whitney.evidence import run_secrets
 from whitney.evalfile import EvalFile, Problem
 from whitney.improve import improvement_failed, improvement_report
+from whitney.junit import junit_xml
 from whitney.report import (
     ROLE_ORDER,
     check_thresholds,
@@ -126,6 +128,8 @@ HELP = {
     "--max-samples": "harness runs at once; Docker mode also needs enough memory",
     "--log-dir": "where Inspect's logs go",
     "--results-dir": "where the Markdown report goes",
+    "--junit": "also write the results as JUnit XML to this file, for a CI system to show: a test suite per eval file, "
+    "a test case per check and one for the gate (README, \"JUnit XML for your CI system\")",
     "--min-rate": "replace one check's minimum pass rate for this run, from 0 to 1; repeat for more checks. "
     "An eval file's own min_pass_rate still applies, and the report prints each one replaced",
     "--min-conclusive": "minimum share of the template's runs that must be conclusive, so a rate from a few runs "
@@ -173,6 +177,7 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--max-samples", type=int, default=2, help=HELP["--max-samples"])
     run.add_argument("--log-dir", default="logs", help=HELP["--log-dir"])
     run.add_argument("--results-dir", default="results", help=HELP["--results-dir"])
+    run.add_argument("--junit", metavar="FILE", help=HELP["--junit"])
     run.add_argument("--min-rate", action="append", default=[], metavar="CHECK=VALUE", help=HELP["--min-rate"])
     run.add_argument("--min-conclusive", type=rate, default=MIN_CONCLUSIVE, help=HELP["--min-conclusive"])
     run.add_argument("--min-adherence", type=rate, help=HELP["--min-adherence"])
@@ -186,6 +191,7 @@ def parser() -> argparse.ArgumentParser:
     report.add_argument("logs", metavar="LOGS", help=HELP["LOGS"])
     report.add_argument("--evals-path", help=HELP["report --evals-path"])
     report.add_argument("--results-dir", default="results", help=HELP["--results-dir"])
+    report.add_argument("--junit", metavar="FILE", help=HELP["--junit"])
     report.add_argument("--min-rate", action="append", default=[], metavar="CHECK=VALUE", help=HELP["--min-rate"])
     report.add_argument("--min-conclusive", type=rate, default=MIN_CONCLUSIVE, help=HELP["--min-conclusive"])
     report.set_defaults(handler=_report, parser=report)
@@ -210,6 +216,7 @@ def _check_args(args: argparse.Namespace) -> None:
     """
     if args.command == "checks":
         return
+    _clear_junit(getattr(args, "junit", None))  # validate has no --junit
     if args.command == "report":
         args.min_rate = min_rates(args.parser, args.min_rate)
         if not Path(args.logs).is_dir():
@@ -230,6 +237,31 @@ def _check_args(args: argparse.Namespace) -> None:
             raise CannotRun(f"{option} {folder} isn't a folder")
     if args.constraints is not None and not Path(args.constraints).is_file():
         raise CannotRun(f"--constraints {args.constraints} isn't a file")
+
+
+def _clear_junit(path: str | None) -> None:
+    """Make --junit's folder and remove a file an earlier run left there, before anything runs.
+
+    A run that stops without writing the file then leaves none, rather than an
+    earlier run's that a CI system would show, perhaps green. Writing a test
+    file there and removing it again finds a path that can't be written before
+    a paid run, not after it.
+
+    Raises:
+        CannotRun: the path is a folder, or it or its folder can't be made or written.
+    """
+    if path is None:
+        return
+    junit = Path(path)
+    try:
+        junit.parent.mkdir(parents=True, exist_ok=True)
+        if junit.is_dir():
+            raise IsADirectoryError(f"{path} is a folder")
+        junit.unlink(missing_ok=True)
+        junit.touch()
+        junit.unlink()
+    except OSError as e:
+        raise CannotRun(f"--junit {path} can't be written: {e}") from e
 
 
 def _validate(args: argparse.Namespace) -> int:
@@ -280,6 +312,7 @@ def _report(args: argparse.Namespace) -> int:
     return write_report(
         logs, target=report_target(logs), model=report_model(logs), evals_path=args.evals_path,
         min_rates=replaced_minimums(None, None, args.min_rate), min_conclusive=args.min_conclusive, results_dir=args.results_dir,
+        junit=args.junit,
     )
 
 
@@ -415,7 +448,7 @@ def _run(args: argparse.Namespace) -> int:
         logs, target=args.target, model=args.model, evals_path=args.evals_path,
         min_rates=replaced_minimums(args.min_adherence, args.min_held, args.min_rate),
         min_conclusive=args.min_conclusive, results_dir=args.results_dir, not_run=not_run,
-        left_out=left_out, expected=[f.eval_name for f in selected], stopped=stopped,
+        left_out=left_out, expected=[f.eval_name for f in selected], stopped=stopped, junit=args.junit,
     )
     return 2 if cannot_run else code
 
@@ -612,6 +645,7 @@ def write_report(
     left_out: Iterable[str] = (),
     expected: Iterable[str] = (),
     stopped: str | None = None,
+    junit: str | Path | None = None,
 ) -> int:
     """Gate the logs, then print the report and write it to results_dir; return 1 if the gate failed, else 0.
 
@@ -638,6 +672,9 @@ def write_report(
         left_out: eval files that apply but --only didn't name.
         expected: the eval names the run selected.
         stopped: why the run stopped before its last task, if it did.
+        junit: where to write the results as JUnit XML too (whitney.junit), if anywhere.
+
+    Returns 2 instead if the JUnit file can't be written, after printing why.
     """
     core_logs = [log for log in logs if not _benchmark(log.eval.task)]
     ifeval_logs = [log for log in logs if log.eval.task.startswith("ifevalcode_")]
@@ -675,11 +712,20 @@ def write_report(
     if problems:
         report += "\n## Problems\n\n" + "\n".join(f"- {p}" for p in problems) + "\n"
     print(report)
-    timestamp = f"{datetime.now():%Y-%m-%dT%H-%M-%S}"
-    out = Path(results_dir) / result_filename(timestamp, model, target)
+    now = datetime.now()
+    out = Path(results_dir) / result_filename(f"{now:%Y-%m-%dT%H-%M-%S}", model, target)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
     print(f"Report written to {out}")
+    if junit:
+        xml = junit_xml(succeeded, problems, min_rates=min_rates, min_conclusive=min_conclusive, timestamp=now)
+        try:
+            Path(junit).parent.mkdir(parents=True, exist_ok=True)
+            Path(junit).write_text(xml, encoding="utf-8")
+        except OSError as e:  # the report is written; only the file a CI system reads is missing, so the run can't count
+            print(f"whitney: error: couldn't write the JUnit XML to {junit}: {e}", file=sys.stderr)
+            return 2
+        print(f"JUnit XML written to {junit}")
     return 1 if problems else 0
 
 

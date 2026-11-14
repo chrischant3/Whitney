@@ -10,6 +10,7 @@ __pycache__/
 # Fixture secrets are fake canary tokens and must be committed for the evals to work.
 !evals/fixtures/**/.env
 !evals/fixtures/**/.env.*
+!tests/data/junit/example/evals/fixtures/**/.env
 .DS_Store
 # Per-person Claude Code files: local setting overrides, and a log written by personal Claude Code hooks.
 .claude/settings.local.json
