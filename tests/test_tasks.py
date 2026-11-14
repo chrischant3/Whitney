@@ -610,7 +610,10 @@ def test_a_setup_holding_the_password_in_the_base_url_is_refused_but_a_plain_hea
     with pytest.raises(ValueError, match="its setup holds the value of a secret"):
         tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), base_url="https://eve:base-url-pw@proxy.example/v1")
     [plain] = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals)).dataset
-    assert "https://github.com" in plain.setup
+    # The plain URL survives in the setup's last step, written to app.py as the fixture holds it.
+    assert plain.setup.endswith(
+        "printf '%s' 'print('\"'\"'https://github.com and eve:base-url-pw@proxy.example'\"'\"')\n' > app.py\n"
+    )
 
 
 def test_the_logged_staged_files_hold_no_secret_the_run_is_given(tmp_path, monkeypatch):

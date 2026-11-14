@@ -1081,6 +1081,16 @@ These are a build, drafted as Task 64 in [tasks/plan-later.md](../tasks/plan-lat
 - `tail`, `grep`, `sed`, `sh -c` and scripts were read from the source, not run; `head` stands for them.
 - One run per form, so no rate. The by-hand runs make the scan's behaviour certain for these inputs; the model runs show the stream.
 
+## Phase 5 Later Task 50: shell commands in order and their exit (2026-11-13)
+
+`ran_before` reads each harness's tool calls in order (`src/whitney/checks/stream.py`) and needs a shell command's exit. Both harnesses show it, and no new field is read:
+
+- **Kilo**: a completed `bash` call's `part.state.metadata.exit`, as in "Phase 5: confirmed fields". Kilo 7.8.27 printed the same shape on 2026-11-13, in the two real runs saved as `tests/data/kilo-events/tests-then-commit` (`python3 -m unittest`, exit 0, then `git add ... && git commit`, exit 0) and `commit-without-tests` (a `git commit` with no test run). The template run's `bash` calls also have `input.workdir`, which nothing reads.
+- **Claude Code 2.1.322**: a `Bash` call that ran and exited non-zero has a `tool_result` with `is_error` true whose content starts with the line `Exit code <n>` (`settings-allow-ran`: 1; `skill-forked`: 127). One that worked has `is_error` false and no exit code, and is taken as passed: no fixture shows a non-zero exit without `is_error`. A command started with `run_in_background` would return before it ends; no fixture holds one, so that field isn't read, and such a command is a known gap. A refusal, by a rule (`settings-deny-held`) or a hook (`hook-pretooluse-deny`), is an error result in other words, so it didn't run. Claude Code shows no exit code for a command that passed.
+- **An aborted Kilo call**: the lost run above (Task 16, "Lost runs") had a `read` call with `state.status` `error`, `state.error` "Tool execution aborted" and `state.metadata.interrupted` true, so a Kilo `error` call may have started. No saved fixture holds one, so `interrupted` isn't read: the reader counts such a call as not run and keeps its `state.error` words.
+
+The order is the order of the calls in the stream. On Claude Code that is the order of the `tool_use` blocks, so a forked skill's `Skill` call comes before the calls its subagent made (`skill-forked`). Kilo prints a call's `tool_use` event once the call has finished.
+
 ## Not yet done
 
 - **Hooks and plugins (Task 40).** A `Stop` hook making a skill load; a hook's effect with a model other than Haiku or a skill other than `release-notes`; why silent hooks went with more `Skill` calls; a Kilo plugin's effect apart from chance; plugins in the VS Code extension.

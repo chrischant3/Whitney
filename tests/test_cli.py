@@ -812,10 +812,10 @@ def test_the_help_for_report_and_checks_shows_every_option_and_its_help(capsys):
     assert text("report") in top and text("checks") in top
     report = shown(["report", "--help"])
     assert report.startswith(
-        "usage: whitney report [-h] [--evals-path EVALS_PATH] [--results-dir RESULTS_DIR] "
+        "usage: whitney report [-h] [--evals-path EVALS_PATH] [--results-dir RESULTS_DIR] [--junit FILE] "
         "[--min-rate CHECK=VALUE] [--min-conclusive MIN_CONCLUSIVE] LOGS " + text("report") + " positional arguments: LOGS "
     )
-    for key in ("LOGS", "report --evals-path", "--results-dir", "--min-rate", "--min-conclusive"):
+    for key in ("LOGS", "report --evals-path", "--results-dir", "--junit", "--min-rate", "--min-conclusive"):
         assert text(key) in report, key
     assert shown(["checks", "--help"]).startswith("usage: whitney checks [-h] " + text("checks") + " options:")
 
