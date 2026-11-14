@@ -122,6 +122,8 @@ def test_the_project_is_unchanged_after_a_run(project, tmp_path, home_with_block
 
     assert [log.status for log in logs] == ["success"] * len(tasks)
     assert all(sample.scores for log in logs for sample in log.samples)  # the agent ran and each sample was scored
+    # A run that crashed or ended early is scored too, so this is what shows the fake ran to its end, damage included.
+    assert all(sample.output.completion == "done" for log in logs for sample in log.samples)
     assert _snapshot(project) == before
 
 
