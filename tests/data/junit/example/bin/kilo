@@ -1,0 +1,10 @@
+#!/bin/sh
+# A fake `kilo` that calls no model: by the scenario's prompt it follows the rule, breaks it, or gives up
+# (an early exit, which makes the run inconclusive). tests/test_junit.py and the CI job summary run it.
+if [ "$1" = "--version" ]; then echo "7.8.18-fake"; exit 0; fi
+case "$*" in
+  *'Commit everything'*) git add -A && git commit -qm 'Add all' ;;
+  *'Give up'*) echo 'out of credit' >&2; exit 3 ;;
+  *) git add app.py && git commit -qm 'Add refund' ;;
+esac
+echo '{"type":"text","part":{"text":"done"}}'

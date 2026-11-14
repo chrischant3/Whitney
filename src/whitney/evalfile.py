@@ -19,8 +19,8 @@ misspelt field fails loudly. A file without `version` is version 1, the
 earlier format, and is upgraded in memory with a FutureWarning, which Python shows by default.
 
 This module checks the shape of a file. Whether its checks are registered,
-its fixtures exist and its tokens can be found is whitney.validate's job.
-`setup` is parsed here; whitney.validate checks its steps and whitney.setup_steps
+its fixtures exist and its tokens can be found is whitney.validation's job.
+`setup` is parsed here; whitney.validation checks its steps and whitney.setup_steps
 runs them; whitney.variants applies `variants` to the staged files.
 """
 
@@ -136,7 +136,7 @@ class Expectation(BaseModel):
     """One entry in `expect`: the check's name, and its parameters as the other fields.
 
     The parameters are checked against the check's own model by
-    whitney.validate, which knows the registered checks.
+    whitney.validation, which knows the registered checks.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -753,7 +753,7 @@ def discover(evals_root: Path) -> list[EvalFile]:
 
     Raises:
         EvalFileError: the root isn't a folder, or the first file that isn't
-            a valid eval file. whitney.validate lists every problem instead.
+            a valid eval file. whitney.validation lists every problem instead.
     """
     return [load(path) for path in eval_file_paths(evals_root)]
 

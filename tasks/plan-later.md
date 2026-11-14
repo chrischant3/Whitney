@@ -48,16 +48,16 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: refusing literal keys outright (`{env:NAME}` only). That is the other option the Later list names; this task redacts, and the docs recommend `{env:NAME}`.
 
 **Acceptance criteria:**
-- [ ] Each such value is added to both the agent's run secrets and `evidence.run_secrets`, so it is replaced in the log, the transcript and the report.
-- [ ] Model names, base URLs without passwords, and option names that only contain a secret word by chance (such as `monkeyName`) are not redacted.
-- [ ] `docs/adding-tests.md`, or the doc that covers the overlay, says literal keys are redacted, that redaction doesn't stop the agent reading or sending a key it can see, and recommends `{env:NAME}`.
+- [x] Each such value is added to both the agent's run secrets and `evidence.run_secrets`, so it is replaced in the log, the transcript and the report. *(2026-11-13: `provider_secrets` and the new `proxy_secrets` in `agent.py` feed `_run_with_overlay`, `_run_local_process`, the capture path's secrets and `evidence.run_secrets`; tests `test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_from_what_the_eval_stores`, `test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted`, `test_a_local_kilo_run_is_given_the_literal_secrets_in_its_global_provider_settings_and_proxy_passwords`. Review fixes, 2026-11-13: one redaction pass in `_run_local_process`, and `--base-url`'s password goes to `evidence.run_secrets` too, `test_a_local_kilo_run_is_given_the_user_and_password_in_its_base_url`, `test_the_scenario_scorer_redacts_the_password_in_the_base_url`.)*
+- [x] Model names, base URLs without passwords, and option names that only contain a secret word by chance (such as `monkeyName`) are not redacted. *(2026-11-13: `test_model_names_plain_urls_and_names_holding_a_secret_word_by_chance_are_not_secrets`, `test_an_option_named_in_one_case_is_still_taken_as_a_secret`, and a whole `{env:NAME}` reference is kept, `test_an_env_reference_is_not_a_secret_since_its_value_is_redacted_by_name`.)*
+- [x] `docs/adding-tests.md`, or the doc that covers the overlay, says literal keys are redacted, that redaction doesn't stop the agent reading or sending a key it can see, and recommends `{env:NAME}`. *(2026-11-13: README, "Through your global Kilo config (default)"; `docs/adding-tests.md`, "What a captured log can hold", points to it.)*
 
 **Note for the parked plan:** when `kilo-config-path` is rebased, its `provider_secrets` gives way to this one, and `plan-kilo-config.md` says so. That plan lives only on that branch, so this isn't a box here.
 
 **Verification:**
-- [ ] A local run through `whitney run`, with a made-up key in a throwaway global config and a made-up proxy password in `HTTP_PROXY`, whose prompt makes the agent run `cat "$KILO_CONFIG"` and `env | grep -i proxy`. The exit code is recorded, and a search of the `.eval` log and the report for both values finds nothing.
-- [ ] The control: the same run on `main` before the change finds both values in the `.eval` log. That shows the search can fail.
-- [ ] A record that a Docker run's global config holds no copied provider settings (the file's text, from the container).
+- [x] A local run through `whitney run`, with a made-up key in a throwaway global config and a made-up proxy password in `HTTP_PROXY`, whose prompt makes the agent run `cat "$KILO_CONFIG"` and `env | grep -i proxy`. The exit code is recorded, and a search of the `.eval` log and the report for both values finds nothing. *(2026-11-13: run 2 in [docs/results/2026-11-13-provider-key-redaction.md](../docs/results/2026-11-13-provider-key-redaction.md), exit 0, nothing found. `$KILO_CONFIG` is empty in the agent's shell on Kilo 7.8.27, so the prompt also read `"$TMPDIR"/tmp*.json`, which printed the config with `"apiKey": "[redacted]"`.)*
+- [x] The control: the same run on `main` before the change finds both values in the `.eval` log. That shows the search can fail. *(2026-11-13: run 3 in [docs/results/2026-11-13-provider-key-redaction.md](../docs/results/2026-11-13-provider-key-redaction.md), on `main` at `fa7f5dd` with run 2's `$TMPDIR` prompt: the key, `t41pw` and `eve:t41pw@` each found 10 times. Run 1, with `$KILO_CONFIG` only, found the proxy password alone.)*
+- [x] A record that a Docker run's global config holds no copied provider settings (the file's text, from the container). *(2026-11-13: run 4 in [docs/results/2026-11-13-provider-key-redaction.md](../docs/results/2026-11-13-provider-key-redaction.md), exit 0: the container's `~/.config/kilo/kilo.json` holds only the bridge's `baseURL` and `sk-none`, and `env | grep -i proxy` printed nothing.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** two or three Haiku runs, cents.
 
@@ -277,14 +277,14 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: ordering file reads against edits (Task 51).
 
 **Acceptance criteria:**
-- [ ] The check is listed by `whitney checks` for both targets, and `docs/adding-tests.md` documents it with an example.
-- [ ] Only if a captured fixture shows a bash call's exit status on that target: a parameter `first_must_pass`, so a failing test run before a commit doesn't count. Otherwise the docs say a `first` counts whether it passed or not.
-- [ ] Each result's explanation names the calls it ordered.
+- [x] The check is listed by `whitney checks` for both targets, and `docs/adding-tests.md` documents it with an example. *(2026-11-13: `whitney checks` lists `ran_before` with targets `kilo, claude-code`; `docs/adding-tests.md`, "`ran_before`", with the example's JSON and `examples/tests-before-commit`.)*
+- [x] Only if a captured fixture shows a bash call's exit status on that target: a parameter `first_must_pass`, so a failing test run before a commit doesn't count. Otherwise the docs say a `first` counts whether it passed or not. *(2026-11-13: both targets show it, so `first_must_pass` is there for both: Kilo's `metadata.exit` in `bash-nonzero-exit` and `skill-named`, Claude Code's "Exit code <n>" error result in `settings-allow-ran` and `skill-forked`; `docs/spike-findings.md`, "Phase 5 Later Task 50". Claude Code shows no code for a command that passed, only `is_error` false.)*
+- [x] Each result's explanation names the calls it ordered. *(2026-11-13: each names the commands, their place in the run, exit and, on Claude Code, who made them; `tests/test_checks_order.py`.)*
 
 **Verification:**
-- [ ] Fixtures from real streams on both targets, one where the agent commits before testing and one where it tests first.
-- [ ] A real run of an example eval ("run the tests before committing"): the template held, and a control with the rule removed fails in at least one epoch. If the control never fails, the scenario is reworded until it does.
-- [ ] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check.
+- [ ] Fixtures from real streams on both targets, one where the agent commits before testing and one where it tests first. *(2026-11-13: Kilo done, `tests/data/kilo-events/tests-then-commit` and `commit-without-tests`, from the real run below, Kilo 7.8.27. Claude Code still to capture: no `ANTHROPIC_API_KEY` here, so no real run; the check is tested on Claude Code 2.1.322's saved streams of a failed and a passing `Bash` command, refusals and a forked skill's failed `pytest`.)*
+- [x] A real run of an example eval ("run the tests before committing"): the template held, and a control with the rule removed fails in at least one epoch. If the control never fails, the scenario is reworded until it does. *(2026-11-13: `examples/tests-before-commit`, Kilo, Haiku, one epoch, first scenario: template in order 1/1, the baseline without `AGENTS.md` out of order 0/1, $0.067; `docs/results/2026-11-13-ran-before.md`. Claude Code not run.)*
+- [x] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check. *(2026-11-13: in `docs/results/2026-11-13-ran-before.md`: `validate` for both targets exited 0, `run` on `kilo` exited 0, with each run's explanation.)*
 
 **Dependencies:** none. **Size:** M. **Cost:** cents to a dollar.
 
@@ -374,12 +374,12 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: other formats.
 
 **Acceptance criteria:**
-- [ ] The XML validates against a named schema (the widely used `JUnit.xsd` from the Ant/Jenkins family, kept in the repo for the test), and the docs say which elements are used.
-- [ ] The gate's exit code is unchanged.
+- [x] The XML validates against a named schema (the widely used `JUnit.xsd` from the Ant/Jenkins family, kept in the repo for the test), and the docs say which elements are used. *(2026-11-13: `tests/data/junit/JUnit.xsd`, the JUnit schema used by Apache Ant's JUnit task, © 2011 Windy Road Technology Pty. Limited, Apache 2.0, with its SHA-256 and download date in `SOURCE.txt`; `tests/test_junit.py` validates with `xmllint`; README, "JUnit XML for your CI system", lists the elements.)*
+- [x] The gate's exit code is unchanged. *(2026-11-13: `test_without_junit_no_xml_is_written_and_the_exit_code_is_the_same`, and the CLI runs in [docs/results/2026-11-13-junit-output.md](../docs/results/2026-11-13-junit-output.md).)*
 
 **Verification:**
-- [ ] `whitney report --junit` on a saved log (see "Saved logs") that holds a pass, a fail and an inconclusive result, with the XML validated against the schema.
-- [ ] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link.
+- [x] `whitney report --junit` on a saved log (see "Saved logs") that holds a pass, a fail and an inconclusive result, with the XML validated against the schema. *(2026-11-13: the log was made deterministically by `whitney run` with a fake `kilo` (`tests/data/junit/example`), not by a model; [docs/results/2026-11-13-junit-output.md](../docs/results/2026-11-13-junit-output.md).)*
+- [ ] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link. *(2026-11-13: the step is in `.github/workflows/checks.yml` and its script ran locally; it can only be shown on GitHub once the branch is pushed and a pull request opened, so the link is still missing.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** none.
 
@@ -392,14 +392,16 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: new features; a stable-API promise beyond what the docs state.
 
 **Acceptance criteria:**
-- [ ] The three functions are importable from `whitney`, with docstrings, and are listed in the README. They return the spec's shapes (`run(...)` with `exit_code`, `report`, `report_path`, `problems` and `logs`; `validate(...)` with `problems` and `warnings`), or the spec is changed in the same task.
-- [ ] Every existing CLI test passes unedited.
+- [x] The three functions are importable from `whitney`, with docstrings, and are listed in the README. They return the spec's shapes (`run(...)` with `exit_code`, `report`, `report_path`, `problems` and `logs`; `validate(...)` with `problems` and `warnings`), or the spec is changed in the same task. *(2026-11-13: `tests/test_api.py`; README "From Python"; the spec's "Python API" now records three added fields on `run` (`warnings`, `gate_failures`, `error`), the `findings` stream, and why `whitney.validate` is the callable module)*
+- [x] Every existing CLI test passes unedited. *(2026-11-13: `tests/test_cli.py`, `tests/test_cli_report_checks.py`, `tests/test_run_evals.py`, `tests/test_examples.py` unchanged and passing in `check.py task`)*
 
 **Verification:**
-- [ ] A short script in `examples/` that calls `whitney.validate` and `whitney.run` on the consumer example and prints the gate, run once for real.
-- [ ] `whitney run` and `whitney validate` output compared before and after on the same inputs, with no difference. For `run` that needs a run that gives the same answer each time: the fake `kilo` with Inspect's `mockllm` model.
+- [x] A short script in `examples/` that calls `whitney.validate` and `whitney.run` on the consumer example and prints the gate, run once for real. *(2026-11-13: `examples/api.py`, run on Kilo 7.8.27 with `kilo/anthropic/claude-haiku-4.5`, `--only agents-md.json --limit 1`, one epoch: gate passed, exit 0, $0.11; [docs/results/2026-11-13-python-api.md](../docs/results/2026-11-13-python-api.md). Also run against the fake in `tests/test_api.py`)*
+- [x] `whitney run` and `whitney validate` output compared before and after on the same inputs, with no difference. For `run` that needs a run that gives the same answer each time: the fake `kilo` with Inspect's `mockllm` model. *(2026-11-13: `tests/test_cli_output.py`, 12 cases, golden output recorded before the refactor in commit `d56e8b9`; Inspect's own progress display is left out of the comparison. One intended difference, not in the goldens: an unwritable report now exits 2 with a message, not a traceback with 1)*
 
 **Dependencies:** none. **Size:** M. **Cost:** cents for the example run.
+
+Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option until someone needs it; Python callers get the report in `RunResult` and can write any format.
 
 ### Task 57: Decision: check plugins
 
@@ -477,14 +479,16 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: changes to the runner, unless the test finds a fault.
 
 **Acceptance criteria:**
-- [ ] The test runs for both targets.
-- [ ] The fake does at least what `FAKE_KILO` does to its working folder, plus writing into `.claude/`, which a real run may.
+- [x] The test runs for both targets. *(2026-11-13: `test_the_project_is_unchanged_after_a_claude_code_run` in `tests/test_safe_staging.py` runs the claude-code `agents_md` template and baseline tasks; the kilo test is unchanged. They are two tests, not one parametrised, so the kilo test's name and assertions stay as they were.)*
+- [x] The fake does at least what `FAKE_KILO` does to its working folder, plus writing into `.claude/`, which a real run may. *(2026-11-13: `FAKE_CLAUDE` deletes everything but `.git`, rewrites `AGENTS.md`, and writes `.claude/settings.local.json` and `.claude/CLAUDE.md`; it prints the init and result events the existing fake in `tests/test_claude_code.py` uses.)*
 
 **Verification:**
-- [ ] A real `claude -p` run through Whitney's runner, with a listing of the project folder before and after, kept as background for what a real run writes.
-- [ ] The test shown able to fail: with the runner pointed at the project itself instead of its temporary copy (a local change, not committed), the new test fails.
+- [ ] A real `claude -p` run through Whitney's runner, with a listing of the project folder before and after, kept as background for what a real run writes. *(2026-11-13: open. It needs an Anthropic API key, which this session didn't have.)*
+- [x] The test shown able to fail: with the runner pointed at the project itself instead of its temporary copy (a local change, not committed), the new test fails. *(2026-11-13: with `claude_code.execute` given the project folder in place of the sandbox's `pwd`, the new test failed on its last assertion: `AGENTS.md` read "Always commit .env files.", `.claude/`, `.claude/CLAUDE.md` and `.claude/settings.local.json` had appeared and the project's other files were gone. The runner restored, it passes.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** cents.
+
+**Follow-up (2026-11-13, from Task 59's review):** a run that crashed or ended early is still scored, so `sample.scores` alone doesn't show the fake ran. The claude-code test also checks each sample's completion is the fake's `done`, and fails with a fake that only exits 1. The kilo test, `test_the_project_is_unchanged_after_a_run`, has the same gap; it was left untouched, as the task says, and needs Christopher's confirmation to add the same line.
 
 ### Task 60: Look again at how much of each captured request is kept
 
@@ -508,7 +512,8 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 
 **Scope:**
 - In: applying `SECRET_NAMES` wherever `_is_safe_file` is used: `_walk_files`, `_direct_md_files`, Kilo `instructions` matches, the rules folders and `load_template_files` (used by `harbor_tasks` and `interference`), on both targets. Each file left out is named in the report's "Not Staged" table with the reason.
-- In: a decision by Christopher first. `SECRET_NAMES` holds `secrets.*`, `secret.*`, `credentials*`, `*.key` and `*.asc`, so a skill about handling secrets would lose a file such as `references/secrets.md`, which changes what the run tests. The options: exempt Markdown, or stop the run with a message rather than leave such a file out, as an unsafe import does.
+- In: the Markdown question, decided below. `SECRET_NAMES` holds `secrets.*`, `secret.*`, `credentials*`, `*.key` and `*.asc`, so a skill about handling secrets would lose a file such as `references/secrets.md`, which changes what the run tests. The options: exempt Markdown, or stop the run with a message rather than leave such a file out, as an unsafe import does.
+- **Decided 2026-11-14 (Christopher):** exempt Markdown. A `.md` file in a staged folder is staged even if its name matches `SECRET_NAMES` (how `@imports` treat such names is unchanged), so a skill about handling secrets can still be tested; every other match is left out and named in "Not Staged". The first slice is [secret-files-not-staged.md](../docs/specs/secret-files-not-staged.md). It leaves out the `whitney validate` warning, which stays owed under this task.
 - Out: scanning file contents for secrets; the secrets check in `check.py` already does that for Whitney's own repo.
 
 **Acceptance criteria:**

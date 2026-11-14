@@ -1,0 +1,4 @@
+exit 2
+--- stderr
+whitney: error: `kilo` isn't on PATH; install the kilo target's CLI (see the README's Setup)
+--- stdout
