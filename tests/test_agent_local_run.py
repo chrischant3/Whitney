@@ -440,7 +440,7 @@ def test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_fr
     for secret in ("sk-literal-corp-0123", "team-header-0123", "eve:pw@"):
         assert secret not in events
     assert '"apiKey": "[redacted]"' in events and "HTTP_PROXY=[redacted]" in events
-    assert "https://llm.corp.example/v1" in events and "Corp Gateway" in events and '"X-Team": "Platform"' in events
+    assert '"baseURL": "https://llm.corp.example/v1"' in events and '"name": "Corp Gateway"' in events and '"X-Team": "Platform"' in events
 
 
 def test_a_run_with_an_overlay_still_copies_its_outputs_and_reads_the_overlay_from_a_json_file(fake_kilo, user_home):
