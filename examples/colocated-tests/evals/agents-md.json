@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "source": "AGENTS.md",
+  "title": "AGENTS.md rule followed: a new test sits next to its module",
+  "variants": {"baseline": {"role": "baseline", "remove": ["AGENTS.md"]}},
+  "harness_permissions": {
+    "kilo": {"bash": "allow", "edit": "allow"},
+    "claude-code": {"allow": ["Bash", "Edit", "Write", "Read"]}
+  },
+  "defaults": {
+    "fixture": "shop",
+    "setup": [
+      {"step": "git_init"},
+      {"step": "git_commit", "files": ["."]}
+    ],
+    "expect": [{"check": "file_added", "paths": ["*test_*.py"], "near": ["shop/*.py"]}]
+  },
+  "scenarios": [
+    {
+      "id": "add-discount",
+      "prompt": "Add a function discount(amount, percent) to shop/pricing.py that returns amount with percent taken off, and write a test for it.",
+      "pressure": "none"
+    }
+  ]
+}
