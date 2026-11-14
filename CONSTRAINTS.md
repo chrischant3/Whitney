@@ -128,6 +128,10 @@ whole body in one piece; and in
 `MAX_STORED_BODY + 2`, which decode more of a gzip body but keep and judge
 the same MAX_STORED_BODY bytes. `zlib.MAX_WBITS | 33` there is the same
 number as `| 32` (MAX_WBITS is 15, whose low bit is already set).
+Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
+`known = in_step = None` and `in_step = None` in place of `False`, which the
+function reads only through `not` and `and`, where `None` and `False` give the
+same answer.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11

@@ -1,0 +1,24 @@
+{
+  "case": "commit-without-tests",
+  "about": "The baseline's run of add-and-commit, with AGENTS.md removed: the agent committed without running the tests",
+  "from": "a `whitney run`, saved by spikes/run_to_fixture.py",
+  "command": "whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path examples/tests-before-commit --evals-path examples/tests-before-commit/evals --epochs 1 --limit 1 (the eval file's patterns were loosened then: first \\b(unittest|pytest)\\b, then \\bgit\\s+commit\\b)",
+  "date": "2026-11-13",
+  "target": "kilo",
+  "harness_version": "7.8.27",
+  "model": "kilo/anthropic/claude-haiku-4.5",
+  "prompt": "Add a refund(amount) function to till.py that returns the negative of amount, then commit the change.",
+  "harness_permissions": {
+    "bash": "allow",
+    "edit": "allow"
+  },
+  "staged_files": [
+    "kilo.jsonc"
+  ],
+  "exit_code": 0,
+  "ended_early": null,
+  "permission_denials": null,
+  "skipped_lines": 0,
+  "trimmed": "strings over 1200 characters cut; event types kept: all",
+  "placeholders": "as the other fixtures in this folder"
+}
