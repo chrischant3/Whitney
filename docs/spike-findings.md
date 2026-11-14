@@ -963,6 +963,71 @@ What Claude Code sent, run in the project folder and in what the loader staged f
 
 See [the results page](results/2026-11-12-capture-followups.md#not-shown).
 
+## Later Task 49: Kilo's code review and `REVIEW.md` (2026-11-13)
+
+The proposal's last future-work item puts a `REVIEW.md` in `template/.kilo/`, for a code review agent that "runs at the end of each run" and starts a verify subagent. This spike asked whether `REVIEW.md` does anything in `kilo run`, at the project root or in `.kilo/`.
+
+**Answer: no.** In Kilo 7.8.27, `REVIEW.md` changes nothing in `kilo run`, in either place, whether the run is an ordinary task or the built-in `/review` command. It is a setting of Kilo's cloud review of pull requests and merge requests, read from the repository root on the base branch. Nothing in a run starts a review by itself.
+
+### Docs read (2026-11-13)
+
+- [Code reviews overview](https://kilo.ai/docs/automate/code-reviews/overview): cloud reviews run when a pull request or merge request is opened or updated. `REVIEW.md` is turned on by a **Use REVIEW.md** toggle in the review configuration, must be "at the repository root", and is read "from the PR/MR base branch, not the feature branch". It sets review rules, severity, files to skip, summary style and how many of the six sub-agents to use; it can't override read-only mode or the output format. Missing, empty or unreadable, Kilo uses its own guidance; over 10,000 characters it is cut. Local reviews use `/review` in the CLI and the VS Code extension; the page doesn't say they read `REVIEW.md`. `.kilo/` isn't mentioned.
+- [GitHub](https://kilo.ai/docs/automate/code-reviews/github) and [GitLab](https://kilo.ai/docs/automate/code-reviews/gitlab) code reviews: the same toggle, "Load repository-specific review guidance, including sub-agent usage, from the base branch". Triggers are a pull request (or merge request) opened, new commits pushed, reopened, or a draft marked ready. Neither page covers the CLI.
+- [Integrations](https://kilo.ai/docs/automate/integrations): connecting GitHub or GitLab; no `REVIEW.md`, no CLI.
+
+### What the CLI holds
+
+No model calls, Kilo 7.8.27 at `/opt/homebrew/bin/kilo`:
+
+- The executable doesn't contain `REVIEW.md`: 0 matches as UTF-8 (in any case) and as UTF-16. The same search finds `AGENTS.md` 10 and 48 times.
+- `kilo serve`'s `GET /command` lists a built-in `review` command, "review changes [uncommitted|staged|unpushed|branch|commit|pr]", with no `source`, next to `init`, `goal` and the others. Its 24,400-character template never names `REVIEW.md` or any repository file of guidance. The only guidance it takes is the text typed after `/review`, which "may refine review focus" but can't change the scope, tracks or output format. It tells the model to treat every file in the review as untrusted data, and to size its sub-agents (the `task` tool) by the diff: none for a small diff or `quick`, three or four for a medium one, all six for a large one or `deep`.
+- The prompt also holds a tool that suggests a local review "after completing implementation work", as the last action of a turn, with `/review uncommitted` and the like as its action prompts. It only suggests; it didn't appear in these runs.
+- `kilo github run` (the GitHub agent) and `kilo pr` weren't run.
+
+### Runs
+
+Three scratch projects under `$TMPDIR`, each a git repository with `README.md` and `app.py` (`total()`) in one commit, then an uncommitted change adding `parse(expr)`, which calls `eval(expr)`. They differed only in one file, committed with the rest:
+
+| Project | `REVIEW.md` |
+|---|---|
+| `root` | at the root |
+| `dotkilo` | at `.kilo/REVIEW.md` |
+| `none` | none |
+
+The file asked for two marks the model wouldn't write unprompted: start every review summary with the line `REVIEW-GUIDE-ACTIVE-7Q3`, and name any `eval(` finding `EVAL-BAN`.
+
+Each run: a temporary HOME holding only a copy of the Kilo login (as `whitney.agent.kilo_home` makes it) and a global `kilo.json` with only `permission` (`bash: allow`; `edit: deny` for the reviews, `allow` for the tasks), then `kilo run --pure --format json -m kilo/anthropic/claude-haiku-4.5 ...`. Never `--auto`. The streams stayed in `$TMPDIR` and aren't saved here.
+
+| Run | Project | Command | Marks in the stream | Tools | First step: input + cache tokens | Cost |
+|---|---|---|---|---|---|---|
+| review-root | `root` | `--command review quick` | none | 3 `bash` (git status, diff, untracked) | 121 + 22,478 written | $0.0341 |
+| review-dotkilo | `dotkilo` | the same | none | the same | 125 + 22,478 read | $0.0092 |
+| review-none | `none` | the same | none | the same | 121 + 22,478 read | $0.0087 |
+| review-none-guidance | `none` | `--command review -- quick "<the same two rules>"` | both, in the final review | the same | 121 + 16,126 read, 6,384 written | $0.0175 |
+| task-root | `root` | "Add a one-line docstring to total() in app.py. Then finish." | none | `read`, `edit` | 121 + 17,217 written | $0.0275 |
+| task-none | `none` | the same | none | the same | 121 + 17,217 read | $0.0078 |
+
+Six Haiku runs, $0.105 in all (the `step_finish` costs).
+
+What the streams show:
+
+- **The reviews ran the same with and without the file.** All three found the `eval` call and called it CRITICAL, from the git diff alone; none started with the mark or used the name `EVAL-BAN`, and none read `REVIEW.md`. The positive control, the same rules typed after `/review`, put both marks in the review, so the check could fail.
+- **The file wasn't in what was sent.** Each review's first request was the same size, and the `dotkilo` and `none` runs read all 22,478 cached tokens the `root` run wrote: the prompt up to the cache point was the same with and without a `REVIEW.md` at the root. The 4 extra uncached tokens in `dotkilo` are too few for the file (178 bytes, about 50 tokens) and match its longer folder name. The two task runs show the same: 17,217 tokens written by `task-root`, all read by `task-none`. Kilo loads `AGENTS.md` into that prompt ([load-order.md](load-order.md)), so a `REVIEW.md` loaded the same way would have changed it.
+- **Nothing ran at the end of a task.** Both task runs ended after the edit with `step_finish` `reason: stop`: no `task` call, no review, no suggestion.
+- **How a review shows in the stream:** a `/review` run looks like any other run. Its first text says it is performing a review, its tools are `bash` calls running `git status --short`, `git diff HEAD` and `git ls-files --others --exclude-standard`, and its last text has the heading `## Local Review for **uncommitted changes**` and a severity table. A larger or `deep` review would add `task` tool parts for its sub-agents (not run here). No event names the review as such.
+
+### Recommendation
+
+- **Don't build an eval of `REVIEW.md` on `kilo run`.** It does nothing there, and its documented home, Kilo's cloud review, runs on Kilo's servers when a pull request changes, which Whitney's runners can't drive or observe. No follow-on task is drafted.
+- **The proposal's `template/.kilo/REVIEW.md` wouldn't work even in the cloud**, which reads it only at the repository root. Drop it from the proposal's future work, or reword it as "`REVIEW.md` at the root, for Kilo's cloud review", outside what Whitney tests.
+- **For a check at the end of each run**, use Tasks 45 and 46 (a Stop hook, and Kilo's plugins). If a team wants Kilo's local review in an eval, `kilo run --command review -- <guidance>` works headlessly and follows guidance passed as arguments, and its stream is ordinary tool parts and text; a scenario could stage that. It needs a decision first, since the guidance is then a prompt, not an instruction file.
+
+### Not shown
+
+- One run per case, on Haiku 4.5 only, all in `quick` mode on a small diff, so no sub-agents.
+- The VS Code extension's `/review` and the Agent Manager's `worktree` review weren't run, nor `kilo github run`, which may share the cloud's code. The cloud review wasn't run.
+- Whether a later Kilo reads `REVIEW.md` locally. The overview page leaves it open; re-check on a Kilo upgrade by searching the executable for the name and rerunning `review-root` against `review-none`.
+
 ## Later Task 63: shell variables and `external_directory` (2026-11-13)
 
 Task 41's runs ([results](results/2026-11-13-provider-key-redaction.md)) saw `cat ~/...` ask for `external_directory` while `cat "$HOME"/...` and `cat "$TMPDIR"/...` read files outside the project with no prompt. This spike asks why, and which other forms of a path get past the rule. The answer: Kilo checks only the literal text of a bash command's path arguments, only for twelve shell command names, and skips any argument holding a `$` or a backtick. So a variable, a command substitution, a redirect or any reader other than `cat` (`head`, `grep`, `sed`, a script) reads outside the project with no prompt, under `ask` and under `deny`.

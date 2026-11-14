@@ -304,13 +304,15 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: building it; Claude Code's own review features. Tasks 45 and 46 cover a Stop hook used the same way.
 
 **Acceptance criteria:**
-- [ ] `docs/spike-findings.md` records what `REVIEW.md` does in `kilo run`, with the Kilo version, the docs read and the date.
-- [ ] A recommendation, with a follow-on task drafted here if the feature works headlessly.
+- [x] `docs/spike-findings.md` records what `REVIEW.md` does in `kilo run`, with the Kilo version, the docs read and the date.
+- [x] A recommendation, with a follow-on task drafted here if the feature works headlessly.
 
 **Verification:**
-- [ ] A real `kilo run` in a project with a `REVIEW.md`, and its stream, compared with the same run without the file.
+- [x] A real `kilo run` in a project with a `REVIEW.md`, and its stream, compared with the same run without the file.
 
 **Dependencies:** none. **Size:** S. **Cost:** cents.
+
+**Done 2026-11-13:** Kilo 7.8.27 doesn't read `REVIEW.md` in `kilo run`, at the root or in `.kilo/`, in an ordinary run or in `/review`; it is a setting of Kilo's cloud review, read at the root of the base branch. Six Haiku runs, $0.105, compared in [spike-findings.md](../docs/spike-findings.md#later-task-49-kilos-code-review-and-reviewmd-2026-11-13). No follow-on task, since it doesn't work headlessly.
 
 ---
 
