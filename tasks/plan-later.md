@@ -49,16 +49,16 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: refusing literal keys outright (`{env:NAME}` only). That is the other option the Later list names; this task redacts, and the docs recommend `{env:NAME}`.
 
 **Acceptance criteria:**
-- [ ] Each such value is added to both the agent's run secrets and `evidence.run_secrets`, so it is replaced in the log, the transcript and the report.
-- [ ] Model names, base URLs without passwords, and option names that only contain a secret word by chance (such as `monkeyName`) are not redacted.
-- [ ] `docs/adding-tests.md`, or the doc that covers the overlay, says literal keys are redacted, that redaction doesn't stop the agent reading or sending a key it can see, and recommends `{env:NAME}`.
+- [x] Each such value is added to both the agent's run secrets and `evidence.run_secrets`, so it is replaced in the log, the transcript and the report. *(2026-11-13: `provider_secrets` and the new `proxy_secrets` in `agent.py` feed `_run_with_overlay`, `_run_local_process`, the capture path's secrets and `evidence.run_secrets`; tests `test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_from_what_the_eval_stores`, `test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted`, `test_a_local_kilo_run_is_given_the_literal_secrets_in_its_global_provider_settings_and_proxy_passwords`. Review fixes, 2026-11-13: one redaction pass in `_run_local_process`, and `--base-url`'s password goes to `evidence.run_secrets` too, `test_a_local_kilo_run_is_given_the_user_and_password_in_its_base_url`, `test_the_scenario_scorer_redacts_the_password_in_the_base_url`.)*
+- [x] Model names, base URLs without passwords, and option names that only contain a secret word by chance (such as `monkeyName`) are not redacted. *(2026-11-13: `test_model_names_plain_urls_and_names_holding_a_secret_word_by_chance_are_not_secrets`, `test_an_option_named_in_one_case_is_still_taken_as_a_secret`, and a whole `{env:NAME}` reference is kept, `test_an_env_reference_is_not_a_secret_since_its_value_is_redacted_by_name`.)*
+- [x] `docs/adding-tests.md`, or the doc that covers the overlay, says literal keys are redacted, that redaction doesn't stop the agent reading or sending a key it can see, and recommends `{env:NAME}`. *(2026-11-13: README, "Through your global Kilo config (default)"; `docs/adding-tests.md`, "What a captured log can hold", points to it.)*
 
 **Note for the parked plan:** when `kilo-config-path` is rebased, its `provider_secrets` gives way to this one, and `plan-kilo-config.md` says so. That plan lives only on that branch, so this isn't a box here.
 
 **Verification:**
-- [ ] A local run through `whitney run`, with a made-up key in a throwaway global config and a made-up proxy password in `HTTP_PROXY`, whose prompt makes the agent run `cat "$KILO_CONFIG"` and `env | grep -i proxy`. The exit code is recorded, and a search of the `.eval` log and the report for both values finds nothing.
-- [ ] The control: the same run on `main` before the change finds both values in the `.eval` log. That shows the search can fail.
-- [ ] A record that a Docker run's global config holds no copied provider settings (the file's text, from the container).
+- [x] A local run through `whitney run`, with a made-up key in a throwaway global config and a made-up proxy password in `HTTP_PROXY`, whose prompt makes the agent run `cat "$KILO_CONFIG"` and `env | grep -i proxy`. The exit code is recorded, and a search of the `.eval` log and the report for both values finds nothing. *(2026-11-13: run 2 in [docs/results/2026-11-13-provider-key-redaction.md](../docs/results/2026-11-13-provider-key-redaction.md), exit 0, nothing found. `$KILO_CONFIG` is empty in the agent's shell on Kilo 7.8.27, so the prompt also read `"$TMPDIR"/tmp*.json`, which printed the config with `"apiKey": "[redacted]"`.)*
+- [x] The control: the same run on `main` before the change finds both values in the `.eval` log. That shows the search can fail. *(2026-11-13: run 3 in [docs/results/2026-11-13-provider-key-redaction.md](../docs/results/2026-11-13-provider-key-redaction.md), on `main` at `fa7f5dd` with run 2's `$TMPDIR` prompt: the key, `t41pw` and `eve:t41pw@` each found 10 times. Run 1, with `$KILO_CONFIG` only, found the proxy password alone.)*
+- [x] A record that a Docker run's global config holds no copied provider settings (the file's text, from the container). *(2026-11-13: run 4 in [docs/results/2026-11-13-provider-key-redaction.md](../docs/results/2026-11-13-provider-key-redaction.md), exit 0: the container's `~/.config/kilo/kilo.json` holds only the bridge's `baseURL` and `sk-none`, and `env | grep -i proxy` printed nothing.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** two or three Haiku runs, cents.
 
@@ -491,6 +491,8 @@ Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option 
 
 **Follow-up (2026-11-13, from Task 59's review):** a run that crashed or ended early is still scored, so `sample.scores` alone doesn't show the fake ran. The claude-code test also checks each sample's completion is the fake's `done`, and fails with a fake that only exits 1. The kilo test, `test_the_project_is_unchanged_after_a_run`, has the same gap; it was left untouched, as the task says, and needs Christopher's confirmation to add the same line.
 
+- [x] Add the same completion check to the kilo test. *(2026-11-14: Christopher approved ("yes"). `test_the_project_is_unchanged_after_a_run` now also asserts each sample's completion is `FAKE_KILO`'s `done`, with the claude-code test's comment; nothing else in the test changed. With `exit 1` as the fake's first command, the test without the check still passed and the test with it failed on the new line. The fake restored, it passes.)*
+
 ### Task 60: Look again at how much of each captured request is kept
 
 **Description:** Task 31 decision 5 keeps the first request in full plus each later request's size and a "changed" flag. Christopher asked to look at it again once multi-step captures show how often a later request's system prompt or tools change.
@@ -513,7 +515,8 @@ Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option 
 
 **Scope:**
 - In: applying `SECRET_NAMES` wherever `_is_safe_file` is used: `_walk_files`, `_direct_md_files`, Kilo `instructions` matches, the rules folders and `load_template_files` (used by `harbor_tasks` and `interference`), on both targets. Each file left out is named in the report's "Not Staged" table with the reason.
-- In: a decision by Christopher first. `SECRET_NAMES` holds `secrets.*`, `secret.*`, `credentials*`, `*.key` and `*.asc`, so a skill about handling secrets would lose a file such as `references/secrets.md`, which changes what the run tests. The options: exempt Markdown, or stop the run with a message rather than leave such a file out, as an unsafe import does.
+- In: the Markdown question, decided below. `SECRET_NAMES` holds `secrets.*`, `secret.*`, `credentials*`, `*.key` and `*.asc`, so a skill about handling secrets would lose a file such as `references/secrets.md`, which changes what the run tests. The options: exempt Markdown, or stop the run with a message rather than leave such a file out, as an unsafe import does.
+- **Decided 2026-11-14 (Christopher):** exempt Markdown. A `.md` file in a staged folder is staged even if its name matches `SECRET_NAMES` (how `@imports` treat such names is unchanged), so a skill about handling secrets can still be tested; every other match is left out and named in "Not Staged". The first slice is [secret-files-not-staged.md](../docs/specs/secret-files-not-staged.md). It leaves out the `whitney validate` warning, which stays owed under this task.
 - Out: scanning file contents for secrets; the secrets check in `check.py` already does that for Whitney's own repo.
 
 **Acceptance criteria:**

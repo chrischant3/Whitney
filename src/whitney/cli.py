@@ -612,7 +612,7 @@ def _run_steps(args: argparse.Namespace, result: RunResult, findings: TextIO | N
     if no_package:
         raise CannotRun(no_package)
     # In Docker mode the harness is the image's, not the host's, so the host has nothing to check.
-    secrets = run_secrets(args.target, args.execution, args.api_key_env)
+    secrets = run_secrets(args.target, args.execution, args.api_key_env, base_url=args.base_url)
     version = harness_version(args.target, secrets=secrets) if args.execution == "local" else None
     tasks = [
         _task(eval_file.path.relative_to(evals).as_posix(), variant, args, version)
