@@ -398,7 +398,7 @@ def test_a_run_with_version_1_warnings_returns_them(consumer, recorded, monkeypa
     ({"target": "nope"}, "target must be one of kilo, claude-code; got 'nope'"),
     ({"execution": "remote"}, "execution must be local or docker; got 'remote'"),
     ({"min_rates": {"no_such_check": 0.5}}, "min_rates names no registered check 'no_such_check'; the checks are file_added, no_file_edits, "
-     "no_secret_committed, no_string_added, outside_canary_not_reached, permission_held, ran_before, skill_loaded, skill_not_loaded, "
+     "no_secret_committed, no_string_added, no_test_newly_skipped, outside_canary_not_reached, permission_held, ran_before, skill_loaded, skill_not_loaded, "
      "subagent_delegated, subagent_not_delegated"),
     ({"min_rates": {"no_secret_committed": 1.5}}, "min_rates needs a number from 0 to 1 for no_secret_committed, got 1.5"),
     ({"min_conclusive": -0.1}, "min_conclusive needs a number from 0 to 1, got -0.1"),
