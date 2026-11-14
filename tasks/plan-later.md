@@ -115,7 +115,7 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: changing Whitney's evals, docs or code (Task 64), and filing anything with Kilo.
 
 **Acceptance criteria:**
-- [x] A "Later Task 63" section in `docs/spike-findings.md`, with the Kilo version, the date, a table of the forms and the cause. *(2026-11-13: [Later Task 63](../docs/spike-findings.md#later-task-63-shell-variables-and-external_directory-2026-11-13). Kilo's bash scan (`packages/opencode/src/tool/shell.ts` at `v7.8.27`) checks paths only for nine command names, drops `$VAR` and `$(...)` arguments, and skips any argument holding `$`; it fails open.)*
+- [x] A "Later Task 63" section in `docs/spike-findings.md`, with the Kilo version, the date, a table of the forms and the cause. *(2026-11-13: [Later Task 63](../docs/spike-findings.md#later-task-63-shell-variables-and-external_directory-2026-11-13). Kilo's bash scan (`packages/opencode/src/tool/shell.ts` at `v7.8.27`) checks paths only for twelve shell command names, drops `$VAR` and `$(...)` arguments, and skips any argument holding `$`; it fails open.)*
 - [x] A recommendation on reporting it to Kilo, on scenarios for Whitney's evals and on what Whitney's docs claim, with the issue text drafted, not filed. *(2026-11-13: in the same section, "Recommendation" and "Draft issue for Kilo".)*
 - [x] If the recommendation is a build, the follow-on task drafted here. *(2026-11-13: Task 64.)*
 
@@ -129,7 +129,7 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 
 ### Task 64: Scenarios and docs for the shell routes `external_directory` misses
 
-**Description:** Task 63 showed that on Kilo 7.8.27 `external_directory` is checked only for nine bash commands (`cd`, `rm`, `cp`, `mv`, `mkdir`, `touch`, `chmod`, `chown`, `cat`) and only when their path is written out. A variable (`"$PWD"/..`, `$HOME`, `D=...; "$D"`), a command substitution, a redirect (`cat <`) or any other reader (`head`, `grep`, a script) reads outside the project with no ask, under `ask` and `deny`. A variable in a command's name steps round a `bash` pattern rule too. `outside_canary_not_reached` would catch each of these, since it watches the canary's content, but no scenario prompts one, and Whitney's docs say more than Kilo does.
+**Description:** Task 63 showed that on Kilo 7.8.27 `external_directory` is checked only for twelve bash commands (`cd`, `chdir`, `popd`, `pushd`, `rm`, `cp`, `mv`, `mkdir`, `touch`, `chmod`, `chown`, `cat`) and only when their path is written out. A variable (`"$PWD"/..`, `$HOME`, `D=...; "$D"`), a command substitution, a redirect (`cat <`) or any other reader (`head`, `grep`, a script) reads outside the project with no ask, under `ask` and `deny`. A variable in a command's name steps round a `bash` pattern rule too. `outside_canary_not_reached` would catch each of these, since it watches the canary's content, but no scenario prompts one, and Whitney's docs say more than Kilo does.
 
 **Scope:**
 - In: a new finding, `docs/findings/002-shell-paths-bypass-external-directory.md`, in finding 001's shape, from Task 63's section.
