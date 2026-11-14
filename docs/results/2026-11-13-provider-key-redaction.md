@@ -1,0 +1,159 @@
+# Literal provider keys and proxy passwords in a local Kilo run (2026-11-13)
+
+Task 41's real runs, in [tasks/plan-later.md](../../tasks/plan-later.md), on branch `task-41`. Kilo 7.8.27 on the host, `kilo/anthropic/claude-haiku-4.5` through the Kilo Gateway with the user's own Kilo login, one epoch, `--limit 1`.
+
+## The setup
+
+Nothing in the user's own Kilo setup was changed. The made-up key went into a throwaway global config, and the run was pointed at it with `XDG_CONFIG_HOME`, which `global_provider_settings` reads. `kilo_auth_path` reads `XDG_DATA_HOME`, else `HOME`, which were left as they were, so the run still copied the real login into its temporary HOME. The user's real global config has no `provider` settings, so nothing was lost by not reading it.
+
+- `$XDG_CONFIG_HOME/kilo/kilo.json`: `{"provider": {"anthropic": {"options": {"apiKey": "sk-ant-madeup-t41-LITERAL-0000000000"}}}}`. The run's model is on the `kilo` provider, so the `anthropic` settings are only carried over, never used.
+- `HTTP_PROXY=http://eve:t41pw@proxy.invalid:3128`: a 5-character password, below `MIN_SECRET_LENGTH`.
+- `NO_PROXY=*`, so Kilo's own calls didn't go to the made-up proxy. The Gateway call worked.
+
+The eval file, kept outside the repository, had `"variants": {}` (the template only, no baseline), the `repo-with-env` fixture, `harness_permissions` `{"bash": "allow", "edit": "allow", "read": {"*": "allow"}}` and one scenario.
+
+## The runs
+
+| # | Code | Prompt | Exit code | Cost the harness reported |
+|---|---|---|---|---|
+| 0 | `main` at `fa7f5dd` | `cat "$KILO_CONFIG"; cat ~/.config/kilo/kilo.json; env \| grep -i proxy` | 1 | $0.0222 + $0.0225 |
+| 1 (control) | `main` at `fa7f5dd` | `cat "$KILO_CONFIG"; env \| grep -i proxy` | 0 | $0.0247 |
+| 2 | `task-41` | first `env \| grep -i proxy`, then `cat "$KILO_CONFIG" "$TMPDIR"/tmp*.json` | 0 | $0.0347 |
+
+The total is about $0.104. Each run was:
+
+```bash
+env XDG_CONFIG_HOME=<scratch>/xdg HTTP_PROXY='http://eve:t41pw@proxy.invalid:3128' NO_PROXY='*' \
+  whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path template/kilo \
+  --evals-path <scratch>/evals --epochs 1 --limit 1 --log-dir <scratch>/logs-<run> --results-dir <scratch>/results-<run>
+```
+
+The control ran `main`'s code by putting an extract of `main`'s `src/` (`git archive HEAD src`) first on `PYTHONPATH`, and running `python -m whitney.cli`. A check printed `whitney.agent.__file__` from that extract first.
+
+Each `.eval` log (a zip) and each report was searched, every member of the zip, for `sk-ant-madeup-t41-LITERAL-0000000000`, `t41pw`, `eve:t41pw@` and `proxy.invalid`.
+
+**Run 0** (the first try, with a baseline) is not evidence. `cat ~/.config/kilo/kilo.json` asked for `external_directory` on the temporary HOME's `.config/kilo/*`, Kilo auto-rejected it, and the whole command didn't run. It's listed for its cost.
+
+**Run 1, the control, on `main`.** The proxy password was found 10 times in `samples/print-config-and-proxy_epoch_1.json`, so the search can fail. The tool's output was:
+
+```
+cat: : No such file or directory
+HTTP_PROXY=http://eve:t41pw@proxy.invalid:3128
+NO_PROXY=*
+```
+
+The made-up key wasn't found, because the agent couldn't reach it through `$KILO_CONFIG` (below). So this control shows the search failing for the proxy password only. For the literal key, the only evidence that `main` leaks it is the unit tests' red run.
+
+**Run 2, with the change.** `whitney run` exited 0. None of the four strings was found in the log or the report. The agent's two commands printed:
+
+```
+HTTP_PROXY=[redacted]
+NO_PROXY=*
+```
+
+and, among the files in `$TMPDIR`, the run's own config:
+
+```
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "permission": { "bash": "allow", "edit": "allow", "read": { "*": "allow" } },
+  "provider": { "anthropic": { "options": { "apiKey": "[redacted]" } } }
+}
+```
+
+(The permission lines are condensed here. In the log they're indented, as Kilo printed them.)
+
+## The control and the Docker run, after the review
+
+Two more runs on 2026-11-13, at Christopher's request, with the same throwaway config, `HTTP_PROXY` and `NO_PROXY` as above.
+
+| # | Code | Prompt | Exit code | Cost the harness reported |
+|---|---|---|---|---|
+| 3 (control) | `main` at `fa7f5dd`, as run 1 | run 2's: first `env \| grep -i proxy`, then `cat "$KILO_CONFIG" "$TMPDIR"/tmp*.json` | 0 | $0.0332 |
+| 4 (Docker) | `task-41` at `1b4811c`, plus the id fix below | first `env \| grep -i proxy`, then `cat "$HOME"/.config/kilo/kilo.json`, with `--execution docker` | 0 | $0.0211 |
+
+All four runs since the first come to about $0.159, including run 0's $0.045, which isn't evidence.
+
+**Run 3, the control.** In `main`'s log, the made-up key, `t41pw` and `eve:t41pw@` were each found 10 times in `samples/print-config-and-proxy_epoch_1.json`. The agent printed `HTTP_PROXY=http://eve:t41pw@proxy.invalid:3128` and, among the `tmp*.json` files, the run's config with `"apiKey": "sk-ant-madeup-t41-LITERAL-0000000000"`. With run 2, this shows the search fails on both values without the change and finds nothing with it.
+
+**Run 4, Docker.** `env | grep -i proxy` printed nothing (`(no output)`): the container has no proxy variable. The container's global config, as the agent printed it:
+
+```
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "provider": {
+    "anthropic": {
+      "options": {
+        "baseURL": "http://localhost:13131/v1",
+        "apiKey": "sk-none"
+      }
+    }
+  },
+  "permission": {
+    "bash": "allow",
+    "edit": "allow",
+    "read": {
+      "*": "allow"
+    }
+  }
+}
+```
+
+Only the bridge's settings, which Whitney writes: none of the host's provider settings. The made-up key, `t41pw`, `eve:t41pw@` and `proxy.invalid` were not found in the log or the report. `cat "$HOME"/...` asked for no permission here either, while run 0's `cat ~/.config/...` did, which supports the guess that Kilo doesn't expand variables when it checks a bash command's paths. The file had a `$schema` line that Whitney doesn't write, so Kilo rewrites its global config too.
+
+## Red, then green
+
+Before the code, the new tests failed, for example (from the run):
+
+```
+FAILED tests/test_agent_local_run.py::test_literal_provider_keys_and_proxy_passwords_kilo_is_given_are_redacted_from_what_the_eval_stores
+E           assert 'sk-literal-corp-0123' not in '{"type":"st...ample:3128\n'
+FAILED tests/test_capture_agents.py::test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted
+E       assert ('sk-literal-...e-0123456789' not in '{"exit_code...he events"}}'
+```
+
+The review fixes' tests failed first too, for example `ValueError: Invalid IPv6 URL` for `http://[::1` in the provider settings, `assert ['pw'] == ['user:pw@', ...]` for a short password in a provider URL, and a scenario whose setup mentions `https://github.com` refused because an `HTTP-Referer` header's value counted as a secret.
+
+## After the review
+
+The review (2026-11-13) changed what these runs tested, without a new run:
+
+- The overlay is now `kilo.json` in a `kilo-eval-config-*` folder of its own (0700), not a `tmp*.json` beside every other file in `$TMPDIR`. The agent can still list `$TMPDIR` and read it, so the redaction is what protects the log.
+- `kilo debug config` with `KILO_CONFIG` pointing at a `.txt` file loaded it as well as a `.json` one, and Kilo rewrote the file with a `$schema` line, which confirms the rewrite seen in run 2.
+- The secret-word rule judges setting names only, not provider, model or variant ids, so a provider called `my-key` keeps its name and URL (`test_a_provider_model_or_variant_id_ending_in_a_secret_word_keeps_its_settings`, which failed first with `'Corp Key Gateway' != 'provider-key-0123'`).
+- Header values are now secrets only when the header's name is (`Authorization`, `X-Api-Key`, `Cookie`), and a URL's user and password are hidden with its host in the provider settings and `--base-url` as in proxy variables.
+
+## What the runs found besides
+
+- **`$KILO_CONFIG` is empty in the agent's shell.** Kilo 7.8.27 is given `KILO_CONFIG`, but `cat "$KILO_CONFIG"` printed `cat: : No such file or directory` in both runs. The file is still easy to find: it is a `tmp*.json` in `$TMPDIR`, which is in `LOCAL_ENV_PASSTHROUGH`.
+- **`cat "$TMPDIR"/tmp*.json` asked no permission.** The files are outside the project, but `external_directory` didn't stop the read, while `~/.config/kilo/kilo.json` in run 0 did ask. It looks as though Kilo doesn't expand `$TMPDIR` when it checks a bash command's paths. That is like Kilo finding 001 (a symlink made through bash gets past `external_directory`), but it hasn't been looked into here.
+- **The run's config, as the agent read it, had a `$schema` line and indentation.** Whitney writes the overlay as compact JSON with no `$schema`, so Kilo seems to rewrite the `KILO_CONFIG` file when it loads it. Not looked into.
+- **`$TMPDIR` held 31 other `tmp*.json` files**, each a permission overlay from an earlier run on this machine that wasn't removed. The agent read them all. None held a provider key. A run ended by a kill may be leaving its overlay behind. Not looked into.
+
+## Docker copies neither
+
+From the code, not from a run: the Docker branch of `agent.kilo` writes the container's `~/.config/kilo/kilo.json` from scratch, as `{"provider": {<provider>: {"options": {"baseURL": <the bridge's URL>, "apiKey": "sk-none"}}}}` plus `harness_permissions`. It never calls `global_provider_settings`. `_run_kilo` gives the process `HOME` and `PWD` only, and `LOCAL_ENV_PASSTHROUGH` is used only in `_run_local_process`. `sandbox/compose.yaml` sets no `environment` and runs with `network_mode: none`, and `sandbox/Dockerfile` sets no `ENV`. `evidence.run_secrets` returns `[]` for a Docker Kilo run (`test_a_local_kilo_run_is_given_the_literal_secrets_in_its_global_provider_settings_and_proxy_passwords` checks this with a literal key and a proxy password set). Run 4 below printed the file's text from a container.
+
+## What this doesn't show
+
+- One run of each, on one model and one Kilo version.
+- The captured-request path (`--capture-prompt`) was tested with fakes only (`test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted`), not in a real run.
+- A key the agent can see can still be used or sent somewhere. Redaction only cleans what Whitney stores.
+- A proxy password is hidden with its user (`eve:t41pw@`, `eve:t41pw@proxy.invalid:3128` and the whole value). A password printed on its own, or percent-decoded, isn't. When the `user:pass@` part is under 8 characters, it's hidden only where it's printed with its host.
+- A proxy or URL password with an unencoded `/`, `?` or `#` in it is cut short where it's matched.
+
+## Re-run 2026-11-14 (independent)
+
+Runs 2, 3 and 4 repeated from the method above by a separate session, as the open boxes in PR #67's test plan. Same Kilo 7.8.27, `kilo/anthropic/claude-haiku-4.5` through the Kilo Gateway, one epoch, `--limit 1`, a throwaway `XDG_CONFIG_HOME` holding the same made-up key, the same `HTTP_PROXY`, `NO_PROXY=*` and probe prompts, and the same four search strings. The `.eval` logs were searched member by member, and the reports as files.
+
+| Run | Code tested | Matches in log and report |
+|---|---|---|
+| 2 (local, with the change) | `task-41` at `d9ae52d` | 0 for each of the four strings; the agent printed `HTTP_PROXY=[redacted]` |
+| 3 (local, control) | `origin/main` at `e101988` (no Task 41) | 10 each for the key, `t41pw`, `eve:t41pw@` and `proxy.invalid`, all in `samples/print-config-and-proxy_epoch_1.json`; none in the report |
+| 4 (Docker, `--execution docker`) | `task-41` at `d9ae52d` | 0 for each of the four strings |
+
+Docker (run 4): `docker info` worked first. `env | grep -i proxy` in the container printed `(no output)`, so no proxy variable is set. The container's `~/.config/kilo/kilo.json`, as the agent printed it, held only the bridge's `baseURL` (`http://localhost:13131/v1`), `apiKey` `sk-none`, and the `bash`, `edit` and `read` permissions. None of the host's provider settings were in it.
+
+Cost, from Kilo's step cost lines, each step counted once: run 2 $0.0321, run 3 $0.0329, run 4 $0.0212, about $0.086 in all.
+
+Nothing differed from the 2026-11-13 results. The control's key match is new evidence: on 2026-11-13 run 1 couldn't reach the key, and run 3 found it 10 times, as here.

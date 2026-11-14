@@ -280,6 +280,24 @@ def test_kilo_keeps_the_base_url_its_global_config_sets_as_the_upstream(harness,
     assert harness.upstream.seen[0]["path"] == "/own/api/openrouter/models"
 
 
+def test_a_literal_provider_key_and_a_proxy_password_in_a_captured_request_are_redacted(harness, tmp_path, monkeypatch):
+    # Task 41: the agent's shell could print the run's KILO_CONFIG or its proxy variables into a tool result.
+    literal, proxy = "sk-literal-capture-0123456789", "http://eve:pw@proxy.example:3128"
+    config = Path(tmp_path / "user-home" / ".config" / "kilo")
+    config.mkdir(parents=True)
+    (config / "kilo.json").write_text(json.dumps({"provider": {"anthropic": {"options": {"apiKey": literal}}}}))
+    monkeypatch.setenv("HTTP_PROXY", proxy)
+    request = first_request()
+    request["messages"].append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": f"{literal}\nHTTP_PROXY={proxy}\n"}]})
+    harness.control(requests=[request])
+
+    run(kilo(model="anthropic/claude-haiku-4-5", capture_prompt=True))
+
+    stored = json.dumps(harness.stored[RUN_STORE_KEY])
+    assert literal not in stored and "eve:pw@" not in stored
+    assert harness.stored[RUN_STORE_KEY]["sent"]["first_body"]["messages"][-1]["content"][0]["content"] == "[redacted]\nHTTP_PROXY=[redacted]\n"
+
+
 def test_kilo_with_thinking_runs_the_high_variant_and_states_it(harness):
     run(kilo(model="kilo/anthropic/claude-haiku-4.5", thinking=True, agent_name="reviewer"))
 
