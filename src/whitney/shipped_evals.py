@@ -1,6 +1,6 @@
 """Where Whitney's own eval files are, named once for the tasks that run them and the validation that checks them.
 
-It imports nothing from Whitney or Inspect, so whitney.validate can use it
+It imports nothing from Whitney or Inspect, so whitney.validation can use it
 without loading inspect_ai.
 """
 

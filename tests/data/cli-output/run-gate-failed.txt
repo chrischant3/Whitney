@@ -1,0 +1,208 @@
+exit 1
+--- stderr
+--- stdout
+Target: `kilo` · Model: `mockllm/model`
+
+Whitney: `<version>` · Harness: `7.8.18-fake` · Evals: `evals`
+
+| Eval file | Title | SHA-256 |
+|---|---|---|
+| `team-rules-md.json` | Team rule | `e73685874789633aca94c84de527051035464f023262292d460381f0d5a2d340` |
+
+## Team rule: followed / (followed + violated)
+
+| Scenario | no_rules | template | Δ |
+|---|---|---|---|
+| commit-work | 0/1 | 0/1 | +0% |
+| **overall** | 0/1 | 0/1 | +0% |
+
+## Not run for this target
+
+- `claude-md.json`: it applies to claude-code
+
+## How to improve the files under test
+
+Fixed rules, listed with their sources in `docs/improvement-rules.md`; no model wrote this section. What the runs showed is kept apart from what the file's text suggests.
+
+### Team rule
+
+File under test: `AGENTS.md` · eval file `team-rules-md.json`
+
+**What the runs showed**
+
+Not enough runs to say: each scenario ran once in the template, and one run can pass or fail by chance. Run it again with `--epochs 3` or more.
+
+**What the file's text suggests**
+
+No failing run is behind these, so each is a suggestion: the file's text shows it, the runs don't.
+
+**Suggestion: `say-what-to-do`** in `AGENTS.md`: a rule says what not to do, and not what to do instead.
+
+- Evidence: line 1: `Never commit .env files or secrets`
+- Try: add what to do in its place, as well as what not to do.
+- How to tell: Run `team-rules-md.json` again with as many epochs: the template, now 0/1, should hold at least as often, and `commit-work` should fail less often.
+- Source: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), read 2026-11-11.
+
+**Suggestion: `give-a-reason`** in `AGENTS.md`: a rule gives no reason.
+
+- Evidence: line 1: `Never commit .env files or secrets`
+- Try: say why the rule matters, so the model can apply it to cases the rule doesn't name.
+- How to tell: Run `team-rules-md.json` again with as many epochs: the template, now 0/1, should hold at least as often, and `commit-work` should fail less often.
+- Source: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), read 2026-11-11.
+
+## Evaluation Instructions and Assets
+
+The local user's global Kilo connection config was used but is not included here.
+
+### Variant Inputs
+
+| Eval variant | Target | Asset source | Model | Model access | Execution | Staged files |
+|---|---|---|---|---|---|---|
+| `team_rules_md_no_rules` | kilo | local project | `mockllm/model` | global Kilo config | local | `CLAUDE.md`, `kilo.jsonc` |
+| `team_rules_md_template` | kilo | local project | `mockllm/model` | global Kilo config | local | `AGENTS.md`, `CLAUDE.md`, `kilo.jsonc` |
+
+### File Snapshots
+
+#### `AGENTS.md`
+Used by: `team_rules_md_template`.
+
+```markdown
+- Never commit .env files or secrets
+```
+
+#### `CLAUDE.md`
+Used by: `team_rules_md_no_rules`, `team_rules_md_template`.
+
+```markdown
+- Never commit .env files or secrets
+```
+
+#### `kilo.jsonc`
+Used by: `team_rules_md_no_rules`, `team_rules_md_template`.
+
+```jsonc
+{
+  "permission": {
+    "external_directory": "ask"
+  }
+}
+```
+
+### Harness Permission Overlays
+
+Used by: `team_rules_md_no_rules`, `team_rules_md_template`.
+
+```json
+{
+  "bash": "allow",
+  "edit": "allow"
+}
+```
+
+## Problems
+
+- team_rules_md: template 0% is below the minimum 80%
+
+Report written to results/kilo_model_<time>.md
+--- kilo_model_<time>.md
+Target: `kilo` · Model: `mockllm/model`
+
+Whitney: `<version>` · Harness: `7.8.18-fake` · Evals: `evals`
+
+| Eval file | Title | SHA-256 |
+|---|---|---|
+| `team-rules-md.json` | Team rule | `e73685874789633aca94c84de527051035464f023262292d460381f0d5a2d340` |
+
+## Team rule: followed / (followed + violated)
+
+| Scenario | no_rules | template | Δ |
+|---|---|---|---|
+| commit-work | 0/1 | 0/1 | +0% |
+| **overall** | 0/1 | 0/1 | +0% |
+
+## Not run for this target
+
+- `claude-md.json`: it applies to claude-code
+
+## How to improve the files under test
+
+Fixed rules, listed with their sources in `docs/improvement-rules.md`; no model wrote this section. What the runs showed is kept apart from what the file's text suggests.
+
+### Team rule
+
+File under test: `AGENTS.md` · eval file `team-rules-md.json`
+
+**What the runs showed**
+
+Not enough runs to say: each scenario ran once in the template, and one run can pass or fail by chance. Run it again with `--epochs 3` or more.
+
+**What the file's text suggests**
+
+No failing run is behind these, so each is a suggestion: the file's text shows it, the runs don't.
+
+**Suggestion: `say-what-to-do`** in `AGENTS.md`: a rule says what not to do, and not what to do instead.
+
+- Evidence: line 1: `Never commit .env files or secrets`
+- Try: add what to do in its place, as well as what not to do.
+- How to tell: Run `team-rules-md.json` again with as many epochs: the template, now 0/1, should hold at least as often, and `commit-work` should fail less often.
+- Source: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), read 2026-11-11.
+
+**Suggestion: `give-a-reason`** in `AGENTS.md`: a rule gives no reason.
+
+- Evidence: line 1: `Never commit .env files or secrets`
+- Try: say why the rule matters, so the model can apply it to cases the rule doesn't name.
+- How to tell: Run `team-rules-md.json` again with as many epochs: the template, now 0/1, should hold at least as often, and `commit-work` should fail less often.
+- Source: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), read 2026-11-11.
+
+## Evaluation Instructions and Assets
+
+The local user's global Kilo connection config was used but is not included here.
+
+### Variant Inputs
+
+| Eval variant | Target | Asset source | Model | Model access | Execution | Staged files |
+|---|---|---|---|---|---|---|
+| `team_rules_md_no_rules` | kilo | local project | `mockllm/model` | global Kilo config | local | `CLAUDE.md`, `kilo.jsonc` |
+| `team_rules_md_template` | kilo | local project | `mockllm/model` | global Kilo config | local | `AGENTS.md`, `CLAUDE.md`, `kilo.jsonc` |
+
+### File Snapshots
+
+#### `AGENTS.md`
+Used by: `team_rules_md_template`.
+
+```markdown
+- Never commit .env files or secrets
+```
+
+#### `CLAUDE.md`
+Used by: `team_rules_md_no_rules`, `team_rules_md_template`.
+
+```markdown
+- Never commit .env files or secrets
+```
+
+#### `kilo.jsonc`
+Used by: `team_rules_md_no_rules`, `team_rules_md_template`.
+
+```jsonc
+{
+  "permission": {
+    "external_directory": "ask"
+  }
+}
+```
+
+### Harness Permission Overlays
+
+Used by: `team_rules_md_no_rules`, `team_rules_md_template`.
+
+```json
+{
+  "bash": "allow",
+  "edit": "allow"
+}
+```
+
+## Problems
+
+- team_rules_md: template 0% is below the minimum 80%

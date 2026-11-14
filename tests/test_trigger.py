@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 from whitney import cli, tasks
-from whitney import validate as validate_module
+from whitney import validation as validate_module
 from whitney.evalfile import EvalFileError, load, under_test
-from whitney.validate import validate_evals, validate_project
+from whitney.validation import validate_evals, validate_project
 from whitney.variants import TRIGGER_CONTROL, declared_variants, runs_in
 
 MODEL = "test-provider/test-model"
@@ -1165,13 +1165,13 @@ def test_the_tasks_scorer_counts_a_run_as_the_agent_under_test_only_for_the_scen
     (">\n\tfolded text\n  more", "folded text more"),  # a continuation line may start with a tab
 ])
 def test_a_frontmatter_value_is_read_as_kilo_would_read_it(written, value):
-    from whitney.validate import frontmatter_value
+    from whitney.validation import frontmatter_value
 
     assert frontmatter_value(f"---\nname: n\ndescription: {written}\n---\nbody\n", "description") == value
 
 
 def test_a_skill_kept_in_two_folders_is_named_once_by_its_first_path():
-    from whitney.validate import staged_names
+    from whitney.validation import staged_names
 
     staged = {".kilo/skills/a/SKILL.md": "", ".claude/skills/a/SKILL.md": "", ".kilocode/skills/a/SKILL.md": "", ".kilo/skills/b/SKILL.md": ""}
 

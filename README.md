@@ -396,6 +396,26 @@ Logs hold full transcripts, which can include whatever is in your fixtures and p
 
 A run that errored is listed in its check's `<skipped>` with the error, so `errors` is always 0. A `--junit` path that can't be written stops the command with exit 2, before any run when it can be found then. Whitney's own tests validate the file with `xmllint` (on Linux, the `libxml2-utils` package). IFEvalCode and Harbor runs, and logs that didn't finish as `success`, get no suite of their own; a log that didn't succeed is a problem in the `whitney` suite's `gate`. Whitney's own pull-request workflow (`.github/workflows/checks.yml`) runs a fake harness with `--junit` and writes the file's cases to the job summary.
 
+## From Python
+
+`whitney run` and `whitney validate` are thin layers over three functions you can call from your own Python, such as a CI step that posts the gate somewhere:
+
+```python
+import whitney
+
+files = whitney.discover("evals")                        # every eval file, loaded and checked against the schema
+found = whitney.validate(".", "evals", target="kilo")    # what `whitney validate` finds, without printing it
+for problem in found.problems:                           # each a Problem(file, location, message); found.warnings too
+    print(problem)
+
+run = whitney.run(target="kilo", model="kilo/anthropic/claude-haiku-4.5",
+                  project_path=".", evals_path="evals", epochs=3)
+print(run.exit_code, run.report_path)                    # 0 the gate passed, 1 it failed, 2 it couldn't run
+print(run.gate_failures)                                 # why the gate failed, as the report's "Problems" lists them
+```
+
+`whitney.run` takes every `whitney run` option but `--junit` as a keyword, with the same defaults (`--min-rate` as `min_rates={"no_secret_committed": 0.9}`), and returns the exit code instead of exiting. It also returns the report's Markdown (`run.report`), the validation problems and warnings that stopped or came before the run, the error when it couldn't run (`run.error`), and the Inspect logs (`run.logs`). It prints none of its own output unless you pass a stream as `findings`; Inspect still prints its progress. For the JUnit XML that `--junit` writes, pass the result's `logs` and `gate_failures` to `whitney.cli.write_junit`. `whitney.validate` raises `whitney.CannotRun` for a path that isn't there, and `whitney.discover` raises on the first file that isn't a valid eval file, where `whitney.validate` lists every problem. [examples/api.py](examples/api.py) calls `validate` and `run` on the consumer example and prints the gate.
+
 ## Running inspect_evals (IFEvalCode and BigCodeBench-Hard)
 
 These optional evals reuse published benchmarks to check whether adding the template's instructions makes the agent's code worse. Each compares a `baseline` (no root `AGENTS.md`) with the `template` variant, for either target, using the model access set up above. Both need Docker, because the generated code is checked in a sandbox. The examples use `$TARGET` and `$MODEL`, e.g. `TARGET=claude-code MODEL=anthropic/claude-haiku-4-5`.
