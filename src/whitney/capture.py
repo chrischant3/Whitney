@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 
 from whitney.evalfile import under_test
 from whitney.project_files import claude_code_instructions, staged_imports, without_block_comments
-from whitney.validate import frontmatter_value
+from whitney.validation import frontmatter_value
 
 VIA_PROXY = "proxy"
 VIA_INSPECT_LOG = "inspect-log"

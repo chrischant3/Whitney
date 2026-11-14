@@ -94,6 +94,36 @@ def test_run_and_report_write_junit_that_validates_with_a_pass_a_fail_and_an_inc
     assert report_xml.read_text().startswith("<?xml version='1.0' encoding='utf-8'?>\n<testsuites>")
 
 
+def run_with_junit(consumer, *flags):
+    """`whitney run` on the example with --junit run.xml and `flags`; return its exit code."""
+    return cli.main([
+        "run", "--target", "kilo", "--model", "test-provider/test-model", "--project-path", str(consumer.project),
+        "--evals-path", str(consumer.evals), "--epochs", "1", "--junit", str(consumer.root / "run.xml"), *flags,
+    ])
+
+
+def test_run_passes_its_replaced_minimum_to_the_junit_file(consumer):
+    assert run_with_junit(consumer, "--min-rate", "no_secret_committed=0.5") == 0
+
+    suite = suites((consumer.root / "run.xml").read_text(encoding="utf-8"))["team-rules-md.json"]
+    assert properties(suite)["no_secret_committed.minimum"] == "0.5"
+    assert cases(suite)["no_secret_committed"].find("failure") is None
+
+
+def test_a_run_whose_junit_file_cant_be_written_at_the_end_exits_2_after_writing_the_report(consumer, monkeypatch, capsys):
+    def blocked(*args, **kwargs):  # a folder appears where the file should go, after the start's check
+        (consumer.root / "run.xml").mkdir()
+        return "<testsuites/>"
+
+    monkeypatch.setattr(cli, "junit_xml", blocked)
+
+    assert run_with_junit(consumer) == 2
+
+    out, err = capsys.readouterr()
+    assert "Report written to " in out and "JUnit XML written" not in out
+    assert f"whitney: error: couldn't write the JUnit XML to {consumer.root / 'run.xml'}: " in err
+
+
 @pytest.mark.parametrize("command", ["run", "report"])
 def test_help_names_the_junit_option(capsys, command):
     assert cli.main([command, "--help"]) == 0

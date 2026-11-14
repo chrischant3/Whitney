@@ -1,0 +1,5 @@
+exit 1
+--- stderr
+--- stdout
+error: unfit-evals/rules.json: source: 'RULES.md' isn't staged: the project has no such file
+unfit-evals: 2 eval file(s), 1 problem(s), 0 warning(s)
