@@ -1109,4 +1109,3 @@ def _min_pass_rate_problems(eval_file: EvalFile, checks: Mapping[str, CheckSpec]
         f"{eval_file.min_pass_rate:g} is below {floor:g}, the default minimum of {highest}; "
         "a file can raise its bar, never lower it"
     ))]
-

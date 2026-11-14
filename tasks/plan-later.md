@@ -393,14 +393,16 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: new features; a stable-API promise beyond what the docs state.
 
 **Acceptance criteria:**
-- [ ] The three functions are importable from `whitney`, with docstrings, and are listed in the README. They return the spec's shapes (`run(...)` with `exit_code`, `report`, `report_path`, `problems` and `logs`; `validate(...)` with `problems` and `warnings`), or the spec is changed in the same task.
-- [ ] Every existing CLI test passes unedited.
+- [x] The three functions are importable from `whitney`, with docstrings, and are listed in the README. They return the spec's shapes (`run(...)` with `exit_code`, `report`, `report_path`, `problems` and `logs`; `validate(...)` with `problems` and `warnings`), or the spec is changed in the same task. *(2026-11-13: `tests/test_api.py`; README "From Python"; the spec's "Python API" now records three added fields on `run` (`warnings`, `gate_failures`, `error`), the `findings` stream, and why `whitney.validate` is the callable module)*
+- [x] Every existing CLI test passes unedited. *(2026-11-13: `tests/test_cli.py`, `tests/test_cli_report_checks.py`, `tests/test_run_evals.py`, `tests/test_examples.py` unchanged and passing in `check.py task`)*
 
 **Verification:**
-- [ ] A short script in `examples/` that calls `whitney.validate` and `whitney.run` on the consumer example and prints the gate, run once for real.
-- [ ] `whitney run` and `whitney validate` output compared before and after on the same inputs, with no difference. For `run` that needs a run that gives the same answer each time: the fake `kilo` with Inspect's `mockllm` model.
+- [x] A short script in `examples/` that calls `whitney.validate` and `whitney.run` on the consumer example and prints the gate, run once for real. *(2026-11-13: `examples/api.py`, run on Kilo 7.8.27 with `kilo/anthropic/claude-haiku-4.5`, `--only agents-md.json --limit 1`, one epoch: gate passed, exit 0, $0.11; [docs/results/2026-11-13-python-api.md](../docs/results/2026-11-13-python-api.md). Also run against the fake in `tests/test_api.py`)*
+- [x] `whitney run` and `whitney validate` output compared before and after on the same inputs, with no difference. For `run` that needs a run that gives the same answer each time: the fake `kilo` with Inspect's `mockllm` model. *(2026-11-13: `tests/test_cli_output.py`, 12 cases, golden output recorded before the refactor in commit `d56e8b9`; Inspect's own progress display is left out of the comparison. One intended difference, not in the goldens: an unwritable report now exits 2 with a message, not a traceback with 1)*
 
 **Dependencies:** none. **Size:** M. **Cost:** cents for the example run.
+
+Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option until someone needs it; Python callers get the report in `RunResult` and can write any format.
 
 ### Task 57: Decision: check plugins
 

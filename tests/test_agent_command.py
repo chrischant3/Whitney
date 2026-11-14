@@ -20,7 +20,7 @@ from whitney import agent as agent_module
 from whitney import targets, tasks
 from whitney.checks import Evidence, Verdict, registry
 from whitney.evalfile import EvalFileError, load
-from whitney.validate import validate_evals, validate_project
+from whitney.validation import validate_evals, validate_project
 
 MODEL = "test-provider/test-model"
 EVENTS = Path(__file__).parent / "data" / "kilo-events"

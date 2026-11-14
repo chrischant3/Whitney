@@ -28,6 +28,9 @@ same invocation works on any CI system.
 
 scripts/run_evals.py, the deprecated runner, shares this module's report
 and gate (write_report) and its option parsing (rate, min_rates).
+
+`run` and `validate` are the Python API behind `whitney run` and `whitney
+validate`, re-exported from `whitney`: they return what the commands print.
 """
 
 import argparse
@@ -38,8 +41,10 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TextIO
 
 from inspect_ai import eval as inspect_eval
 from inspect_ai.log import list_eval_logs, read_eval_log
@@ -74,7 +79,7 @@ from whitney.report import (
 from whitney.target_names import TARGETS
 from whitney.tasks import _whitney_version, scenario_eval, why_not_applies
 from whitney.thresholds import MIN_ADHERENCE, MIN_CONCLUSIVE, MIN_HELD
-from whitney.validate import (
+from whitney.validation import (
     ValidationResult,
     permission_warnings,
     skill_copy_warnings,
@@ -84,6 +89,7 @@ from whitney.validate import (
 )
 from whitney.variants import TEMPLATE, declared_variants
 
+EXECUTIONS = ("local", "docker")
 # The CLI each target runs, checked with `<name> --version` before a run.
 HARNESS_COMMANDS = {"kilo": "kilo", "claude-code": "claude"}
 MAX_VERSION_LENGTH = 200  # a version is short; a long first line is something else, kept out of every report
@@ -166,7 +172,7 @@ def parser() -> argparse.ArgumentParser:
     _add_paths(run)
     run.add_argument("--model", required=True, help=HELP["--model"])
     run.add_argument("--only", nargs="+", metavar="FILE_OR_NAME", help=HELP["--only"])
-    run.add_argument("--execution", choices=("local", "docker"), default="local", help=HELP["--execution"])
+    run.add_argument("--execution", choices=EXECUTIONS, default="local", help=HELP["--execution"])
     run.add_argument("--api-key-env", help=HELP["--api-key-env"])
     run.add_argument("--base-url", help=HELP["--base-url"])
     run.add_argument("--capture-prompt", action="store_true", help=HELP["--capture-prompt"])
@@ -208,15 +214,16 @@ def _add_paths(p: argparse.ArgumentParser) -> None:
 
 
 def _check_args(args: argparse.Namespace) -> None:
-    """What argparse can't check alone: --min-rate's pairs and --limit; then that the paths exist.
+    """What argparse can't check alone: --min-rate's pairs and --limit, and `whitney report`'s folders.
+
+    `run` and `validate` check their own paths first (_check_paths), so a
+    call from Python gets the same message as the command.
 
     Raises:
         SystemExit: through the subcommand's parser, for a bad option value.
-        CannotRun: a path that isn't a folder, or a constraints file that isn't a file.
+        CannotRun: a `whitney report` folder that isn't one, or a --junit path that can't be written (_clear_junit).
     """
-    if args.command == "checks":
-        return
-    _clear_junit(getattr(args, "junit", None))  # validate has no --junit
+    _clear_junit(getattr(args, "junit", None))  # only run and report have --junit
     if args.command == "report":
         args.min_rate = min_rates(args.parser, args.min_rate)
         if not Path(args.logs).is_dir():
@@ -232,11 +239,15 @@ def _check_args(args: argparse.Namespace) -> None:
         for option, value in (("--epochs", args.epochs), ("--max-samples", args.max_samples)):
             if value < 1:
                 args.parser.error(f"{option} must be positive")
-    for option, folder in (("--project-path", args.project_path), ("--evals-path", args.evals_path)):
+
+
+def _check_paths(project_path: str | Path, evals_path: str | Path, constraints: str | Path | None) -> None:
+    """Raise CannotRun, naming the option, if either path isn't a folder or the constraints file isn't a file."""
+    for option, folder in (("--project-path", project_path), ("--evals-path", evals_path)):
         if not Path(folder).is_dir():
             raise CannotRun(f"{option} {folder} isn't a folder")
-    if args.constraints is not None and not Path(args.constraints).is_file():
-        raise CannotRun(f"--constraints {args.constraints} isn't a file")
+    if constraints is not None and not Path(constraints).is_file():
+        raise CannotRun(f"--constraints {constraints} isn't a file")
 
 
 def _clear_junit(path: str | None) -> None:
@@ -265,27 +276,55 @@ def _clear_junit(path: str | None) -> None:
 
 
 def _validate(args: argparse.Namespace) -> int:
-    """`whitney validate`: print every problem and warning, then a count; 1 if there is a problem.
-
-    For the kilo target it also warns about the project's skill descriptions
-    (validate.skill_warnings), whether or not an eval file tests a skill, and
-    about a declared variant that leaves a copy of its skill staged
-    (validate.skill_copy_warnings).
-    """
-    evals = Path(args.evals_path)
-    result = validate_evals(evals, constraints=_constraints(args))
-    checks = registry()
-    for target in (args.target,) if args.target else TARGETS:
-        applicable = [f for f in result.files if why_not_run(f, target, checks) is None]
-        if applicable:
-            result.problems += validate_project(applicable, Path(args.project_path), target, evals_path=evals)
-        if target == "kilo":  # only Kilo runs stage skills, and only Kilo's permission rules are tested
-            result.warnings += skill_warnings(Path(args.project_path), evals_path=evals)
-            result.warnings += permission_warnings(applicable, Path(args.project_path), evals_path=evals)
-            result.warnings += skill_copy_warnings(applicable, Path(args.project_path), evals_path=evals)
+    """`whitney validate`: print every problem and warning `validate` finds, then a count; 1 if there is a problem."""
+    result = validate(args.project_path, args.evals_path, args.target, args.constraints)
     _print_findings(result)
-    print(f"{evals}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
+    print(f"{Path(args.evals_path)}: {len(result.files)} eval file(s), {len(result.problems)} problem(s), {len(result.warnings)} warning(s)")
     return 1 if result.problems else 0
+
+
+def validate(
+    project_path: str | Path, evals_path: str | Path, target: str | None = None, constraints: str | Path | None = None
+) -> ValidationResult:
+    """Check the eval files, and the project against them, without calling a model: `whitney validate` as a function.
+
+    The project is checked for `target`, or for every target when it is
+    None, against the eval files that apply to that target. For the kilo
+    target it also warns about the project's skill descriptions
+    (validation.skill_warnings), whether or not an eval file tests a skill,
+    about permission rules (validation.permission_warnings), and about a
+    declared variant that leaves a copy of its skill staged
+    (validation.skill_copy_warnings). Nothing is printed.
+
+    Args:
+        project_path: the project whose config and instruction files are under test; read, never written.
+        evals_path: the evals root: the eval files, plus their fixtures in fixtures/.
+        target: "kilo" or "claude-code"; None checks every target a file applies to.
+        constraints: a CONSTRAINTS.md-style file; each known_gap's ID must be a row in its Exceptions table.
+
+    Returns:
+        The problems and warnings, each a Problem(file, location, message),
+        and the eval files that loaded. Any problem means the evals aren't valid.
+
+    Raises:
+        CannotRun: a path that isn't a folder, a constraints file that isn't
+            a file, or a target that doesn't exist (`whitney validate` exits 2).
+    """
+    _check_paths(project_path, evals_path, constraints)
+    if target is not None:
+        _check_target(target, "local")
+    evals, project = Path(evals_path), Path(project_path)
+    result = validate_evals(evals, constraints=Path(constraints) if constraints else None)
+    checks = registry()
+    for each in (target,) if target else TARGETS:
+        applicable = [f for f in result.files if why_not_run(f, each, checks) is None]
+        if applicable:
+            result.problems += validate_project(applicable, project, each, evals_path=evals)
+        if each == "kilo":  # only Kilo runs stage skills, and only Kilo's permission rules are tested
+            result.warnings += skill_warnings(project, evals_path=evals)
+            result.warnings += permission_warnings(applicable, project, evals_path=evals)
+            result.warnings += skill_copy_warnings(applicable, project, evals_path=evals)
+    return result
 
 
 def _report(args: argparse.Namespace) -> int:
@@ -390,22 +429,179 @@ def _default_shown(info) -> str:
 
 
 def _run(args: argparse.Namespace) -> int:
-    """`whitney run`: validate, check the credentials and the harness, build every task, then run them and gate.
+    """`whitney run`: `run` with the command's options, printing its findings to stderr as it goes, then its report.
+
+    With --junit it then writes the results as JUnit XML (write_junit), and
+    returns 2 if that file can't be written.
+
+    Raises:
+        CannotRun: `run` stopped before it had a report, or couldn't write it; its error is the message.
+    """
+    minimums = replaced_minimums(args.min_adherence, args.min_held, args.min_rate)
+    done = run(
+        target=args.target, model=args.model, project_path=args.project_path, evals_path=args.evals_path,
+        only=args.only, constraints=args.constraints, execution=args.execution, api_key_env=args.api_key_env,
+        base_url=args.base_url, capture_prompt=args.capture_prompt, thinking=args.thinking, epochs=args.epochs,
+        limit=args.limit, sample_shuffle=args.sample_shuffle, max_samples=args.max_samples, log_dir=args.log_dir,
+        results_dir=args.results_dir, min_rates=minimums, min_conclusive=args.min_conclusive, findings=sys.stderr,
+    )
+    if done.report is None:
+        raise CannotRun(done.error)
+    print(done.report)
+    if done.report_path is None:
+        raise CannotRun(done.error)
+    print(f"Report written to {done.report_path}")
+    if args.junit and not write_junit(
+        args.junit, done.logs, done.gate_failures, min_rates=minimums, min_conclusive=args.min_conclusive
+    ):
+        return 2
+    return done.exit_code
+
+
+@dataclass
+class RunResult:
+    """What `run` did: what `whitney run` prints and writes, as values.
+
+    Attributes:
+        exit_code: `whitney run`'s: 0 every gate met, 1 a gate failed, 2 couldn't run.
+        report: the Markdown report `whitney run` prints; None if the run stopped before it had one.
+        report_path: the file under results_dir the report was written to; None if it has no report, or it couldn't be written.
+        problems: what validation found wrong with the eval files or the project, as Problem(file, location,
+            message); any one stops the run before it calls a model.
+        warnings: what validation and the run's options warn about, which doesn't stop the run: a Problem,
+            or a line about the whole run, such as --thinking's.
+        gate_failures: why the gate failed, as the report's "Problems" section lists them; [] when it passed.
+        error: why the run couldn't start, stopped partway with exit 2, or couldn't write its report; else None.
+        logs: the Inspect logs of the tasks that ran.
+    """
+
+    exit_code: int
+    report: str | None = None
+    report_path: Path | None = None
+    problems: list[Problem] = field(default_factory=list)
+    warnings: list[Problem | str] = field(default_factory=list)
+    gate_failures: list[str] = field(default_factory=list)
+    error: str | None = None
+    logs: list = field(default_factory=list)
+
+
+def run(
+    *,
+    target: str,
+    model: str,
+    project_path: str | Path,
+    evals_path: str | Path,
+    only: list[str] | None = None,
+    constraints: str | Path | None = None,
+    execution: str = "local",
+    api_key_env: str | None = None,
+    base_url: str | None = None,
+    capture_prompt: bool = False,
+    thinking: bool = False,
+    epochs: int = 3,
+    limit: int | None = None,
+    sample_shuffle: bool = False,
+    max_samples: int = 2,
+    log_dir: str | Path = "logs",
+    results_dir: str | Path = "results",
+    min_rates: Mapping[str, float] | None = None,
+    min_conclusive: float = MIN_CONCLUSIVE,
+    findings: TextIO | None = None,
+) -> RunResult:
+    """Run the eval files against a harness and model, write the report and gate on it: `whitney run` as a function.
+
+    It validates everything, checks the credential variable it was named
+    and runs `kilo --version` (or `claude --version`) before any sample, so
+    a mistake returns exit code 2 and an error rather than a run of errored
+    samples. It returns the exit code instead of exiting, and prints nothing
+    of its own but the findings, and only to `findings`; Inspect prints its
+    progress as it runs each task.
+
+    Args:
+        target, model, project_path, evals_path: as `whitney run`'s --target, --model, --project-path and --evals-path.
+        only: run only these eval files: paths relative to the evals root, or eval names (--only).
+        constraints, execution, api_key_env, base_url, capture_prompt, thinking, epochs, limit, sample_shuffle,
+            max_samples, log_dir, results_dir, min_conclusive: as the options of the same names, with their defaults.
+        min_rates: check -> the minimum pass rate replacing its default for this run (--min-rate).
+        findings: where to print each problem and warning as it is found, as `whitney run` prints them to
+            stderr; None prints none. They are in the result either way.
+
+    Before checking credentials it loads a `.env` file from the current
+    folder or the nearest one above it into os.environ, as Inspect does and
+    `whitney run` always has.
+
+    Returns:
+        The exit code, the report and where it was written, what validation
+        found, the gate's failures, the error if it couldn't run, and the logs.
+
+    Raises:
+        Whatever a fault outside Whitney's own checks raises before the first
+        task, such as an OSError reading the constraints file, as `whitney
+        run` did; everything Whitney checks is an exit code 2 with an error.
+    """
+    options = argparse.Namespace(
+        target=target, model=model, project_path=project_path, evals_path=evals_path, only=only, constraints=constraints,
+        execution=execution, api_key_env=api_key_env, base_url=base_url, capture_prompt=capture_prompt, thinking=thinking,
+        epochs=epochs, limit=limit, sample_shuffle=sample_shuffle, max_samples=max_samples, log_dir=log_dir,
+        results_dir=results_dir, min_rates=dict(min_rates or {}), min_conclusive=min_conclusive,
+    )
+    result = RunResult(exit_code=2)
+    try:
+        _check_run_options(options)
+        _run_steps(options, result, findings)
+    except CannotRun as e:
+        result.error = str(e)
+    return result
+
+
+def _check_run_options(options: argparse.Namespace) -> None:
+    """What `whitney run`'s parser and _check_args check, for a call from Python.
+
+    Raises:
+        CannotRun: a missing path, a count below 1, an unknown execution
+            mode, or a minimum that isn't a registered check's or a number from 0 to 1.
+    """
+    _check_paths(options.project_path, options.evals_path, options.constraints)
+    for name in ("limit", "epochs", "max_samples"):
+        value = getattr(options, name)
+        if value is not None and value < 1:
+            raise CannotRun(f"{name} must be positive")
+    if options.execution not in EXECUTIONS:
+        raise CannotRun(f"execution must be {' or '.join(EXECUTIONS)}; got {options.execution!r}")
+    checks = registry()
+    for name, value in options.min_rates.items():
+        if name not in checks:
+            raise CannotRun(f"min_rates names no registered check {name!r}; the checks are {', '.join(sorted(checks))}")
+        if not 0 <= value <= 1:
+            raise CannotRun(f"min_rates needs a number from 0 to 1 for {name}, got {value!r}")
+    if not 0 <= options.min_conclusive <= 1:
+        raise CannotRun(f"min_conclusive needs a number from 0 to 1, got {options.min_conclusive!r}")
+
+
+def _run_steps(args: argparse.Namespace, result: RunResult, findings: TextIO | None) -> None:
+    """`run`'s work, into `result`: validate, check the credentials and the harness, build every task, then run them and gate.
 
     Raises:
         CannotRun: anything that stops the run before its first sample.
     """
-    _check_target(args)
-    warnings = thinking_warnings(args.target, args.model, args.execution, args.capture_prompt, args.thinking)
-    _print_findings(ValidationResult(warnings=warnings), sys.stderr)
+
+    def found(problems: Iterable[Problem] = (), warnings: Iterable[Problem | str] = ()) -> None:
+        problems, warnings = list(problems), list(warnings)  # read twice: kept, then printed
+        result.problems.extend(problems)
+        result.warnings.extend(warnings)
+        if findings is not None:
+            _print_findings(ValidationResult(problems=problems, warnings=warnings), findings)
+
+    _check_target(args.target, args.execution)
+    found(warnings=thinking_warnings(args.target, args.model, args.execution, args.capture_prompt, args.thinking))
     evals, project = Path(args.evals_path), Path(args.project_path)
-    result = validate_evals(evals, constraints=_constraints(args))
-    _print_findings(result, sys.stderr)
-    if result.problems:
+    validated = validate_evals(evals, constraints=_constraints(args))
+    found(validated.problems, validated.warnings)
+    if validated.problems:
         raise CannotRun("the evals aren't valid; `whitney validate` lists the same problems")
-    selected, not_run, left_out = _select(result.files, evals, args.target, args.only)
+    selected, not_run, left_out = _select(validated.files, evals, args.target, args.only)
     project_problems = validate_project(selected, project, args.target, evals_path=evals)
-    _print_findings(ValidationResult(problems=project_problems), sys.stderr)
+    found(project_problems)
     if project_problems:
         raise CannotRun("the evals don't fit the project; `whitney validate` lists the same problems")
     init_dotenv()
@@ -444,22 +640,27 @@ def _run(args: argparse.Namespace) -> int:
                 stopped += f"; {BROKEN_INSTALL}"
             cannot_run = isinstance(e, (CannotRun, CredentialsError, ImportError))
             break
-    code = write_report(
-        logs, target=args.target, model=args.model, evals_path=args.evals_path,
-        min_rates=replaced_minimums(args.min_adherence, args.min_held, args.min_rate),
-        min_conclusive=args.min_conclusive, results_dir=args.results_dir, not_run=not_run,
-        left_out=left_out, expected=[f.eval_name for f in selected], stopped=stopped, junit=args.junit,
+    result.logs = logs
+    result.report, result.gate_failures = render_report(
+        logs, target=args.target, model=args.model, evals_path=args.evals_path, min_rates=args.min_rates,
+        min_conclusive=args.min_conclusive, not_run=not_run, left_out=left_out,
+        expected=[f.eval_name for f in selected], stopped=stopped,
     )
-    return 2 if cannot_run else code
+    result.exit_code = 2 if cannot_run else 1 if result.gate_failures else 0
+    result.error = stopped if cannot_run else None
+    try:
+        result.report_path = report_file(result.report, args.results_dir, args.model, args.target)
+    except OSError as e:  # the report is still returned, and `whitney run` prints it before it says why it stopped
+        result.exit_code, result.error = 2, f"couldn't write the report to {args.results_dir}: {e}"
 
 
-def _check_target(args: argparse.Namespace) -> None:
+def _check_target(target: str, execution: str) -> None:
     """Raise CannotRun, with targets.check_target's message, if the target can't run in the run's execution mode.
 
     A base URL the target can't use is refused when its tasks are built (_task).
     """
     try:
-        targets.check_target(args.target, args.execution)
+        targets.check_target(target, execution)
     except ValueError as e:
         raise CannotRun(str(e)) from e
 
@@ -633,6 +834,55 @@ def harness_version(target: str, secrets: Iterable[str] = ()) -> str:
 
 
 def write_report(
+    logs: list, *, model: str, target: str, results_dir: str | Path, junit: str | Path | None = None, **report: object
+) -> int:
+    """Gate the logs, then print the report and write it to results_dir; return 1 if the gate failed, else 0.
+
+    The report and gate are render_report's, given `logs`, `model`, `target`
+    and the rest of its arguments in `report`; the file is report_file's.
+    With `junit`, the results are also written there as JUnit XML
+    (write_junit), and 2 is returned instead if that file can't be written.
+    """
+    text, problems = render_report(logs, model=model, target=target, **report)
+    print(text)
+    out = report_file(text, results_dir, model, target)
+    print(f"Report written to {out}")
+    if junit and not write_junit(
+        junit, logs, problems, min_rates=report["min_rates"], min_conclusive=report["min_conclusive"]
+    ):
+        return 2
+    return 1 if problems else 0
+
+
+def write_junit(
+    path: str | Path, logs: list, problems: list[str], *, min_rates: Mapping[str, float], min_conclusive: float
+) -> bool:
+    """Write the results as JUnit XML (whitney.junit) to `path`, making its folder, and print where.
+
+    Args:
+        path: the --junit file.
+        logs: the Inspect logs the report was rendered from; only the core eval files' successful ones get a suite.
+        problems: the gate's problems, as render_report returns them.
+        min_rates: the check minimums replaced for this run.
+        min_conclusive: the share of template runs that must be conclusive.
+
+    Returns:
+        False, after printing why to stderr, if the file can't be written: the
+        Markdown report is written, but the file a CI system reads is missing, so the run can't count.
+    """
+    succeeded = [log for log in logs if not _benchmark(log.eval.task) and log.status == "success"]
+    xml = junit_xml(succeeded, problems, min_rates=min_rates, min_conclusive=min_conclusive, timestamp=datetime.now())
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(xml, encoding="utf-8")
+    except OSError as e:
+        print(f"whitney: error: couldn't write the JUnit XML to {path}: {e}", file=sys.stderr)
+        return False
+    print(f"JUnit XML written to {path}")
+    return True
+
+
+def render_report(
     logs: list,
     *,
     target: str,
@@ -640,14 +890,12 @@ def write_report(
     evals_path: str | Path | None,
     min_rates: Mapping[str, float],
     min_conclusive: float,
-    results_dir: str | Path,
     not_run: Mapping[str, str] | None = None,
     left_out: Iterable[str] = (),
     expected: Iterable[str] = (),
     stopped: str | None = None,
-    junit: str | Path | None = None,
-) -> int:
-    """Gate the logs, then print the report and write it to results_dir; return 1 if the gate failed, else 0.
+) -> tuple[str, list[str]]:
+    """Gate the logs and render the report: the Markdown, and the gate's problems ([] when it passed).
 
     The gate fails on an Inspect log that isn't `success`, on any eval file
     whose template falls short (report.check_thresholds), on any `expected`
@@ -663,18 +911,14 @@ def write_report(
 
     Args:
         logs: Inspect logs, from this run or read back.
-        target, model: what the report's first line names, and its file name.
+        target, model: what the report's first line names.
         evals_path: the evals root the logs' eval files are relative to.
         min_rates: the check minimums replaced for this run.
         min_conclusive: the share of template runs that must be conclusive.
-        results_dir: where the report is written, as <target>_<model>_<timestamp>.md.
         not_run: eval file -> why it doesn't apply to the target.
         left_out: eval files that apply but --only didn't name.
         expected: the eval names the run selected.
         stopped: why the run stopped before its last task, if it did.
-        junit: where to write the results as JUnit XML too (whitney.junit), if anywhere.
-
-    Returns 2 instead if the JUnit file can't be written, after printing why.
     """
     core_logs = [log for log in logs if not _benchmark(log.eval.task)]
     ifeval_logs = [log for log in logs if log.eval.task.startswith("ifevalcode_")]
@@ -711,22 +955,20 @@ def write_report(
     report = f"Target: `{target}` · Model: `{model}`\n\n" + header + report
     if problems:
         report += "\n## Problems\n\n" + "\n".join(f"- {p}" for p in problems) + "\n"
-    print(report)
-    now = datetime.now()
-    out = Path(results_dir) / result_filename(f"{now:%Y-%m-%dT%H-%M-%S}", model, target)
+    return report, problems
+
+
+def report_file(report: str, results_dir: str | Path, model: str, target: str) -> Path:
+    """Write `report` to results_dir as <target>_<model>_<timestamp>.md, making the folder if need be, and return its path.
+
+    Raises:
+        OSError: the folder or the file can't be written.
+    """
+    timestamp = f"{datetime.now():%Y-%m-%dT%H-%M-%S}"
+    out = Path(results_dir) / result_filename(timestamp, model, target)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
-    print(f"Report written to {out}")
-    if junit:
-        xml = junit_xml(succeeded, problems, min_rates=min_rates, min_conclusive=min_conclusive, timestamp=now)
-        try:
-            Path(junit).parent.mkdir(parents=True, exist_ok=True)
-            Path(junit).write_text(xml, encoding="utf-8")
-        except OSError as e:  # the report is written; only the file a CI system reads is missing, so the run can't count
-            print(f"whitney: error: couldn't write the JUnit XML to {junit}: {e}", file=sys.stderr)
-            return 2
-        print(f"JUnit XML written to {junit}")
-    return 1 if problems else 0
+    return out
 
 
 def _benchmark(task: str) -> bool:
