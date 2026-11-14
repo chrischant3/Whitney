@@ -208,6 +208,14 @@ class _Handler(BaseHTTPRequestHandler):
             body.write(piece)
             size -= len(piece)
 
+    def _safe_header(self, name: str, value: str) -> tuple[str, str] | None:
+        """A header safe to emit, or None if invalid for forwarding."""
+        if "\r" in name or "\n" in name or "\r" in value or "\n" in value:
+            return None
+        if not re.fullmatch(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+", name):
+            return None
+        return name, value
+
     def _relay(self, answer: http.client.HTTPResponse) -> None:
         """Pass `answer` back as it arrives: its status and headers, then its body, piece by piece.
 
@@ -221,7 +229,9 @@ class _Handler(BaseHTTPRequestHandler):
         chunked = unsized and self.request_version != "HTTP/1.0"
         for name, value in answer.getheaders():
             if name.lower() not in HOP_BY_HOP:
-                self.send_header(name, value)
+                safe = self._safe_header(name, value)
+                if safe is not None:
+                    self.send_header(*safe)
         if chunked:  # http.client has taken the upstream's chunks apart, so they are made again here
             self.send_header(TRANSFER_ENCODING, CHUNKED)
         elif unsized:
