@@ -314,6 +314,9 @@ whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path template/kilo --evals-path evals --log-dir logs/run-1
 whitney report logs/run-1 --evals-path evals
 
+# Also write the results as JUnit XML, for a CI system to show (see "Running it in CI")
+whitney report logs/run-1 --evals-path evals --junit results/whitney-junit.xml
+
 # List the checks an eval file can name, with their parameters
 whitney checks
 
@@ -374,6 +377,23 @@ Each run leaves two things in the folder it ran in. Keep both as build artefacts
 - `logs/`: one Inspect log per eval file and variant, with every transcript. `--log-dir` moves it. `whitney report` writes the report again from these without calling a model.
 
 Logs hold full transcripts, which can include whatever is in your fixtures and prompts. Store them where only the people who may read those can reach them.
+
+### JUnit XML for your CI system
+
+`whitney run` and `whitney report` take `--junit FILE`, which also writes the results as JUnit XML, the format most CI systems read to show test results. The gate's exit code is the same with or without it. The file follows the Apache Ant JUnit task's schema, `JUnit.xsd` (a copy, with its source and licence, is in `tests/data/junit/`, and Whitney's tests validate the file against it). It uses these elements:
+
+- `<testsuites>`, holding one `<testsuite>` per eval file the logs hold, named by the file's path under the evals root, with the eval name as its `package`. Then a last suite, `whitney`.
+- In an eval file's suite, one `<testcase>` per check its runs were scored with, then one named `gate`. Each check's case counts that check's own outcome in the template's runs, leaving out known gaps, as the gate does:
+  - no child element if its pass rate reaches the minimum the gate applies to the file;
+  - `<failure type="below minimum">` if it doesn't, with the rate and the minimum in `message` and the explanation of each failed run as its text;
+  - `<skipped>` if no run was conclusive, with each run's reason as its text.
+- The `gate` case has `<failure type="gate">` with the gate's problem lines for that file, if it has any.
+- The `whitney` suite's one case, `gate`, fails with every problem the gate found, failed logs and missing eval files included: it fails whenever the gate fails. A run that couldn't start writes no file, and removes one an earlier run left at that path.
+- `<properties>`: each check's `<check>.rate` (`none` with no conclusive run) and `<check>.minimum`, as fractions.
+- `<system-out>`: a line per check with its counts, a line per failed or inconclusive run with its explanation, and the gate's lines.
+- `<system-err>` is empty. Every `time` is 0 and every `hostname` is `localhost`: Whitney doesn't time checks, and your machine's name stays out of a file you may publish.
+
+A run that errored is listed in its check's `<skipped>` with the error, so `errors` is always 0. A `--junit` path that can't be written stops the command with exit 2, before any run when it can be found then. Whitney's own tests validate the file with `xmllint` (on Linux, the `libxml2-utils` package). IFEvalCode and Harbor runs, and logs that didn't finish as `success`, get no suite of their own; a log that didn't succeed is a problem in the `whitney` suite's `gate`. Whitney's own pull-request workflow (`.github/workflows/checks.yml`) runs a fake harness with `--junit` and writes the file's cases to the job summary.
 
 ## Running inspect_evals (IFEvalCode and BigCodeBench-Hard)
 

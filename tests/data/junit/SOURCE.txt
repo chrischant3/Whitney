@@ -1,0 +1,8 @@
+JUnit.xsd: the JUnit schema used by Apache Ant's JUnit task, (c) 2011 Windy Road Technology Pty. Limited,
+Apache License 2.0 (LICENSE, beside this file). Its own header is kept as it came.
+
+Downloaded 2026-11-13, unchanged.
+SHA-256: 147ff89ef34a82f9a1b2951e7cad251b98c9a7a48a0e0c8e44937141791f57a8
+
+tests/test_junit.py validates the XML that `whitney run --junit` and `whitney report --junit`
+write against it, with xmllint (libxml2; the libxml2-utils package on Linux).
