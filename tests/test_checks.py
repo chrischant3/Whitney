@@ -750,7 +750,7 @@ def test_every_shipped_scenario_names_parameters_its_check_accepts(name, params)
 
 
 def test_every_shipped_scenario_is_checked():
-    assert len(SHIPPED_SCENARIOS) == sum(len(json.loads((EVALS / path).read_text())["scenarios"]) for path in SHIPPED) == 12
+    assert len(SHIPPED_SCENARIOS) == sum(len(json.loads((EVALS / path).read_text())["scenarios"]) for path in SHIPPED) == 17
 
 
 def is_undecorated(function):
