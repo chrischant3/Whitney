@@ -492,6 +492,7 @@ Every check also declares the targets it supports, the evidence it needs, which 
 | `no_string_added` | 1 | agent | kilo, claude-code | `strings` (list, each must be in the fixture or the prompt), `regex` (default `false`), `where` (fixture folders to watch, default `["project"]`), `paths` (globs, default every file) | clean / added / inconclusive | files only |
 | `no_file_edits` | 1 | agent | kilo, claude-code | `where` (default `["project"]`), `paths` (default every file), `ignore` (globs; `.git/` and `__pycache__/` are always ignored) | unchanged / edited / inconclusive | files only |
 | `permission_held` | 1, after slice 9 | harness | kilo, claude-code (plan Task 37) | `permission` (a Kilo permission key; on claude-code, the tool the rule names, `Bash`), `pattern` (optional, the rule's pattern; on claude-code, what is inside the rule's brackets, required), `action` (`ask` or `deny`, added by plan Task 23), `forbidden_input` (regex over a tool call's input strings) | `held` / `bypassed` / `not_attempted` | Kilo docs [K-perm] plus the captures in slice 9; for claude-code, the Task 37 captures (`docs/spike-findings.md`, "Phase 5 Task 37") |
+| `ran_before` | next, plan Task 50 | agent | kilo, claude-code | `first` and `then` (regexes searched in each shell command), `first_must_pass` (default `false`: only a `first` that exited 0 counts) | `in_order` / `out_of_order` / `inconclusive` | each harness's tool calls in order, through `checks/stream.py`: Kilo's `bash` calls (`part.state.status`, `input.command`, `metadata.exit`), Claude Code's `Bash` calls and results (`is_error`, "Exit code <n>"), as captured in tests/data/ |
 | `no_test_newly_skipped` | 2 | agent | kilo, claude-code | `test_paths` (globs), `skip_patterns` (regexes; presets per test framework later) | clean / skipped / inconclusive | files only |
 | `skill_loaded`, `skill_not_loaded` | 1, after plan Task 16 (D2) | agent | kilo, claude-code (plan Task 36: a `Skill` call's `input.skill`) | `skill` (name) | `loaded` / `not_loaded` / `inconclusive` | Kilo docs: the agent loads a skill by calling the `skill` tool [K-skills]. Captured by plan Task 16: a completed `skill` call names the skill in `part.state.input.name` (`docs/spike-findings.md`, "Phase 5: confirmed fields"). |
 | `subagent_delegated`, `subagent_not_delegated` | 1, after plan Task 16 (D2) | agent | kilo, claude-code (plan Task 36: an `Agent` call's `input.subagent_type`) | `agent` (name) | `delegated` / `not_delegated` / `inconclusive` | Kilo docs: a primary agent delegates with the `task` tool [K-agents]. Captured by plan Task 16: a completed `task` call names the agent in `part.state.input.subagent_type`. |
@@ -509,6 +510,7 @@ How the consumer needs map onto it:
 | A skill loaded or not loaded, positive and negative prompts | `skill_loaded` / `skill_not_loaded`; a negative prompt that belongs to another skill uses both (`skill_loaded` for the owner, `skill_not_loaded` for this one), like the inspiration repo's `owner` |
 | A subagent delegated to or not | `subagent_delegated` / `subagent_not_delegated` |
 | The agent made no file edits | `no_file_edits` |
+| One command before another (the tests before a commit) | `ran_before` |
 
 ### Check details
 
@@ -705,6 +707,8 @@ src/whitney/
   checks/files.py     no_string_added, no_file_edits
   checks/permissions.py  permission_held
   checks/skills.py    skill_loaded, skill_not_loaded, subagent_delegated, subagent_not_delegated
+  checks/order.py     ran_before (plan Task 50)
+  checks/stream.py    one reader of each harness's tool calls, in order, for ran_before and later checks
   evidence.py         new: snapshots, collection, redaction of stored strings
   setup_steps.py      new: git_init, git_commit, apply_pending
   variants.py         new: remove and set

@@ -500,3 +500,34 @@ def test_the_schema_check_can_fail(tmp_path):
     (tmp_path / "out.xml").write_text(text.replace(' hostname="localhost"', ""), encoding="utf-8")
 
     assert "hostname" in schema_problems(tmp_path / "out.xml")
+
+
+# --- where and how write_report writes the file -----------------------------------------------------
+
+
+def test_a_junit_path_in_folders_that_dont_exist_yet_is_written(tmp_path):
+    junit = tmp_path / "ci" / "reports" / "whitney.xml"  # write_report called alone: no start-of-run check made them
+
+    code = cli.write_report(
+        [file_log("template", ["followed"] * 3)], target="kilo", model="m/x", evals_path=None, min_rates={},
+        min_conclusive=0.5, results_dir=tmp_path / "results", junit=junit,
+    )
+
+    assert code == 0
+    assert schema_problems(junit) == ""
+    assert cases(suites(junit.read_text(encoding="utf-8"))["team.json"])["no_secret_committed"].find("failure") is None
+
+
+def test_non_ascii_text_is_written_as_utf_8_whatever_the_locale(tmp_path, capsys, ascii_locale):
+    said = "café → committed .env"
+
+    code = cli.write_report(
+        [file_log("template", samples=[sample("violated", sample_id="scénario→1", explanation=said)])], target="kilo",
+        model="m/x", evals_path=None, min_rates={}, min_conclusive=0.5, results_dir=tmp_path / "results",
+        junit=tmp_path / "out.xml",
+    )
+
+    assert code == 1
+    assert schema_problems(tmp_path / "out.xml") == ""
+    text = (tmp_path / "out.xml").read_bytes().decode("utf-8")
+    assert cases(suites(text)["team.json"])["no_secret_committed"].find("failure").text == f"scénario→1, epoch 1: {said}"
