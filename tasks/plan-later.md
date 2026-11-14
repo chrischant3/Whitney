@@ -401,6 +401,8 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 
 **Dependencies:** none. **Size:** M. **Cost:** cents for the example run.
 
+Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option until someone needs it; Python callers get the report in `RunResult` and can write any format.
+
 ### Task 57: Decision: check plugins
 
 **Description:** Spec open question 9. Should a consumer project be able to add its own check, or does every check stay a pull request to Whitney (spec, rule 5)?
