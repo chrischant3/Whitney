@@ -50,6 +50,11 @@ HOP_BY_HOP = frozenset({
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer",
     "transfer-encoding", "upgrade",
 })  # fmt: skip
+# A header the upstream folded over several lines (obs-fold): a proxy replaces each fold with one space before
+# passing it on (RFC 9112, 5.2). http.client keeps a fold in the value, after a CRLF, a bare LF or a bare CR,
+# and send_header writes it as it is, so a client could otherwise read the continuation line as a header of
+# its own. Any other line break ends the header in http.client, and it keeps every CR and LF out of names.
+OBS_FOLD = re.compile(r"[\r\n]+[ \t]*")
 # A request's Host and length are set again for the upstream; Expect was answered here already.
 NOT_FORWARDED = HOP_BY_HOP | {"host", "content-length", "expect"}
 # Header names and values the proxy reads or writes. HTTP compares names, and these values, ignoring case.
@@ -221,7 +226,7 @@ class _Handler(BaseHTTPRequestHandler):
         chunked = unsized and self.request_version != "HTTP/1.0"
         for name, value in answer.getheaders():
             if name.lower() not in HOP_BY_HOP:
-                self.send_header(name, value)
+                self.send_header(name, OBS_FOLD.sub(" ", value))
         if chunked:  # http.client has taken the upstream's chunks apart, so they are made again here
             self.send_header(TRANSFER_ENCODING, CHUNKED)
         elif unsized:
