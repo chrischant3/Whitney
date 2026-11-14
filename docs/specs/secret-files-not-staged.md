@@ -27,3 +27,7 @@ Paths as of `b0627c6`. Where the code was, not what to build.
 - `tests/test_safe_staging.py` — the nearest end-to-end staging test, with a fake `kilo` run through `inspect_eval`
 - `src/whitney/report.py` — the "Not Staged" table (around line 1008) that a new left-out row must reach
 - `docs/adding-tests.md` — the staging rules and the secret-name list for imports (around lines 828 to 861)
+
+## Owed
+
+- A `whitney validate` warning for each secret-named file (Task 61's criterion "`whitney validate` warns about each one, so a team sees it before a run"). This slice names each file in the report's "Not Staged" table instead, so the file stays out of the log either way, but a team only learns of it after a run. The warning would also need a Claude Code branch in `src/whitney/cli.py`, whose extra warnings are Kilo-only today.
