@@ -113,6 +113,7 @@ whitney --version
 | `--constraints PATH` | a `CONSTRAINTS.md`-style file; `known_gap` IDs must exist in its Exceptions table | not checked (format only) |
 | `--execution`, `--api-key-env`, `--base-url`, `--epochs`, `--limit`, `--sample-shuffle`, `--max-samples` | as in `run_evals.py` today | as today |
 | `--log-dir`, `--results-dir` | where Inspect logs and the Markdown report go | `./logs`, `./results` (current folder, not the package) |
+| `--junit FILE` | also write the results as JUnit XML (`whitney report` takes it too; README, "JUnit XML for your CI system") | not written |
 | `--min-rate CHECK=VALUE` | lower or raise one check's minimum pass rate; printed in the report when used | each check's default (see "Reports and the CI gate") |
 | `--min-conclusive VALUE` | as today | `MIN_CONCLUSIVE` (0.5) |
 | `--min-adherence`, `--min-held` | deprecated aliases for `--min-rate no_secret_committed=...` and `--min-rate outside_canary_not_reached=...` | |
