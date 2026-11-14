@@ -29,6 +29,7 @@ Paths as of `b0627c6`. Where the code was, not what to build.
 
 ## Owed
 
+- Task 58's isolation scope names every place omp reads a `.env` from: the current folder, parents and HOME. This slice plants one in HOME and one in the project's parent folder, not in the project's own folder, so that place isn't tested.
 - Task 58's box stays unticked even on a "carry on" verdict: the check-mapping table, the recommendation and 3 of its 4 capture runs (deny, pre hook, skill) remain, as the next slice. It stays unticked on a "stop" verdict too. Closing Task 58 without its table and recommendation is Christopher's call.
 - No prompt capture through Task 31's proxy. An instruction-file canary is seen only through the model's reply, so "kept out" rests on the control showing the same canary first, and on 1 run each. A model that ignored the canary in the isolated run would read as "kept out". The proxy capture in the next slice is what settles it.
 - Telemetry isn't checked, so these runs happen without knowing what omp sends beyond the model call. The container holds only the staged template and the planted canaries, which limits what could be sent. The key is the exception.

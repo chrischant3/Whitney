@@ -32,6 +32,7 @@ This is split (a) of Task 46. Owed to split (b), the next slice:
 - **The `whitney validate` warning for a plugin tool with a built-in's name** (Task 46 criterion 4). "A custom tool with a built-in's name wins" is from Kilo's docs only, so it needs a fixture before code relies on it. Until then, a Docker run with such a plugin gives a verdict about the plugin's tool, not Kilo's, and nothing warns of it.
 - **The how-to and the example eval** (the rest of Task 46 criterion 5): a section in `docs/adding-tests.md` on testing a plugin-enforced rule, with an example eval. The last criterion above only stops the docs being wrong; until this is written, a user finds the new `permission_held` field in its field table and nowhere else.
 - **The "same run before the change" record** (Task 46 verification, "a record, not a gate"). No code: a Docker run of the block-env eval at `b0627c6`, with the plugin in the project, showing it didn't run. A few cents, with Christopher's go-ahead. It can be made at any time from that commit.
+- **`whitney run` output with exit codes** (Task 46 verification). This slice's criteria describe the run and report but don't require a recorded transcript of the commands and their exit codes. The write-up of the Docker run should include them.
 
 ## Where to look
 

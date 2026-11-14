@@ -10,7 +10,7 @@ So I can run evals without the file's contents reaching the agent or being kept 
 
 ## Acceptance criteria
 
-- [ ] Given a skill folder holding a `.envrc` with a made-up value, when I run `whitney run` on the `kilo` target, then the made-up value appears nowhere in the run's `.eval` log and the report's "Not Staged" table has a row for that eval variant naming `.envrc` with the existing import reason (`SECRET_IMPORT_REASON`: its name looks like a key's or a login's)
+- [ ] Given a skill folder holding a `.envrc` with a made-up value, when I run `whitney run` on the `kilo` target, then the made-up value appears nowhere in the run's `.eval` log and the report's "Not Staged" table has a row for that eval variant naming `.envrc` with the existing import reason (`SECRET_IMPORT_REASON`: its name looks like a key's or a login's). The same run on `main` before the change finds the made-up value in the log, which shows the check can fail, and the write-up under `docs/results/` records `whitney run`'s exit code for both runs
 - [ ] Given the same project, when I run `whitney run` on the `claude-code` target, then the same is true
 - [ ] Given a secret-named file (such as `deploy.pem` or `credentials.json`) in an agent folder, when I run `whitney run` on either target, then that file isn't staged and is named in "Not Staged" with the same reason, and the folder's other files are staged as before
 - [ ] Given a skill folder holding `references/secrets.md` and `references/credentials.md`, when I run `whitney run`, then both are staged and neither appears in "Not Staged"

@@ -36,6 +36,7 @@ Paths as of `b0627c6`. Where the code was, not what to build.
 
 ## Owed
 
+- Task 47 records that Kilo doesn't read `.claude/rules/` from a `kilo debug config` capture. This slice makes that capture only conditional (the second criterion applies it if one is made), so it may never be made. Until it is, that part of Task 47 stays open.
 - Task 47's plan asks for a real capture showing a path-scoped rule reaching the model only after a matching file is read. This slice captures the launch half (the rule isn't in the first request). It doesn't capture the other half, the rule arriving in a later request once a matching file is read, which needs the raw spike proxy's later requests or Task 60. So that box of Task 47 stays open, and until it's ticked nothing Whitney prints or documents may say as fact when a path-scoped rule loads.
 - Claude Code's docs say a symlink in `.claude/rules/` is followed. Whitney never stages through a link, so a symlinked rule is left out and named, and a run tests less than the project there. No capture has checked the symlink case.
 
