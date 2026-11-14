@@ -141,3 +141,19 @@ From the code, not from a run: the Docker branch of `agent.kilo` writes the cont
 - A key the agent can see can still be used or sent somewhere. Redaction only cleans what Whitney stores.
 - A proxy password is hidden with its user (`eve:t41pw@`, `eve:t41pw@proxy.invalid:3128` and the whole value). A password printed on its own, or percent-decoded, isn't. When the `user:pass@` part is under 8 characters, it's hidden only where it's printed with its host.
 - A proxy or URL password with an unencoded `/`, `?` or `#` in it is cut short where it's matched.
+
+## Re-run 2026-11-14 (independent)
+
+Runs 2, 3 and 4 repeated from the method above by a separate session, as the open boxes in PR #67's test plan. Same Kilo 7.8.27, `kilo/anthropic/claude-haiku-4.5` through the Kilo Gateway, one epoch, `--limit 1`, a throwaway `XDG_CONFIG_HOME` holding the same made-up key, the same `HTTP_PROXY`, `NO_PROXY=*` and probe prompts, and the same four search strings. The `.eval` logs were searched member by member, and the reports as files.
+
+| Run | Code tested | Matches in log and report |
+|---|---|---|
+| 2 (local, with the change) | `task-41` at `d9ae52d` | 0 for each of the four strings; the agent printed `HTTP_PROXY=[redacted]` |
+| 3 (local, control) | `origin/main` at `e101988` (no Task 41) | 10 each for the key, `t41pw`, `eve:t41pw@` and `proxy.invalid`, all in `samples/print-config-and-proxy_epoch_1.json`; none in the report |
+| 4 (Docker, `--execution docker`) | `task-41` at `d9ae52d` | 0 for each of the four strings |
+
+Docker (run 4): `docker info` worked first. `env | grep -i proxy` in the container printed `(no output)`, so no proxy variable is set. The container's `~/.config/kilo/kilo.json`, as the agent printed it, held only the bridge's `baseURL` (`http://localhost:13131/v1`), `apiKey` `sk-none`, and the `bash`, `edit` and `read` permissions. None of the host's provider settings were in it.
+
+Cost, from Kilo's step cost lines, each step counted once: run 2 $0.0321, run 3 $0.0329, run 4 $0.0212, about $0.086 in all.
+
+Nothing differed from the 2026-11-13 results. The control's key match is new evidence: on 2026-11-13 run 1 couldn't reach the key, and run 3 found it 10 times, as here.
