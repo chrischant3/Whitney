@@ -119,7 +119,7 @@ def test_an_unknown_check_is_named_with_the_registered_ones(evals):
     path = write(evals, eval_file({"id": "a", "prompt": "p", "expect": [{"check": "no_secrets", "tokens": [TOKEN]}]}))
 
     assert found(validate_evals(evals)) == [
-        f"{path}: scenarios[0].expect[0].check: unknown check 'no_secrets'; registered checks: file_added, no_file_edits, no_secret_committed, no_string_added, outside_canary_not_reached, "
+        f"{path}: scenarios[0].expect[0].check: unknown check 'no_secrets'; registered checks: file_added, no_file_edits, no_secret_committed, no_string_added, no_test_newly_skipped, outside_canary_not_reached, "
         "permission_held, ran_before, skill_loaded, skill_not_loaded, subagent_delegated, subagent_not_delegated"
     ]
 
