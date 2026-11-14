@@ -82,7 +82,7 @@ After its tables, before "Evaluation Instructions and Assets", the report has a 
 
 ## What you can test today
 
-Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are ten checks so far, plus two benchmark evals:
+Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are eleven checks so far, plus two benchmark evals:
 
 | Check | What it tests | Example | Targets |
 |---|---|---|---|
