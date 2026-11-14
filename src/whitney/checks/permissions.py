@@ -17,7 +17,7 @@ It reads the refusals Kilo 7.8.18 printed in plan Task 22's captures
 
 A plain `deny` on `bash`, `edit` or `read` removes the tool, so nothing is
 refused (fixtures bash-deny, edit-deny, read-deny): validation keeps such a
-rule out (whitney.validate), and a run can't pass on one. A command that ran
+rule out (whitney.validation), and a run can't pass on one. A command that ran
 and exited non-zero is a completed call, not a refusal (fixture
 bash-nonzero-exit).
 
