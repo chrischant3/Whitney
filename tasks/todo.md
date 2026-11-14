@@ -2,7 +2,7 @@
 
 See [plan.md](plan.md) for decisions, risks and open questions.
 
-> **Status, 2026-11-03.** Tasks 1–8 and 11 are built and covered by the test suite; many of their boxes below were never ticked as the work landed, so read [plan.md](plan.md)'s task list for the current state. Still open: Task 9's extension run and manual checklist, and Task 10's fresh-clone walkthrough. **2026-11-11:** an audit ticked 14 boxes below whose work was done, each with a note. Still open: Task 9's extension run (now Phase 5 Task 30). Task 10's walkthrough was done by fresh sessions with no context on 2026-11-10, not by a person, so its boxes are left for Christopher. Task 11 has no recorded real run. The manual `inspect view` boxes and the "Review with human" boxes are also left for him. Since then the repository was published (Task 12, root commit `255c015`) and CI was added (`.github/workflows/`); Task 12's steps below are kept as a record and name a branch and commit that no longer apply. Phase 4 (the `kilo` and `claude-code` targets) is tracked in plan.md.
+> **Status, 2026-11-03.** Tasks 1–8 and 11 are built and covered by the test suite; many of their boxes below were never ticked as the work landed, so read [plan.md](plan.md)'s task list for the current state. Still open: Task 9's extension run and manual checklist, and Task 10's fresh-clone walkthrough. **2026-11-11:** an audit ticked 14 boxes below whose work was done, each with a note. Still open: Task 9's extension run (now Phase 5 Task 30). Task 10's walkthrough was done by fresh sessions with no context on 2026-11-10, not by a person, so its boxes are left for Christopher. Task 11 has no recorded real run. The manual `inspect view` boxes and the "Review with human" boxes are also left for him. Since then the repository was published (Task 12, root commit `255c015`) and CI was added (`.github/workflows/`); Task 12's steps below are kept as a record and name a branch and commit that no longer apply. Phase 4 (the `kilo` and `claude-code` targets) is tracked in plan.md. **2026-11-13:** a second audit ticked 3 more boxes (Task 11's real run, and Task 12's two searches for the organisation's name) and noted what each open box still lacks.
 
 ## Phase 0: Prove it can work
 
@@ -17,7 +17,7 @@ See [plan.md](plan.md) for decisions, risks and open questions.
 Done 2026-11-02; see `docs/spike-findings.md` § T1.
 
 **Verification:**
-- [ ] The agent reads the run's log (`inspect log dump`) and records the sample's transcript and model usage it holds, which is what `inspect view` shows
+- [ ] The agent reads the run's log (`inspect log dump`) and records the sample's transcript and model usage it holds, which is what `inspect view` shows *(2026-11-13, audit: still open. `docs/spike-findings.md` § T1 says the smoke sample's model calls are in the Inspect log, but no record of the transcript or model usage read from the log is kept, and the spike's log isn't committed.)*
 
 **Dependencies:** None
 **Files likely touched:** `spikes/kilo_bridge.py`, `docker/Dockerfile`, `docker/compose.yaml`
@@ -90,7 +90,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 
 ## Checkpoint: Phase 1
 - [x] All tests pass Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
-- [ ] Review with human
+- [ ] Review with human *(2026-11-13, audit: still open: no Phase 1 review is recorded in `tasks/`, `docs/` or the commit messages.)*
 
 ## Phase 2: The two MVP evals
 
@@ -104,7 +104,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 
 **Verification:**
 - [x] Tests pass: `pytest -q tests/test_agents_md.py` Confirmed 2026-11-11 by audit: that file was renamed; `tests/test_tasks.py` and `tests/test_scoring.py` cover it (plan.md), and the suite passes in CI on PR #44.
-- [ ] The agent reads the run's log (`inspect log dump`) and records each scenario's result and explanation, which is what `inspect view` shows
+- [ ] The agent reads the run's log (`inspect log dump`) and records each scenario's result and explanation, which is what `inspect view` shows *(2026-11-13, audit: in part. `docs/results/2026-11-02-phase2.md` records each scenario's result in both variants, for the first run and the rerun, but not the scorer's explanations, and doesn't say they were read from `inspect log dump`. Missing: each scenario's explanation. The logs aren't committed but were still on the maintainer's machine on this date.)*
 
 **Dependencies:** T1, T4, T5
 **Files likely touched:** `evals/agents-md.json`, `evals/fixtures/repo-with-env/`, `src/whitney/agents_md.py`, `tests/test_agents_md.py`
@@ -121,7 +121,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 
 **Verification:**
 - [x] Tests pass: `pytest -q tests/test_permissions.py` Confirmed 2026-11-11 by audit: that file was renamed; `tests/test_tasks.py` and `tests/test_scoring.py` cover it (plan.md), and the suite passes in CI on PR #44.
-- [ ] The agent reads the control run's log and the `ask` run's log, and records the two results and explanations side by side
+- [ ] The agent reads the control run's log and the `ask` run's log, and records the two results and explanations side by side *(2026-11-13, audit: in part. The `kilo.jsonc` table in `docs/results/2026-11-02-phase2.md` gives the `ask` and `allow` results side by side for each route, and says the two "not attempted" control transcripts were read. Missing: the explanations themselves.)*
 
 **Dependencies:** T1, T2, T4, T5
 **Files likely touched:** `evals/configuration/kilo-jsonc.json`, `evals/fixtures/outside-dir/`, `src/whitney/permissions.py`, `tests/test_permissions.py`
@@ -131,7 +131,7 @@ Done 2026-11-02; see `docs/spike-findings.md` § T1.
 Results: `docs/results/2026-11-02-phase2.md`.
 - [x] All tests pass
 - [x] Both evals run end to end on a real model
-- [ ] Review results with human
+- [ ] Review results with human *(2026-11-13, audit: still open: no review of the Phase 2 results is recorded in `tasks/`, `docs/` or the commit messages.)*
 
 ## Phase 3: Reporting, VS Code, docs
 
@@ -154,12 +154,12 @@ Results: `docs/results/2026-11-02-phase2.md`.
 **Description:** An automated check that the extension's runtime resolves the same `kilo.jsonc` and `AGENTS.md` as the CLI (method from T2). Plus `docs/vscode-manual-check.md`: a short script that repeats one scenario from each eval in the extension, with a results table to fill in.
 
 **Acceptance criteria:**
-- [ ] Parity check passes on the template and fails if the extension would load a different file (unit-tested; CLI-vs-CLI run OK; **not yet run against the extension**, which isn't installed here) *(2026-11-12: run against the extension, `parity OK` (Phase 5 Task 30, [docs/results/2026-11-12-vscode-parity.md](../docs/results/2026-11-12-vscode-parity.md)). "A different file" holds for `kilo.jsonc`'s `permission` and `instructions` only: a changed `AGENTS.md` doesn't make it fail, so this box is unticked until the check catches that or the box is reworded; see open decision 1 in [todo-phase5.md](todo-phase5.md#open-decisions-for-the-maintainer).)*
-- [ ] Manual checklist run once, with results recorded (**needs a person with the extension installed**)
+- [ ] Parity check passes on the template and fails if the extension would load a different file (unit-tested; CLI-vs-CLI run OK; **not yet run against the extension**, which isn't installed here) *(2026-11-12: run against the extension, `parity OK` (Phase 5 Task 30, [docs/results/2026-11-12-vscode-parity.md](../docs/results/2026-11-12-vscode-parity.md)). "A different file" holds for `kilo.jsonc`'s `permission` and `instructions` only: a changed `AGENTS.md` doesn't make it fail, so this box is unticked until the check catches that or the box is reworded; see open decision 1 in [todo-phase5.md](todo-phase5.md#open-decisions-for-the-maintainer).)* *(2026-11-13, audit: still open: `src/whitney/parity.py` still compares only `COMPARED_KEYS = ("permission", "instructions")`, unchanged since `78e8813`, and open decision 1 is undecided.)*
+- [ ] Manual checklist run once, with results recorded (**needs a person with the extension installed**) *(2026-11-13, audit: still open: the Results section of `docs/vscode-manual-check.md` has no row; only step 1, the parity check, was run, by an agent on 2026-11-12. Steps 3 and 4 need a person in the extension.)*
 
 **Verification:**
 - [x] Tests pass: `pytest -q tests/test_parity.py` Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
-- [ ] Manual check: completed checklist committed
+- [ ] Manual check: completed checklist committed *(2026-11-13, audit: still open, as the box above.)*
 
 **Dependencies:** T5, T6, T7
 **Files likely touched:** `src/whitney/parity.py`, `tests/test_parity.py`, `docs/vscode-manual-check.md`
@@ -169,11 +169,11 @@ Results: `docs/results/2026-11-02-phase2.md`.
 **Description:** `docs/template.md`, `docs/load-order.md` (final), `docs/adding-tests.md` (when you change a template file, and when you add one), and a README that explains the project, how to run it, and where the docs are.
 
 **Acceptance criteria:**
-- [ ] Someone new can fork the repo, add a scenario and run it using only the docs (docs written; not yet tried by someone new)
+- [ ] Someone new can fork the repo, add a scenario and run it using only the docs (docs written; not yet tried by someone new) *(2026-11-13, audit: still open as worded. Fresh sessions with no context have done it, not a person: on 2026-11-09 one added an eval for its own rule to a copy of `examples/consumer` using only `docs/adding-tests.md`, validated and ran it (Phase 5 Task 15 and Checkpoint A, ticked in [todo-phase5.md](todo-phase5.md), whose criterion accepts "a person or a fresh session"); on 2026-11-12 another validated the Claude Code example from the docs alone but did not run it (`docs/results/2026-11-12-claude-code-example.md`, "A newcomer follows the docs"). Whether that settles this box is for Christopher.)*
 - [x] README commands are copied from a verified run
 
 **Verification:**
-- [ ] An agent in a fresh session follows `docs/adding-tests.md` from a clean clone, and its commands, output and friction log are kept
+- [ ] An agent in a fresh session follows `docs/adding-tests.md` from a clean clone, and its commands, output and friction log are kept *(2026-11-13, audit: in part. The 2026-11-09 session worked in a copy of `examples/consumer`, not a clean clone, and only a summary of its gaps is kept (Phase 5 Task 15's notes). The 2026-11-12 session's friction log is kept, with what was fixed, in `docs/results/2026-11-12-claude-code-example.md`, but it didn't start from a clean clone and its commands and output aren't kept. Missing: a run from a clean clone with its commands, output and friction log.)*
 
 **Dependencies:** T8, T9
 **Files likely touched:** `README.md`, `docs/*.md`
@@ -183,7 +183,7 @@ Results: `docs/results/2026-11-02-phase2.md`.
 **Description:** Port `ifevalcode_ab` from `inspect-instructions-example`, with the template's `AGENTS.md` as the instructions.
 
 **Acceptance criteria:**
-- [ ] Runs the baseline and template variants on the Python subset and reports the delta
+- [x] Runs the baseline and template variants on the Python subset and reports the delta *(2026-11-13, audit: a real run on 2026-11-12, `--target claude-code --model anthropic/claude-haiku-4-5 --evals ifevalcode --ifevalcode-samples-per-language 1 --epochs 1` (the languages default to `python`, `scripts/run_evals.py`), ran both variants on Python sample 505; results in `docs/results/2026-11-12-ifevalcode-escapes.md`, "The rerun with a model" (correctness and instruction 0 in both, so no difference). It was run through the runner's own task builder with a sandbox override and its result written up by hand. The report's Δ column is `render_ifevalcode_markdown` in `src/whitney/report.py`, tested by `tests/test_report_rendering.py::test_ifevalcode_report`. One sample and one epoch: it shows the eval runs and reports, not the template's effect.)*
 
 **Verification:**
 - [x] Tests pass: `pytest -q tests/test_interference.py` Confirmed 2026-11-11 by audit: the suite passes in CI on PR #44.
@@ -194,8 +194,8 @@ Results: `docs/results/2026-11-02-phase2.md`.
 
 ## Checkpoint: MVP complete
 - [x] All tests pass locally and in CI Confirmed 2026-11-11 by audit: 2618 tests passed locally on `77e1345`, and `check.py task` passed in CI on PR #44.
-- [ ] All four MVP acceptance criteria in `AGENTS.md` met, with evidence
-- [ ] Review with human
+- [ ] All four MVP acceptance criteria in `AGENTS.md` met, with evidence *(2026-11-13, audit: three of four. The template (`template/kilo/AGENTS.md`, `template/kilo/kilo.jsonc`), the report of how well the rule is followed and the `external_directory: ask` test are evidenced in `docs/results/2026-11-02-phase2.md` and the test suite. The fourth, the template tested in both Kilo CLI and the VS Code extension, still lacks the manual checklist in the extension (Task 9).)*
+- [ ] Review with human *(2026-11-13, audit: still open: no MVP review is recorded in `tasks/`, `docs/` or the commit messages.)*
 
 ## After the MVP: publish
 
@@ -210,12 +210,12 @@ Results: `docs/results/2026-11-02-phase2.md`.
 5. Create the public GitHub repo, push, and set `origin/main` as the floor guard's base.
 
 **Acceptance criteria:**
-- [ ] No file in the new repo names the organisation
+- [x] No file in the new repo names the organisation *(2026-11-13, audit: a case-insensitive `git grep` of every tracked file, on this branch and on `origin/main` (`f252693`), for the organisation's name and its abbreviations, with and without a hyphen, found nothing. The variants searched for were taken from the commit that removed them before publishing.)*
 - [x] The new repo's history is a single commit with no trace of this repo's history Confirmed 2026-11-11 by audit: the public repo has one root commit, `255c015`, with no parent.
 - [x] `python scripts/check.py full` passes in a fresh clone of the public repo Confirmed 2026-11-11 by audit: the "Mutation (full)" workflow, which runs `check.py full` on a fresh checkout on GitHub, succeeded on `35eeaa4`. Not run in a clone on a person's machine.
 
 **Verification:**
-- [ ] Case-insensitive search of the new repo for the organisation's name returns nothing
+- [x] Case-insensitive search of the new repo for the organisation's name returns nothing *(2026-11-13, audit: as the box above; `git log -G` with the same pattern finds no commit since the root commit `255c015` that added or removed it either.)*
 - [x] `pytest -q` and `python scripts/check.py full` pass from a fresh clone Confirmed 2026-11-11 by audit: as the box above.
 
 **Dependencies:** MVP checkpoint

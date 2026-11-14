@@ -374,12 +374,12 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: other formats.
 
 **Acceptance criteria:**
-- [ ] The XML validates against a named schema (the widely used `JUnit.xsd` from the Ant/Jenkins family, kept in the repo for the test), and the docs say which elements are used.
-- [ ] The gate's exit code is unchanged.
+- [x] The XML validates against a named schema (the widely used `JUnit.xsd` from the Ant/Jenkins family, kept in the repo for the test), and the docs say which elements are used. *(2026-11-13: `tests/data/junit/JUnit.xsd`, the JUnit schema used by Apache Ant's JUnit task, © 2011 Windy Road Technology Pty. Limited, Apache 2.0, with its SHA-256 and download date in `SOURCE.txt`; `tests/test_junit.py` validates with `xmllint`; README, "JUnit XML for your CI system", lists the elements.)*
+- [x] The gate's exit code is unchanged. *(2026-11-13: `test_without_junit_no_xml_is_written_and_the_exit_code_is_the_same`, and the CLI runs in [docs/results/2026-11-13-junit-output.md](../docs/results/2026-11-13-junit-output.md).)*
 
 **Verification:**
-- [ ] `whitney report --junit` on a saved log (see "Saved logs") that holds a pass, a fail and an inconclusive result, with the XML validated against the schema.
-- [ ] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link.
+- [x] `whitney report --junit` on a saved log (see "Saved logs") that holds a pass, a fail and an inconclusive result, with the XML validated against the schema. *(2026-11-13: the log was made deterministically by `whitney run` with a fake `kilo` (`tests/data/junit/example`), not by a model; [docs/results/2026-11-13-junit-output.md](../docs/results/2026-11-13-junit-output.md).)*
+- [ ] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link. *(2026-11-13: the step is in `.github/workflows/checks.yml` and its script ran locally; it can only be shown on GitHub once the branch is pushed and a pull request opened, so the link is still missing.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** none.
 
