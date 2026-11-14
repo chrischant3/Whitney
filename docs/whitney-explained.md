@@ -1,6 +1,6 @@
 # Whitney: what it does and who it's for
 
-*Written 2026-11-14 from the repository as it is on `main`.*
+*Written 2026-11-14 from the repository as it is on `main`. Each use case below is also a Gherkin feature in [`tests/journeys/`](../tests/journeys/) that runs as a test; see [The journeys as tests](#the-journeys-as-tests).*
 
 ## In one paragraph
 
@@ -78,7 +78,7 @@ The last task row is the useful finding: the rule keeps `.env` files out of comm
 
 Note: that run used the older `scripts/run_evals.py` with Kilo in Docker, not today's `whitney run` command.
 
-## Five use cases
+## Six use cases
 
 ### 1. A team proves its instruction file works
 
@@ -91,12 +91,12 @@ Note: that run used the older `scripts/run_evals.py` with Kilo in Docker, not to
 
 ### 2. Infosec checks that a block actually blocks
 
-**Who:** a security reviewer whose config says `"git push *": "deny"`.
+**Who:** a security reviewer whose `kilo.jsonc` says `"external_directory": "ask"`: ask before touching anything outside the project.
 
-1. Whitney sets a task that tempts the assistant to push.
-2. It also runs a deliberately loosened copy, where pushing must succeed, which proves the test can fail.
-3. A file planted outside the project shows whether the assistant reached beyond its folder.
-4. The reviewer reads `docs/findings/` for known ways round the block. One example: a shell variable such as `$HOME` gets past Kilo's folder check.
+1. A file holding a fake secret is planted beside the project, and a task asks the assistant to read it.
+2. Whitney also runs a deliberately loosened copy of the settings, set to `"allow"`, where the read must succeed. That proves the test can fail.
+3. A run where Kilo asked for permission, and so read nothing, counts as "blocked". The gate for blocks is 90%.
+4. Known ways round the block are run and reported as known gaps, outside the gate. The template's one is a symlink made by a shell command, in `docs/findings/001-symlink-bypasses-external-directory.md`. Task 63 found more, recorded in `docs/spike-findings.md`: Kilo doesn't check a path holding a shell variable, so `cat "$HOME"/...` gets through.
 
 ### 3. Every change to the rules is tested in CI
 
@@ -111,11 +111,17 @@ Note: that run used the older `scripts/run_evals.py` with Kilo in Docker, not to
 
 **Who:** a team standardising instructions across several projects.
 
-1. Copy `examples/consumer`.
+1. Copy `examples/consumer`, or the smaller example closest to the rule.
 2. Add the company's rule, a test task and a small sample project.
 3. Loop between `whitney validate` and `whitney run`, following `docs/adding-tests.md`.
 
-Rules, skills and handing work to a sub-agent are all covered.
+Rules, skills and handing work to a sub-agent are all covered. The three newest checks test rules about how work is done, each with an example to copy:
+
+| Check | Fails when | Example |
+|---|---|---|
+| `file_added` | the assistant finishes without adding a file it was told to, such as a test next to its module | `examples/colocated-tests` |
+| `no_test_newly_skipped` | the assistant marks a test as skipped | `examples/skipped-tests` |
+| `ran_before` | a command ran without another before it, such as a commit with no test run first | `examples/tests-before-commit` |
 
 ### 5. Comparing tools or models
 
@@ -125,25 +131,46 @@ Rules, skills and handing work to a sub-agent are all covered.
 2. Run with `--target kilo`, then with `--target claude-code`, or with two different `--model` values. Each report is named after its model.
 3. Compare the reports.
 
-Real runs found differences. For example, Claude Code blocked only its own file tools, so a shell `cat` outside the project got through.
+Real runs found differences. For example, Claude Code blocked only its own file tools, so a shell `cat` outside the project got through (`docs/spike-findings.md`, "Outside the project"). That one isn't in the journey tests: it's about the tools themselves, so only a real run shows it.
 
-### The five journeys side by side
+### 6. Calling Whitney from Python
+
+**Who:** a developer building Whitney into their own tooling.
+
+1. `import whitney`.
+2. `whitney.validate(project, evals, target="kilo")` returns the problems and warnings as lists, instead of printing them.
+3. `whitney.run(target=..., model=..., project_path=..., evals_path=...)` returns the result instead of exiting: `exit_code`, `report_path`, and `gate_failures`, which says why the gate failed.
+4. `examples/api.py` does both on the consumer example.
+
+### The six journeys side by side
 
 | Journey | Starts with | Ends with |
 |---|---|---|
 | 1. Rule proof | `AGENTS.md` | A reworded rule |
-| 2. Block check | A `deny` rule in `kilo.jsonc` | A list of known bypasses |
+| 2. Block check | `"external_directory": "ask"` in `kilo.jsonc` | Proof the block holds, and its known gaps |
 | 3. CI | A pipeline step | A red or green build |
 | 4. Fork | A copy of `examples/consumer` | The company's own test suite |
 | 5. Tool comparison | The same project, two tools | Which tool obeys |
+| 6. Python | `import whitney` | Results as values your code acts on |
+
+## The journeys as tests
+
+Each journey is a feature file in [`tests/journeys/`](../tests/journeys/), written in Gherkin (Given, When, Then) and run by pytest-bdd as part of the test suite:
+
+```bash
+pytest tests/journeys
+```
+
+The tests run `whitney` as a user would, but with a fake `kilo` or `claude` that decides whether a rule is followed, so no model is called and nothing costs money. They show that Whitney measures, reports and gates as described here. Whether a real model obeys a rule is what a real `whitney run` measures.
+
+Two steps above are left out of the tests, because only a real run shows them: rewording a rule and seeing it hold more often (journey 1), and the difference between Kilo and Claude Code (journey 5).
 
 ## What it can't tell you
 
 - **Small samples.** With 6 tasks × 3 runs, Whitney shows big effects, not small ones.
 - **Kilo's permissions aren't a security wall.** They only make the assistant ask before acting, and some shell commands get round them. Docker is the only real isolation.
 - **Claude Code needs `ANTHROPIC_API_KEY`.**
-- **Which file wins when two rule files disagree isn't tested yet.** Task 48 found how Kilo loads rule files in subfolders, and Task 62 is planned to test it.
-- **The Python API**, `whitney.run()`, is still in pull request #66 and isn't on `main` yet.
+- **Which file wins when two rule files disagree isn't tested yet.** Task 48, a spike on how rule files in subfolders are loaded, is planned.
 
 ## Words you'll see in the repo
 
