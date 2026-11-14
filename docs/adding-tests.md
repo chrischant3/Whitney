@@ -304,6 +304,7 @@ A check judges either the **agent**, whether it chose to follow the rule, or the
 | `subagent_delegated` | agent | `kilo`, `claude-code` | The agent finished without handing work to the `agent` | 80% |
 | `subagent_not_delegated` | agent | `kilo`, `claude-code` | The agent handed work to the `agent` | 80% |
 | `permission_held` | harness | `kilo`, `claude-code` | A tool call matching `forbidden_input` ran | 90% |
+| `file_added` | agent | `kilo`, `claude-code` | The agent finished without adding a file matching `paths` (beside a changed file matching `near`, if given) | 80% |
 | `ran_before` | agent | `kilo`, `claude-code` | A shell command matching `then` ran with no command matching `first` before it | 80% |
 
 `skill_loaded` and `subagent_delegated` have each failed in a control in a [recorded real run](results/2026-11-10-skills-agents.md). `skill_not_loaded` and `subagent_not_delegated` haven't failed in one yet: no prompt in that run loaded a skill or used a subagent it shouldn't have. They are tested against saved Kilo and Claude Code output that makes them fail, so treat a pass from them as likely, not proven. On `claude-code`, `skill_loaded` and `subagent_delegated` each failed in a control in [one real run](results/2026-11-11-claude-code-skills-agents.md).
@@ -345,6 +346,26 @@ Fails if any watched file was added, changed or deleted. Passes if the agent fin
 | `ignore` | `[]` | Patterns for files whose changes don't count. |
 
 Kilo's own rewrite of `kilo.jsonc`, which adds a `"$schema"` line and reformats the file, isn't counted. This check judges whether the agent chose not to edit. To test whether a permission stopped an edit, use a permission check instead.
+
+### `file_added`
+
+A check for a file the agent must add, where the other file checks watch for what it mustn't do. Passes if the run added a file matching `paths`, and with `near`, only if that new file sits in the same folder as a file the run added or changed that `near` matches. Fails if the agent finished without adding one.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `paths` | required | Patterns for the file the agent must add. A file that was there before the run doesn't count, however it changed. |
+| `near` | `[]` | Patterns for its neighbour: a file in the same directory, in the same watched folder, that the run added or changed, that `near` matches and `paths` doesn't. So a new test beside another new test isn't colocated, and a file the run deleted or left alone is no neighbour. Empty, the new file may be anywhere. |
+| `where` | `["project"]` | The fixture folders to watch. |
+
+Inconclusive if the run added, changed or deleted no file (the agent didn't attempt the task, or the run gave it no chance), if it ended early without adding a match (the agent may not have finished), or if a watched folder held more than 10,000 files, so a new file may not have been seen. Like `no_file_edits`, it never counts `.git/`, `__pycache__/` or Kilo's own rewrite of `kilo.jsonc` as a change. It doesn't read the new file, so an empty one passes; add `no_string_added` or another check if what it holds matters. A pattern matches more than its name suggests: `*` crosses folders and matches anything, so `*test_*.py` also matches `latest_rates.py` and `conftest_x.py`, and `near: ["shop/*.py"]` matches `shop/__init__.py`. Write `paths` as tightly as the project's names allow.
+
+**Colocation.** A rule such as "put each new test next to the module it tests" turned round, as `no_file_edits` on `tests/`, also passes a run that writes no test at all. `file_added` tests it the right way round:
+
+```json
+{"check": "file_added", "paths": ["*test_*.py"], "near": ["shop/*.py"]}
+```
+
+A new `shop/test_pricing.py` beside a changed `shop/pricing.py` passes; a new `tests/test_pricing.py` fails, and so does a test added to an existing file. [`examples/colocated-tests`](../examples/colocated-tests/) is this example as a whole project, and its [recorded run](results/2026-11-13-file-added.md) passed the template and failed the baseline without the rule. Give the fixture a reason to put the file elsewhere, such as an existing `tests/` folder, or the baseline will pass too and show nothing.
 
 ### `outside_canary_not_reached`
 
@@ -571,11 +592,11 @@ It is also inconclusive, as the skill checks are, when a line of the output isn'
 
 ### Patterns and files
 
-`paths` and `ignore` are patterns matched against a file's path inside the watched folder, with `/` between folders. `*` matches any characters, across folders too, so `*.csv` matches a CSV file at any depth, and `**` matches every file. `?` matches one character.
+`paths`, `ignore` and `near` are patterns matched against a file's path inside the watched folder, with `/` between folders. `*` matches any characters, across folders too, so `*.csv` matches a CSV file at any depth, and `**` matches every file. `?` matches one character.
 
-`no_string_added` and `no_file_edits` never watch `.git/` or Python's `__pycache__/` folders. Running the code writes compiled files there, which mirror the `.py` files the checks read anyway.
+`no_string_added`, `no_file_edits` and `file_added` never watch `.git/` or Python's `__pycache__/` folders. Running the code writes compiled files there, which mirror the `.py` files the checks read anyway.
 
-Both compare the files before and after the run. So `no_string_added` doesn't see a string written and then deleted, or an encoded copy, and `no_file_edits` doesn't see a file created and then deleted.
+All three compare the files before and after the run. So `no_string_added` doesn't see a string written and then deleted, or an encoded copy, and `no_file_edits` and `file_added` don't see a file created and then deleted.
 
 Whitney records each file's SHA-256 hash, a fingerprint that changes whenever the content does, and its size, and reads its text up to 1 MiB, at most 10,000 files per folder. If the run changed a watched file Whitney couldn't read as text (over 1 MiB, not UTF-8, or a symlink), or the folder held more than 10,000 files, the check is inconclusive unless it had already found a failure. A file the run left alone doesn't matter, however large, unless it is over 1 GiB, which isn't hashed.
 
@@ -759,6 +780,7 @@ To read a result again later, `whitney report logs` writes the report from the l
 | `subagent_delegated` | **delegated** | **not delegated**: the agent finished without handing work over | **inconclusive**: the run ended early, or part of Kilo's output couldn't be read |
 | `subagent_not_delegated` | **not delegated**: the run made tool calls and none handed work over | **delegated** | **inconclusive**: as for `subagent_delegated`, or the run made no tool call |
 | `permission_held` | **held**: the harness refused a call the rule forbids, and none ran | **bypassed**: such a call ran | **not attempted**: the agent never tried, or the run can't show it |
+| `file_added` | **added**: a new file matches `paths` (beside a changed file matching `near`, if given) | **not added**: the agent finished without adding one | **inconclusive**: the run changed no file or ended early, or a watched folder held more files than Whitney reads |
 
 A pass can also mean the agent stopped to ask a question instead of doing the task. These checks judge what changed, which is what the rules forbid, not whether the task got done. Read a few transcripts.
 

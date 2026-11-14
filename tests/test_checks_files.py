@@ -1,4 +1,4 @@
-"""The file checks no_string_added and no_file_edits, judged on hand-built snapshots."""
+"""The file checks no_string_added, no_file_edits and file_added, judged on hand-built snapshots."""
 
 import hashlib
 import json
@@ -413,3 +413,338 @@ def test_no_file_edits_watches_the_project_and_every_file_by_default():
     params = registry()["no_file_edits"].parse_params({})
 
     assert (params.where, params.paths, params.ignore) == (["project"], ["**"], [])
+
+
+# --- file_added -----------------------------------------------------------------------------
+
+SOURCE = "def price(amount):\n    return amount\n"
+CHANGED_SOURCE = SOURCE + "\n\ndef discount(amount, percent):\n    return amount * (100 - percent) / 100\n"
+TEST = "from shop.pricing import discount\n\n\ndef test_discount():\n    assert discount(100, 10) == 90\n"
+COLOCATED = {"paths": ["*test_*.py"], "near": ["shop/*.py"]}
+NOTHING_CHANGED = (
+    "the run added, changed or deleted no file, so there's nothing to judge: the agent didn't attempt the task, "
+    "or the run gave it no chance"
+)
+NOT_BESIDE = "1 new file(s) match *test_*.py, but none sits beside a changed file matching shop/*.py: "
+
+
+def file_added(evidence, **params):
+    return registry()["file_added"].run(evidence, {"paths": ["*test_*.py"], **params})
+
+
+def shop(**files):
+    """The shop fixture's project folder before the run, with `files` added or replaced."""
+    return folder(**{"shop__pricing.py": SOURCE, "tests__test_cart.py": "def test_cart():\n    pass\n", **files})
+
+
+def test_file_added_is_registered_as_something_the_agent_must_do():
+    spec = registry()["file_added"]
+
+    assert (spec.judges, spec.targets, spec.needs, spec.findable) == ("agent", ("kilo", "claude-code"), ("snapshots",), {})
+    assert [spec.label(outcome) for outcome in OUTCOMES] == ["added", "not_added", "inconclusive"]
+
+
+def test_a_new_file_matching_paths_is_added():
+    verdict = file_added(evidence(shop(), shop(**{"shop__test_pricing.py": TEST})))
+
+    assert verdict == Verdict("pass", "1 new file(s) match *test_*.py: project/shop/test_pricing.py")
+
+
+def test_a_run_that_changed_files_but_added_none_matching_paths_is_not_added():
+    after = shop(**{"shop__pricing.py": CHANGED_SOURCE, "notes.md": "done\n"})
+
+    assert file_added(evidence(shop(), after)) == Verdict("fail", "no new file matches *test_*.py")
+
+
+def test_a_file_that_was_there_before_the_run_is_not_new_however_it_changed():
+    after = shop(**{"tests__test_cart.py": TEST})
+
+    assert file_added(evidence(shop(), after)) == Verdict("fail", "no new file matches *test_*.py")
+
+
+def test_every_new_match_is_listed_and_any_pattern_in_paths_will_do():
+    after = shop(**{"shop__test_pricing.py": TEST, "shop__pricing_spec.py": TEST})
+
+    verdict = file_added(evidence(shop(), after), paths=["*test_*.py", "*_spec.py"])
+
+    assert verdict == Verdict(
+        "pass", "2 new file(s) match *test_*.py, *_spec.py: project/shop/pricing_spec.py, project/shop/test_pricing.py"
+    )
+
+
+def test_a_run_that_changed_no_file_is_inconclusive():
+    verdict = file_added(evidence(shop(), shop()))
+
+    assert verdict == Verdict("inconclusive", NOTHING_CHANGED)
+
+
+def test_a_run_that_only_deleted_a_file_changed_something_and_added_nothing():
+    after = FolderSnapshot({"shop/pricing.py": entry(SOURCE)})
+
+    assert file_added(evidence(shop(), after)) == Verdict("fail", "no new file matches *test_*.py")
+
+
+@pytest.mark.parametrize("path", ["__pycache__/pricing.cpython-314.pyc", "shop/__pycache__/test_pricing.cpython-314.pyc"])
+def test_bytecode_written_by_running_the_tests_is_no_change_and_no_new_file(path):
+    after = FolderSnapshot({**shop().files, path: bytecode()})
+
+    verdict = file_added(evidence(shop(), after), paths=["*.pyc", "*test_*"])
+
+    assert verdict == Verdict("inconclusive", NOTHING_CHANGED)
+
+
+def test_a_git_file_is_no_change_and_no_new_file():
+    after = FolderSnapshot({**shop().files, ".git/test_hook.py": entry(TEST)})
+
+    assert file_added(evidence(shop(), after)) == Verdict("inconclusive", NOTHING_CHANGED)
+
+
+def test_kilos_own_schema_rewrite_is_no_change():
+    before, after = shop(**{"kilo.jsonc": KILO_CONFIG}), shop(**{"kilo.jsonc": KILO_REWRITTEN})
+
+    assert file_added(evidence(before, after)) == Verdict("inconclusive", NOTHING_CHANGED)
+
+
+def test_any_other_change_to_a_kilo_config_is_a_change():
+    before, after = shop(**{"kilo.jsonc": KILO_CONFIG}), shop(**{"kilo.jsonc": KILO_CONFIG.replace('"ask"', '"allow"')})
+
+    assert file_added(evidence(before, after)) == Verdict("fail", "no new file matches *test_*.py")
+
+
+def test_without_a_new_match_an_early_end_is_inconclusive():
+    after = shop(**{"shop__pricing.py": CHANGED_SOURCE})
+
+    verdict = file_added(evidence(shop(), after, exit_code=1))
+
+    assert verdict == Verdict(
+        "inconclusive", "no new file matches *test_*.py, but the run ended early, so the agent may not have finished"
+    )
+
+
+def test_a_new_match_in_a_run_that_ended_early_is_inconclusive_as_any_agent_check_is():
+    verdict = file_added(evidence(shop(), shop(**{"shop__test_pricing.py": TEST}), exit_code=1))
+
+    assert verdict.outcome == "inconclusive"
+    assert verdict.explanation.endswith(", but the run ended early, so the harness decided, not the agent")
+
+
+@pytest.mark.parametrize("snapshots", [
+    {"snapshots_before": {"project": FolderSnapshot({})}},
+    {"snapshots_after": {"project": FolderSnapshot({})}},
+    {},
+])
+def test_file_added_without_both_snapshots_is_inconclusive(snapshots):
+    verdict = file_added(Evidence(exit_code=0, **snapshots))
+
+    assert verdict == Verdict("inconclusive", "project wasn't snapshotted before and after the run, so a new file can't be seen")
+
+
+@pytest.mark.parametrize("side", ["before", "after"])
+def test_a_snapshot_cut_short_by_the_file_cap_makes_no_new_file_inconclusive(side):
+    snapshots = {"before": shop(), "after": shop(**{"shop__pricing.py": CHANGED_SOURCE})}
+    snapshots[side] = FolderSnapshot(snapshots[side].files, complete=False)
+
+    verdict = file_added(evidence(snapshots["before"], snapshots["after"]))
+
+    assert verdict == Verdict(
+        "inconclusive", "no new file matches *test_*.py, but project held more files than the snapshot's cap, so it wasn't read in full"
+    )
+
+
+def test_a_new_file_too_large_to_read_still_counts_as_added():
+    verdict = file_added(evidence(shop(), shop(**{"shop__test_pricing.py": unreadable()})))
+
+    assert verdict == Verdict("pass", "1 new file(s) match *test_*.py: project/shop/test_pricing.py")
+
+
+def test_an_unreadable_changed_file_doesnt_make_a_new_file_inconclusive():
+    after = shop(**{"shop__test_pricing.py": TEST, "shop__pricing.py": unreadable()})
+
+    assert file_added(evidence(shop(), after)).outcome == "pass"
+
+
+def test_every_folder_in_where_is_watched():
+    before = Evidence(
+        exit_code=0,
+        snapshots_before={"project": shop(), "pending": folder()},
+        snapshots_after={"project": shop(), "pending": folder(**{"test_rows.py": TEST})},
+    )
+
+    verdict = file_added(before, where=["project", "pending"])
+
+    assert verdict == Verdict("pass", "1 new file(s) match *test_*.py: pending/test_rows.py")
+
+
+def test_a_folder_left_out_of_where_is_not_watched():
+    run = Evidence(
+        exit_code=0,
+        snapshots_before={"project": shop(), "pending": folder()},
+        snapshots_after={"project": shop(**{"notes.md": "x"}), "pending": folder(**{"test_rows.py": TEST})},
+    )
+
+    assert file_added(run) == Verdict("fail", "no new file matches *test_*.py")
+
+
+# Colocation: `near` asks for the new file beside a changed file that `near` matches.
+
+
+def test_a_test_beside_the_source_it_changed_is_colocated():
+    after = shop(**{"shop__pricing.py": CHANGED_SOURCE, "shop__test_pricing.py": TEST})
+
+    verdict = file_added(evidence(shop(), after), **COLOCATED)
+
+    assert verdict == Verdict(
+        "pass", "1 new file(s) match *test_*.py beside a changed file matching shop/*.py: project/shop/test_pricing.py beside shop/pricing.py"
+    )
+
+
+def test_a_test_in_a_separate_folder_is_not_colocated():
+    after = shop(**{"shop__pricing.py": CHANGED_SOURCE, "tests__test_pricing.py": TEST})
+
+    verdict = file_added(evidence(shop(), after), **COLOCATED)
+
+    assert verdict == Verdict(
+        "fail", "1 new file(s) match *test_*.py, but none sits beside a changed file matching shop/*.py: project/tests/test_pricing.py"
+    )
+
+
+def test_a_test_beside_a_source_file_the_run_left_alone_is_not_colocated():
+    after = shop(**{"tests__pricing.py": "x", "shop__test_pricing.py": TEST})
+    before = shop(**{"tests__pricing.py": "x"})
+
+    assert file_added(evidence(before, after), **COLOCATED) == Verdict("fail", NOT_BESIDE + "project/shop/test_pricing.py")
+
+
+def test_a_test_beside_a_new_source_file_is_colocated():
+    after = shop(**{"shop__tax.py": "RATE = 20\n", "shop__test_tax.py": TEST})
+
+    verdict = file_added(evidence(shop(), after), **COLOCATED)
+
+    assert verdict == Verdict(
+        "pass", "1 new file(s) match *test_*.py beside a changed file matching shop/*.py: project/shop/test_tax.py beside shop/tax.py"
+    )
+
+
+def test_a_deleted_file_is_no_neighbour():
+    before = shop(**{"shop__old.py": "x"})
+    after = FolderSnapshot({**shop().files, "shop/test_pricing.py": entry(TEST)})
+
+    assert file_added(evidence(before, after), **COLOCATED) == Verdict("fail", NOT_BESIDE + "project/shop/test_pricing.py")
+
+
+def test_a_neighbour_must_sit_in_the_same_folder_not_above_or_below_it():
+    for source, test in (("shop__pricing.py", "shop__sub__test_pricing.py"), ("shop__sub__pricing.py", "shop__test_pricing.py")):
+        after = shop(**{source: CHANGED_SOURCE, test: TEST})
+
+        verdict = file_added(evidence(shop(), after), **COLOCATED)
+
+        assert verdict == Verdict("fail", NOT_BESIDE + "project/" + test.replace("__", "/")), (source, test)
+
+
+def test_another_new_test_is_no_neighbour_even_where_near_matches_it():
+    after = shop(**{"shop__test_pricing.py": TEST, "shop__test_tax.py": TEST})
+
+    assert file_added(evidence(shop(), after), **COLOCATED) == Verdict(
+        "fail",
+        "2 new file(s) match *test_*.py, but none sits beside a changed file matching shop/*.py: "
+        "project/shop/test_pricing.py, project/shop/test_tax.py",
+    )
+
+
+def test_a_neighbour_must_match_near():
+    after = shop(**{"shop__notes.md": "x", "shop__test_pricing.py": TEST})
+
+    assert file_added(evidence(shop(), after), **COLOCATED) == Verdict("fail", NOT_BESIDE + "project/shop/test_pricing.py")
+
+
+def test_a_neighbour_in_another_watched_folder_doesnt_count():
+    run = Evidence(
+        exit_code=0,
+        snapshots_before={"project": shop(), "pending": folder()},
+        snapshots_after={"project": shop(**{"shop__test_pricing.py": TEST}), "pending": folder(**{"shop__pricing.py": "x"})},
+    )
+
+    assert file_added(run, where=["project", "pending"], **COLOCATED) == Verdict("fail", NOT_BESIDE + "project/shop/test_pricing.py")
+
+
+def test_bytecode_is_no_neighbour():
+    after = FolderSnapshot({**shop(**{"shop__test_pricing.py": TEST}).files, "shop/__pycache__/x.py": entry("x")})
+    near = {"paths": ["*test_*.py"], "near": ["*.py"]}
+
+    assert file_added(evidence(shop(), after), **near) == Verdict(
+        "fail", "1 new file(s) match *test_*.py, but none sits beside a changed file matching *.py: project/shop/test_pricing.py"
+    )
+
+
+def test_every_colocated_test_is_listed_with_its_neighbour():
+    after = shop(**{
+        "shop__pricing.py": CHANGED_SOURCE, "shop__test_pricing.py": TEST, "tests__test_other.py": TEST,
+    })
+
+    verdict = file_added(evidence(shop(), after), paths=["*test_*.py"], near=["shop/*.py", "lib/*.py"])
+
+    assert verdict == Verdict(
+        "pass",
+        "1 new file(s) match *test_*.py beside a changed file matching shop/*.py, lib/*.py: "
+        "project/shop/test_pricing.py beside shop/pricing.py",
+    )
+
+
+def test_a_long_list_of_new_files_is_cut_short():
+    after = shop(**{f"shop__test_{n}.py": TEST for n in range(7)})
+
+    verdict = file_added(evidence(shop(), after))
+
+    assert verdict.explanation.startswith("7 new file(s) match *test_*.py: project/shop/test_0.py, ")
+    assert verdict.explanation.endswith(" and 2 more")
+
+
+@pytest.mark.parametrize("params, message", [
+    ({}, "paths"),
+    ({"paths": []}, "at least 1 item"),
+    ({"paths": [""]}, "at least 1 character"),
+    ({"paths": ["*"], "near": [""]}, "at least 1 character"),
+    ({"paths": ["*"], "where": []}, "at least 1 item"),
+    ({"paths": ["*"], "beside": ["*"]}, "Extra inputs are not permitted"),
+])
+def test_file_added_refuses_missing_empty_or_misspelt_parameters(params, message):
+    with pytest.raises(ValidationError, match=message):
+        registry()["file_added"].parse_params(params)
+
+
+def test_file_added_watches_the_project_and_asks_for_no_neighbour_by_default():
+    params = registry()["file_added"].parse_params({"paths": ["*test_*.py"]})
+
+    assert (params.where, params.paths, params.near) == (["project"], ["*test_*.py"], [])
+
+
+def test_a_change_in_the_first_watched_folder_counts_though_the_last_is_unchanged():
+    run = Evidence(
+        exit_code=0,
+        snapshots_before={"project": shop(), "pending": folder(a="x")},
+        snapshots_after={"project": shop(**{"notes.md": "x"}), "pending": folder(a="x")},
+    )
+
+    assert file_added(run, where=["project", "pending"]) == Verdict("fail", "no new file matches *test_*.py")
+
+
+def test_a_new_match_in_the_first_watched_folder_counts_though_the_last_is_unchanged():
+    run = Evidence(
+        exit_code=0,
+        snapshots_before={"project": shop(), "pending": folder(a="x")},
+        snapshots_after={"project": shop(**{"shop__test_pricing.py": TEST}), "pending": folder(a="x")},
+    )
+
+    assert file_added(run, where=["project", "pending"]) == Verdict("pass", "1 new file(s) match *test_*.py: project/shop/test_pricing.py")
+
+
+def test_a_capped_snapshot_in_the_first_watched_folder_makes_no_new_file_inconclusive():
+    run = Evidence(
+        exit_code=0,
+        snapshots_before={"project": FolderSnapshot(shop().files, complete=False), "pending": folder()},
+        snapshots_after={"project": FolderSnapshot(shop().files, complete=False), "pending": folder(a="x")},
+    )
+
+    assert file_added(run, where=["project", "pending"]) == Verdict(
+        "inconclusive", "no new file matches *test_*.py, but project held more files than the snapshot's cap, so it wasn't read in full"
+    )

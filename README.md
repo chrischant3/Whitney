@@ -82,7 +82,7 @@ After its tables, before "Evaluation Instructions and Assets", the report has a 
 
 ## What you can test today
 
-Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are ten checks so far, plus two benchmark evals:
+Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are eleven checks so far, plus two benchmark evals:
 
 | Check | What it tests | Example | Targets |
 |---|---|---|---|
@@ -94,6 +94,7 @@ Whitney is at its first milestone. A **check** is the code that decides whether 
 | `ran_before` | One shell command ran before another, such as the tests before a commit | `AGENTS.md` in [`examples/tests-before-commit`](examples/tests-before-commit/): run the tests before every commit | `kilo`, `claude-code` |
 | `skill_loaded`, `skill_not_loaded` | The agent loaded a named skill, or left it alone | The trigger tests for `.kilo/skills/release-notes/` (`kilo`) and its copy in `.claude/skills/` (`claude-code`) in `examples/consumer` | `kilo`, `claude-code` |
 | `subagent_delegated`, `subagent_not_delegated` | The agent handed work to a named subagent, or didn't | The trigger tests for `.kilo/agents/reviewer.md` (`kilo`) and `.claude/agents/reviewer.md` (`claude-code`) in `examples/consumer` | `kilo`, `claude-code` |
+| `file_added` | The agent added a file it was told to, such as a test, and put it where the rule says, such as next to the module it tests | `AGENTS.md` in [`examples/colocated-tests`](examples/colocated-tests/): put a new test next to its module, not under `tests/` | `kilo`, `claude-code` |
 
 An eval file can also test a skill or an agent, on either target: whether the agent does what it says, and whether the right prompts use it ([Testing a skill or an agent](docs/adding-tests.md#testing-a-skill-or-an-agent)). On `claude-code` the skill or agent is under `.claude/skills/` or `.claude/agents/`. Kilo reads `.claude/skills/` too, but not `.claude/agents/`. [`examples/consumer`](examples/consumer/) is laid out for both harnesses, and its README says which eval file runs on which target. An eval file can switch off a harness's built-in skill or agent, and the report shows the harness refusing it ([Switching off a built-in skill or agent](docs/adding-tests.md#switching-off-a-built-in-skill-or-agent)). The two checks for a skill or subagent that should stay unused haven't yet failed in a recorded real run, so a pass from them is likely, not proven.
 
