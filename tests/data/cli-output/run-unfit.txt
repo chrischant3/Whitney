@@ -1,0 +1,5 @@
+exit 2
+--- stderr
+error: unfit-evals/rules.json: source: 'RULES.md' isn't staged: the project has no such file
+whitney: error: the evals don't fit the project; `whitney validate` lists the same problems
+--- stdout

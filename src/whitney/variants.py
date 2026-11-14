@@ -19,7 +19,7 @@ string or a missing key is refused rather than guessed at.
 
 Problems are (location, message) pairs, the location relative to the
 variant, such as ("remove", 1) or ("set", "kilo.jsonc", "/permission/bash"),
-so whitney.validate can name the place in the eval file.
+so whitney.validation can name the place in the eval file.
 """
 
 import json
@@ -401,7 +401,7 @@ def for_kilo_skill_copies(variant: Variant, files: Mapping[str, str], source: st
     apply_variant to report.
 
     Whitney uses it on the variants it adds itself (automatic_variants), and
-    validate.skill_copy_warnings on declared ones, to warn. The claude-code
+    validation.skill_copy_warnings on declared ones, to warn. The claude-code
     target reads only `.claude/skills/`, so it doesn't need this.
 
     Returns:

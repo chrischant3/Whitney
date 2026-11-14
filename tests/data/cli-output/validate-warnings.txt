@@ -1,0 +1,5 @@
+exit 0
+--- stderr
+--- stdout
+warning: skill-project/.kilo/skills/notes/SKILL.md: description: no description in its frontmatter; Kilo picks a skill by its description, so the agent can't tell when to load this one
+evals: 2 eval file(s), 0 problem(s), 1 warning(s)
