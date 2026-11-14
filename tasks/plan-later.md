@@ -277,14 +277,14 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: ordering file reads against edits (Task 51).
 
 **Acceptance criteria:**
-- [ ] The check is listed by `whitney checks` for both targets, and `docs/adding-tests.md` documents it with an example.
-- [ ] Only if a captured fixture shows a bash call's exit status on that target: a parameter `first_must_pass`, so a failing test run before a commit doesn't count. Otherwise the docs say a `first` counts whether it passed or not.
-- [ ] Each result's explanation names the calls it ordered.
+- [x] The check is listed by `whitney checks` for both targets, and `docs/adding-tests.md` documents it with an example. *(2026-11-13: `whitney checks` lists `ran_before` with targets `kilo, claude-code`; `docs/adding-tests.md`, "`ran_before`", with the example's JSON and `examples/tests-before-commit`.)*
+- [x] Only if a captured fixture shows a bash call's exit status on that target: a parameter `first_must_pass`, so a failing test run before a commit doesn't count. Otherwise the docs say a `first` counts whether it passed or not. *(2026-11-13: both targets show it, so `first_must_pass` is there for both: Kilo's `metadata.exit` in `bash-nonzero-exit` and `skill-named`, Claude Code's "Exit code <n>" error result in `settings-allow-ran` and `skill-forked`; `docs/spike-findings.md`, "Phase 5 Later Task 50". Claude Code shows no code for a command that passed, only `is_error` false.)*
+- [x] Each result's explanation names the calls it ordered. *(2026-11-13: each names the commands, their place in the run, exit and, on Claude Code, who made them; `tests/test_checks_order.py`.)*
 
 **Verification:**
-- [ ] Fixtures from real streams on both targets, one where the agent commits before testing and one where it tests first.
-- [ ] A real run of an example eval ("run the tests before committing"): the template held, and a control with the rule removed fails in at least one epoch. If the control never fails, the scenario is reworded until it does.
-- [ ] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check.
+- [ ] Fixtures from real streams on both targets, one where the agent commits before testing and one where it tests first. *(2026-11-13: Kilo done, `tests/data/kilo-events/tests-then-commit` and `commit-without-tests`, from the real run below, Kilo 7.8.27. Claude Code still to capture: no `ANTHROPIC_API_KEY` here, so no real run; the check is tested on Claude Code 2.1.322's saved streams of a failed and a passing `Bash` command, refusals and a forked skill's failed `pytest`.)*
+- [x] A real run of an example eval ("run the tests before committing"): the template held, and a control with the rule removed fails in at least one epoch. If the control never fails, the scenario is reworded until it does. *(2026-11-13: `examples/tests-before-commit`, Kilo, Haiku, one epoch, first scenario: template in order 1/1, the baseline without `AGENTS.md` out of order 0/1, $0.067; `docs/results/2026-11-13-ran-before.md`. Claude Code not run.)*
+- [x] `whitney validate` and `whitney run` on the example, with exit codes and the report's line for the check. *(2026-11-13: in `docs/results/2026-11-13-ran-before.md`: `validate` for both targets exited 0, `run` on `kilo` exited 0, with each run's explanation.)*
 
 **Dependencies:** none. **Size:** M. **Cost:** cents to a dollar.
 
@@ -374,12 +374,12 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: other formats.
 
 **Acceptance criteria:**
-- [ ] The XML validates against a named schema (the widely used `JUnit.xsd` from the Ant/Jenkins family, kept in the repo for the test), and the docs say which elements are used.
-- [ ] The gate's exit code is unchanged.
+- [x] The XML validates against a named schema (the widely used `JUnit.xsd` from the Ant/Jenkins family, kept in the repo for the test), and the docs say which elements are used. *(2026-11-13: `tests/data/junit/JUnit.xsd`, the JUnit schema used by Apache Ant's JUnit task, © 2011 Windy Road Technology Pty. Limited, Apache 2.0, with its SHA-256 and download date in `SOURCE.txt`; `tests/test_junit.py` validates with `xmllint`; README, "JUnit XML for your CI system", lists the elements.)*
+- [x] The gate's exit code is unchanged. *(2026-11-13: `test_without_junit_no_xml_is_written_and_the_exit_code_is_the_same`, and the CLI runs in [docs/results/2026-11-13-junit-output.md](../docs/results/2026-11-13-junit-output.md).)*
 
 **Verification:**
-- [ ] `whitney report --junit` on a saved log (see "Saved logs") that holds a pass, a fail and an inconclusive result, with the XML validated against the schema.
-- [ ] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link.
+- [x] `whitney report --junit` on a saved log (see "Saved logs") that holds a pass, a fail and an inconclusive result, with the XML validated against the schema. *(2026-11-13: the log was made deterministically by `whitney run` with a fake `kilo` (`tests/data/junit/example`), not by a model; [docs/results/2026-11-13-junit-output.md](../docs/results/2026-11-13-junit-output.md).)*
+- [ ] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link. *(2026-11-13: the step is in `.github/workflows/checks.yml` and its script ran locally; it can only be shown on GitHub once the branch is pushed and a pull request opened, so the link is still missing.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** none.
 
@@ -477,14 +477,16 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - Out: changes to the runner, unless the test finds a fault.
 
 **Acceptance criteria:**
-- [ ] The test runs for both targets.
-- [ ] The fake does at least what `FAKE_KILO` does to its working folder, plus writing into `.claude/`, which a real run may.
+- [x] The test runs for both targets. *(2026-11-13: `test_the_project_is_unchanged_after_a_claude_code_run` in `tests/test_safe_staging.py` runs the claude-code `agents_md` template and baseline tasks; the kilo test is unchanged. They are two tests, not one parametrised, so the kilo test's name and assertions stay as they were.)*
+- [x] The fake does at least what `FAKE_KILO` does to its working folder, plus writing into `.claude/`, which a real run may. *(2026-11-13: `FAKE_CLAUDE` deletes everything but `.git`, rewrites `AGENTS.md`, and writes `.claude/settings.local.json` and `.claude/CLAUDE.md`; it prints the init and result events the existing fake in `tests/test_claude_code.py` uses.)*
 
 **Verification:**
-- [ ] A real `claude -p` run through Whitney's runner, with a listing of the project folder before and after, kept as background for what a real run writes.
-- [ ] The test shown able to fail: with the runner pointed at the project itself instead of its temporary copy (a local change, not committed), the new test fails.
+- [ ] A real `claude -p` run through Whitney's runner, with a listing of the project folder before and after, kept as background for what a real run writes. *(2026-11-13: open. It needs an Anthropic API key, which this session didn't have.)*
+- [x] The test shown able to fail: with the runner pointed at the project itself instead of its temporary copy (a local change, not committed), the new test fails. *(2026-11-13: with `claude_code.execute` given the project folder in place of the sandbox's `pwd`, the new test failed on its last assertion: `AGENTS.md` read "Always commit .env files.", `.claude/`, `.claude/CLAUDE.md` and `.claude/settings.local.json` had appeared and the project's other files were gone. The runner restored, it passes.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** cents.
+
+**Follow-up (2026-11-13, from Task 59's review):** a run that crashed or ended early is still scored, so `sample.scores` alone doesn't show the fake ran. The claude-code test also checks each sample's completion is the fake's `done`, and fails with a fake that only exits 1. The kilo test, `test_the_project_is_unchanged_after_a_run`, has the same gap; it was left untouched, as the task says, and needs Christopher's confirmation to add the same line.
 
 ### Task 60: Look again at how much of each captured request is kept
 

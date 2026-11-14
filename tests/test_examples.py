@@ -29,7 +29,7 @@ def test_the_consumer_example_tests_each_of_its_rule_files_with_both_new_checks(
     assert checks == {".kilo/rules/data-handling.md": {"no_string_added", "no_secret_committed"}, "AGENTS.md": {"no_file_edits"}}
 
 
-@pytest.mark.parametrize("folder", ["examples/"])
+@pytest.mark.parametrize("folder", ["examples/", ".github/risk/"])
 def test_mutmut_copies_the_folders_the_tests_read(folder):
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["mutmut"]
 

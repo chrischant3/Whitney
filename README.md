@@ -82,7 +82,7 @@ After its tables, before "Evaluation Instructions and Assets", the report has a 
 
 ## What you can test today
 
-Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are nine checks so far, plus two benchmark evals:
+Whitney is at its first milestone. A **check** is the code that decides whether a run followed a rule, and an eval file names the checks for each scenario. There are ten checks so far, plus two benchmark evals:
 
 | Check | What it tests | Example | Targets |
 |---|---|---|---|
@@ -91,6 +91,7 @@ Whitney is at its first milestone. A **check** is the code that decides whether 
 | `no_file_edits` | Files a rule protects weren't added, changed or deleted | `AGENTS.md` in `examples/consumer`, and its `CLAUDE.md` on `claude-code`: never edit `vendor/` | `kilo`, `claude-code` |
 | `outside_canary_not_reached` | Reads, writes and shell commands that reach outside the project were blocked | `kilo.jsonc`: `"external_directory": "ask"`, in `evals/configuration/kilo-jsonc.json` | `kilo`, `claude-code` |
 | `permission_held` | The harness refused what a permission rule forbids, such as a `bash` command pattern | In `examples/consumer`: `kilo.jsonc`, `"git push *": "deny"`; `.claude/settings.json`, `"deny": ["Bash(git push:*)"]` | `kilo`, `claude-code` |
+| `ran_before` | One shell command ran before another, such as the tests before a commit | `AGENTS.md` in [`examples/tests-before-commit`](examples/tests-before-commit/): run the tests before every commit | `kilo`, `claude-code` |
 | `skill_loaded`, `skill_not_loaded` | The agent loaded a named skill, or left it alone | The trigger tests for `.kilo/skills/release-notes/` (`kilo`) and its copy in `.claude/skills/` (`claude-code`) in `examples/consumer` | `kilo`, `claude-code` |
 | `subagent_delegated`, `subagent_not_delegated` | The agent handed work to a named subagent, or didn't | The trigger tests for `.kilo/agents/reviewer.md` (`kilo`) and `.claude/agents/reviewer.md` (`claude-code`) in `examples/consumer` | `kilo`, `claude-code` |
 
@@ -98,11 +99,11 @@ An eval file can also test a skill or an agent, on either target: whether the ag
 
 The benchmark evals, `ifevalcode` and `bigcodebench_hard_complete`, test the agent's code on IFEvalCode and BigCodeBench-Hard with and without the template, for both targets. They are optional and need Docker.
 
-[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-10-permissions.md](docs/results/2026-11-10-permissions.md), for its permission rule, [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent. The same skill and agent were run once on `claude-code`: [docs/results/2026-11-11-claude-code-skills-agents.md](docs/results/2026-11-11-claude-code-skills-agents.md). So was the permission rule in `.claude/settings.json`: [docs/results/2026-11-12-claude-code-permissions.md](docs/results/2026-11-12-claude-code-permissions.md). The whole example, with its `CLAUDE.md` and its `.claude/` skill and agent, ran once on each target: [docs/results/2026-11-12-claude-code-example.md](docs/results/2026-11-12-claude-code-example.md). On `claude-code`, `outside_canary_not_reached` fails a shell read: Claude Code guards only its file tools, unless a `Read` deny rule is set ([docs/results/2026-11-11-claude-code-outside.md](docs/results/2026-11-11-claude-code-outside.md)).
+[Writing your own evals](docs/adding-tests.md) says what each check's parameters are, and `whitney checks` prints them. The example project's real runs are in [docs/results/2026-11-10-permissions.md](docs/results/2026-11-10-permissions.md), for its permission rule, [docs/results/2026-11-09-own-rules.md](docs/results/2026-11-09-own-rules.md), for its rules, and [docs/results/2026-11-10-skills-agents.md](docs/results/2026-11-10-skills-agents.md), for its skill and agent. The same skill and agent were run once on `claude-code`: [docs/results/2026-11-11-claude-code-skills-agents.md](docs/results/2026-11-11-claude-code-skills-agents.md). So was the permission rule in `.claude/settings.json`: [docs/results/2026-11-12-claude-code-permissions.md](docs/results/2026-11-12-claude-code-permissions.md). The whole example, with its `CLAUDE.md` and its `.claude/` skill and agent, ran once on each target: [docs/results/2026-11-12-claude-code-example.md](docs/results/2026-11-12-claude-code-example.md). On `claude-code`, `outside_canary_not_reached` fails a shell read: Claude Code guards only its file tools, unless a `Read` deny rule is set ([docs/results/2026-11-11-claude-code-outside.md](docs/results/2026-11-11-claude-code-outside.md)). `ran_before` failed in a baseline without the rule and held in the template in one Kilo run ([docs/results/2026-11-13-ran-before.md](docs/results/2026-11-13-ran-before.md)).
 
 Not supported yet:
 
-- **A new kind of rule.** A rule such as "run the tests before you commit" needs Python: a new check under `src/whitney/checks/`, registered with `check(...)`. `whitney run` and `inspect eval` run any eval file through `scenario_eval` (below); the deprecated `scripts/run_evals.py` reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`.
+- **A new kind of rule.** A rule such as "write the commit message in the imperative" needs Python: a new check under `src/whitney/checks/`, registered with `check(...)`. `whitney run` and `inspect eval` run any eval file through `scenario_eval` (below); the deprecated `scripts/run_evals.py` reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`.
 - **Claude Code settings other than permissions.** With `--project-path`, the `claude-code` target copies the instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md` ([Claude Code's memory docs](https://code.claude.com/docs/en/memory.md)). It also copies `.claude/skills/` and `.claude/agents/`, and the `allow`, `ask` and `deny` lists of the `permissions` block of `.claude/settings.json`, so the project's `deny` and `ask` rules apply. The rest of `settings.json` isn't copied, so its hooks never run. Claude Code itself ignores a project's `allow` rules in a folder nobody has trusted, as an eval's temporary project is, so those rules aren't tested: what the agent may do comes from the eval file's `harness_permissions` ([results](docs/results/2026-11-12-claude-code-permissions.md)). `CLAUDE.local.md` is personal, so it isn't copied. The rest of `.claude/`, such as commands, isn't copied either, and the report lists what was left out and why.
 - **Which instruction wins** when two files disagree.
 
@@ -314,6 +315,9 @@ whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path
 whitney run --target kilo --model kilo/anthropic/claude-haiku-4.5 --project-path template/kilo --evals-path evals --log-dir logs/run-1
 whitney report logs/run-1 --evals-path evals
 
+# Also write the results as JUnit XML, for a CI system to show (see "Running it in CI")
+whitney report logs/run-1 --evals-path evals --junit results/whitney-junit.xml
+
 # List the checks an eval file can name, with their parameters
 whitney checks
 
@@ -374,6 +378,23 @@ Each run leaves two things in the folder it ran in. Keep both as build artefacts
 - `logs/`: one Inspect log per eval file and variant, with every transcript. `--log-dir` moves it. `whitney report` writes the report again from these without calling a model.
 
 Logs hold full transcripts, which can include whatever is in your fixtures and prompts. Store them where only the people who may read those can reach them.
+
+### JUnit XML for your CI system
+
+`whitney run` and `whitney report` take `--junit FILE`, which also writes the results as JUnit XML, the format most CI systems read to show test results. The gate's exit code is the same with or without it. The file follows the Apache Ant JUnit task's schema, `JUnit.xsd` (a copy, with its source and licence, is in `tests/data/junit/`, and Whitney's tests validate the file against it). It uses these elements:
+
+- `<testsuites>`, holding one `<testsuite>` per eval file the logs hold, named by the file's path under the evals root, with the eval name as its `package`. Then a last suite, `whitney`.
+- In an eval file's suite, one `<testcase>` per check its runs were scored with, then one named `gate`. Each check's case counts that check's own outcome in the template's runs, leaving out known gaps, as the gate does:
+  - no child element if its pass rate reaches the minimum the gate applies to the file;
+  - `<failure type="below minimum">` if it doesn't, with the rate and the minimum in `message` and the explanation of each failed run as its text;
+  - `<skipped>` if no run was conclusive, with each run's reason as its text.
+- The `gate` case has `<failure type="gate">` with the gate's problem lines for that file, if it has any.
+- The `whitney` suite's one case, `gate`, fails with every problem the gate found, failed logs and missing eval files included: it fails whenever the gate fails. A run that couldn't start writes no file, and removes one an earlier run left at that path.
+- `<properties>`: each check's `<check>.rate` (`none` with no conclusive run) and `<check>.minimum`, as fractions.
+- `<system-out>`: a line per check with its counts, a line per failed or inconclusive run with its explanation, and the gate's lines.
+- `<system-err>` is empty. Every `time` is 0 and every `hostname` is `localhost`: Whitney doesn't time checks, and your machine's name stays out of a file you may publish.
+
+A run that errored is listed in its check's `<skipped>` with the error, so `errors` is always 0. A `--junit` path that can't be written stops the command with exit 2, before any run when it can be found then. Whitney's own tests validate the file with `xmllint` (on Linux, the `libxml2-utils` package). IFEvalCode and Harbor runs, and logs that didn't finish as `success`, get no suite of their own; a log that didn't succeed is a problem in the `whitney` suite's `gate`. Whitney's own pull-request workflow (`.github/workflows/checks.yml`) runs a fake harness with `--junit` and writes the file's cases to the job summary.
 
 ## Running inspect_evals (IFEvalCode and BigCodeBench-Hard)
 
