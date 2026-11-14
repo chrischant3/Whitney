@@ -272,3 +272,30 @@ def test_the_proxy_is_shut_down_when_the_run_ends_even_by_an_error(upstream):
     address = urllib.parse.urlsplit(origin)
     with pytest.raises(ConnectionRefusedError):
         socket.create_connection((address.hostname, address.port), timeout=TIMEOUT)
+
+
+def raw_upstream(header_lines: bytes) -> str:
+    """An upstream that answers one request with `header_lines` as they are, then a 2-byte body; returns its URL."""
+    listener = socket.create_server(("127.0.0.1", 0))
+
+    def answer():
+        connection, _ = listener.accept()
+        with connection, listener:
+            connection.recv(65536)
+            connection.sendall(b"HTTP/1.1 200 OK\r\n" + header_lines + b"Content-Length: 2\r\n\r\nok")
+
+    threading.Thread(target=answer, daemon=True).start()
+    return f"http://127.0.0.1:{listener.getsockname()[1]}"
+
+
+@pytest.mark.parametrize("fold", [b"\r\n\t", b"\r\n ", b"\n ", b"\r ", b"\r\t"], ids=["crlf-tab", "crlf-space", "lf", "cr", "cr-tab"])
+def test_a_header_the_upstream_folds_over_two_lines_reaches_the_harness_on_one(fold):
+    upstream = raw_upstream(b"X-Request-Id: r1" + fold + b"Set-Cookie: injected=1\r\n")
+
+    with logging_proxy(upstream, Capture(VIA_PROXY, {})) as origin:
+        answer = raw_request(origin, b"GET /models HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+
+    head = answer.split(b"\r\n\r\n")[0]
+    request_ids = [line for line in head.split(b"\r\n") if line.lower().startswith(b"x-request-id:")]
+    assert request_ids == [b"X-Request-Id: r1 Set-Cookie: injected=1"]
+    assert head.count(b"\r") == head.count(b"\n")  # every CR ends a line: none is left inside a header
