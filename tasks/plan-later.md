@@ -27,7 +27,7 @@ Real runs cost money. Each task gives a rough cost, and anything over a few cent
 3. Task 60 (what a capture keeps) before Tasks 47 and 48, which need later requests in full.
 4. Task 50 before Task 51, which uses the same stream reader.
 5. The other items in any order. Each says what it needs.
-6. Task 65 (the project mutation score) after PRs #66 and #69 merge, since #66 renames `validate` and changes `cli`, where 31 of its survivors are.
+6. Task 65 (the project mutation score) after PR #66 merges, since it renames `validate` and changes `cli`, where 31 of its survivors are.
 
 Not covered here: the open decisions and the "Follow-ups recorded but not yet tasks" in [todo-phase5.md](todo-phase5.md). They stay where they are.
 
@@ -528,10 +528,10 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 
 ### Task 65: Bring the project mutation score back to its recorded 99.7%
 
-**Description:** The first full mutation run since 2026-11-10 ([run 43596513909](https://github.com/chrischant3/Whitney/actions/runs/43596513909), on `ci-full-xmllint`, 2026-11-14) measured 99.0%, with 162 of 16,144 mutants surviving. CONSTRAINTS.md records 99.7% with 0.5 points of drift, so `check.py full` ends `checks: blocked` and the weekly run fails. The full run couldn't run between #62 and #69, and each pull request's `check.py task` judges only the functions it touched, so the fall built up across the merges since 2026-11-10 without being seen. The survivors are spread out: `improve` 21, `project_files` 20, `tasks` 19, `cli` 16, `validate` 15, `refusals` 13, `agent` 12, `report` 10, and 36 across twelve other modules.
+**Description:** The first full mutation run since 2026-11-10 ([run 43596513909](https://github.com/chrischant3/Whitney/actions/runs/43596513909), on `ci-full-xmllint`, 2026-11-14) measured 99.0%, with 162 of 16,144 mutants surviving. CONSTRAINTS.md records 99.7% with 0.5 points of drift, so `check.py full` ends `checks: blocked` and the weekly run fails. The full run failed on every run between #62 and #69 (#69 installs `xmllint` there), and each pull request's `check.py task` judges only the functions it touched, so the fall built up across the merges since 2026-11-10 without being seen. The survivors are spread out: `improve` 21, `project_files` 20, `tasks` 19, `cli` 16, `validate` 15, `refusals` 13, `agent` 12, `report` 10, and 36 across thirteen other modules.
 
 **Scope:**
-- In: every surviving mutant in the full run's `mutmut-results.txt`, taken from a fresh full run on `main` after #66 and #69 merge. Each one is either killed by a test that asserts observable behaviour, or explained in CONSTRAINTS.md as an equivalent mutant, as earlier tasks did. A real bug a survivor reveals is fixed test-first.
+- In: every surviving mutant in the full run's `mutmut-results.txt`, taken from a fresh full run on `main` after #66 merges. Each one is either killed by a test that asserts observable behaviour, or explained in CONSTRAINTS.md as an equivalent mutant, as earlier tasks did. A real bug a survivor reveals is fixed test-first.
 - In: splitting the work by module into pull requests small enough to review in one sitting.
 - Out: lowering the recorded 99.7% or widening the drift. That would weaken CONSTRAINTS.md, and only Christopher records a new figure, in a commit of its own.
 
@@ -544,4 +544,4 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 - [ ] "Mutation (full)" started by hand on `main` after the last pull request merges ends `checks: pass`, with the project score at or above 99.2% (99.7% less the 0.5-point drift). The run's link is recorded here.
 - [ ] The weekly run that follows also passes.
 
-**Dependencies:** PRs #66 and #69. **Size:** M to L, depending on how many survivors are equivalent. **Cost:** no model calls; CI time only.
+**Dependencies:** PR #66 (#69, which lets the full run work again, merged on 2026-11-14). **Size:** M to L, depending on how many survivors are equivalent. **Cost:** no model calls; CI time only.
