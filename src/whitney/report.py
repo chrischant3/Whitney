@@ -493,10 +493,7 @@ def check_thresholds(
         if eval_summary.problems:
             problems.extend(f"{name}: {problem}" for problem in eval_summary.problems)
             continue
-        if eval_summary.file:
-            minimum = file_minimum(eval_summary.file, rates)
-        else:
-            minimum = rates.get(LEGACY_CHECKS[key], LEGACY_MINIMUMS[key])
+        minimum = gate_minimum(key, eval_summary, rates)
         for part, cell in _gated_parts(eval_summary):
             of_part, part_runs = (f"{part}s ", f"{part} runs") if part else ("", "runs")
             rate = cell.rate
@@ -513,6 +510,23 @@ def check_thresholds(
                     f"below the minimum {min_conclusive:.0%}"
                 )
     return problems
+
+
+def gate_minimum(key: str, s: EvalSummary, rates: Mapping[str, float]) -> float:
+    """The minimum pass rate the gate applies to one eval file of a summary.
+
+    file_minimum's for a log that records its file's checks; for an older
+    log, the minimum of the one check its eval was scored with, from `rates`
+    (replaced_minimums) if given, else its default.
+
+    Args:
+        key: the file's key in the summary (summarise), its eval name for an older log.
+        s: its summary.
+        rates: the check minimums replaced for this run.
+    """
+    if s.file:
+        return file_minimum(s.file, rates)
+    return rates.get(LEGACY_CHECKS[key], LEGACY_MINIMUMS[key])
 
 
 def _gated_parts(s: EvalSummary) -> list[tuple[str, Cell]]:

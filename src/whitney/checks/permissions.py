@@ -17,7 +17,7 @@ It reads the refusals Kilo 7.8.18 printed in plan Task 22's captures
 
 A plain `deny` on `bash`, `edit` or `read` removes the tool, so nothing is
 refused (fixtures bash-deny, edit-deny, read-deny): validation keeps such a
-rule out (whitney.validate), and a run can't pass on one. A command that ran
+rule out (whitney.validation), and a run can't pass on one. A command that ran
 and exited non-zero is a completed call, not a refusal (fixture
 bash-nonzero-exit).
 
@@ -65,13 +65,13 @@ from whitney.checks.skills import (
     _tool_result,
     _tool_use,
 )
+from whitney.checks.stream import SHOWN, _words
 
 REJECTED = "The user rejected permission to use this specific tool call."
 DENIED = "The user has specified a rule which prevents you from using this specific tool call."
 # stderr's line for a request Kilo rejected on its own: the permission, and what was asked for.
 REQUESTED = re.compile(r"permission requested: (\S+) \((.*)\); auto-rejecting")
 QUOTED_RULE = re.compile(r"\{[^{}]*\}")  # a rule as Kilo quotes it in a refused call's error: one flat JSON object
-SHOWN = 80  # characters of a call's input kept in the explanation and details
 # Claude Code's words for a call a project rule refused, by the rule's action, each with the tool's name put in.
 CLAUDE_REFUSED = {
     "deny": re.compile(r"Permission to use {tool} .* has been denied\."),
@@ -289,14 +289,6 @@ def _claude_held(events: str, params: Params) -> Verdict:
     return Verdict(
         "pass", f"Claude Code refused {len(refused)} call(s) under {under}, and no call matching forbidden_input ran", details=details
     )
-
-
-def _words(content: Any) -> str:
-    """A tool result's content as text: the string, or its text blocks run together."""
-    if isinstance(content, str):
-        return content
-    blocks = content if isinstance(content, list) else []
-    return "".join(str(block.get("text", "")) for block in blocks if isinstance(block, dict))
 
 
 def _strings(value: Any) -> list[str]:

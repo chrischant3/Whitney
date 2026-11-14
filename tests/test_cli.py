@@ -812,10 +812,10 @@ def test_the_help_for_report_and_checks_shows_every_option_and_its_help(capsys):
     assert text("report") in top and text("checks") in top
     report = shown(["report", "--help"])
     assert report.startswith(
-        "usage: whitney report [-h] [--evals-path EVALS_PATH] [--results-dir RESULTS_DIR] "
+        "usage: whitney report [-h] [--evals-path EVALS_PATH] [--results-dir RESULTS_DIR] [--junit FILE] "
         "[--min-rate CHECK=VALUE] [--min-conclusive MIN_CONCLUSIVE] LOGS " + text("report") + " positional arguments: LOGS "
     )
-    for key in ("LOGS", "report --evals-path", "--results-dir", "--min-rate", "--min-conclusive"):
+    for key in ("LOGS", "report --evals-path", "--results-dir", "--junit", "--min-rate", "--min-conclusive"):
         assert text(key) in report, key
     assert shown(["checks", "--help"]).startswith("usage: whitney checks [-h] " + text("checks") + " options:")
 
@@ -930,6 +930,13 @@ def test_the_harness_check_is_given_the_runs_secrets(consumer, monkeypatch, reco
     cli.main(_for_claude_code(_run_args(consumer)))
     assert "sk-team-value" in given["kilo"]
     assert given["claude-code"] == ["sk-anthropic-value"]
+
+
+def test_the_harness_check_is_given_the_password_in_the_base_url(consumer, monkeypatch, recorded):
+    given = {}
+    monkeypatch.setattr(cli, "harness_version", lambda target, secrets=(): given.setdefault(target, secrets) and "1")
+    cli.main(_run_args(consumer, "--base-url", "https://eve:pw@proxy.example/v1"))
+    assert "eve:pw@proxy.example" in given["kilo"]
 
 
 def test_docker_mode_without_gateway_credentials_exits_2(consumer, monkeypatch, capsys):

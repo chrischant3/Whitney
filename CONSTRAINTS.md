@@ -92,7 +92,7 @@ The mutation score measured 99.7% on 2026-11-08, in a from-scratch `check.py ful
 
 Equivalent mutants found since, on 2026-11-06 (the same kinds, in code added
 later): more codec-name cases (`project_files._load_kilo`, `_read_text`,
-`evalfile.fixture_files`, `validate.exception_ids`);
+`evalfile.fixture_files`, `validation.exception_ids`);
 `_linked_below(None, ...)` in `not_staged_reason`, `_walk_files`,
 `_direct_md_files` and `_is_kilo_file`, which walks on past the project root
 to `/` but finds no symlink there, since the root is already resolved; and
@@ -128,6 +128,23 @@ whole body in one piece; and in
 `MAX_STORED_BODY + 2`, which decode more of a gzip body but keep and judge
 the same MAX_STORED_BODY bytes. `zlib.MAX_WBITS | 33` there is the same
 number as `| 32` (MAX_WBITS is 15, whose low bit is already set).
+Task 56 (2026-11-13) moved code into new functions, so mutants that survived
+in the old ones now survive under new names: `targets.check_target(target, None)`
+and `(target, )` in `cli._check_target`, and `_check_target(args.target, None)`
+in `cli._run_steps`, since `check_target` refuses by target and base URL and
+never reads the execution mode; the same in `cli.validate`, which passes
+`"local"` (`None`, `"XXlocalXX"`, `"LOCAL"`); `missing_package(None, ...)` and
+`(..., None)` in `_run_steps`, which only a Docker run of claude-code reaches;
+`improvement_report(..., None)` and without `records` in `cli.render_report`
+(the old `write_report`), whose default reads the same records again; and the
+codec name's case in `cli.report_file`. Not equivalent, and left as they were
+in the old `_validate`: `skill_copy_warnings(..., evals_path=None)` and without
+it in `cli.validate`, which differ only for an evals root inside the project
+holding a skill folder, which no test builds.
+Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
+`known = in_step = None` and `in_step = None` in place of `False`, which the
+function reads only through `not` and `and`, where `None` and `False` give the
+same answer.
 Later plan Task 53 (2026-11-13) adds two in `checks.skips`: `autojunk=None`
 in place of `False` in `_added_skips`, which `SequenceMatcher` reads only for
 truth; and `None` in place of `""` as `_marked`'s default, which stands for

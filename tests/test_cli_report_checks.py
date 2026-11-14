@@ -305,6 +305,7 @@ def test_each_check_says_where_a_real_run_made_it_fail_or_that_none_has(capsys):
         "subagent_not_delegated": "not yet",
         "permission_held": "docs/results/2026-11-10-permissions.md",
         "no_test_newly_skipped": "docs/results/2026-11-13-test-skips.md",
+        "ran_before": "docs/results/2026-11-13-ran-before.md",
     }
 
 

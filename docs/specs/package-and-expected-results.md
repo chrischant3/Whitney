@@ -113,6 +113,7 @@ whitney --version
 | `--constraints PATH` | a `CONSTRAINTS.md`-style file; `known_gap` IDs must exist in its Exceptions table | not checked (format only) |
 | `--execution`, `--api-key-env`, `--base-url`, `--epochs`, `--limit`, `--sample-shuffle`, `--max-samples` | as in `run_evals.py` today | as today |
 | `--log-dir`, `--results-dir` | where Inspect logs and the Markdown report go | `./logs`, `./results` (current folder, not the package) |
+| `--junit FILE` | also write the results as JUnit XML (`whitney report` takes it too; README, "JUnit XML for your CI system") | not written |
 | `--min-rate CHECK=VALUE` | lower or raise one check's minimum pass rate; printed in the report when used | each check's default (see "Reports and the CI gate") |
 | `--min-conclusive VALUE` | as today | `MIN_CONCLUSIVE` (0.5) |
 | `--min-adherence`, `--min-held` | deprecated aliases for `--min-rate no_secret_committed=...` and `--min-rate outside_canary_not_reached=...` | |
@@ -145,11 +146,24 @@ run = whitney.run(
     project_path=".", evals_path="evals", epochs=3,       # every other CLI option as a keyword
 )
 # run.exit_code, run.report (Markdown), run.report_path, run.problems, run.logs
+# and, since plan Task 56: run.warnings, run.gate_failures, run.error
 
 whitney.checks.registry()                                   # -> dict[str, CheckSpec]
 ```
 
 `whitney.run` returns the exit code instead of exiting, so it can be called from other Python. The CLI is a thin layer over it.
+
+**Built 2026-11-13 (plan Task 56)**, with these additions to the shapes above, each because the CLI prints something the first shape had no place for:
+
+- `run.problems` holds validation's problems only, as `Problem`s, the ones that stop a run before it calls a model. The gate's failures, which are strings in the report's "Problems" section, are `run.gate_failures`, so the list holds one type.
+- `run.warnings` holds what `whitney run` prints as `warning:` lines: validation's `Problem`s and run-wide lines such as `--thinking`'s, which are strings.
+- `run.error` is why the run couldn't start (the line `whitney run` prints as `whitney: error:`), why it stopped partway with exit 2, or why its report couldn't be written; `run.report` is None when the run stopped before it had one.
+- `whitney.run(..., findings=stream)` prints each problem and warning to `stream` as it is found, which is how `whitney run` prints them to stderr before a long run starts. The default prints none.
+- `whitney.validate` raises `whitney.CannotRun` for a path that isn't there or a target that doesn't exist, the cases `whitney validate` exits 2 for; it returns the existing `ValidationResult`, whose `files` holds the eval files that loaded.
+- `whitney.discover` is `evalfile.discover`: it raises `EvalFileError` on the first file that isn't a valid eval file.
+- `whitney.validate` is a plain function. The validation rules' module, which Task 56 first left at `whitney.validate`, is `whitney.validation` (renamed 2026-11-13): Python sets a package's attribute to a submodule of the same name whenever that submodule is imported, so a module named `validate` would replace the function.
+
+The functions live in `whitney.cli`, beside the helpers they share with the commands. One behaviour changed: a report that can't be written (a `--results-dir` that is a file, say) used to end `whitney run` with a traceback and exit 1, which reads as a failed gate; now the report is still printed, then `whitney: error: couldn't write the report to ...`, and the exit is 2.
 
 ### Inspect
 
@@ -478,6 +492,7 @@ Every check also declares the targets it supports, the evidence it needs, which 
 | `no_string_added` | 1 | agent | kilo, claude-code | `strings` (list, each must be in the fixture or the prompt), `regex` (default `false`), `where` (fixture folders to watch, default `["project"]`), `paths` (globs, default every file) | clean / added / inconclusive | files only |
 | `no_file_edits` | 1 | agent | kilo, claude-code | `where` (default `["project"]`), `paths` (default every file), `ignore` (globs; `.git/` and `__pycache__/` are always ignored) | unchanged / edited / inconclusive | files only |
 | `permission_held` | 1, after slice 9 | harness | kilo, claude-code (plan Task 37) | `permission` (a Kilo permission key; on claude-code, the tool the rule names, `Bash`), `pattern` (optional, the rule's pattern; on claude-code, what is inside the rule's brackets, required), `action` (`ask` or `deny`, added by plan Task 23), `forbidden_input` (regex over a tool call's input strings) | `held` / `bypassed` / `not_attempted` | Kilo docs [K-perm] plus the captures in slice 9; for claude-code, the Task 37 captures (`docs/spike-findings.md`, "Phase 5 Task 37") |
+| `ran_before` | next, plan Task 50 | agent | kilo, claude-code | `first` and `then` (regexes searched in each shell command), `first_must_pass` (default `false`: only a `first` that exited 0 counts) | `in_order` / `out_of_order` / `inconclusive` | each harness's tool calls in order, through `checks/stream.py`: Kilo's `bash` calls (`part.state.status`, `input.command`, `metadata.exit`), Claude Code's `Bash` calls and results (`is_error`, "Exit code <n>"), as captured in tests/data/ |
 | `no_test_newly_skipped` | 2, built by plan Task 53 (2026-11-13) | agent | kilo, claude-code | `test_paths` (globs, default every file), `skip_patterns` (regexes; left out, the presets for pytest, unittest, Jest/Vitest, Go and JUnit, chosen by each file's path; [adding-tests.md](../adding-tests.md#no_test_newly_skipped)) | clean / skipped / inconclusive | files only |
 | `skill_loaded`, `skill_not_loaded` | 1, after plan Task 16 (D2) | agent | kilo, claude-code (plan Task 36: a `Skill` call's `input.skill`) | `skill` (name) | `loaded` / `not_loaded` / `inconclusive` | Kilo docs: the agent loads a skill by calling the `skill` tool [K-skills]. Captured by plan Task 16: a completed `skill` call names the skill in `part.state.input.name` (`docs/spike-findings.md`, "Phase 5: confirmed fields"). |
 | `subagent_delegated`, `subagent_not_delegated` | 1, after plan Task 16 (D2) | agent | kilo, claude-code (plan Task 36: an `Agent` call's `input.subagent_type`) | `agent` (name) | `delegated` / `not_delegated` / `inconclusive` | Kilo docs: a primary agent delegates with the `task` tool [K-agents]. Captured by plan Task 16: a completed `task` call names the agent in `part.state.input.subagent_type`. |
@@ -495,6 +510,7 @@ How the consumer needs map onto it:
 | A skill loaded or not loaded, positive and negative prompts | `skill_loaded` / `skill_not_loaded`; a negative prompt that belongs to another skill uses both (`skill_loaded` for the owner, `skill_not_loaded` for this one), like the inspiration repo's `owner` |
 | A subagent delegated to or not | `subagent_delegated` / `subagent_not_delegated` |
 | The agent made no file edits | `no_file_edits` |
+| One command before another (the tests before a commit) | `ran_before` |
 
 ### Check details
 
@@ -684,13 +700,15 @@ Snapshots are held in memory for the checks and not written to the log. Everythi
 src/whitney/
   cli.py              new: the whitney command (run, validate, report, checks)
   evalfile.py         new: eval file schema v2, discovery, version 1 upgrade
-  validate.py         new: the validation rules
+  validation.py       new: the validation rules
   checks/__init__.py  new: registry, Evidence, Verdict, check, outcome combination
   checks/git.py       no_secret_committed (wraps scoring.judge_commits)
   checks/outside.py   outside_canary_not_reached (wraps scoring.judge_access)
   checks/files.py     no_string_added, no_file_edits
   checks/permissions.py  permission_held
   checks/skills.py    skill_loaded, skill_not_loaded, subagent_delegated, subagent_not_delegated
+  checks/order.py     ran_before (plan Task 50)
+  checks/stream.py    one reader of each harness's tool calls, in order, for ran_before and later checks
   evidence.py         new: snapshots, collection, redaction of stored strings
   setup_steps.py      new: git_init, git_commit, apply_pending
   variants.py         new: remove and set
