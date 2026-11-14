@@ -535,6 +535,7 @@ Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option 
 **Scope:**
 - In: every surviving mutant in the full run's `mutmut-results.txt`, taken from a fresh full run on `main` after #66 merges. Each one is either killed by a test that asserts observable behaviour, or explained in CONSTRAINTS.md as an equivalent mutant, as earlier tasks did. A real bug a survivor reveals is fixed test-first.
 - In: splitting the work by module into pull requests small enough to review in one sitting.
+- In: `agent._run_with_overlay`, which PR #67 (Task 41) changed. Locally its touched-function score was 98.7% (about 12 survivors, four of them explained in CONSTRAINTS.md under Task 41). CI on #67's head `a0d490d` ([run 43604387378](https://github.com/chrischant3/Whitney/actions/runs/43604387378)) gave 96.4% of 954 mutants, about 34 survivors, including `_run_with_overlay` mutants 10–13 and 19. Find out whether the extra survivors are real gaps or CI-only (such as mutants that time out on slower runners), and kill or explain each.
 - Out: lowering the recorded 99.7% or widening the drift. That would weaken CONSTRAINTS.md, and only Christopher records a new figure, in a commit of its own.
 
 **Acceptance criteria:**
