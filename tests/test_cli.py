@@ -932,6 +932,13 @@ def test_the_harness_check_is_given_the_runs_secrets(consumer, monkeypatch, reco
     assert given["claude-code"] == ["sk-anthropic-value"]
 
 
+def test_the_harness_check_is_given_the_password_in_the_base_url(consumer, monkeypatch, recorded):
+    given = {}
+    monkeypatch.setattr(cli, "harness_version", lambda target, secrets=(): given.setdefault(target, secrets) and "1")
+    cli.main(_run_args(consumer, "--base-url", "https://eve:pw@proxy.example/v1"))
+    assert "eve:pw@proxy.example" in given["kilo"]
+
+
 def test_docker_mode_without_gateway_credentials_exits_2(consumer, monkeypatch, capsys):
     _no_model_calls(monkeypatch)
     monkeypatch.delenv("KILO_API_KEY", raising=False)

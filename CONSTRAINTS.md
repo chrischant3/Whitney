@@ -145,6 +145,11 @@ Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
 `known = in_step = None` and `in_step = None` in place of `False`, which the
 function reads only through `not` and `and`, where `None` and `False` give the
 same answer.
+Later plan Task 53 (2026-11-13) adds two in `checks.skips`: `autojunk=None`
+in place of `False` in `_added_skips`, which `SequenceMatcher` reads only for
+truth; and `None` in place of `""` as `_marked`'s default, which stands for
+the end of the file either way, since a real result is never a blank line,
+and is only compared with other `_marked` results.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11

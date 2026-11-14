@@ -692,6 +692,35 @@ def test_a_local_kilo_run_is_given_its_key_the_variables_its_global_config_names
     assert evidence.run_secrets("kilo", "local", None, environ) == ["global-value-1", "login-access-value"]
 
 
+def test_a_local_kilo_run_is_given_the_literal_secrets_in_its_global_provider_settings_and_proxy_passwords(tmp_path):
+    (tmp_path / ".config" / "kilo").mkdir(parents=True)
+    (tmp_path / ".config" / "kilo" / "kilo.json").write_text(json.dumps({"provider": {"p": {
+        "name": "Corp", "options": {"apiKey": "sk-literal-0123", "baseURL": "https://llm.corp.example/v1", "monkeyName": "kept-0123"},
+    }}}))
+    environ = {"HOME": str(tmp_path), "HTTPS_PROXY": "http://eve:pw@proxy.example:3128"}
+
+    secrets = evidence.run_secrets("kilo", "local", None, environ)
+
+    assert sorted(secrets) == sorted(["sk-literal-0123", "eve:pw@", "eve:pw@proxy.example:3128", "http://eve:pw@proxy.example:3128"])
+    assert evidence.run_secrets("kilo", "docker", None, environ) == []  # Docker copies neither the settings nor the proxy
+    assert evidence.run_secrets("claude-code", "local", None, environ) == []
+
+
+def test_a_local_kilo_run_is_given_the_user_and_password_in_its_base_url(tmp_path):
+    environ = {"HOME": str(tmp_path)}
+    assert evidence.run_secrets("kilo", "local", None, environ, base_url="https://u:pw@proxy.example/v1") == [
+        "u:pw@", "u:pw@proxy.example", "https://u:pw@proxy.example/v1"
+    ]
+    assert evidence.run_secrets("kilo", "local", None, environ, base_url="https://proxy.example/v1") == []
+    assert evidence.run_secrets("kilo", "docker", None, environ, base_url="https://u:pw@proxy.example/v1") == []
+
+
+def test_a_malformed_url_in_the_global_provider_settings_doesnt_stop_the_run(tmp_path):
+    (tmp_path / ".config" / "kilo").mkdir(parents=True)
+    (tmp_path / ".config" / "kilo" / "kilo.json").write_text(json.dumps({"provider": {"p": {"options": {"baseURL": "http://[::1"}}}}))
+    assert evidence.run_secrets("kilo", "local", None, {"HOME": str(tmp_path)}) == []
+
+
 def test_a_docker_kilo_run_is_given_no_host_secret(tmp_path):
     assert evidence.run_secrets("kilo", "docker", "TEAM_KEY", {"HOME": str(tmp_path), "TEAM_KEY": "team-value-12"}) == []
 

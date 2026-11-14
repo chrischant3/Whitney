@@ -1,10 +1,12 @@
-"""The checks no_string_added and no_file_edits: what the agent left in the fixture's files.
+"""The checks no_string_added, no_file_edits and file_added: what the agent left in the fixture's files.
 
-Both compare the snapshots of the watched folders taken after setup and after
+All three compare the snapshots of the watched folders taken after setup and after
 the run (whitney.evidence.snapshot), so a string written and then deleted
 during the run isn't seen, and neither is an encoded copy (base64 and so on).
 CheckSpec.run makes a pass inconclusive if the run ended early or a watched
-file it changed couldn't be read as text.
+file it changed couldn't be read as text. file_added judges something the
+agent must do, not something it mustn't, so it also makes its own fail
+inconclusive when the run ended early or changed nothing.
 
 A check watches the files `paths` matches and `ignore` doesn't, leaving out
 `.git/` and Python's `__pycache__/` folders wherever they are (_watched).
@@ -22,14 +24,14 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from whitney.checks import DEFAULT_WATCH, Evidence, FileSnapshot, Verdict, _listed, changed_paths, check
+from whitney.checks import DEFAULT_WATCH, Evidence, FileSnapshot, FolderSnapshot, Verdict, _listed, changed_paths, check
 from whitney.static_checks import parse_jsonc
 
 Text = Annotated[str, Field(min_length=1)]
 # The files Kilo 7.8.18 rewrites with a "$schema" key (docs/spike-findings.md, "Kilo rewrites config files").
 KILO_CONFIG_NAMES = ("kilo.jsonc", "kilo.json")
 SCHEMA = "$schema"
-# Folders neither check ever watches, at any depth.
+# Folders no file check ever watches, at any depth.
 SKIPPED_FOLDERS = (".git", "__pycache__")
 
 
@@ -82,6 +84,27 @@ class EditParams(BaseModel):
     where: list[str] = Field(default_factory=lambda: list(DEFAULT_WATCH), min_length=1)
     paths: list[Text] = Field(default_factory=lambda: ["**"], min_length=1)
     ignore: list[Text] = Field(default_factory=list)
+
+
+class AddedParams(BaseModel):
+    """file_added's parameters.
+
+    Attributes:
+        paths: patterns for the file the agent must add; a new file matching
+            any of them will do.
+        near: patterns for its neighbour. If given, the new file must sit in
+            the same directory as a file the run added or changed that `near`
+            matches and `paths` doesn't, so a new test beside another new test
+            isn't colocated. Left empty, the new file may be anywhere.
+        where: the fixture folders to watch. A neighbour must be in the same
+            one as the new file.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    paths: list[Text] = Field(min_length=1)
+    near: list[Text] = Field(default_factory=list)
+    where: list[str] = Field(default_factory=lambda: list(DEFAULT_WATCH), min_length=1)
 
 
 def no_string_added(evidence: Evidence, params: StringParams) -> Verdict:
@@ -146,6 +169,86 @@ def no_file_edits(evidence: Evidence, params: EditParams) -> Verdict:
     return Verdict("pass", f"no watched file was added, changed or deleted{aside}")
 
 
+def file_added(evidence: Evidence, params: AddedParams) -> Verdict:
+    """Did the agent add a file matching `paths`, beside a changed file matching `near` if that is given?
+
+    Pass if it did. Else inconclusive if a watched folder wasn't snapshotted
+    both before and after the run, the run changed no file, a snapshot
+    stopped at the file cap (CheckSpec.run gives the reason), or the run
+    ended early: the agent may not have got to it. Else fail. `.git/`,
+    `__pycache__/` and Kilo's own rewrite of its config are neither new
+    files nor changes (_counted). A new file's content isn't read; only a Kilo
+    config's, to spot Kilo's own rewrite.
+
+    Reads: evidence.snapshots_before and evidence.snapshots_after for each
+    folder in params.where.
+    """
+    missing = _unsnapshotted(evidence, params.where)
+    if missing:
+        return Verdict("inconclusive", f"{missing} wasn't snapshotted before and after the run, so a new file can't be seen")
+    changed, new, complete = [], [], True
+    for folder in params.where:
+        before, after = evidence.snapshots_before[folder], evidence.snapshots_after[folder]
+        complete = complete and before.complete and after.complete
+        counted = [path for path in changed_paths(before, after) if _counted(path, before, after)]
+        changed += counted
+        present = [path for path in counted if path in after.files]
+        new += [
+            (folder, path, _neighbour(path, present, params))
+            for path in present
+            if path not in before.files and _matches(path, params.paths)
+        ]
+    paths = ", ".join(params.paths)
+    if params.near:
+        found = [f"{folder}/{path} beside {neighbour}" for folder, path, neighbour in new if neighbour]
+        aside = f" beside a changed file matching {', '.join(params.near)}"
+    else:
+        found, aside = [f"{folder}/{path}" for folder, path, _ in new], ""
+    if found:
+        return Verdict("pass", f"{len(found)} new file(s) match {paths}{aside}: {_listed(found)}")
+    if not changed:
+        return Verdict(
+            "inconclusive",
+            "the run added, changed or deleted no file, so there's nothing to judge: the agent didn't attempt the task, or the run gave it no chance",
+        )
+    if new:
+        missed = f"{len(new)} new file(s) match {paths}, but none sits{aside}: {_listed([f'{folder}/{path}' for folder, path, _ in new])}"
+    else:
+        missed = f"no new file matches {paths}"
+    if not complete:
+        # A new file may be among those the snapshot didn't list; CheckSpec.run adds which folder.
+        return Verdict("inconclusive", missed)
+    if not evidence.run_completed():
+        return Verdict("inconclusive", f"{missed}, but the run ended early, so the agent may not have finished")
+    return Verdict("fail", missed)
+
+
+def _counted(path: str, before: FolderSnapshot, after: FolderSnapshot) -> bool:
+    """True if file_added counts the change to `path`: not in SKIPPED_FOLDERS, and not Kilo's own config rewrite."""
+    if _skipped(path):
+        return False
+    return not _kilo_schema_rewrite(path, before.files.get(path), after.files.get(path))
+
+
+def _neighbour(path: str, present: list[str], params: AddedParams) -> str | None:
+    """The first of `present` (added or changed, in the same watched folder) that `near` matches, `paths` doesn't,
+    and that sits in the same directory as `path`; None if there's none."""
+    directory = PurePosixPath(path).parent
+    for other in present:
+        if PurePosixPath(other).parent == directory and _matches(other, params.near) and not _matches(other, params.paths):
+            return other
+    return None
+
+
+def _never_reads_text(params: AddedParams, path: str) -> bool:
+    """file_added reads no new file's text, so a changed file it couldn't read can't make it inconclusive.
+
+    It does read a changed Kilo config's text, to spot Kilo's own rewrite; one with no text counts as a change,
+    which is what the check would assume anyway.
+    """
+    return False
+
+
 def _unsnapshotted(evidence: Evidence, folders: list[str]) -> str | None:
     """The first of `folders` missing a snapshot from before or after the run, or None."""
     for folder in folders:
@@ -157,9 +260,14 @@ def _unsnapshotted(evidence: Evidence, folders: list[str]) -> str | None:
 def _watched(params: StringParams | EditParams, path: str) -> bool:
     """True if a check with `params` judges `path` (inside a watched folder): `paths` matches it, and neither
     `ignore` (if the check has one) nor SKIPPED_FOLDERS does."""
-    if any(part in SKIPPED_FOLDERS for part in path.split("/")):
+    if _skipped(path):
         return False
     return _matches(path, params.paths) and not _matches(path, getattr(params, "ignore", []))
+
+
+def _skipped(path: str) -> bool:
+    """True if `path` is inside one of SKIPPED_FOLDERS, at any depth."""
+    return any(part in SKIPPED_FOLDERS for part in path.split("/"))
 
 
 def _matches(path: str, patterns: list[str]) -> bool:
@@ -215,3 +323,14 @@ check(
     watches=_watched,
     proven="docs/results/2026-11-09-own-rules.md",
 )(no_file_edits)
+
+check(
+    "file_added",
+    params=AddedParams,
+    judges="agent",
+    labels=("added", "not_added", "inconclusive"),
+    targets=("kilo", "claude-code"),
+    needs=("snapshots",),
+    watches=_never_reads_text,
+    proven="docs/results/2026-11-13-file-added.md",
+)(file_added)

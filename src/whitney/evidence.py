@@ -31,7 +31,7 @@ from typing import Any
 from inspect_ai.util import OutputLimitExceededError
 from inspect_ai.util._sandbox.events import SandboxEnvironmentProxy
 
-from whitney.agent import ENV_REFERENCE, PROJECT_DIR, global_provider_settings, login_secrets, redact
+from whitney.agent import ENV_REFERENCE, PROJECT_DIR, global_provider_settings, login_secrets, provider_secrets, proxy_secrets, redact, url_credentials
 from whitney.checks import CheckSpec, Evidence, FileSnapshot, FolderSnapshot
 from whitney.scoring import GIT_STATE_SCRIPT, GitState, parse_git_state
 
@@ -347,7 +347,9 @@ def _quietly(sbox) -> contextlib.AbstractContextManager:
     return sbox.no_events()
 
 
-def run_secrets(target: str, execution: str, api_key_env: str | None, environ: Mapping[str, str] = os.environ) -> list[str]:
+def run_secrets(
+    target: str, execution: str, api_key_env: str | None, environ: Mapping[str, str] = os.environ, base_url: str | None = None
+) -> list[str]:
     """The secret values a run of `target` is given, which nothing Whitney stores may hold (see agent.redact).
 
     The same values the agents redact from their own run records: for
@@ -355,16 +357,23 @@ def run_secrets(target: str, execution: str, api_key_env: str | None, environ: M
     Docker mode that is Inspect's key on the host, which the container never
     has, redacted all the same); for a
     local kilo run, the variables its config overlay names as {env:NAME}
-    (those in the global Kilo config's provider settings, and api_key_env)
-    and the values in the copy of the user's Kilo login. A Docker kilo run is
-    given none: Inspect's bridge answers it.
+    (those in the global Kilo config's provider settings, and api_key_env),
+    the values in the copy of the user's Kilo login, the literal secrets in
+    the provider settings it copies (agent.provider_secrets) and the proxy
+    credentials it passes on (agent.proxy_secrets), and the user and
+    password in base_url, the `--base-url` its overlay gives the provider
+    (agent.url_credentials). A Docker kilo run is
+    given none: Inspect's bridge answers it, its global config is written
+    fresh and its environment holds no host variable.
     """
     if target == "claude-code":
         return _set_values([api_key_env or "ANTHROPIC_API_KEY"], environ)
     if execution != "local":
         return []
-    referenced = ENV_REFERENCE.findall(json.dumps(global_provider_settings(environ)))
-    return _set_values([*referenced, *filter(None, [api_key_env])], environ) + login_secrets(environ)
+    providers = global_provider_settings(environ)
+    referenced = ENV_REFERENCE.findall(json.dumps(providers))
+    copied = provider_secrets({"provider": providers}) + proxy_secrets(environ) + (url_credentials(base_url) if base_url else [])
+    return _set_values([*referenced, *filter(None, [api_key_env])], environ) + login_secrets(environ) + copied
 
 
 def _set_values(names: Iterable[str], environ: Mapping[str, str]) -> list[str]:

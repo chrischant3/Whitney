@@ -1,0 +1,6 @@
+{
+  "$schema": "https://kilo.ai/config.json"
+
+  // No rules here: Whitney's kilo target needs a Kilo config to stage the project,
+  // and this example's rule is in AGENTS.md.
+}

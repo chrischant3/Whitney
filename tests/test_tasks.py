@@ -595,6 +595,27 @@ def test_a_setup_holding_a_secret_the_run_is_given_is_refused(tmp_path, monkeypa
     assert "pending-text-that-is-the-run-secret" in plain.setup
 
 
+def test_a_setup_holding_the_password_in_the_base_url_is_refused_but_a_plain_header_url_is_not(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".config" / "kilo").mkdir(parents=True)
+    (home / ".config" / "kilo" / "kilo.json").write_text(json.dumps({"provider": {"kilo": {"options": {"headers": {"HTTP-Referer": "https://github.com"}}}}}))
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    evals = _consumer_evals(tmp_path, {**_one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]),
+                                       "defaults": {"fixture": "repo", "setup": [{"step": "git_init"}, {"step": "apply_pending"}]}})
+    (evals / "fixtures" / "repo" / "pending").mkdir()
+    (evals / "fixtures" / "repo" / "pending" / "app.py").write_text("print('https://github.com and eve:base-url-pw@proxy.example')\n")
+
+    with pytest.raises(ValueError, match="its setup holds the value of a secret"):
+        tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), base_url="https://eve:base-url-pw@proxy.example/v1")
+    [plain] = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals)).dataset
+    # The plain URL survives in the setup's last step, written to app.py as the fixture holds it.
+    assert plain.setup.endswith(
+        "printf '%s' 'print('\"'\"'https://github.com and eve:base-url-pw@proxy.example'\"'\"')\n' > app.py\n"
+    )
+
+
 def test_the_logged_staged_files_hold_no_secret_the_run_is_given(tmp_path, monkeypatch):
     monkeypatch.setenv("TEAM_PROVIDER_VALUE", "agents-md-text-that-is-the-run-secret")
     project = tmp_path / "project"
@@ -757,6 +778,16 @@ def test_the_scenario_scorer_redacts_the_key_the_run_was_given(host, tmp_path, m
     assert score.explanation.endswith("agent exit=0; stderr tail: leaked [redacted]")
 
 
+def test_the_scenario_scorer_redacts_the_password_in_the_base_url(host, tmp_path, monkeypatch):
+    evals = _consumer_evals(tmp_path / "e", _one_scenario([{"check": "no_secret_committed", "tokens": ["TOKEN-1"]}]))
+    task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), base_url="https://eve:pw@proxy.example/v1")
+    host.run.update(exit_code=0, stderr="leaked https://eve:pw@proxy.example/v1")
+
+    score = _scenario_scorer_score(task, host.run)
+
+    assert score.explanation.endswith("agent exit=0; stderr tail: leaked [redacted]")
+
+
 def test_the_scenario_scorer_runs_even_when_the_agent_recorded_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(tasks_module, "sandbox", lambda: HostSandbox(tmp_path))
     monkeypatch.setattr(tasks_module, "store", lambda: SimpleNamespace(get=lambda key, default=None: default))
@@ -908,6 +939,19 @@ def test_a_failed_snapshot_names_no_secret_the_run_is_given(target, model, varia
         with pytest.raises(RuntimeError, match=r"cannot read key=\[redacted\]$"):
             asyncio.run(step())
     assert failing.timeouts == [COMMAND_TIMEOUT, COMMAND_TIMEOUT]
+
+
+def test_a_failed_snapshot_names_no_password_from_the_base_url(tmp_path, monkeypatch):
+    failing = FailingSnapshotSandbox("https://eve:pw@proxy.example/v1")
+    monkeypatch.setattr(tasks_module, "sandbox", lambda: failing)
+    monkeypatch.setattr(tasks_module, "store", lambda: SimpleNamespace(get=lambda key, default=None: default))
+    evals = _outside_and_quiet_evals(tmp_path, monkeypatch)
+    task = tasks_module.scenario_eval("rules.json", target="kilo", model=MODEL, evals_path=str(evals), base_url="https://eve:pw@proxy.example/v1")
+    state = SimpleNamespace(sample_id="s", uuid="failing", metadata={})
+
+    for step in (lambda: task.setup(state, None), lambda: task.scorer[0](state, None)):
+        with pytest.raises(RuntimeError, match=r"cannot read key=\[redacted\]$"):
+            asyncio.run(step())
 
 
 def test_git_state_and_every_read_batch_have_a_timeout(tmp_path, monkeypatch):
