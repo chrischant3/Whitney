@@ -221,7 +221,10 @@ class _Handler(BaseHTTPRequestHandler):
         chunked = unsized and self.request_version != "HTTP/1.0"
         for name, value in answer.getheaders():
             if name.lower() not in HOP_BY_HOP:
-                self.send_header(name, value)
+                safe_name = name.replace("\r", "").replace("\n", "")
+                safe_value = value.replace("\r", "").replace("\n", "")
+                if safe_name:
+                    self.send_header(safe_name, safe_value)
         if chunked:  # http.client has taken the upstream's chunks apart, so they are made again here
             self.send_header(TRANSFER_ENCODING, CHUNKED)
         elif unsized:
