@@ -29,6 +29,11 @@ dev = [
     "pytest-xdist==3.8.0",
     # mutmut's runs only (`[tool.mutmut]` below): fails a test a looping mutant never lets finish
     "pytest-timeout==2.4.0",
+    # The user journeys in tests/journeys/ are Gherkin .feature files that run as tests, so the journeys a reader
+    # sees and the behaviour the suite checks are one text
+    "pytest-bdd==9.0.1",
+    # pytest-bdd's Gherkin parser, held at a release more than two weeks old (43.0.0 came out 2026-11-13)
+    "gherkin-official==42.0.1",
 ]
 ifevalcode = ["inspect-evals[ifevalcode]==0.27.0"]  # supplies the IFEvalCode scorer, so pinned like inspect-ai
 gateway = ["openai>=1", "anthropic>=2"]  # Docker mode: Inspect's bridge serves Kilo's OpenAI- or Anthropic-format calls, and Claude Code's

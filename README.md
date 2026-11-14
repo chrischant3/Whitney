@@ -289,6 +289,10 @@ In one recorded run the agent was asked to read a file on the host and fetch a w
 pytest -q
 python -m whitney.static_checks    # checks every shipped template
 
+# Free, and part of `pytest -q`: the user journeys in docs/whitney-explained.md, as Gherkin
+# features run by pytest-bdd against a fake kilo or claude (tests/journeys/)
+pytest tests/journeys
+
 # Smoke tests for the two core scenarios (tests/e2e/core_scenarios.md): real CLIs and models, a few cents.
 # Left out of `pytest -q`; name the models to run them.
 E2E_KILO_MODEL=kilo/anthropic/claude-haiku-4.5 E2E_CLAUDE_MODEL=anthropic/claude-haiku-4-5 pytest -m e2e tests/e2e
