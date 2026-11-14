@@ -62,6 +62,11 @@ jobs:
           chmod +x "$RUNNER_TEMP/bin/osv-scanner"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      # tests/test_junit.py validates Whitney's JUnit XML against tests/data/junit/JUnit.xsd with xmllint;
+      # without it mutmut's clean test run fails and no mutant is checked (run 43581120436).
+      - name: Install xmllint
+        run: command -v xmllint || { sudo apt-get update -q && sudo apt-get install -y -q libxml2-utils; }
+
       # From scratch: no mutants/ is restored, so every verdict is measured
       # against today's tests.
       - name: check.py full

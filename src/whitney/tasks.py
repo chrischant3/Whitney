@@ -20,6 +20,7 @@ its API key, or in Docker through the same bridge.
 """
 
 import base64
+import os
 import sys
 import warnings
 from collections.abc import Callable, Iterable
@@ -54,7 +55,7 @@ from whitney.scenarios import load_scenarios
 from whitney.scoring import GIT_STATE_SCRIPT, OUTSIDE_DIR, parse_git_state, run_completed
 from whitney.setup_steps import SetupError, SetupStep
 from whitney.target_names import TARGETS
-from whitney.validate import _spread_by_the_wrapper, staged_names, tested_permissions
+from whitney.validation import _spread_by_the_wrapper, staged_names, tested_permissions
 from whitney.variants import (
     TEMPLATE,
     apply_variant,
@@ -550,7 +551,7 @@ def _scenario_task(
         elif variant in plan.automatic:  # kilo: it reads a skill from more folders than the source's
             chosen_variant = for_kilo_skill_copies(chosen_variant, staged, plan.source)
         staged = apply_variant(staged, plan.adjust(chosen_variant, staged, plan.source))
-    secrets = evidence.run_secrets(target, execution, api_key_env)
+    secrets = evidence.run_secrets(target, execution, api_key_env, os.environ, base_url)
     samples = []
     chosen: dict[str, dict[str, str]] = {}  # scenario id -> its `kilo run` option in this variant
     for sample in _scenario_samples(plan.path, plan.fixtures_dir):
@@ -581,14 +582,14 @@ def _scenario_task(
     return Task(
         name=f"{plan.eval_name}_{variant}",
         dataset=MemoryDataset(samples, name=plan.path.stem),
-        setup=solver(name="before_snapshots")(_before_snapshots)(folders, python, target, execution, api_key_env),
+        setup=solver(name="before_snapshots")(_before_snapshots)(folders, python, target, execution, api_key_env, base_url),
         solver=_agent_for(chosen, lambda **named: targets.build_agent(
             target, model, {target: plan.harness_permissions[target]}, execution=execution,
             api_key_env=api_key_env, base_url=base_url, **watched, **named,
         )),
         scorer=checks_scorer(
             plan.expect, labels, metrics, target, execution, api_key_env, python, plan.under_test, chosen,
-            plan.harness_permissions[target],
+            plan.harness_permissions[target], base_url,
         ),
         cleanup=_forget_before,
         sandbox=_sandbox_config(execution, target),
@@ -707,18 +708,20 @@ def _named_checks(plan: _EvalPlan) -> dict[str, CheckSpec]:
     return named
 
 
-def _before_snapshots(folders: dict[str, list[str]], python: str, target: str, execution: str, api_key_env: str | None):
+def _before_snapshots(
+    folders: dict[str, list[str]], python: str, target: str, execution: str, api_key_env: str | None, base_url: str | None = None
+):
     """The task's setup step: snapshot each sample's watched folders after its setup script, before the agent runs.
 
     Args:
         folders: scenario id -> the fixture folders its checks watch.
         python: the sandbox's Python, for the snapshot script.
-        target, execution, api_key_env: the run's, so a snapshot error can
+        target, execution, api_key_env, base_url: the run's, so a snapshot error can
             be redacted of the secrets the run is given (evidence.run_secrets).
     """
 
     async def solve(state: TaskState, generate) -> TaskState:
-        secrets = evidence.run_secrets(target, execution, api_key_env)
+        secrets = evidence.run_secrets(target, execution, api_key_env, os.environ, base_url)
         await _take_before(state, folders[str(state.sample_id)], python, secrets)
         return state
 
@@ -755,7 +758,7 @@ async def _forget_before(state: TaskState) -> None:
 def _checks_scorer(
     expect: dict[str, list[tuple[str, dict]]], labels: list[str], metrics: list[str], target: str, execution: str,
     api_key_env: str | None, python: str, under_test: tuple[str, str] | None = None,
-    chosen: dict[str, dict[str, str]] | None = None, permissions: dict | None = None,
+    chosen: dict[str, dict[str, str]] | None = None, permissions: dict | None = None, base_url: str | None = None,
 ):
     """The scorer for scenario_eval's tasks, registered as scenario_checks with metrics for `labels` and `metrics`.
 
@@ -763,7 +766,7 @@ def _checks_scorer(
         expect: scenario id -> its checks and their parameters.
         labels: the score's words for pass, fail and inconclusive.
         metrics: every metric the file's checks declare.
-        target, execution, api_key_env: the run's, so the scorer knows the
+        target, execution, api_key_env, base_url: the run's, so the scorer knows the
             secrets it was given (evidence.run_secrets) without holding them.
         python: the sandbox's Python, for the snapshot script.
         under_test: the skill or agent the file tests, if it tests one (see _scenario_score).
@@ -776,7 +779,7 @@ def _checks_scorer(
     async def score(state: TaskState, _target: Target) -> Score:
         checks = [(registry()[name], params) for name, params in expect[str(state.sample_id)]]
         run = store().get(RUN_STORE_KEY, {})
-        secrets = evidence.run_secrets(target, execution, api_key_env)
+        secrets = evidence.run_secrets(target, execution, api_key_env, os.environ, base_url)
         found = await evidence.collect(
             sandbox(), evidence.plan(checks), python, run, initial_commits=state.metadata.get("initial_commits"),
             before=_BEFORE_SNAPSHOTS.pop(state.uuid, {}), secrets=secrets,

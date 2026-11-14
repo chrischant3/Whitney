@@ -365,13 +365,13 @@ def project(tmp_path, permission, expect=PUSH, source="kilo.jsonc", **overrides)
 
 
 def eval_problems(root: Path) -> list[tuple[str, str]]:
-    from whitney.validate import validate_evals
+    from whitney.validation import validate_evals
 
     return [(p.location, p.message) for p in validate_evals(root / "evals").problems]
 
 
 def project_problems(root: Path) -> list[tuple[str, str]]:
-    from whitney.validate import validate_evals, validate_project
+    from whitney.validation import validate_evals, validate_project
 
     result = validate_evals(root / "evals")
     assert result.problems == []
@@ -561,7 +561,7 @@ def test_the_report_says_what_the_default_overlay_left_out():
 
 
 def test_a_bash_object_with_no_catch_all_is_warned_about(tmp_path):
-    from whitney.validate import permission_warnings, validate_evals
+    from whitney.validation import permission_warnings, validate_evals
 
     root = project(tmp_path, {"bash": {"git push *": "deny"}})
     files = validate_evals(root / "evals").files
@@ -583,13 +583,13 @@ def test_a_bash_object_with_no_catch_all_is_warned_about(tmp_path):
 
 
 def _files(root: Path):
-    from whitney.validate import validate_evals
+    from whitney.validation import validate_evals
 
     return validate_evals(root / "evals").files
 
 
 def _project_found(root: Path):
-    from whitney.validate import validate_project
+    from whitney.validation import validate_project
 
     return validate_project(_files(root), root, "kilo", evals_path=root / "evals")
 
@@ -643,7 +643,7 @@ def test_a_source_that_isnt_staged_is_reported_once_and_not_as_a_rule_problem(tm
 
 
 def test_the_catch_all_warning_is_given_for_each_file_that_needs_it(tmp_path):
-    from whitney.validate import permission_warnings
+    from whitney.validation import permission_warnings
 
     root = project(tmp_path, {"bash": {"git push *": "deny"}})
     evals = root / "evals"
@@ -660,7 +660,7 @@ def test_the_catch_all_warning_is_given_for_each_file_that_needs_it(tmp_path):
 
 
 def test_a_file_whose_bash_rule_has_a_catch_all_doesnt_stop_the_warnings_for_later_files(tmp_path):
-    from whitney.validate import permission_warnings
+    from whitney.validation import permission_warnings
 
     root = project(tmp_path, PUSH_RULE)
     evals = root / "evals"
@@ -673,7 +673,7 @@ def test_a_file_whose_bash_rule_has_a_catch_all_doesnt_stop_the_warnings_for_lat
 
 
 def test_a_config_whose_permission_isnt_an_object_gets_no_warning(tmp_path):
-    from whitney.validate import permission_warnings
+    from whitney.validation import permission_warnings
 
     root = project(tmp_path, "ask")
 
@@ -689,7 +689,7 @@ def test_a_permission_held_source_that_isnt_staged_gets_only_the_not_staged_prob
 
 
 def test_a_kilo_config_inside_the_evals_folder_gets_no_catch_all_warning(tmp_path):
-    from whitney.validate import permission_warnings
+    from whitney.validation import permission_warnings
 
     root = project(tmp_path, {"bash": {"git push *": "deny"}}, source=".kilo/kilo.jsonc")
     (root / ".kilo").mkdir()

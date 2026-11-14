@@ -1,0 +1,78 @@
+# Scores each pull request into main for risk with a fixed set of rules
+# (.github/risk/score.py, thoughtbot's, unchanged), prints the JSON in the job
+# summary and labels the pull request risk:low, risk:medium or risk:high.
+# A high score never fails the job: the label is information for the reviewer.
+# A diff or scorer that errors does fail it, rather than being labelled low.
+#
+# The score depends only on the diff and the base branch's score.py, so the same
+# change always gets the same label. A rule that looks wrong is a change to
+# score.py, made in its own pull request. A pull request can still edit this
+# workflow, but that shows up as an infra_config signal and in review.
+# Labelling needs a write token, which a fork's pull request doesn't get, so
+# those are scored and shown in the summary but not labelled.
+name: Risk score
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write # creating the risk:* labels
+  pull-requests: write # putting one on the pull request
+
+concurrency:
+  group: risk-score-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  score:
+    name: Score the pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # a shallow checkout has no merge base, so no diff
+          persist-credentials: false
+
+      - name: Score the diff
+        id: score
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash # runs with -eo pipefail; the default `bash -e` would score a failed diff as an empty one, risk:low
+        run: |
+          # Score with the base branch's copy, so a pull request can't change the rules it is judged by.
+          # The pull request that adds score.py has no base copy yet, so it is scored by its own.
+          scorer="$RUNNER_TEMP/score.py"
+          note=""
+          git show "${BASE_SHA}:.github/risk/score.py" > "$scorer" 2>/dev/null || {
+            cp .github/risk/score.py "$scorer"
+            note="No score.py on ${BASE_REF} yet, so this pull request's own copy was used."
+          }
+          # These flags fix the diff's format, so no git config can change the score.
+          git -c core.quotePath=false diff --no-color --no-ext-diff --find-renames \
+            "origin/${BASE_REF}...HEAD" | python3 -I "$scorer" | tee "$RUNNER_TEMP/risk.json"
+          echo "level=$(jq -r .level "$RUNNER_TEMP/risk.json")" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Risk score: $(jq -r '.level + " (" + (.score | tostring) + ")"' "$RUNNER_TEMP/risk.json")"
+            test -z "$note" || echo "$note"
+            echo '```json'
+            cat "$RUNNER_TEMP/risk.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Label the pull request
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          LEVEL: ${{ steps.score.outputs.level }}
+        run: |
+          gh label create risk:low --color 0e8a16 --description "Risk score 0 to 2" --force
+          gh label create risk:medium --color fbca04 --description "Risk score 3 to 5" --force
+          gh label create risk:high --color d93f0b --description "Risk score 6 or more" --force
+          others=$(printf '%s\n' risk:low risk:medium risk:high | grep -vx "risk:${LEVEL}" | paste -sd, -)
+          gh pr edit "$PR" --add-label "risk:${LEVEL}" --remove-label "$others"

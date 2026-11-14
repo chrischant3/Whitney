@@ -1,0 +1,4 @@
+exit 0
+--- stderr
+--- stdout
+evals: 2 eval file(s), 0 problem(s), 0 warning(s)

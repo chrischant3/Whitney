@@ -50,7 +50,7 @@ def load_scenarios(path: Path, fixtures_dir: Path | None = None) -> list[Sample]
     Args:
         path: the scenario JSON file, version 1 or 2 (see whitney.evalfile).
             A version 1 file needs no token keys here, as before; validation
-            (whitney.validate) is what insists on them.
+            (whitney.validation) is what insists on them.
         fixtures_dir: where fixture folders live. Defaults to `fixtures/` in
             the evals root, which is the folder holding the scenario file or,
             for files in a subfolder such as `configuration/`, its parent.

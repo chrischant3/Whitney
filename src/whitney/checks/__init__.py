@@ -599,4 +599,4 @@ def combine(verdicts: Iterable[Verdict]) -> Outcome:
 
 
 # Whitney's own checks register themselves when imported. They import the names above, so they come last.
-from whitney.checks import files, git, outside, permissions, skills
+from whitney.checks import files, git, order, outside, permissions, skills

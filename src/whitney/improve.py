@@ -31,7 +31,7 @@ from pathlib import Path
 
 from whitney.report import TEMPLATE_VARIANT, Cell, EvalSummary, Record, records_from_log, summarise
 from whitney.thresholds import MIN_CONCLUSIVE
-from whitney.validate import BOM, STAGED, frontmatter_value, skill_description, skill_description_warnings
+from whitney.validation import BOM, STAGED, frontmatter_value, skill_description, skill_description_warnings
 
 HEADING = "## How to improve the files under test"
 RULES_DOC = "docs/improvement-rules.md"
