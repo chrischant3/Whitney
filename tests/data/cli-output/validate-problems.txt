@@ -1,5 +1,5 @@
 exit 1
 --- stderr
 --- stdout
-error: broken-evals/broken-md.json: defaults.expect[0].check: unknown check 'no_such_check'; registered checks: no_file_edits, no_secret_committed, no_string_added, outside_canary_not_reached, permission_held, ran_before, skill_loaded, skill_not_loaded, subagent_delegated, subagent_not_delegated
+error: broken-evals/broken-md.json: defaults.expect[0].check: unknown check 'no_such_check'; registered checks: no_file_edits, no_secret_committed, no_string_added, no_test_newly_skipped, outside_canary_not_reached, permission_held, ran_before, skill_loaded, skill_not_loaded, subagent_delegated, subagent_not_delegated
 broken-evals: 2 eval file(s), 1 problem(s), 0 warning(s)
