@@ -1,0 +1,1 @@
+- Never commit .env files or secrets
