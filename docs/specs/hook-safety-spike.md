@@ -58,3 +58,7 @@ Paths as of `b0627c6`. Where the code was, not what to build.
 - Are local runs needed to recommend "refused locally"? No. Task 40 already recorded the key in a local hook's environment, and the plugin running in Kilo's process.
 - Which hooks get runs? Only `PreToolUse` on Claude Code and `tool.execute.before` on Kilo. The rest of each table comes from the docs and Task 40's runs, marked that way.
 - Who records Christopher's decisions? Not this slice. The spike ends with recommendations marked for him to decide. His dated decisions go under Task 44 in `tasks/plan-later.md` once he gives them.
+
+## Owed
+
+- Task 44's last verification item, "Christopher's decisions, recorded here, dated". This slice ends with recommendations, so Task 44's box stays open until he decides, and the Task 45 and 46 specs stay guesses until then.
