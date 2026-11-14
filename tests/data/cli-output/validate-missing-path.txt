@@ -1,0 +1,4 @@
+exit 2
+--- stderr
+whitney: error: --project-path nowhere isn't a folder
+--- stdout

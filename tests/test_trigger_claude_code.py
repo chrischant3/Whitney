@@ -16,7 +16,7 @@ import pytest
 from whitney import cli, tasks
 from whitney.checks import Evidence, registry
 from whitney.evalfile import load
-from whitney.validate import staged_names, validate_evals, validate_project
+from whitney.validation import staged_names, validate_evals, validate_project
 from whitney.variants import TRIGGER_CONTROL, declared_variants
 
 EVENTS = Path(__file__).parent / "data" / "claude-code-events"

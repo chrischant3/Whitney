@@ -25,7 +25,7 @@ sample's files, and `apply_pending` writes its contents from inside the
 script. The agent sees the change, never the folder it came from.
 
 This module is the one place that knows the steps, their parameters and the
-rules for their order and pending files. whitney.validate checks an eval file
+rules for their order and pending files. whitney.validation checks an eval file
 against SETUP_STEPS, order_problems and pending_problem before anything runs;
 build applies the same rules, so a file that skipped validation still can't run.
 """
@@ -155,7 +155,7 @@ STEPS: dict[str, Step] = {
         Step("apply_pending", _NoStepParams, commits=0, script=_apply_pending),
     )
 }
-# Each step's parameter model, which whitney.validate checks a file's steps against.
+# Each step's parameter model, which whitney.validation checks a file's steps against.
 SETUP_STEPS: dict[str, type[BaseModel]] = {name: step.params for name, step in STEPS.items()}
 
 

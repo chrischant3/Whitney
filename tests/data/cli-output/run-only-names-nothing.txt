@@ -1,0 +1,4 @@
+exit 2
+--- stderr
+whitney: error: --only nope names no eval file under evals: give a path relative to it, or an eval name
+--- stdout

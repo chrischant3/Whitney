@@ -19,7 +19,7 @@ import pytest
 from whitney import tasks
 from whitney.evalfile import load
 from whitney.tasks import agents_md, kilo_jsonc
-from whitney.validate import validate_evals
+from whitney.validation import validate_evals
 
 ROOT = Path(__file__).parent.parent
 VERSION_1 = Path(__file__).parent / "data" / "version-1"

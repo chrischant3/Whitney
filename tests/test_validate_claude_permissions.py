@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from whitney.validate import validate_evals, validate_project
+from whitney.validation import validate_evals, validate_project
 
 RULE = "Bash(git push:*)"
 PUSH = {"check": "permission_held", "permission": "Bash", "pattern": "git push:*", "action": "deny", "forbidden_input": r"\bgit\b.*\bpush\b"}
