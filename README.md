@@ -111,6 +111,17 @@ Not supported yet:
 
 On Claude Code, `permission_held` reads only a `Bash` rule with a pattern, such as `Bash(git push:*)`, the one form whose refusal has been captured. Gaps found in what is tested: [docs/findings/](docs/findings/).
 
+## Watching a live session
+
+`whitney watch` is a first version of something different: it watches your own Claude Code session while you work, and when the agent breaks a rule it tells you in the session, quoting the rule and the file it came from. It only alerts, and never blocks or tells the model anything. Today it watches "never commit `.env` files or secrets" with `no_secret_committed`, on Claude Code only:
+
+```bash
+whitney watch install    # in your project: hooks in .claude/settings.local.json, rules in .whitney/watch.json
+whitney watch            # leave running; start Claude Code in the project
+```
+
+[docs/watch.md](docs/watch.md) explains how to try it, what an alert means, and what it can't do yet. The recorded run on real Claude Code is in [docs/results/2026-11-15-watch-live/](docs/results/2026-11-15-watch-live/).
+
 ## Targets
 
 Each run picks a **target**: a harness, its template, and how it reaches the model.
@@ -492,6 +503,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 - [CONSTRAINTS.md](CONSTRAINTS.md): the bar a change must meet (floor, coverage, mutation testing, secrets, dependencies) and `scripts/check.py`, which runs it. `check.py` needs [gitleaks](https://github.com/gitleaks/gitleaks) and [osv-scanner](https://github.com/google/osv-scanner) on PATH, such as `brew install gitleaks osv-scanner`; CI uses gitleaks 8.30.1. Claude Code sessions in this repo also need [jq](https://jqlang.org): the git workflow gate in `.claude/hooks/`, which blocks commits and pushes on main, force pushes, PR merges and `gh api` writes, uses it and blocks every Bash call without it
 - [docs/signed-approvals.md](docs/signed-approvals.md): making approvals something only a human can give: a signing key an agent can't use, `floor-guard` as a required check, and an agent token without admin rights
 - [docs/agent-push-controls.md](docs/agent-push-controls.md): the credentials, GitHub organisation settings, agent configuration and review process that keep AI coding agents from pushing to GitHub or acting through `gh`
+- [docs/watch.md](docs/watch.md): `whitney watch`, alerts in a live Claude Code session when a rule isn't followed
 - [docs/adding-tests.md](docs/adding-tests.md): writing your own evals: a walkthrough, the eval file format, the checks, and what each result means
 - [examples/consumer/](examples/consumer/): a project with its own rules and the evals that test them
 - [docs/load-order.md](docs/load-order.md): where Kilo loads instructions from

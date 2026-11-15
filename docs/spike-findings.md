@@ -1158,6 +1158,35 @@ An AI assistant drafted this. Kilo's SECURITY.md doesn't accept AI-generated sec
 
 The order is the order of the calls in the stream. On Claude Code that is the order of the `tool_use` blocks, so a forked skill's `Skill` call comes before the calls its subagent made (`skill-forked`). Kilo prints a call's `tool_use` event once the call has finished.
 
+## Later Task 66: whitney watch, alerts in a live Claude Code session (2026-11-15)
+
+Christopher asked, on 2026-11-15, for a branch he could check out and try the next morning, so the spike was built as a first version of `whitney watch` (`src/whitney/watch.py`, `src/whitney/watch_client.py`; how to use it: [watch.md](watch.md)) rather than as a script under `spikes/` alone. It runs on Claude Code 2.1.325, Python 3.13, Linux.
+
+**Docs read** (2026-11-15): [hooks reference](https://code.claude.com/docs/en/hooks), [hooks guide](https://code.claude.com/docs/en/hooks-guide), [settings](https://code.claude.com/docs/en/settings), [headless](https://code.claude.com/docs/en/headless), [sessions](https://code.claude.com/docs/en/sessions). Kilo's plugin docs were not read: Kilo is still open (below).
+
+**Runs made:** `spikes/watch_live.py`, saved as [results/2026-11-15-watch-live/](results/2026-11-15-watch-live/). Real Claude Code ran in `-p` mode with `--include-hook-events`, with the hooks `whitney watch install` wrote and the watcher running. A scripted stand-in for the model on 127.0.0.1 answered it: one Bash call with the scenario's command, then "Done.". It kept a summary of every request, so it shows what reached the model. No API key, no cost, not in Docker.
+
+The seven questions:
+
+1. **Where the evidence comes from.** From the hook payloads (`hook_event_name`, `tool_name`, `tool_input`, `tool_use_id`) and from git, never from the transcript. The sessions page says the transcript's format "is internal to Claude Code and changes between versions", so it is no base to build on. `no_secret_committed` takes its evidence from git: the commits that appeared between a call's PreToolUse and its PostToolUse, read with `git diff-tree` against their parents, so only what the commit added counts. That is narrower than `whitney run`'s GIT_STATE_SCRIPT, which reads every commit object and would judge a real repository's whole history on every call. The tool call goes to the check as one stream-shaped event, so `history_erasure` reads its input as it does in a run. The stream-json fixtures in `tests/data/claude-code-events/` turned out not to be needed for this check. The outside-access check, which would need them, isn't built (below).
+2. **Which rule was broken.** From a rules file, `.whitney/watch.json`, which ties each rule's words and source file to a check. Eval files were left alone. At SessionStart the watcher looks for each rule's words in its source, ignoring spacing, and warns if they have gone. The rule is still judged.
+3. **What "broken" means live.** A fail alerts as "a rule wasn't followed". An inconclusive alerts as "couldn't tell whether a rule was followed", with the check's reason: a command that can erase commits, or a file over 5 MiB that wasn't searched. A pass says nothing. The commits a person makes between the agent's calls are taken as theirs and never judged. Commits made while a call is running are judged as the agent's, a known limit.
+4. **How the alert reaches the person.** A synchronous command hook's `systemMessage`, documented as "Warning message shown to the user". An `async` hook's `systemMessage` goes to Claude instead, per the hooks reference, so the hooks are synchronous. In the `commits-env` run, Claude Code turned the PostToolUse reply into a `"subtype": "informational"`, `"level": "notice"` event, each line prefixed `PostToolUse:Bash says:`. Neither of the two requests the model received held any of the watcher's text, the second sent after the alert (`requests.json`). The SessionStart reply reached the stream only as the hook's `hook_response`, not as a notice. How the interactive terminal and the VS Code extension show either one is not checked, and Claude Code's docs don't say for the extension.
+5. **What an alert costs** (`latency.json`, 30 runs each, medians): a bare `python -I -S` 9.4 ms; the hook client against a running watcher 32.1 ms at PreToolUse and 37.5 ms at PostToolUse; the client with no watcher 30.2 ms. So the client's own start-up is most of the cost, not the watcher. On Whitney's 665-commit history, the per-call fingerprint (refs, HEAD, reflog) took 4.2 ms and listing every commit 13.3 ms, which only happens when the fingerprint changes. No judge for prose rules was tried.
+6. **Whether Python is fast enough.** Yes, with the watcher kept running. Importing the checks is paid once, at start, and a hook that ran the `whitney` command (1.3 s to import) would have cost that on every call. No alternative language is needed for Claude Code. For Kilo, the client has to be a JavaScript plugin whatever the watcher is written in.
+7. **What `whitney watch` keeps.** Nothing on disk. Alerts go to the session and the watcher's terminal, and are held in memory. An alert names the `.env` file and variable a value came from, and replaces any value in the command it shows with `[secret]`. Neither scenario's saved files hold the fixture's canary values (`canary_in_saved_files`: false). The socket's folder must be this user's and closed to others, or the watcher won't start.
+
+**Found while building:** a long `$XDG_RUNTIME_DIR` or temp folder made the socket path too long for Unix (`OSError: AF_UNIX path too long`). The path now falls back to a shorter folder. Also: Claude Code in this container added the session owner's email address to the requests it sent the stand-in model, from `CLAUDE_CODE_USER_EMAIL`. The spike now runs Claude Code with a minimal environment and saves only a summary of each request. And `git add -A` committed `.whitney/watch.json` along with `.env`, which is harmless, since the rules file is meant to be committed.
+
+**Recommendation, for Christopher to decide:** keep `whitney watch` and build on it. The next tasks are:
+
+- the Kilo client, a plugin on `tool.execute.before` and `tool.execute.after`, after reading Kilo's plugin docs for how its message reaches the person;
+- a check of how the interactive terminal and the VS Code extension show the messages;
+- one real-model run, since these runs used a scripted model;
+- live versions of more checks, starting with outside access, for which the stream-json fixtures can serve as the replay.
+
+What doesn't carry over to Kilo: the hook client and `settings.local.json`; `systemMessage` as the way to reach the person; and the PreToolUse/PostToolUse pairing by `tool_use_id`, which Kilo may name differently.
+
 ## Not yet done
 
 - **Hooks and plugins (Task 40).** A `Stop` hook making a skill load; a hook's effect with a model other than Haiku or a skill other than `release-notes`; why silent hooks went with more `Skill` calls; a Kilo plugin's effect apart from chance; plugins in the VS Code extension.

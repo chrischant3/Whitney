@@ -1,0 +1,30 @@
+{
+  "runs": 30,
+  "bare_interpreter_ms": {
+    "median": 9.4,
+    "p90": 10.4,
+    "max": 11.3
+  },
+  "pre_tool_use_ms": {
+    "median": 32.1,
+    "p90": 36.7,
+    "max": 38.6
+  },
+  "post_tool_use_ms": {
+    "median": 37.5,
+    "p90": 45.0,
+    "max": 49.0
+  },
+  "no_watcher_ms": {
+    "median": 30.2,
+    "p90": 38.9,
+    "max": 40.7
+  },
+  "big_repo_commits": 665,
+  "big_repo_all_commits_ms": 13.3,
+  "big_repo_fingerprint_ms": {
+    "median": 4.2,
+    "p90": 4.6,
+    "max": 5.0
+  }
+}

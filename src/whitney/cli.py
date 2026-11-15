@@ -54,7 +54,7 @@ from inspect_ai.log import list_eval_logs, read_eval_log
 # what the run will see. Inspect has no public name for this.
 from inspect_ai._util.dotenv import init_dotenv
 
-from whitney import targets
+from whitney import targets, watch
 from whitney.agent import redact
 from whitney.capture import thinking_warnings
 from whitney.capture_report import render_capture_markdown
@@ -105,6 +105,11 @@ HELP = {
     "validate": "check the eval files and the project without calling a model",
     "report": "render the report from Inspect logs already written, and gate on it, without calling a model",
     "checks": "list every check an eval file can name, with its parameters, outcomes, targets and minimum",
+    "watch": "watch a live Claude Code session and tell the person when the agent breaks a rule, naming the rule",
+    "watch ACTION": "run (the default) watches the project until Ctrl-C; install writes its hooks and a rules file; "
+    "uninstall removes its hooks",
+    "watch --project": "the project to watch: a git repository you run Claude Code in",
+    "watch --python": "install: the Python the hooks run (default: this one)",
     "LOGS": "the folder holding the Inspect logs, such as logs",
     "report --evals-path": "the evals root the logs were run from, so the report can say if an eval file has changed since",
     "--target": "the harness under test",
@@ -163,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    """The `whitney` command's argument parser, with the `run`, `validate`, `report` and `checks` subcommands."""
+    """The `whitney` command's argument parser, with the `run`, `validate`, `report`, `checks` and `watch` subcommands."""
     p = argparse.ArgumentParser(prog="whitney", description=__doc__.split("\n")[0])
     p.add_argument("--version", action="version", version=f"%(prog)s {_whitney_version() or 'not installed'}")
     commands = p.add_subparsers(dest="command", required=True)
@@ -203,6 +208,11 @@ def parser() -> argparse.ArgumentParser:
     report.set_defaults(handler=_report, parser=report)
     checks = commands.add_parser("checks", help=HELP["checks"], description=HELP["checks"])
     checks.set_defaults(handler=_checks)
+    watch_ = commands.add_parser("watch", help=HELP["watch"], description=HELP["watch"])
+    watch_.add_argument("action", nargs="?", choices=("run", "install", "uninstall"), default="run", help=HELP["watch ACTION"])
+    watch_.add_argument("--project", default=".", help=HELP["watch --project"])
+    watch_.add_argument("--python", default=sys.executable, help=HELP["watch --python"])
+    watch_.set_defaults(handler=_watch)
     return p
 
 
@@ -393,6 +403,11 @@ def _checks(args: argparse.Namespace) -> int:
     """`whitney checks`: print every registered check, by name, with what it declares."""
     print("\n\n".join(describe_check(spec) for _, spec in sorted(registry().items())))
     return 0
+
+
+def _watch(args: argparse.Namespace) -> int:
+    """`whitney watch [run|install|uninstall]`: whitney.watch.command."""
+    return watch.command(args.action, Path(args.project), sys.stdout, python=args.python)
 
 
 def describe_check(spec: CheckSpec) -> str:
