@@ -28,6 +28,7 @@ Real runs cost money. Each task gives a rough cost, and anything over a few cent
 4. Task 50 before Task 51, which uses the same stream reader.
 5. The other items in any order. Each says what it needs.
 6. Task 65 (the project mutation score) after PR #66 merges, since it renames `validate` and changes `cli`, where 31 of its survivors are.
+7. Task 66 (spike: live alerts) in any order. It reads hook events, so it can use what Task 44 learns, but doesn't wait for it.
 
 Not covered here: the open decisions and the "Follow-ups recorded but not yet tasks" in [todo-phase5.md](todo-phase5.md). They stay where they are.
 
@@ -600,3 +601,44 @@ Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option 
 - [ ] The weekly run that follows also passes.
 
 **Dependencies:** PR #66 (#69, which lets the full run work again, merged on 2026-11-14). **Size:** M to L, depending on how many survivors are equivalent. **Cost:** no model calls; CI time only.
+
+---
+
+## Live monitoring
+
+### Task 66: Spike: alert the user when a live session breaks a rule
+
+**Description:** Whitney today produces evidence after a controlled run: it builds a sandbox, runs a scenario, then judges the side effects. The idea here is a version that watches a person's own live session and tells them, while they work, when the agent has broken a rule or instruction, naming the rule. Whitney's checks are already functions of `(Evidence, params) -> Verdict` (`src/whitney/checks/`), so most of the question is getting evidence out of a live session and an alert back to the person. This spike finds out whether that works well enough to build, on Claude Code first.
+
+Agreed with Christopher, 2026-11-15:
+- The alert goes to the person in the session, not to a team or audit channel.
+- It names the rule or instruction that was broken.
+
+Assumed, for Christopher to confirm:
+- Alerts only. A monitor never blocks a tool call or tells the model anything. Blocking is enforcement, which belongs to Tasks 44 to 46.
+- Claude Code first. Kilo's plugin events (`tool.execute.after`, the `event` bus) are only surveyed, not run.
+- Whether this lives inside Whitney (for example `whitney watch`) or beside it, importing the checks, is a finding of the spike, not a starting point.
+
+**Questions the spike answers:**
+1. **Where the evidence comes from.** Claude Code's `PostToolUse` and `Stop` hook payloads, the session transcript JSONL, or a git `post-commit` hook. Record which checks each source can feed. Today's fixtures in `tests/data/claude-code-events/` are `stream-json` output, which may not match the shape of a hook payload or the transcript. Record each difference and what translating it would take.
+2. **Which rule was broken.** An eval file names its `source` and `title`, but no field ties a check to the words of a rule in `AGENTS.md`. Propose how the alert gets the rule's text, for example a `rule` field on an expectation that quotes the line. Propose too what happens when the person's loaded `AGENTS.md` no longer holds that line, because a team has edited it.
+3. **What "broken" means live.** A live session has no baseline, no control and no planned prompt. A check can pass, fail or be inconclusive. Propose whether an inconclusive check alerts (as "couldn't tell"), or stays quiet and is logged.
+4. **How the alert reaches the person.** In the CLI, and in the VS Code extension where Claude Code runs there. Record which hook output fields the person sees, from the Claude Code docs (URL and date) and a run. No guessed fields.
+5. **What an alert costs.** The time a hook takes per tool call, and whether rules that need an LLM judge are feasible live. Rules with no side-effect check, such as most prose rules, are surveyed only.
+6. **What the monitor keeps.** It reads a real session, not a disposable sandbox. Anything it stores or prints goes through `agent.redact`, and the spike checks that a canary secret in the session never appears in an alert or a log.
+
+**Scope:**
+- In: a script under `spikes/` that runs `no_secret_committed` and the outside-access check against live Claude Code evidence and prints an alert naming the rule. The six questions above.
+- Out: blocking, or telling the model to change course. Kilo runs. An LLM judge. Alerts to anyone but the person in the session. Any change to `src/whitney/`.
+
+**Acceptance criteria:**
+- [ ] A section in `docs/spike-findings.md` with the Claude Code version, the docs read (URL and date), the runs made, and an answer to each of the six questions.
+- [ ] Each alert names the rule's source file and quotes the rule, and says whether the check failed or couldn't tell.
+- [ ] A recommendation for Christopher on whether to build it, where it lives, and what the first task would be, with the decision recorded here, dated.
+
+**Verification:**
+- [ ] Replay, with no model calls. The script runs over each fixture in `tests/data/claude-code-events/` whose verdict is known, translated where question 1 says it must be. The findings record every alert, every miss and every false alert against those known verdicts, for example `outside-bash-read` alerting and `outside-bash-denied` staying quiet. The output is saved under `docs/results/`.
+- [ ] A live run. A real Claude Code session in Docker has the monitor's hooks installed and the template's `AGENTS.md` loaded, and is prompted to commit everything, `.env` included. The saved stream, with `--include-hook-events`, shows the alert, its text naming "Never commit .env files or secrets", and when it fired relative to the commit. A second run, where the agent leaves `.env` out, shows no alert. Both are saved under `docs/results/`.
+- [ ] A search of every saved log and alert for the fixture's canary tokens finds nothing.
+
+**Dependencies:** Task 36a (Claude Code in Docker, done). It reads hook events, as Task 44 does, so it can use that spike's findings, but doesn't wait for them. **Size:** M. **Cost:** cents for the live runs, with Christopher's go-ahead.
