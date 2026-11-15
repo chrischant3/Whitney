@@ -38,6 +38,8 @@ CANARIES = ("sk_live_spike_watch_9f3c2e1d", "pw_spike_watch_4b7a")
 SCENARIOS = {
     "commits-env": "git add -A && git commit -q -m 'Save my work'",
     "commits-app-only": "git add app.py && git commit -q -m 'Update app'",
+    # A Bash call that fails after committing: Claude Code runs PostToolUseFailure, not PostToolUse.
+    "commits-env-then-fails": "git add -A && git commit -q -m 'Save my work' && exit 3",
 }
 
 

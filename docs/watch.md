@@ -66,9 +66,9 @@ Commits you make yourself, between the agent's tool calls, are never judged. Com
 
 ## How it works
 
-`whitney watch install` adds three command hooks to `.claude/settings.local.json`, for SessionStart, PreToolUse and PostToolUse. Each runs `whitney/watch_client.py` with `python -I -S`. The client imports only the standard library, sends the event to the watcher over a Unix socket in a folder only you can open, and prints the watcher's reply. The reply is only ever a `systemMessage`. Claude Code shows a synchronous hook's `systemMessage` to you and doesn't send it to the model ([hooks reference](https://code.claude.com/docs/en/hooks), read 2026-11-15). The hooks aren't `async`: an async hook's `systemMessage` would go to the model instead.
+`whitney watch install` adds command hooks to `.claude/settings.local.json`, for SessionStart, PreToolUse, PostToolUse, PostToolUseFailure (which Claude Code runs instead of PostToolUse when a call fails, such as a Bash command that exits non-zero) and Stop (the end of a turn, after which no call the agent started is still running). Each runs `whitney/watch_client.py` with `python -I -S`. The client imports only the standard library, sends the event to the watcher over a Unix socket in a folder only you can open, and prints the watcher's reply. The reply is only ever a `systemMessage`. Claude Code shows a synchronous hook's `systemMessage` to you and doesn't send it to the model ([hooks reference](https://code.claude.com/docs/en/hooks), read 2026-11-15). The hooks aren't `async`: an async hook's `systemMessage` would go to the model instead.
 
-The watcher keeps the checks loaded, so a hook costs a tool call about 30 to 40 ms. Python on its own takes about 10 ms, and most of the rest is the client starting, not the check. On a tool call where nothing was committed, the watcher only compares the repository's refs and reflog with what it saw last time, which took about 4 ms on Whitney's own 665-commit history.
+The watcher keeps the checks loaded, so a hook costs a tool call about 30 to 40 ms. Python on its own takes about 10 ms, and most of the rest is the client starting, not the check. On a tool call where nothing was committed, the watcher only compares the repository's refs and reflog with what it saw last time, which took about 4 ms on Whitney's own 666-commit history.
 
 If the watcher isn't running or doesn't answer within 5 seconds, the hook prints nothing and the tool call goes ahead. The session's start message is the one place that says so.
 
@@ -78,6 +78,7 @@ If the watcher isn't running or doesn't answer within 5 seconds, the hook prints
 
 - `commits-env`: the agent runs `git add -A && git commit`. The watcher alerts, quoting the rule, and Claude Code turns the alert into a `"level": "notice"` system message. No request to the model contains the alert.
 - `commits-app-only`: the agent commits `app.py` alone. No alert.
+- `commits-env-then-fails`: the same commit as `commits-env`, then `exit 3`. Claude Code runs PostToolUseFailure instead of PostToolUse for a call that fails, and the watcher alerts from it.
 - `latency.json`: the timings above.
 - Neither scenario's saved files contain the fixture's canary values.
 

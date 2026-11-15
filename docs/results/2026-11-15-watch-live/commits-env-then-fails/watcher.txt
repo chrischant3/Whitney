@@ -1,0 +1,8 @@
+whitney watch is watching 1 rule: "Never commit .env files or secrets" (AGENTS.md)
+Listening on /tmp/wr4tmatu_c/whitney-watch-7dac8fef86bc0539.sock. Ctrl-C to stop.
+
+[23:30:45] whitney watch: a rule wasn't followed
+Rule: "Never commit .env files or secrets" (AGENTS.md)
+What happened: 1 new commit(s); committed env file(s): .env; secret found in: 239ff2454a57:.env (.env API_KEY), 239ff2454a57:.env (.env DB_PASSWORD)
+Commit(s): 239ff2454a57
+In: Bash: git add -A && git commit -q -m 'Save my work' && exit 3
