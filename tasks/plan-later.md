@@ -613,11 +613,11 @@ Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option 
 Agreed with Christopher, 2026-11-15:
 - The alert goes to the person in the session, not to a team or audit channel.
 - It names the rule or instruction that was broken.
+- It is a Whitney subcommand, `whitney watch`.
+- The feature covers both targets, Kilo and Claude Code. The spike runs on Claude Code only, and surveys Kilo's plugin events (`tool.execute.after`, the `event` bus) from its docs so the design fits both.
 
 Assumed, for Christopher to confirm:
-- Alerts only. A monitor never blocks a tool call or tells the model anything. Blocking is enforcement, which belongs to Tasks 44 to 46.
-- Claude Code first. Kilo's plugin events (`tool.execute.after`, the `event` bus) are only surveyed, not run.
-- Whether this lives inside Whitney (for example `whitney watch`) or beside it, importing the checks, is a finding of the spike, not a starting point.
+- Alerts only. `whitney watch` never blocks a tool call or tells the model anything. Blocking is enforcement, which belongs to Tasks 44 to 46.
 
 **Questions the spike answers:**
 1. **Where the evidence comes from.** Claude Code's `PostToolUse` and `Stop` hook payloads, the session transcript JSONL, or a git `post-commit` hook. Record which checks each source can feed. Today's fixtures in `tests/data/claude-code-events/` are `stream-json` output, which may not match the shape of a hook payload or the transcript. Record each difference and what translating it would take.
@@ -625,16 +625,17 @@ Assumed, for Christopher to confirm:
 3. **What "broken" means live.** A live session has no baseline, no control and no planned prompt. A check can pass, fail or be inconclusive. Propose whether an inconclusive check alerts (as "couldn't tell"), or stays quiet and is logged.
 4. **How the alert reaches the person.** In the CLI, and in the VS Code extension where Claude Code runs there. Record which hook output fields the person sees, from the Claude Code docs (URL and date) and a run. No guessed fields.
 5. **What an alert costs.** The time a hook takes per tool call, and whether rules that need an LLM judge are feasible live. Rules with no side-effect check, such as most prose rules, are surveyed only.
-6. **What the monitor keeps.** It reads a real session, not a disposable sandbox. Anything it stores or prints goes through `agent.redact`, and the spike checks that a canary secret in the session never appears in an alert or a log.
+6. **What `whitney watch` keeps.** It reads a real session, not a disposable sandbox. Anything it stores or prints goes through `agent.redact`, and the spike checks that a canary secret in the session never appears in an alert or a log.
 
 **Scope:**
-- In: a script under `spikes/` that runs `no_secret_committed` and the outside-access check against live Claude Code evidence and prints an alert naming the rule. The six questions above.
-- Out: blocking, or telling the model to change course. Kilo runs. An LLM judge. Alerts to anyone but the person in the session. Any change to `src/whitney/`.
+- In: a script under `spikes/` (a prototype of `whitney watch`) that runs `no_secret_committed` and the outside-access check against live Claude Code evidence and prints an alert naming the rule. The six questions above.
+- In: for Kilo, from its docs (URL and date): which plugin events would feed each check, and how a plugin's message reaches the person in the CLI and the VS Code extension. Where the docs don't say, the findings say so rather than guess.
+- Out: blocking, or telling the model to change course. Kilo runs, which come in the build tasks. An LLM judge. Alerts to anyone but the person in the session. Any change to `src/whitney/`.
 
 **Acceptance criteria:**
 - [ ] A section in `docs/spike-findings.md` with the Claude Code version, the docs read (URL and date), the runs made, and an answer to each of the six questions.
 - [ ] Each alert names the rule's source file and quotes the rule, and says whether the check failed or couldn't tell.
-- [ ] A recommendation for Christopher on whether to build it, where it lives, and what the first task would be, with the decision recorded here, dated.
+- [ ] A recommendation for Christopher on whether to build `whitney watch`, what its first task would be on each target, and what of the Claude Code design doesn't carry over to Kilo, with the decision recorded here, dated.
 
 **Verification:**
 - [ ] Replay, with no model calls. The script runs over each fixture in `tests/data/claude-code-events/` whose verdict is known, translated where question 1 says it must be. The findings record every alert, every miss and every false alert against those known verdicts, for example `outside-bash-read` alerting and `outside-bash-denied` staying quiet. The output is saved under `docs/results/`.
