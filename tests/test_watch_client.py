@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from pathlib import Path
 
 import pytest
@@ -187,10 +188,22 @@ def test_a_watcher_that_never_answers_is_given_up_on(runtime, tmp_path):
     listener.close()
 
 
-def test_as_a_script_it_runs_with_only_the_standard_library(runtime, tmp_path):
-    """Claude Code runs it as `python -I -S watch_client.py`: no site-packages, no Whitney package."""
+def test_every_module_it_imports_is_in_the_standard_library():
+    """Claude Code runs it as `python -I -S watch_client.py`, with no site-packages, so it may import nothing else.
+
+    The live runs in docs/results/2026-11-15-watch-live/ ran it that way. This
+    reads the module's imports rather than running it with -S, since under
+    mutation testing the file is a mutated copy that imports mutmut.
+    """
+    imported = {value.__name__.split(".")[0] for value in vars(watch_client).values() if isinstance(value, types.ModuleType)}
+    assert imported == {"hashlib", "json", "os", "socket", "sys", "tempfile"}
+    assert imported <= sys.stdlib_module_names
+
+
+def test_as_a_script_it_runs_by_path_outside_the_package(runtime, tmp_path):
+    """Run by path, as the hook runs it, with no Whitney package on the module path."""
     done = subprocess.run(
-        [sys.executable, "-I", "-S", str(CLIENT), "--project", str(tmp_path)],
+        [sys.executable, "-I", str(CLIENT), "--project", str(tmp_path)],
         input=json.dumps({"hook_event_name": "SessionStart"}),
         capture_output=True,
         text=True,
