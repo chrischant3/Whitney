@@ -140,7 +140,8 @@ never reads the execution mode; the same in `cli.validate`, which passes
 codec name's case in `cli.report_file`. Not equivalent, and left as they were
 in the old `_validate`: `skill_copy_warnings(..., evals_path=None)` and without
 it in `cli.validate`, which differ only for an evals root inside the project
-holding a skill folder, which no test builds.
+holding a skill folder, which no test built until Later plan Task 65: now
+`test_validate_leaves_out_a_skill_copy_under_an_evals_path_inside_the_project` kills both.
 Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
 `known = in_step = None` and `in_step = None` in place of `False`, which the
 function reads only through `not` and `and`, where `None` and `False` give the
@@ -150,6 +151,38 @@ in place of `False` in `_added_skips`, which `SequenceMatcher` reads only for
 truth; and `None` in place of `""` as `_marked`'s default, which stands for
 the end of the file either way, since a real result is never a blank line,
 and is only compared with other `_marked` results.
+Later plan Task 65 (2026-11-16) took the full run on `main` at `d947417` from 166
+survivors to 92 by killing 75 with tests (`tests/test_mutants_*.py`) and simplifying
+two functions; the project score measured 99.45%. Of the 92, those not explained above
+are these. The codec name's case or `encoding=None` (UTF-8 here) in `cli.write_junit`,
+`harbor_cache.check_cache`, `project_files._claude_code_assets` (two),
+`interference._load_records`, `harbor_tasks._host_variables`, `scoring._unquote`,
+`agent._run_with_overlay` (three), `agent.global_provider_settings`,
+`agent.copy_outputs` and `tasks._inline` (two, `"UTF-8"` and `"ASCII"`). Falsy stand-ins
+read only for truth: `ensure_ascii=None` in `cli._default_shown`; `docker=None` in
+`claude_code._run`; `None` for `False` in `checks.permissions.permission_held` (two),
+`checks.permissions._claude_held` and `checks.skills._kilo_calls` (three), as in
+`checks.stream` above; and in `validation._token_problems`, a `getattr` default of
+`None`, since `None is True` is false too. `keepends=None` or `True` in
+`project_files._import_paths`: an import is matched as non-space characters, so a line
+end never joins one. `break` for `continue` in `project_files.staged_imports`: the queue
+is breadth-first, so once one entry reaches the hop limit every later one has too.
+`check_target`'s `execution` default (two) and `None` passed for it in
+`targets.build_agent`, a parameter `check_target` never reads. The placeholder words
+`"quote"` and `"code"` in `improve._plain` (four), which only regexes ever read, and
+which no regex there matches in any of their mutated forms. A missing stream or result
+read as `"XXXX"` instead of `""` in `refusals._events`, `refusals._claude_refusals`,
+`tasks._without_the_named_agent` and `tasks._scenario_score` (two): it isn't JSON,
+holds no refusal and no fallback message, and `was_used` finds nothing in it.
+`redact` called on a falsy `said` in `tasks._redacted_refusal`, which returns it as it
+was. In `validation.frontmatter_value`: `enumerate(..., 2)` (the frontmatter then also
+holds its closing `---`, which matches no key and continues no value) and `maxsplit`
+removed or set to 2 (only the first piece is used). `'XXaeiouXX'` in `validation._a`,
+which differs only for a permission starting with "X", and permission names are
+lowercase. `tasks._sandbox_config`'s default target (two), compared only with
+`"claude-code"`. And `or True` on `target == "kilo"` in `tasks._scenario_task`:
+`plan.left_out` is non-empty only for Kilo's `bash` or `edit` permissions, which
+validation refuses on `claude-code`.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
