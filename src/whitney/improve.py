@@ -286,7 +286,7 @@ def _said(template_log: _Template, scenario: str, failing: str) -> str:
 def _home_as_tilde(text: str) -> str:
     """`text` with the user's home folder written `~`, so a quoted path doesn't name the user who ran it."""
     home = os.path.expanduser("~").rstrip("/")
-    if not home or home == "~":  # no home to hide: os.path.expanduser leaves "~" as it is
+    if not home:  # a home of "/" hides nothing; with no home at all expanduser returns "~", which the line below leaves as it is
         return text
     return re.sub(re.escape(home) + r"(?![\w.-])", "~", text)
 
