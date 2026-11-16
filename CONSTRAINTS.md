@@ -150,6 +150,19 @@ in place of `False` in `_added_skips`, which `SequenceMatcher` reads only for
 truth; and `None` in place of `""` as `_marked`'s default, which stands for
 the end of the file either way, since a real result is never a blank line,
 and is only compared with other `_marked` results.
+Later plan Task 66 (`whitney watch`, 2026-11-15) adds 17. The codec name's case
+and `encoding=None` in `load_rules`, `rule_missing`, `env_secrets`, `_settings` and
+`_write_json` (twelve: `env_secrets` and `_write_json` each also without `encoding`), which read and write the same bytes under the UTF-8 locale every run
+here uses. The placeholder token `"checked"` written as `"XXcheckedXX"` or
+`"CHECKED"` in `_rule`, which only lets the check's own model validate the other
+parameters: any token does. `Repo.fingerprint` calling `git for-each-ref` without
+`--format`: the default format holds the same object names and ref names, plus each
+object's type, which can't change while the names stay the same. `hook = None` in
+place of `{}` in `_Handler.handle`, for a request that isn't JSON: the reply is `{}`
+either way, from the handler itself for `None`, and from the watcher, which says
+nothing to an event with no name, for `{}`. And
+`len(reply) <= MAX_REPLY` in `watch_client.ask`, which reads at most one more chunk
+from a reply already at the cap, and refuses it the same way.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11

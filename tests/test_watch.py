@@ -877,13 +877,14 @@ def test_git_errors_that_arent_utf_8_are_still_reported(project):
 
 
 def test_a_commit_on_a_detached_head_changes_the_fingerprint(project):
+    """No ref moves and, with no reflog file, no reflog changes: only the HEAD file shows the commit."""
     repo = watch.Repo(project)
     git(project, "checkout", "-q", "--detach")
-    git(project, "-c", "core.logAllRefUpdates=false", "commit", "-q", "--allow-empty", "-m", "detached")
+    (project / ".git" / "logs").rename(project / ".git" / "logs-off")
     before = repo.fingerprint()
-    git(project, "-c", "core.logAllRefUpdates=false", "commit", "-q", "--allow-empty", "-m", "detached again")
+    git(project, "-c", "core.logAllRefUpdates=false", "commit", "-q", "--allow-empty", "-m", "detached")
     after = repo.fingerprint()
-    assert before[0] == after[0]
+    assert (before[0], before[2]) == (after[0], after[2])
     assert after != before
 
 
@@ -1212,3 +1213,38 @@ def test_each_alert_the_watcher_prints_has_the_time(watcher, project, short_dir,
     stop.set()
     thread.join(timeout=10)
     assert re.search(r"\n\n\[\d\d:\d\d:\d\d\] whitney watch: a rule wasn't followed\n", out.getvalue())
+
+
+def test_after_a_commit_a_quiet_call_still_doesnt_list_the_commits(watcher, project, monkeypatch):
+    run_tool_call(watcher, project, "echo more >> app.py && git commit -q -am more")
+    monkeypatch.setattr(watcher.repo, "commits", lambda: pytest.fail("listed the commits with nothing new"))
+    assert run_tool_call(watcher, project, "ls", call="toolu_2") == {}
+
+
+def test_history_from_before_watching_stays_known_after_a_judged_commit(project):
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "an old .env commit, from before watching")
+    rules_file(project, [default_rule()])
+    watcher = Watcher(project)
+    assert run_tool_call(watcher, project, "echo a >> app.py && git commit -q -am a") == {}
+    assert run_tool_call(watcher, project, "echo b >> app.py && git commit -q -am b", call="toolu_2") == {}
+
+
+def test_a_secret_inside_a_longer_one_that_sorts_before_it_is_hidden_whole(project):
+    (project / ".env").write_text("SHORT=zzzzzzzz\nLONG=aazzzzzzzz\n")
+    rules_file(project, [default_rule()])
+    command = "echo 'K=aazzzzzzzz' > app.py && git add -A && git commit -q -m wip"
+    message = run_tool_call(Watcher(project), project, command)["systemMessage"]
+    assert "In: Bash: echo 'K=[secret]' > app.py" in message
+
+
+def test_a_request_that_is_json_but_not_an_object_is_answered_with_nothing(watcher, project, short_dir, monkeypatch):
+    from whitney import watch_client
+
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_dir / "run"))
+    server = watch.start_server(watcher, watch.prepare_socket(project))
+    try:
+        assert watch_client.ask(watch_client.socket_path(str(project)), b"[1, 2]\n") == {}
+    finally:
+        server.shutdown()
+        server.server_close()
