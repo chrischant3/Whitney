@@ -44,7 +44,7 @@ Numbered checks **warn until 2026-11-16, then block** (`WARN_UNTIL` in
 | Tests | Whole suite passes (blocks now; a hard constraint in CLAUDE.md) | `pytest` | task end |
 | Secrets | No secrets in history or uncommitted changes (floor, blocks now) | `gitleaks git --redact` (+ `--pre-commit`) | every edit |
 | Coverage: changed lines | ≥ 80% of lines changed since `origin/main` covered | `pytest --cov` + `diff-cover --fail-under=80` | task end |
-| Mutation: touched functions | ≥ 95% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end and on every pull request in CI (`check.py task`); weekly in CI (`check.py full`) |
+| Mutation: touched functions | ≥ 95% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants and the cached survivors (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end and on every pull request in CI (`check.py task`); weekly in CI (`check.py full`) |
 | Dependencies | Nothing at high or above in the installed environment | `osv-scanner scan --no-resolve` on the installed distributions | weekly in CI (`check.py full`), and before a pull request that changes `requirements.lock` |
 
 Why these numbers:
@@ -204,7 +204,7 @@ now kills it on every disk by simulating a case-sensitive one.
 ```bash
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
-python scripts/check.py task       # before handing work back: about a minute for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants)
+python scripts/check.py task       # before handing work back: about a minute for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants and the cached survivors)
 python scripts/check.py full       # reruns every mutant, and the dependency scan; run it on GitHub, not on a laptop (below)
 ```
 
@@ -217,7 +217,8 @@ runs its own workers; a plain `pytest` stays on one process too.
 CI runs on GitHub's hosted runners, which cost nothing for a public
 repository. Every pull request into main gets `check.py task`
 (`.github/workflows/checks.yml`), starting warm from the last weekly full
-run's mutmut results, so it mutates only the functions the diff touches.
+run's mutmut results, so it mutates only the functions the diff touches, and reruns the mutants
+that run left alive.
 `check.py full` runs from scratch every Sunday and on demand from the Actions
 tab (`.github/workflows/mutation-full.yml`); a fall in the project score fails
 that run, and GitHub emails the owner. Neither workflow edits this file: a
@@ -231,9 +232,12 @@ pull request that changes `requirements.lock`, so the dependency scan sees the
 new versions before the weekly run does, and on main before a release. The ratchet's mutation score
 was measured on a Mac; once the weekly run on main has a result, re-baseline it
 from that run and say so here, since macOS and Linux differ by a few survivors.
-`task` mutates only the functions the diff touches and judges them as above;
-its project mutation score is mutmut's cached results, the touched functions'
-fresh ones and every other function's last one, labelled as cached. It still
+`task` mutates only the functions the diff touches and judges them as above.
+It also reruns every mutant the cache says survived or no test reached, wherever
+it is, since a new or stronger test can kill one without the diff touching its
+function: a pull request that only adds tests (Later plan Task 65) otherwise
+couldn't show what it killed. Its project mutation score is mutmut's cached
+results, those fresh ones and every other mutant's last one, labelled as cached. It still
 enforces the ratchet, since each of those results was measured; mutants not
 checked since their function changed are left out and counted, and when they
 are more than 5% of all mutants, or there are no cached results, a score that
