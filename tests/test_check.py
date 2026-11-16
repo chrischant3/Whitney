@@ -228,6 +228,47 @@ def test_task_runs_mutmut_on_the_touched_functions_only():
     assert runs == [_check["mutmut_patterns"](TOUCHED)]
 
 
+def test_task_also_reruns_every_mutant_the_cache_says_survived():
+    """A new or stronger test can kill a cached survivor in a function the diff didn't touch.
+
+    Without this, a pull request that only adds tests (Later plan Task 65) can never show
+    what it killed: every function it didn't touch keeps its cached verdict.
+    """
+    statuses = {
+        "whitney.mod.x_touched__mutmut_1": "killed",
+        "whitney.other.x_untouched__mutmut_2": "survived",
+        "whitney.other.x_untouched__mutmut_3": "no tests",
+        "whitney.other.x_untouched__mutmut_4": "killed",
+        "whitney.other.x_untouched__mutmut_5": "timeout",
+        "whitney.other.x_untouched__mutmut_6": "not checked",
+    }
+    run, runs = _fake_mutmut(statuses)
+
+    _checks(run).mutation(RATCHETS, TOUCHED, stage="task")
+
+    assert runs == [[
+        *_check["mutmut_patterns"](TOUCHED),
+        "whitney.other.x_untouched__mutmut_2",
+        "whitney.other.x_untouched__mutmut_3",
+    ]]
+
+
+def test_task_with_no_touched_function_still_reruns_the_cached_survivors():
+    run, runs = _fake_mutmut({"whitney.other.x_untouched__mutmut_2": "survived"})
+
+    _checks(run).mutation(RATCHETS, set(), stage="task")
+
+    assert runs == [["whitney.other.x_untouched__mutmut_2"]]
+
+
+def test_task_without_readable_cached_results_reruns_the_touched_functions_alone():
+    run, runs = _fake_mutmut({"whitney.other.x_untouched__mutmut_2": "survived"}, results_returncode=1)
+
+    _checks(run).mutation(RATCHETS, TOUCHED, stage="task")
+
+    assert runs == [_check["mutmut_patterns"](TOUCHED)]
+
+
 def test_full_runs_the_whole_mutation_suite():
     run, runs = _fake_mutmut({"whitney.mod.x_touched__mutmut_1": "killed"})
 

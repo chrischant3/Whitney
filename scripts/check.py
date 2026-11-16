@@ -10,7 +10,8 @@ in place of the mutation scores. It is a stopgap while mutation testing is too s
 (decided 2026-11-09, tasks/plan-phase5.md): a skipped run doesn't show the mutation
 floor or ratchet hold.
 
-`task` judges the touched functions' mutants fresh and the rest from mutmut's cache;
+`task` judges the touched functions' mutants and the cached survivors fresh, and the rest
+from mutmut's cache;
 `full` reruns every mutant against the current tests, after deleting mutmut's map of which
 tests reach which function so that mutmut rebuilds it. A new worktree starts warm
 from a copy of the main checkout's mutants/ (CONSTRAINTS.md, "How to run").
@@ -61,6 +62,11 @@ def mutation_score(statuses: Iterable[str]) -> float | None:
     if not statuses:
         return None
     return 100.0 * sum(s in ("killed", "timeout") for s in statuses) / len(statuses)
+
+
+def mutant_statuses(listing: str) -> dict[str, str]:
+    """Mutant name -> status, from `mutmut results --all true`'s "    <name>: <status>" lines."""
+    return dict(line.strip().rsplit(": ", 1) for line in listing.splitlines() if ": " in line)
 
 
 def touched_function_prefixes(path: Path, lines: set[int], src_root: Path = SRC) -> set[str]:
@@ -225,14 +231,17 @@ class Checks:
     def mutation(self, ratchets: dict[str, float], prefixes: set[str], stage: str) -> None:
         """Run mutmut for `stage`, then judge the touched functions and the project ratchet.
 
-        `full` reruns every mutant against the current tests. `task` reruns only the mutants of
-        the functions named by `prefixes`, so its project score comes from mutmut's cache: the
-        touched functions' fresh results plus every other function's last result.
+        `full` reruns every mutant against the current tests. `task` reruns the mutants of the
+        functions named by `prefixes`, and every mutant the cache says survived, so its project
+        score comes from mutmut's cache: those fresh results plus every other mutant's last one.
+        A cached survivor is rerun wherever it is because a new or stronger test can kill it
+        without the diff touching its function, as a pull request that only adds tests does.
+        A cached kill isn't rerun: only `full` measures a test that got weaker.
         """
         # With any name given, mutmut reruns every mutant it selects; with none it keeps every
         # cached verdict, so a weaker test would never be measured. "*" selects every mutant
         # and, for mutmut's clean run, every test.
-        selection = mutmut_patterns(prefixes) if stage == "task" else ["*"]
+        selection = [*mutmut_patterns(prefixes), *self._cached_survivors()] if stage == "task" else ["*"]
         if stage == "full":
             # mutmut 3.8.1 adds a test to its map of which tests reach which function only when
             # the test is new, so an existing test that starts reaching a function is never run
@@ -253,9 +262,17 @@ class Checks:
         if results.returncode != 0:
             self.record("mutation results", ERROR, (results.stdout + results.stderr).strip()[-300:])
             return
-        statuses = dict(line.strip().rsplit(": ", 1) for line in results.stdout.splitlines() if ": " in line)
+        statuses = mutant_statuses(results.stdout)
         self._project_mutation_ratchet(statuses, ratchets, cached=stage == "task")
         self._touched_mutation_score(statuses, prefixes)
+
+    def _cached_survivors(self) -> list[str]:
+        """The mutants mutmut's cache says survived or no test reached; none if it can't be read."""
+        results = self.run([PYTHON, "-m", "mutmut", "results", "--all", "true"])
+        if results.returncode != 0:
+            return []
+        statuses = mutant_statuses(results.stdout)
+        return sorted(name for name, status in statuses.items() if status in ("survived", "no tests"))
 
     def _touched_mutation_score(self, statuses: dict[str, str], prefixes: set[str]) -> None:
         """Judge the touched functions' mutants against TOUCHED_MUTATION_SCORE.

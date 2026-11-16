@@ -591,9 +591,9 @@ Decision (Christopher Chant, 2026-11-14): `whitney.run` takes no `junit` option 
 - Out: lowering the recorded 99.7% or widening the drift. That would weaken CONSTRAINTS.md, and only Christopher records a new figure, in a commit of its own.
 
 **Acceptance criteria:**
-- [ ] Each of the 162 survivors, or the survivors of the fresh run if its list differs, is killed or explained. The pull requests list which.
-- [ ] Each new test fails against the mutant it kills, which is shown by applying the mutant by hand.
-- [ ] No existing assertion is loosened or removed. A test whose expectation must change is named and confirmed by Christopher first.
+- [x] Each of the 162 survivors, or the survivors of the fresh run if its list differs, is killed or explained. The pull requests list which. *(2026-11-16: a fresh `check.py full` on `main` at `d947417`, run in a Linux container as root with the three root-only tests deselected, left 166 survivors and one timeout. 75 are killed by tests in `tests/test_mutants_improve_report.py`, `tests/test_mutants_refusals_validation_tasks.py` and `tests/test_mutants_rest.py`. Two functions, `improve._home_as_tilde` and `report.render_markdown`, are simplified, with the same behaviour. The 92 left are explained in CONSTRAINTS.md. The project score measured 99.45%. `agent._run_with_overlay`'s survivors in that run were three codec-name cases, now explained; CI's higher count there wasn't reproduced.)*
+- [x] Each new test fails against the mutant it kills, which is shown by applying the mutant by hand. *(2026-11-16: each was applied by hand and its test seen to fail, and then `mutmut run` on all 167 earlier survivors confirmed every claimed kill.)*
+- [x] No existing assertion is loosened or removed. A test whose expectation must change is named and confirmed by Christopher first. *(2026-11-16: no existing test file changed; the tests are all new files.)*
 
 **Verification:**
 - [ ] "Mutation (full)" started by hand on `main` after the last pull request merges ends `checks: pass`, with the project score at or above 99.2% (99.7% less the 0.5-point drift). The run's link is recorded here.
