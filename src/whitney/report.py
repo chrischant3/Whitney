@@ -592,7 +592,8 @@ def render_markdown(summary: dict[str, EvalSummary]) -> str:
                 parts.extend(_table("Prompt", prompts, _overall(prompts, {}), _variants(s, prompts), neither, {}))
         if s.triggers:
             parts.append(f"\n{_gate_note(_gated_parts(s), neither)}")
-        parts.extend(f"\n{warning}" for warning in _control_warnings(s, _variants(s, s.rows) if s.file else variants))
+        # Logs that record no eval file record no role either, so for them no variant is a control and nothing is warned.
+        parts.extend(f"\n{warning}" for warning in _control_warnings(s, _variants(s, s.rows)))
         parts.extend(f"\nThe gate fails this file: {problem}." for problem in s.problems)
         parts.append("")
     return "\n".join(parts)
