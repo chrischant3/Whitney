@@ -44,7 +44,7 @@ Numbered checks **warn until 2026-11-16, then block** (`WARN_UNTIL` in
 | Tests | Whole suite passes (blocks now; a hard constraint in CLAUDE.md) | `pytest` | task end |
 | Secrets | No secrets in history or uncommitted changes (floor, blocks now) | `gitleaks git --redact` (+ `--pre-commit`) | every edit |
 | Coverage: changed lines | ≥ 80% of lines changed since `origin/main` covered | `pytest --cov` + `diff-cover --fail-under=80` | task end |
-| Mutation: touched functions | ≥ 95% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end and on every pull request in CI (`check.py task`); weekly in CI (`check.py full`) |
+| Mutation: touched functions | ≥ 95% of mutants in functions the diff touched are caught | `mutmut run` on the touched functions' mutants and the cached survivors (`check.py task`) or on all of them (`check.py full`) + `scripts/check.py` | task end and on every pull request in CI (`check.py task`); weekly in CI (`check.py full`) |
 | Dependencies | Nothing at high or above in the installed environment | `osv-scanner scan --no-resolve` on the installed distributions | weekly in CI (`check.py full`), and before a pull request that changes `requirements.lock` |
 
 Why these numbers:
@@ -140,7 +140,8 @@ never reads the execution mode; the same in `cli.validate`, which passes
 codec name's case in `cli.report_file`. Not equivalent, and left as they were
 in the old `_validate`: `skill_copy_warnings(..., evals_path=None)` and without
 it in `cli.validate`, which differ only for an evals root inside the project
-holding a skill folder, which no test builds.
+holding a skill folder, which no test built until Later plan Task 65: now
+`test_validate_leaves_out_a_skill_copy_under_an_evals_path_inside_the_project` kills both.
 Later plan Task 50 (2026-11-13) adds two in `checks.stream._kilo_tool_calls`:
 `known = in_step = None` and `in_step = None` in place of `False`, which the
 function reads only through `not` and `and`, where `None` and `False` give the
@@ -150,6 +151,51 @@ in place of `False` in `_added_skips`, which `SequenceMatcher` reads only for
 truth; and `None` in place of `""` as `_marked`'s default, which stands for
 the end of the file either way, since a real result is never a blank line,
 and is only compared with other `_marked` results.
+Later plan Task 65 (2026-11-16) took the full run on `main` at `d947417` from 166
+survivors to 92 by killing 75 with tests (`tests/test_mutants_*.py`) and simplifying
+two functions; the project score measured 99.45%. Of the 92, those not explained above
+are these. The codec name's case or `encoding=None` (UTF-8 here) in `cli.write_junit`,
+`harbor_cache.check_cache`, `project_files._claude_code_assets` (two),
+`interference._load_records`, `harbor_tasks._host_variables`, `scoring._unquote`,
+`agent._run_with_overlay` (three), `agent.global_provider_settings`,
+`agent.copy_outputs` and `tasks._inline` (two, `"UTF-8"` and `"ASCII"`). Falsy stand-ins
+read only for truth: `ensure_ascii=None` in `cli._default_shown`; `docker=None` in
+`claude_code._run`; `None` for `False` in `checks.permissions.permission_held` (two),
+`checks.permissions._claude_held` and `checks.skills._kilo_calls` (three), as in
+`checks.stream` above; and in `validation._token_problems`, a `getattr` default of
+`None`, since `None is True` is false too. `keepends=None` or `True` in
+`project_files._import_paths`: an import is matched as non-space characters, so a line
+end never joins one. `break` for `continue` in `project_files.staged_imports`: the queue
+is breadth-first, so once one entry reaches the hop limit every later one has too.
+`check_target`'s `execution` default (two) and `None` passed for it in
+`targets.build_agent`, a parameter `check_target` never reads. The placeholder words
+`"quote"` and `"code"` in `improve._plain` (four), which only regexes ever read, and
+which no regex there matches in any of their mutated forms. A missing stream or result
+read as `"XXXX"` instead of `""` in `refusals._events`, `refusals._claude_refusals`,
+`tasks._without_the_named_agent` and `tasks._scenario_score` (two): it isn't JSON,
+holds no refusal and no fallback message, and `was_used` finds nothing in it.
+`redact` called on a falsy `said` in `tasks._redacted_refusal`, which returns it as it
+was. In `validation.frontmatter_value`: `enumerate(..., 2)` (the frontmatter then also
+holds its closing `---`, which matches no key and continues no value) and `maxsplit`
+removed or set to 2 (only the first piece is used). `'XXaeiouXX'` in `validation._a`,
+which differs only for a permission starting with "X", and permission names are
+lowercase. `tasks._sandbox_config`'s default target (two), compared only with
+`"claude-code"`. And `or True` on `target == "kilo"` in `tasks._scenario_task`:
+`plan.left_out` is non-empty only for Kilo's `bash` or `edit` permissions, which
+validation refuses on `claude-code`.
+Later plan Task 66 (`whitney watch`, 2026-11-15) adds 17. The codec name's case
+and `encoding=None` in `load_rules`, `rule_missing`, `env_secrets`, `_settings` and
+`_write_json` (twelve: `env_secrets` and `_write_json` each also without `encoding`), which read and write the same bytes under the UTF-8 locale every run
+here uses. The placeholder token `"checked"` written as `"XXcheckedXX"` or
+`"CHECKED"` in `_rule`, which only lets the check's own model validate the other
+parameters: any token does. `Repo.fingerprint` calling `git for-each-ref` without
+`--format`: the default format holds the same object names and ref names, plus each
+object's type, which can't change while the names stay the same. `hook = None` in
+place of `{}` in `_Handler.handle`, for a request that isn't JSON: the reply is `{}`
+either way, from the handler itself for `None`, and from the watcher, which says
+nothing to an event with no name, for `{}`. And
+`len(reply) <= MAX_REPLY` in `watch_client.ask`, which reads at most one more chunk
+from a reply already at the cap, and refuses it the same way.
 None of these depends on the platform.
 One more survives here but is not equivalent: `re` flag `1` in place of `0`
 in `_glob_parts` is a bit Python 3.13 and later give no meaning, but on 3.11
@@ -171,7 +217,7 @@ now kills it on every disk by simulating a case-sensitive one.
 ```bash
 pip install --require-hashes -r requirements.lock && pip install --no-deps -e .   # every extra; gitleaks and osv-scanner via brew
 python scripts/check.py fast       # after an edit, a few seconds
-python scripts/check.py task       # before handing work back: about a minute for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants)
+python scripts/check.py task       # before handing work back: about a minute for a small diff, longer as the diff grows (mutmut runs only the touched functions' mutants and the cached survivors)
 python scripts/check.py full       # reruns every mutant, and the dependency scan; run it on GitHub, not on a laptop (below)
 ```
 
@@ -184,7 +230,8 @@ runs its own workers; a plain `pytest` stays on one process too.
 CI runs on GitHub's hosted runners, which cost nothing for a public
 repository. Every pull request into main gets `check.py task`
 (`.github/workflows/checks.yml`), starting warm from the last weekly full
-run's mutmut results, so it mutates only the functions the diff touches.
+run's mutmut results, so it mutates only the functions the diff touches, and reruns the mutants
+that run left alive.
 `check.py full` runs from scratch every Sunday and on demand from the Actions
 tab (`.github/workflows/mutation-full.yml`); a fall in the project score fails
 that run, and GitHub emails the owner. Neither workflow edits this file: a
@@ -198,9 +245,12 @@ pull request that changes `requirements.lock`, so the dependency scan sees the
 new versions before the weekly run does, and on main before a release. The ratchet's mutation score
 was measured on a Mac; once the weekly run on main has a result, re-baseline it
 from that run and say so here, since macOS and Linux differ by a few survivors.
-`task` mutates only the functions the diff touches and judges them as above;
-its project mutation score is mutmut's cached results, the touched functions'
-fresh ones and every other function's last one, labelled as cached. It still
+`task` mutates only the functions the diff touches and judges them as above.
+It also reruns every mutant the cache says survived or no test reached, wherever
+it is, since a new or stronger test can kill one without the diff touching its
+function: a pull request that only adds tests (Later plan Task 65) otherwise
+couldn't show what it killed. Its project mutation score is mutmut's cached
+results, those fresh ones and every other mutant's last one, labelled as cached. It still
 enforces the ratchet, since each of those results was measured; mutants not
 checked since their function changed are left out and counted, and when they
 are more than 5% of all mutants, or there are no cached results, a score that

@@ -1,0 +1,2 @@
+whitney watch is watching 1 rule: "Never commit .env files or secrets" (AGENTS.md)
+Listening on /tmp/wr4tmatu_c/whitney-watch-7d80187bbf4456a8.sock. Ctrl-C to stop.
