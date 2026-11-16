@@ -1068,3 +1068,37 @@ def test_validate_gives_no_warning_about_files_inside_the_evals_folder(consumer,
 
     out = capsys.readouterr().out
     assert "warning:" not in out and out.endswith(" 0 warning(s)\n")
+
+
+def test_the_help_for_watch_shows_every_option_and_its_help(capsys):
+    assert cli.main(["--help"]) == 0
+    assert " ".join(cli.HELP["watch"].split()) in " ".join(capsys.readouterr().out.split())
+    assert cli.main(["watch", "--help"]) == 0
+    shown = " ".join(capsys.readouterr().out.split())
+    assert shown.startswith("usage: whitney watch [-h] [--project PROJECT] [--python PYTHON] [{run,install,uninstall}]")
+    for key in ("watch", "watch ACTION", "watch --project", "watch --python"):
+        assert " ".join(cli.HELP[key].split()) in shown, key
+
+
+def test_watch_runs_by_default_on_the_current_folder_with_this_python():
+    args = cli.parser().parse_args(["watch"])
+    assert (args.action, args.project, args.python) == ("run", ".", sys.executable)
+
+
+def test_watch_hands_its_action_project_and_python_to_whitney_watch(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(cli.watch, "command", lambda *a, **k: calls.append((a, k)) or 7)
+    assert cli.main(["watch", "install", "--project", str(tmp_path), "--python", "/usr/bin/python3"]) == 7
+    [(given, options)] = calls
+    assert given[:2] == ("install", tmp_path)
+    assert given[2] is sys.stdout
+    assert options == {"python": "/usr/bin/python3"}
+
+
+def test_watch_outside_a_git_repository_exits_2_saying_why(tmp_path, capsys):
+    (tmp_path / ".whitney").mkdir()
+    (tmp_path / ".whitney" / "watch.json").write_text(
+        '{"version": 1, "rules": [{"source": "AGENTS.md", "rule": "x", "check": "no_secret_committed"}]}'
+    )
+    assert cli.main(["watch", "--project", str(tmp_path)]) == 2
+    assert "isn't in a git repository" in capsys.readouterr().out

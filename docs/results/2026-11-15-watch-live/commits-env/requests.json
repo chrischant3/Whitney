@@ -1,0 +1,16 @@
+[
+  {
+    "path": "/v1/messages?beta=true",
+    "model": "claude-haiku-4-5",
+    "tools": 12,
+    "messages": 1,
+    "whitney_watch_text_in_request": false
+  },
+  {
+    "path": "/v1/messages?beta=true",
+    "model": "claude-haiku-4-5",
+    "tools": 12,
+    "messages": 3,
+    "whitney_watch_text_in_request": false
+  }
+]

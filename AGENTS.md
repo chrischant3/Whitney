@@ -27,6 +27,8 @@ None provided. Source proposal: docs/proposal.md. Agreed MVP decision: VS Code e
 ## Constraints
 Read CONSTRAINTS.md before writing code. Do not weaken it to make a change pass. Run `python scripts/check.py task` before handing work back.
 
+When `check.py` says a mutation score misses its bar, fix it before handing work back. That covers the functions you touched under 95%, and the project score more than 0.5 points under its recorded figure, even while either only warns. Kill each surviving mutant with a test of behaviour a user would see. Where no test can tell a mutant apart, explain it in CONSTRAINTS.md as an equivalent mutant. Do this even when the survivors came from `main` and not from your change: fix them in the same pull request, or in one of their own that this one waits for, and say which. Don't report a shortfall as someone else's and stop there. Never lower the recorded figure or widen the drift to get past it: only the maintainer does that, in a commit of its own.
+
 ## Evidence
 An agent gathers the evidence that a task is done. Write every verification and evidence step so an agent can carry it out and leave something a person can check afterwards: the command it ran, the output, a saved log or fixture, or a file under `docs/results/`. Don't write a step as "Manual:" or leave one for a person to do. If you can't see how an agent could gather a piece of evidence, say so and ask before writing the step. A decision that is the maintainer's to make, such as a changed expectation, is a decision to ask for. It is not a verification step. One exception, agreed 2026-11-11: the VS Code extension checklist (`docs/vscode-manual-check.md`) is run by a person with the extension installed.
 
