@@ -238,3 +238,35 @@ def test_a_path_exactly_at_the_limit_is_kept(monkeypatch, tmp_path):
     assert path.startswith(folder + "/") and len(path) == watch_client.MAX_SOCKET_PATH
     monkeypatch.setenv("XDG_RUNTIME_DIR", folder + "z")
     assert not watch_client.socket_path(str(tmp_path)).startswith(folder)
+
+
+class SlowWatcher(FakeWatcher):
+    """Sends its reply in two pieces with a pause between, then keeps the connection open."""
+
+    def _serve(self):
+        conn, _ = self.sock.accept()
+        with conn:
+            conn.recv(65536)
+            half = len(self.reply) // 2
+            conn.sendall(self.reply[:half])
+            time.sleep(0.2)
+            conn.sendall(self.reply[half:])
+            time.sleep(1.5)
+
+
+def test_a_reply_sent_in_two_pieces_is_put_together(runtime, tmp_path):
+    path = watch_client.socket_path(str(tmp_path))
+    fake = SlowWatcher(path, b'{"systemMessage": "first half and second half"}\n')
+    started = time.monotonic()
+    assert watch_client.ask(path, b"{}\n", timeout=1.0) == {"systemMessage": "first half and second half"}
+    assert time.monotonic() - started < 1.0, "the client waited past the end of the reply"
+    fake.close()
+
+
+def test_a_reply_that_isnt_an_object_says_so(runtime, tmp_path):
+    path = watch_client.socket_path(str(tmp_path))
+    fake = FakeWatcher(path, b"[1]\n")
+    with pytest.raises(ValueError) as error:
+        watch_client.ask(path, b"{}\n")
+    fake.close()
+    assert str(error.value) == "the watcher's reply wasn't a JSON object"

@@ -140,18 +140,18 @@ def test_a_missing_rules_file_says_how_to_make_one(project):
 
 def test_a_rule_still_in_its_source_is_found_whatever_the_spacing(project):
     (project / "AGENTS.md").write_text("- Never commit .env\n  files or   secrets\n")
-    assert watch.rule_missing(project, Rule("AGENTS.md", RULE_TEXT, "no_secret_committed")) is None
+    assert watch.rule_missing(project, "AGENTS.md", RULE_TEXT) is None
 
 
 def test_a_rule_edited_out_of_its_source_is_reported(project):
     (project / "AGENTS.md").write_text("- Commit what you like\n")
-    missing = watch.rule_missing(project, Rule("AGENTS.md", RULE_TEXT, "no_secret_committed"))
+    missing = watch.rule_missing(project, "AGENTS.md", RULE_TEXT)
     assert missing == f'"{RULE_TEXT}" is no longer in AGENTS.md'
 
 
 def test_a_rule_whose_source_is_gone_is_reported(project):
     (project / "AGENTS.md").unlink()
-    missing = watch.rule_missing(project, Rule("AGENTS.md", RULE_TEXT, "no_secret_committed"))
+    missing = watch.rule_missing(project, "AGENTS.md", RULE_TEXT)
     assert missing == f'AGENTS.md, the source of "{RULE_TEXT}", can\'t be read'
 
 
@@ -791,3 +791,424 @@ def test_install_also_hooks_failed_calls_and_the_end_of_a_turn(project):
     assert sorted(hooks) == sorted(["SessionStart", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"])
     assert hooks["PostToolUseFailure"][0]["matcher"] == "*"
     assert "matcher" not in hooks["Stop"][0]
+
+
+# --- pinned down after mutation testing, 2026-11-15 ---------------------------------
+
+
+def two_unknown_fields_message(project):
+    (project / ".whitney").mkdir()
+    (project / ".whitney" / "watch.json").write_text('{"version": 1, "rules": [], "zeta": 1, "alpha": 2}')
+    with pytest.raises(WatchError) as error:
+        watch.load_rules(project)
+    return str(error.value)
+
+
+def test_unknown_fields_are_listed_in_order_with_commas(project):
+    assert two_unknown_fields_message(project) == ".whitney/watch.json has unknown field(s): alpha, zeta"
+
+
+def test_the_checks_watch_can_judge_are_listed_with_commas(project, monkeypatch):
+    monkeypatch.setattr(watch, "LIVE_CHECKS", ("no_secret_committed", "no_file_edits"))
+    rules_file(project, [{**default_rule(), "check": "ran_before"}])
+    with pytest.raises(WatchError) as error:
+        watch.load_rules(project)
+    assert str(error.value).endswith("whitney watch can judge: no_secret_committed, no_file_edits")
+
+
+def test_a_value_holding_an_equals_sign_is_kept_whole(project):
+    (project / ".env").write_text("URL=postgres://u:p@h/db?sslmode=require\n")
+    assert watch.env_secrets(project) == {".env URL": "postgres://u:p@h/db?sslmode=require"}
+
+
+def test_a_value_of_exactly_the_minimum_length_counts(project):
+    (project / ".env").write_text("A=" + "x" * watch.MIN_SECRET_LENGTH + "\nB=" + "y" * (watch.MIN_SECRET_LENGTH - 1) + "\n")
+    assert watch.env_secrets(project) == {".env A": "x" * watch.MIN_SECRET_LENGTH}
+
+
+@pytest.mark.parametrize("quoted", ["'quoted # value'", '"quoted # value"'])
+def test_either_quote_is_taken_off_and_keeps_what_is_inside(project, quoted):
+    (project / ".env").write_text(f"A={quoted}\n")
+    assert watch.env_secrets(project) == {".env A": "quoted # value"}
+
+
+def test_an_unmatched_quote_is_kept(project):
+    (project / ".env").write_text("A='unterminated_value\n")
+    assert watch.env_secrets(project) == {".env A": "'unterminated_value"}
+
+
+def test_a_file_that_isnt_an_env_file_doesnt_stop_the_scan_of_its_folder(project):
+    (project / ".aaa").write_text("TOKEN=not_an_env_file_value\n")
+    assert ".env API_KEY" in watch.env_secrets(project)
+
+
+def test_an_env_file_of_exactly_the_size_cap_is_read_and_a_larger_one_doesnt_stop_the_scan(project, monkeypatch):
+    content = "TOKEN=at_the_cap_value\n"
+    (project / ".env").write_text(content)
+    (project / ".env.big").write_text(content + "x")
+    (project / ".env.zz").write_text("B=after_big_1\n")
+    monkeypatch.setattr(watch, "MAX_ENV_FILE_BYTES", len(content))
+    assert watch.env_secrets(project) == {".env TOKEN": "at_the_cap_value", ".env.zz B": "after_big_1"}
+
+
+def test_an_unreadable_env_file_doesnt_stop_the_scan_of_its_folder(project):
+    (project / ".env.broken").symlink_to(project / "nowhere")
+    (project / ".env.cfg").write_text("OTHER=after_the_broken_one\n")
+    assert watch.env_secrets(project)[".env.cfg OTHER"] == "after_the_broken_one"
+
+
+def test_an_env_file_that_isnt_utf_8_is_still_read(project):
+    (project / ".env").write_bytes(b"BAD=\xff\xfe_not_utf8\nGOOD=still_found_value\n")
+    assert watch.env_secrets(project)[".env GOOD"] == "still_found_value"
+
+
+def test_git_runs_without_locks_replace_refs_or_prompts(project):
+    env = watch.Repo(project).env
+    assert {name: env[name] for name in watch.GIT_ENV} == {"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_TERMINAL_PROMPT": "0"}
+
+
+def test_the_git_folder_is_found_as_an_absolute_path(project):
+    assert watch.Repo(project).git_dir == (project / ".git").resolve()
+
+
+def test_git_errors_that_arent_utf_8_are_still_reported(project):
+    with pytest.raises(WatchError, match="git cat-file failed: .*\ufffd"):
+        watch.Repo(project).git("cat-file", "-t", "nope\udcff")
+
+
+def test_a_commit_on_a_detached_head_changes_the_fingerprint(project):
+    repo = watch.Repo(project)
+    git(project, "checkout", "-q", "--detach")
+    git(project, "-c", "core.logAllRefUpdates=false", "commit", "-q", "--allow-empty", "-m", "detached")
+    before = repo.fingerprint()
+    git(project, "-c", "core.logAllRefUpdates=false", "commit", "-q", "--allow-empty", "-m", "detached again")
+    after = repo.fingerprint()
+    assert before[0] == after[0]
+    assert after != before
+
+
+def test_a_branch_commit_with_reflogs_off_changes_the_fingerprint(project):
+    (project / ".git" / "logs").rename(project / ".git" / "logs-off")
+    repo = watch.Repo(project)
+    before = repo.fingerprint()
+    git(project, "-c", "core.logAllRefUpdates=false", "commit", "-q", "--allow-empty", "-m", "no reflog")
+    assert repo.fingerprint() != before
+    assert repo.fingerprint()[2] == ()
+
+
+def test_a_reset_that_leaves_the_refs_as_they_were_changes_the_fingerprint(project):
+    repo = watch.Repo(project)
+    git(project, "commit", "-q", "--allow-empty", "-m", "made then dropped")
+    before = repo.fingerprint()
+    git(project, "reset", "-q", "--hard", "HEAD~1")
+    git(project, "reset", "-q", "--hard", "HEAD@{1}")
+    after = repo.fingerprint()
+    assert (before[0], before[1]) == (after[0], after[1])
+    assert after[2] != before[2]
+
+
+def test_files_in_folders_are_introduced_by_their_path(project):
+    (project / "config").mkdir()
+    (project / "config" / ".env").write_text("X=1\n")
+    git(project, "add", "config/.env")
+    git(project, "commit", "-q", "-m", "nested")
+    head = git(project, "rev-parse", "HEAD").strip()
+    assert [path for path, _ in watch.Repo(project).introduced(head)] == ["config/.env"]
+
+
+def test_a_merge_introduces_what_it_brings_from_the_other_branch(project):
+    git(project, "checkout", "-q", "-b", "side")
+    (project / "side.txt").write_text("side\n")
+    git(project, "add", "side.txt")
+    git(project, "commit", "-q", "-m", "side")
+    git(project, "checkout", "-q", "main")
+    (project / "main.txt").write_text("main\n")
+    git(project, "add", "main.txt")
+    git(project, "commit", "-q", "-m", "main")
+    git(project, "merge", "-q", "--no-ff", "--no-edit", "side")
+    merge = git(project, "rev-parse", "HEAD").strip()
+    assert sorted(path for path, _ in watch.Repo(project).introduced(merge)) == ["main.txt", "side.txt"]
+
+
+def test_a_file_renamed_to_env_is_introduced_even_with_rename_detection_on(project):
+    git(project, "config", "diff.renames", "true")
+    (project / ".env").unlink()
+    git(project, "mv", "app.py", ".env")
+    git(project, "commit", "-q", "-m", "rename")
+    head = git(project, "rev-parse", "HEAD").strip()
+    assert [path for path, _ in watch.Repo(project).introduced(head)] == [".env"]
+
+
+def test_a_submodule_isnt_introduced_as_a_file(project):
+    head = git(project, "rev-parse", "HEAD").strip()
+    git(project, "update-index", "--add", "--cacheinfo", f"160000,{head},vendored")
+    (project / "new.txt").write_text("x\n")
+    git(project, "add", "new.txt")
+    git(project, "commit", "-q", "-m", "submodule")
+    commit = git(project, "rev-parse", "HEAD").strip()
+    assert [path for path, _ in watch.Repo(project).introduced(commit)] == ["new.txt"]
+
+
+def test_a_file_name_that_isnt_utf_8_comes_back_escaped(project):
+    name = os.fsdecode(b"bad\xffname.txt")
+    (project / name).write_text("x\n")
+    git(project, "add", "-A", "--", name)
+    git(project, "commit", "-q", "-m", "odd bytes")
+    head = git(project, "rev-parse", "HEAD").strip()
+    assert [path for path, _ in watch.Repo(project).introduced(head)] == [name]
+
+
+def test_several_blobs_are_each_read_whole(project, monkeypatch):
+    repo = watch.Repo(project)
+    contents = [b"one\n", b"two two\n", b"", b"three\nlines", b"x" * 10]
+    shas = [repo.git("hash-object", "-w", "--stdin", stdin=content).decode().strip() for content in contents]
+    monkeypatch.setattr(watch, "MAX_BLOB_BYTES", 11)
+    assert repo.blobs(shas) == dict(zip(shas, contents))
+
+
+def test_a_blob_one_byte_over_the_cap_is_unread(project, monkeypatch):
+    repo = watch.Repo(project)
+    at, over = (repo.git("hash-object", "-w", "--stdin", stdin=b"x" * size).decode().strip() for size in (10, 11))
+    monkeypatch.setattr(watch, "MAX_BLOB_BYTES", 10)
+    assert repo.blobs([at, over]) == {at: b"x" * 10, over: None}
+
+
+def test_an_unread_blob_in_two_files_is_a_problem_for_each(project, monkeypatch):
+    monkeypatch.setattr(watch, "MAX_BLOB_BYTES", 3)
+    (project / "a.txt").write_text("too big\n")
+    (project / "b.txt").write_text("too big\n")
+    git(project, "add", "a.txt", "b.txt")
+    git(project, "commit", "-q", "-m", "big twice")
+    head = git(project, "rev-parse", "HEAD").strip()
+    state = watch.git_state(watch.Repo(project), [head], {".env API_KEY": SECRET})
+    assert sorted(problem.split(" ")[0] for problem in state.problems) == [f"{head[:12]}:a.txt", f"{head[:12]}:b.txt"]
+
+
+def test_rules_given_to_the_watcher_are_used_instead_of_the_file(project):
+    rule = Rule("AGENTS.md", RULE_TEXT, "no_secret_committed")
+    assert Watcher(project, rules=[rule]).rules == [rule]
+
+
+def test_a_tool_call_with_nothing_new_never_lists_the_commits(watcher, project, monkeypatch):
+    monkeypatch.setattr(watcher.repo, "commits", lambda: pytest.fail("listed the commits with nothing new"))
+    assert run_tool_call(watcher, project, "ls") == {}
+    assert run_tool_call(watcher, project, "ls", call="toolu_2") == {}
+
+
+def test_commits_judged_before_are_never_judged_again(watcher, project):
+    assert "systemMessage" in run_tool_call(watcher, project, "git add -A && git commit -q -m wip")
+    assert run_tool_call(watcher, project, "echo more >> app.py && git commit -q -am more", call="toolu_2") == {}
+
+
+def test_the_persons_commits_stay_absorbed_with_the_history_before_them(project):
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "an old .env commit, from before watching")
+    rules_file(project, [default_rule()])
+    watcher = Watcher(project)
+    (project / "mine.txt").write_text("mine\n")
+    git(project, "add", "mine.txt")
+    git(project, "commit", "-q", "-m", "the person's own commit")
+    assert run_tool_call(watcher, project, "echo more >> app.py && git commit -q -am more") == {}
+
+
+def test_the_alert_says_how_many_commits_the_agent_made(watcher, project):
+    assert "What happened: 1 new commit(s); " in run_tool_call(watcher, project, "git add -A && git commit -q -m wip")["systemMessage"]
+
+
+def test_the_alert_lays_out_each_line_and_lists_every_commit(watcher, project):
+    command = "git add .env && git commit -q -m one && git commit -q --allow-empty -m two"
+    message = run_tool_call(watcher, project, command)["systemMessage"]
+    commits = sorted(git(project, "rev-list", "-2", "HEAD").split())
+    lines = message.split("\n")
+    assert lines[0] == "whitney watch: a rule wasn't followed"
+    assert lines[1] == f'Rule: "{RULE_TEXT}" (AGENTS.md)'
+    assert lines[2].startswith("What happened: 2 new commit(s); committed env file(s): .env")
+    assert lines[3] == f"Commit(s): {commits[0][:12]}, {commits[1][:12]}"
+    assert lines[4] == f"In: Bash: {command}"
+    assert len(lines) == 5
+
+
+def test_two_broken_rules_are_two_blocks_with_a_blank_line_between(project):
+    rules_file(project, [default_rule(), {**default_rule(), "rule": "Keep secrets out of git"}])
+    message = run_tool_call(Watcher(project), project, "git add -A && git commit -q -m wip")["systemMessage"]
+    first, second = message.split("\n\n")
+    assert first.startswith("whitney watch:") and second.startswith("whitney watch:")
+    assert 'Rule: "Keep secrets out of git"' in second
+
+
+def test_a_skipped_rule_doesnt_stop_the_next_from_being_judged(project):
+    (project / ".env").write_text("DEBUG=true\n")
+    rules_file(project, [{**default_rule(), "params": {"env_files": False}}, {**default_rule(), "rule": "No env files"}])
+    message = run_tool_call(Watcher(project), project, "git add -A && git commit -q -m wip")["systemMessage"]
+    assert 'Rule: "No env files"' in message
+
+
+def test_a_rule_that_passes_doesnt_stop_the_next_from_being_judged(project):
+    rules_file(project, [{**default_rule(), "rule": "Values only", "params": {"env_files": False}}, {**default_rule(), "rule": "No env files"}])
+    (project / ".env.local").write_text("DEBUG=true\n")
+    message = run_tool_call(Watcher(project), project, "git add .env.local && git commit -q -m wip")["systemMessage"]
+    assert 'Rule: "No env files"' in message
+    assert "Values only" not in message
+
+
+def test_each_alert_is_kept_with_its_time_and_message(watcher, project):
+    before = time.time()
+    reply = run_tool_call(watcher, project, "git add -A && git commit -q -m wip")
+    [alert] = watcher.alerts
+    assert set(alert) == {"time", "outcome", "rule", "source", "message"}
+    assert before <= alert["time"] <= time.time()
+    assert alert["message"] == reply["systemMessage"]
+
+
+def test_session_start_lists_rules_with_semicolons_and_warnings_on_their_own_lines(project):
+    rules_file(project, [default_rule(), {**default_rule(), "rule": "Gone rule"}])
+    message = Watcher(project).handle({"hook_event_name": "SessionStart"})["systemMessage"]
+    assert message == (
+        f'whitney watch is watching 2 rules: "{RULE_TEXT}" (AGENTS.md); "Gone rule" (AGENTS.md)\n'
+        'Warning: "Gone rule" is no longer in AGENTS.md'
+    )
+
+
+def test_a_tool_input_that_isnt_an_object_shows_the_tool_alone(watcher, project):
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "wip")
+    reply = watcher.handle({"hook_event_name": "PostToolUse", "tool_name": "Odd", "tool_input": ["not", "an", "object"], "tool_use_id": "t"})
+    assert reply["systemMessage"].endswith("\nIn: Odd")
+
+
+@pytest.mark.parametrize("extra, shown", [(0, None), (1, "…")])
+def test_a_command_is_cut_only_when_longer_than_the_limit(watcher, project, extra, shown):
+    prefix = "git add -A && git commit -q -m "
+    command = prefix + "x" * (watch.MAX_SHOWN - len(prefix) + extra)
+    last = run_tool_call(watcher, project, command)["systemMessage"].split("\n")[-1]
+    assert last == f"In: Bash: {command[: watch.MAX_SHOWN]}{shown or ''}"
+
+
+def test_a_secret_that_contains_another_is_hidden_whole(project):
+    (project / ".env").write_text("SHORT=abcdefgh\nLONG=abcdefghijkl\n")
+    rules_file(project, [default_rule()])
+    command = "echo 'K=abcdefghijkl' > app.py && git add -A && git commit -q -m wip"
+    message = run_tool_call(Watcher(project), project, command)["systemMessage"]
+    assert "In: Bash: echo 'K=[secret]' > app.py" in message
+    assert "ijkl" not in message
+
+
+def test_install_writes_its_files_as_two_space_json_with_a_final_newline(project):
+    watch.install(project, python="/usr/bin/python3")
+    for name in (watch.SETTINGS_FILE, watch.RULES_FILE):
+        text = (project / name).read_text()
+        assert text == json.dumps(json.loads(text), indent=2) + "\n", name
+
+
+def test_install_names_the_python_it_was_given(project):
+    out = io.StringIO()
+    watch.command("install", project, out, python="/opt/given/python3")
+    command = json.loads((project / ".claude" / "settings.local.json").read_text())["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert command.startswith("/opt/given/python3 -I -S ")
+
+
+def test_install_into_an_existing_empty_whitney_folder(project):
+    (project / ".whitney").mkdir()
+    watch.install(project, python="/usr/bin/python3")
+    assert watch.load_rules(project)[0].source == "AGENTS.md"
+
+
+def test_install_watches_agents_md_when_no_file_holds_the_rule_yet(project):
+    (project / "AGENTS.md").write_text("# Rules\n")
+    (project / "CLAUDE.md").write_text("# Rules\n")
+    watch.install(project, python="/usr/bin/python3")
+    assert watch.load_rules(project)[0].source == "AGENTS.md"
+
+
+def test_install_keeps_settings_without_hooks_and_entries_it_doesnt_understand(project):
+    (project / ".claude").mkdir()
+    (project / ".claude" / "settings.local.json").write_text(json.dumps({"permissions": {"allow": []}}))
+    watch.install(project, python="/usr/bin/python3")
+    settings = json.loads((project / ".claude" / "settings.local.json").read_text())
+    settings["hooks"]["Stop"].insert(0, "not an entry")
+    (project / ".claude" / "settings.local.json").write_text(json.dumps(settings))
+    watch.install(project, python="/usr/bin/python3")
+    assert json.loads((project / ".claude" / "settings.local.json").read_text())["hooks"]["Stop"][0] == "not an entry"
+
+
+def test_uninstall_of_settings_without_hooks_does_nothing(project):
+    (project / ".claude").mkdir()
+    (project / ".claude" / "settings.local.json").write_text('{"permissions": {}}')
+    assert watch.uninstall(project) is False
+    assert (project / ".claude" / "settings.local.json").read_text() == '{"permissions": {}}'
+
+
+def test_uninstall_of_only_its_own_hooks_leaves_no_hooks_key(project):
+    watch.install(project, python="/usr/bin/python3")
+    assert watch.uninstall(project) is True
+    text = (project / ".claude" / "settings.local.json").read_text()
+    assert text == "{}\n"
+
+
+def test_a_hook_entry_with_no_command_isnt_taken_for_this_ones(project):
+    (project / ".claude").mkdir()
+    entry = {"hooks": [{"type": "prompt", "prompt": "check"}]}
+    (project / ".claude" / "settings.local.json").write_text(json.dumps({"hooks": {"Stop": [entry]}}))
+    watch.install(project, python="/usr/bin/python3")
+    assert json.loads((project / ".claude" / "settings.local.json").read_text())["hooks"]["Stop"][0] == entry
+
+
+def test_an_oversized_request_is_cut_off_and_answered_with_nothing(watcher, project, short_dir, monkeypatch):
+    from whitney import watch_client
+
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_dir / "run"))
+    monkeypatch.setattr(watch, "MAX_REQUEST", 100)
+    server = watch.start_server(watcher, watch.prepare_socket(project))
+    try:
+        line = json.dumps({"hook_event_name": "SessionStart", "padding": "p" * 200}).encode() + b"\n"
+        assert watch_client.ask(watch_client.socket_path(str(project)), line) == {}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_socket_error_names_the_reason_without_its_number(watcher, tmp_path):
+    with pytest.raises(WatchError) as error:
+        watch.start_server(watcher, str(tmp_path / "missing" / "watch.sock"))
+    assert str(error.value) == f"can't listen on {tmp_path / 'missing' / 'watch.sock'}: No such file or directory"
+
+
+def test_the_server_thread_is_a_daemon(watcher, project, short_dir, monkeypatch):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_dir / "run"))
+    server = watch.start_server(watcher, watch.prepare_socket(project))
+    try:
+        assert server.thread.daemon is True
+        assert server.thread.is_alive()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_install_command_says_how_to_go_on(project):
+    out = io.StringIO()
+    watch.command("install", project, out, python="/usr/bin/python3")
+    assert out.getvalue().endswith(
+        f"Start the watcher with: whitney watch --project {project}\n"
+        "Then start Claude Code in the project. Its SessionStart message says what is watched.\n"
+    )
+
+
+def test_each_alert_the_watcher_prints_has_the_time(watcher, project, short_dir, monkeypatch):
+    import re
+
+    from whitney import watch_client
+
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_dir / "run"))
+    out, stop = io.StringIO(), threading.Event()
+    thread = threading.Thread(target=lambda: watch.run(project, out, stop))
+    thread.start()
+    path = watch_client.socket_path(str(project))
+    deadline = time.monotonic() + 10
+    while "Listening" not in out.getvalue() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "wip")
+    watch_client.ask(path, watch_client.request(bash("git commit")))
+    stop.set()
+    thread.join(timeout=10)
+    assert re.search(r"\n\n\[\d\d:\d\d:\d\d\] whitney watch: a rule wasn't followed\n", out.getvalue())

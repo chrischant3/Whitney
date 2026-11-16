@@ -77,6 +77,8 @@ MAX_ENV_FILE_BYTES = 1024 * 1024
 # A committed file larger than this isn't searched for secrets, and the verdict says so.
 MAX_BLOB_BYTES = 5 * 1024 * 1024
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__"}
+# git without locks it can do without (the agent's own git may be running), replace refs or prompts.
+GIT_ENV = {"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_TERMINAL_PROMPT": "0"}
 # The most characters of a tool call's command an alert shows.
 MAX_SHOWN = 200
 MAX_REQUEST = 1024 * 1024
@@ -161,15 +163,15 @@ def _no_unknown(entry: dict, known: set[str], where: str) -> None:
         raise WatchError(f"{where} has unknown field(s): {', '.join(unknown)}")
 
 
-def rule_missing(project: Path, rule: Rule) -> str | None:
-    """Why the rule's words aren't in its source file any more, or None if they are, whatever the spacing."""
+def rule_missing(project: Path, source: str, words: str) -> str | None:
+    """Why a rule's `words` aren't in its `source` file any more, or None if they are, whatever the spacing."""
     try:
-        text = (Path(project) / rule.source).read_text(encoding="utf-8")
+        text = (Path(project) / source).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return f'{rule.source}, the source of "{rule.rule}", can\'t be read'
-    if " ".join(rule.rule.split()) in " ".join(text.split()):
+        return f'{source}, the source of "{words}", can\'t be read'
+    if " ".join(words.split()) in " ".join(text.split()):
         return None
-    return f'"{rule.rule}" is no longer in {rule.source}'
+    return f'"{words}" is no longer in {source}'
 
 
 def env_secrets(project: Path) -> dict[str, str]:
@@ -209,7 +211,8 @@ def _env_values(text: str) -> list[tuple[str, str]]:
         if not equals or line.startswith("#"):
             continue
         value = value.strip()
-        if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
+        quote = value[:1]
+        if quote in ("'", '"') and value.endswith(quote):
             value = value[1:-1]
         else:
             value = value.split(" #")[0].strip()
@@ -229,7 +232,7 @@ class Repo:
     def __init__(self, project: Path):
         self.project = Path(project)
         self.env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
-        self.env.update({"GIT_OPTIONAL_LOCKS": "0", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_TERMINAL_PROMPT": "0"})
+        self.env.update(GIT_ENV)
         try:
             self.git_dir = Path(self.git("rev-parse", "--absolute-git-dir").decode().strip())
         except WatchError:
@@ -241,24 +244,21 @@ class Repo:
         Raises:
             WatchError: git failed.
         """
-        done = subprocess.run(
-            ["git", "-C", str(self.project), *args], input=stdin, capture_output=True, env=self.env, check=False
-        )
+        done = subprocess.run(["git", "-C", str(self.project), *args], input=stdin, capture_output=True, env=self.env)
         if done.returncode != 0:
             raise WatchError(f"git {args[0]} failed: {done.stderr.decode(errors='replace').strip()}")
         return done.stdout
 
     def fingerprint(self) -> tuple:
-        """Something that changes whenever a commit is made: the refs, HEAD and its reflog's size and time."""
+        """Something that changes whenever a commit is made: the refs, the HEAD file, and HEAD's reflog's size and time.
+
+        The HEAD file names the commit on a detached HEAD, which no ref does;
+        the reflog changes on a commit even where the refs end as they began.
+        """
         refs = self.git("for-each-ref", "--format=%(objectname) %(refname)")
-        head = subprocess.run(
-            ["git", "-C", str(self.project), "rev-parse", "-q", "--verify", "HEAD"], capture_output=True, env=self.env, check=False
-        ).stdout
-        try:
-            log = (self.git_dir / "logs" / "HEAD").stat()
-            reflog = (log.st_size, log.st_mtime_ns)
-        except FileNotFoundError:
-            reflog = None
+        head = (self.git_dir / "HEAD").read_bytes()
+        log = self.git_dir / "logs" / "HEAD"
+        reflog = (log.stat().st_size, log.stat().st_mtime_ns) if log.exists() else ()
         return refs, head, reflog
 
     def commits(self) -> set[str]:
@@ -267,14 +267,12 @@ class Repo:
 
     def introduced(self, commit: str) -> list[tuple[str, str]]:
         """(path, blob) for each file `commit` added or changed, against each of its parents."""
-        raw = self.git("diff-tree", "-r", "-z", "--no-commit-id", "--root", "-m", "--no-renames", "--diff-filter=AMT", commit)
-        parts = raw.decode("utf-8", errors="surrogateescape").split("\0")
-        found: dict[tuple[str, str], None] = {}
-        for meta, path in zip(parts[0::2], parts[1::2]):
-            fields = meta.split()
-            if len(fields) == 5 and fields[1] != "160000":
-                found[(path, fields[3])] = None
-        return list(found)
+        # Plumbing: diff-tree never detects renames, whatever diff.renames says, so a file renamed to .env is added.
+        raw = self.git("diff-tree", "-r", "-z", "--no-commit-id", "--root", "-m", "--diff-filter=AMT", commit)
+        parts = raw.decode(errors="surrogateescape").split("\0")
+        entries = [(path, meta.split()) for meta, path in zip(parts[0::2], parts[1::2])]
+        # A submodule (mode 160000) is a commit, not a file whose content can be searched.
+        return list(dict.fromkeys((path, fields[3]) for path, fields in entries if fields[1:2] != ["160000"]))
 
     def blobs(self, shas: Iterable[str]) -> dict[str, bytes | None]:
         """Each blob's content, or None for one over MAX_BLOB_BYTES or missing from the repository (a partial clone)."""
@@ -288,12 +286,10 @@ class Repo:
             if size.isdigit() and int(size) <= MAX_BLOB_BYTES:
                 small.append(sha)
         out = self.git("cat-file", "--batch", stdin="".join(f"{s}\n" for s in small).encode())
-        at = 0
-        for sha in small:
-            header_end = out.index(b"\n", at)
-            size = int(out[at:header_end].split()[2])
-            result[sha] = out[header_end + 1 : header_end + 1 + size]
-            at = header_end + 1 + size + 1
+        while out:
+            header, _, out = out.partition(b"\n")
+            sha, _, size = header.decode().split()
+            result[sha], out = out[: int(size)], out[int(size) + 1 :]
         return result
 
 
@@ -333,7 +329,7 @@ class Watcher:
         self.known = self.repo.commits()
         self.seen = self.repo.fingerprint()
         self.alerts: list[dict] = []
-        self.on_alert: Callable[[str], None] | None = None
+        self.on_alert: Callable[[str], None] = _ignore
 
     def handle(self, hook: Mapping[str, Any]) -> dict:
         """The reply for one hook event: {"systemMessage": ...} to tell the person something, else {}."""
@@ -364,7 +360,7 @@ class Watcher:
         count = len(self.rules)
         listed = "; ".join(f'"{rule.rule}" ({rule.source})' for rule in self.rules)
         lines = [f"whitney watch is watching {count} rule{'' if count == 1 else 's'}: {listed}"]
-        lines += [f"Warning: {missing}" for rule in self.rules if (missing := rule_missing(self.project, rule))]
+        lines += [f"Warning: {missing}" for rule in self.rules if (missing := rule_missing(self.project, rule.source, rule.rule))]
         return "\n".join(lines)
 
     def _new_commits(self) -> set[str]:
@@ -393,16 +389,21 @@ class Watcher:
                 continue
             message = _redacted(alert_text(rule, verdict, new, hook), secrets.values())
             self.alerts.append({"time": time.time(), "outcome": verdict.outcome, "rule": rule.rule, "source": rule.source, "message": message})
-            if self.on_alert:
-                self.on_alert(message)
+            self.on_alert(message)
             blocks.append(message)
         return {"systemMessage": "\n\n".join(blocks)} if blocks else {}
 
 
+def _ignore(message: str) -> None:
+    """The watcher's alert callback until start_server sets one."""
+
+
 def _tool_event(hook: Mapping[str, Any]) -> str:
-    """The tool call as one Claude Code stream event, the shape the checks read tool inputs from."""
-    call = {"type": "tool_use", "id": hook.get("tool_use_id"), "name": hook.get("tool_name"), "input": hook.get("tool_input") or {}}
-    return json.dumps({"type": "assistant", "message": {"content": [call]}})
+    """The tool call's input as one event line, where history_erasure reads tool inputs (anything under "input").
+
+    It is the only part of the stream no_secret_committed reads.
+    """
+    return json.dumps({"input": hook.get("tool_input")})
 
 
 def alert_text(rule: Rule, verdict: Verdict, commits: list[str], hook: Mapping[str, Any]) -> str:
@@ -458,15 +459,15 @@ def install(project: Path, python: str = sys.executable) -> list[Path]:
         if event not in NO_MATCHER:
             entry = {"matcher": "*", **entry}
         hooks[event] = [*(e for e in hooks.get(event, []) if not _ours(e)), entry]
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    settings_path.parent.mkdir(exist_ok=True)
+    _write_json(settings_path, settings)
     written = [settings_path]
     rules_path = project / RULES_FILE
     if not rules_path.exists():
-        source = next((s for s in DEFAULT_SOURCES if rule_missing(project, Rule(s, DEFAULT_RULE, LIVE_CHECKS[0])) is None), DEFAULT_SOURCES[0])
-        rules_path.parent.mkdir(parents=True, exist_ok=True)
+        source = next((s for s in DEFAULT_SOURCES if rule_missing(project, s, DEFAULT_RULE) is None), DEFAULT_SOURCES[0])
+        rules_path.parent.mkdir(exist_ok=True)
         rule = {"source": source, "rule": DEFAULT_RULE, "check": LIVE_CHECKS[0]}
-        rules_path.write_text(json.dumps({"version": 1, "rules": [rule]}, indent=2) + "\n", encoding="utf-8")
+        _write_json(rules_path, {"version": 1, "rules": [rule]})
         written.append(rules_path)
     return written
 
@@ -477,20 +478,18 @@ def uninstall(project: Path) -> bool:
     if not settings_path.exists():
         return False
     settings = _settings(settings_path)
-    hooks = settings.get("hooks", {})
-    changed = False
-    for event in list(hooks):
-        kept = [entry for entry in hooks[event] if not _ours(entry)]
-        changed = changed or len(kept) != len(hooks[event])
-        if kept:
-            hooks[event] = kept
-        else:
-            del hooks[event]
-    if not hooks:
-        settings.pop("hooks", None)
-    if changed:
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-    return changed
+    hooks = settings.pop("hooks", {})
+    kept = {event: [entry for entry in entries if not _ours(entry)] for event, entries in hooks.items()}
+    kept = {event: entries for event, entries in kept.items() if entries}
+    if kept == hooks:
+        return False
+    _write_json(settings_path, {**settings, "hooks": kept} if kept else settings)
+    return True
+
+
+def _write_json(path: Path, value: object) -> None:
+    """`value` as JSON indented by two spaces, as Claude Code's own settings files are, ending in a newline."""
+    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
 def _settings(path: Path) -> dict:
@@ -500,7 +499,7 @@ def _settings(path: Path) -> dict:
         settings = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
         raise WatchError(f"{path} isn't valid JSON; fix it or move it aside") from None
-    hooks = settings.get("hooks", {}) if isinstance(settings, dict) else None
+    hooks = settings.get("hooks", {}) if isinstance(settings, dict) else []
     if not isinstance(hooks, dict) or not all(isinstance(entries, list) for entries in hooks.values()):
         raise WatchError(f"{path} isn't the shape Claude Code reads: an object whose hooks map each event to a list")
     return settings
@@ -508,9 +507,7 @@ def _settings(path: Path) -> dict:
 
 def _ours(entry: object) -> bool:
     hooks = entry.get("hooks") if isinstance(entry, dict) else None
-    return isinstance(hooks, list) and any(
-        isinstance(hook, dict) and "watch_client.py" in str(hook.get("command", "")) for hook in hooks
-    )
+    return isinstance(hooks, list) and any(isinstance(hook, dict) and "watch_client.py" in str(hook.get("command")) for hook in hooks)
 
 
 # --- the socket ----------------------------------------------------------------------------
@@ -530,8 +527,7 @@ def prepare_socket(project: Path) -> str:
         raise WatchError(f"{folder} is a folder others can open, so the watcher's socket can't go there")
     if os.path.lexists(path):
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-                conn.settimeout(0.5)
+            with socket.socket(socket.AF_UNIX) as conn:
                 conn.connect(path)
         except OSError:
             os.unlink(path)
@@ -546,7 +542,7 @@ class _Handler(socketserver.StreamRequestHandler):
         try:
             hook = json.loads(line)
         except ValueError:
-            hook = None
+            hook = {}
         reply = self.server.watcher.handle(hook) if isinstance(hook, dict) else {}
         self.wfile.write(json.dumps(reply).encode() + b"\n")
 
@@ -555,7 +551,7 @@ class _Server(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
 
 
-def start_server(watcher: Watcher, path: str, on_alert: Callable[[str], None] | None = None) -> _Server:
+def start_server(watcher: Watcher, path: str, on_alert: Callable[[str], None] = _ignore) -> _Server:
     """Serve `watcher` on the socket at `path`, in a background thread; call shutdown() and server_close() to stop.
 
     Raises:
@@ -567,7 +563,9 @@ def start_server(watcher: Watcher, path: str, on_alert: Callable[[str], None] | 
     except OSError as error:
         raise WatchError(f"can't listen on {path}: {error.strerror or error}") from None
     server.watcher = watcher
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # A daemon thread, so a watcher that is never shut down can't keep Python from exiting.
+    server.thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server.thread.start()
     return server
 
 
@@ -607,8 +605,7 @@ def run(project: Path, out: TextIO, stop: threading.Event) -> int:
 
     server = start_server(watcher, path, on_alert=report)
     try:
-        while not stop.wait(0.2):
-            pass
+        stop.wait()
     except KeyboardInterrupt:
         out.write("stopped\n")
     finally:

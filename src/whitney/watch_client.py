@@ -80,7 +80,7 @@ def ask(path: str, line: bytes, timeout: float = TIMEOUT) -> dict:
         OSError: no watcher answered in time.
         ValueError: the reply wasn't a JSON object.
     """
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+    with socket.socket(socket.AF_UNIX) as conn:
         conn.settimeout(timeout)
         conn.connect(path)
         conn.sendall(line)
