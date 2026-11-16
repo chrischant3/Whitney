@@ -29,6 +29,7 @@ Real runs cost money. Each task gives a rough cost, and anything over a few cent
 5. The other items in any order. Each says what it needs.
 6. Task 65 (the project mutation score) after PR #66 merges, since it renames `validate` and changes `cli`, where 31 of its survivors are.
 7. Task 66 (spike: live alerts) in any order. It reads hook events, so it can use what Task 44 learns, but doesn't wait for it.
+8. Task 67 (a variant that keeps one file, on `kilo`) starts with its journey in `tests/journeys/`, written first. Task 68 (the same on `claude-code`) follows it.
 
 Not covered here: the open decisions and the "Follow-ups recorded but not yet tasks" in [todo-phase5.md](todo-phase5.md). They stay where they are.
 
@@ -314,6 +315,52 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 **Dependencies:** none. **Size:** S. **Cost:** cents.
 
 **Done 2026-11-13:** Kilo 7.8.27 doesn't read `REVIEW.md` in `kilo run`, at the root or in `.kilo/`, in an ordinary run or in `/review`; it is a setting of Kilo's cloud review, read at the root of the base branch. Six Haiku runs, $0.105, compared in [spike-findings.md](../docs/spike-findings.md#later-task-49-kilos-code-review-and-reviewmd-2026-11-13). No follow-on task, since it doesn't work headlessly.
+
+### Task 67: A variant that keeps one instruction file and leaves out the others, on `kilo`
+
+**Description:** Each instruction file has its own eval file, and its default baseline leaves out that file only. The Δ therefore shows what the file adds given every other file, and a rule repeated in another file hides it. `examples/consumer/CLAUDE.md` repeats `AGENTS.md`'s rule word for word; the example's `agents-md.json` avoids the trap with a baseline that removes `["AGENTS.md", "CLAUDE.md"]` by hand, a list that goes stale when someone adds a rules file. A user can't simply ask how a file does on its own. A `keep` field, the opposite of `remove`, closes the gap: `{"role": "baseline", "keep": ["AGENTS.md"]}` stages the named paths and the config, and leaves out every other staged file. Decided 2026-11-16: the gate stays on `template`; the `keep` variant is reported beside it and doesn't gate, as every non-template variant already is (`report.py`, the gate).
+
+**Scope:**
+- In: `keep` on the `Variant` model in `src/whitney/evalfile.py`, a list of staged paths; a path ending in `/` keeps everything under it. What stays besides: every Kilo config in `CONFIG_PATHS` (`src/whitney/project_files.py`), which a Kilo run needs. Everything else staged goes, including the other root instruction files, rules folders, `.kilocodemodes`, modes, workflows, files matched by `instructions`, skills, agents and commands.
+- In: validate refuses, naming the field: `keep` with `remove`; a `keep` path that isn't staged; a `keep` that changes nothing; a repeated or overlapping `keep` entry (as `repeated_removes` does); a `set` on a file `keep` leaves out; a path inside a skill folder (keep a skill by its folder); and a `keep` variant that leaves out the command or agent a scenario names, since without it `kilo run --command` fails and `--agent` falls back to Kilo's default agent.
+- In: `keep` is applied as written. `for_kilo_skill_copies` doesn't widen it, and `trigger_control` is unchanged.
+- In: a seventh journey, `tests/journeys/one-file-at-a-time.feature`, written first and failing until `keep` exists: a Kilo project whose `CLAUDE.md` repeats `AGENTS.md`'s rule, with a fake `kilo` that obeys the rule wherever it reads it. The report shows the rule passing on its own and adding nothing beside its copy.
+- In: `docs/adding-tests.md` ("Variants") and `docs/whitney-explained.md`.
+- Out: `claude-code` (Task 68). There `keep` is refused by validate until Task 68 lands.
+- Out: a `--isolated` flag, isolation as the default baseline, and gating on the `keep` variant. Each changes results users already see; a follow-on if wanted.
+- Out: nested instruction files (Task 48).
+
+**Acceptance criteria:**
+- [ ] A `keep` variant on `kilo` runs with only the kept paths and the config staged: the report's "Staged files" column for it lists exactly those.
+- [ ] Each refusal above has a test, and each message names the field.
+- [ ] `keep` on `claude-code` is refused with a message pointing to Task 68's limitation.
+- [ ] The new journey passes, and fails when `keep` is ignored (shown by breaking it by hand).
+
+**Verification:**
+- [ ] The journey, and `whitney validate --target kilo` on `examples/consumer` with a `keep` variant added to `agents-md.json`. No real run: the fake shows Whitney stages and reports the variant as described; whether a real model behaves differently with one file is a question for the user's own runs.
+
+**Dependencies:** none (PR #80, the journeys, merged on 2026-11-14). **Size:** M. **Cost:** no model calls.
+
+### Task 68: `keep` on `claude-code`
+
+**Description:** Task 67's `keep` on the second target. Two things differ there. Claude Code doesn't read `AGENTS.md` beside a `CLAUDE.md`, so the loader never stages it (`IGNORED_REASON` in `src/whitney/project_files.py`), and `keep: ["AGENTS.md"]` would name a file that isn't staged. And a `CLAUDE.md` can pull in other files with `@path` imports, which the loader stages flat.
+
+**Scope:**
+- In: for a `keep` variant naming `AGENTS.md` or `.claude/AGENTS.md` in a project with a `CLAUDE.md`, the loader stages that `AGENTS.md` for the variant only and leaves every `CLAUDE.md` out. The report says so in the variant's staged files.
+- In: a kept file's `@path` imports stay with it, so `keep: ["CLAUDE.md"]` in a project whose `CLAUDE.md` is `@AGENTS.md` runs the rule. This needs the import graph, which `apply_variant` doesn't see today.
+- In: what stays besides: `.claude/settings.json`'s `permissions` block. `for_claude_code_instructions` doesn't widen `keep`.
+- In: a `claude-code` example in the Task 67 journey, and the docs.
+- Out: as Task 67.
+
+**Acceptance criteria:**
+- [ ] `keep: ["AGENTS.md"]` beside a `CLAUDE.md` runs with `AGENTS.md` staged and no `CLAUDE.md`, and the report says why.
+- [ ] `keep: ["CLAUDE.md"]` keeps the files it imports, and drops a file only another instruction file imports.
+- [ ] Task 67's refusal of `keep` on `claude-code` is removed, and its test changed with Christopher's confirmation.
+
+**Verification:**
+- [ ] The journey's `claude-code` example and `whitney validate --target claude-code` on `examples/consumer`. No real run, for the reason in Task 67.
+
+**Dependencies:** Task 67. **Size:** S to M. **Cost:** no model calls.
 
 ---
 
