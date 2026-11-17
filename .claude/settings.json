@@ -7,10 +7,18 @@
         "ref": "0.6.9",
         "sha": "84ee50673804b95c287d1e4eb4f1c1dad7c5188a"
       }
+    },
+    "skills": {
+      "source": {
+        "source": "github",
+        "repo": "thoughtbot/skills",
+        "ref": "4de93b79bb381e513bd7536b8cdd1bd75df7d475"
+      }
     }
   },
   "enabledPlugins": {
-    "agent-skills@addy-agent-skills": true
+    "agent-skills@addy-agent-skills": true,
+    "rails-consultant@skills": true
   },
   "permissions": {
     "allow": [
