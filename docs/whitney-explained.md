@@ -170,7 +170,7 @@ Two steps above are left out of the tests, because only a real run shows them: r
 - **Small samples.** With 6 tasks × 3 runs, Whitney shows big effects, not small ones.
 - **Kilo's permissions aren't a security wall.** They only make the assistant ask before acting, and some shell commands get round them. Docker is the only real isolation.
 - **Claude Code needs `ANTHROPIC_API_KEY`.**
-- **Which file wins when two rule files disagree isn't tested yet.** Task 48, a spike on how rule files in subfolders are loaded, is planned.
+- **Which file wins when two rule files disagree isn't tested yet.** Task 48, a spike on how rule files in subfolders are loaded, is planned. A local rule that contradicts one it imports is [#88](https://github.com/chrischant3/Whitney/issues/88).
 
 ## Words you'll see in the repo
 

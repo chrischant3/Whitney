@@ -86,7 +86,7 @@ A real model was not used. What a real model does after seeing the alert can't b
 
 ## What it can't do yet
 
-- **Claude Code only.** Kilo needs a plugin as its client (Kilo's plugins are JavaScript in Kilo's own process). That is the next task.
+- **Claude Code only.** Kilo needs a plugin as its client (Kilo's plugins are JavaScript in Kilo's own process). Whether to build `whitney watch` further, and its first task on each target, is still to be decided ([#101](https://github.com/chrischant3/Whitney/issues/101)).
 - **One kind of rule.** Prose rules ("write tests first") need a judge, and no live judge exists yet.
 - **Unix only**, because of the socket.
 - **Shown in the VS Code extension: not checked.** Claude Code's docs don't say how the extension shows a `systemMessage`. `docs/vscode-manual-check.md` is where a person would record it.

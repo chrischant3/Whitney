@@ -502,7 +502,7 @@ Claude Code's refusal under `deny` is "Permission to use Bash with command … h
 
 What `whitney validate` refuses:
 
-- **Any tool but `Bash`, or `Bash` with no `pattern`.** Only `Bash(<pattern>)` has been captured being refused ([spike findings](spike-findings.md#phase-5-task-37-claude-codes-stream-for-a-project-permission-rule-2026-11-11)).
+- **Any tool but `Bash`, or `Bash` with no `pattern`.** Only `Bash(<pattern>)` has been captured being refused ([spike findings](spike-findings.md#phase-5-task-37-claude-codes-stream-for-a-project-permission-rule-2026-11-11)), and only for `Bash(git push:*)`. Validation doesn't look at the pattern's shape: how Claude Code matches a wildcard in the middle of a pattern, such as `Bash(git push * main*)`, hasn't been recorded ([#84](https://github.com/chrischant3/Whitney/issues/84)).
 - **A rule that isn't in the staged settings under the check's `action`.** The message lists the rules that are there.
 - **A rule under `allow`.** It refuses nothing.
 - **A file that leaves `variants` out.** The default baseline would remove the whole settings file, and the eval's own grant would decide.

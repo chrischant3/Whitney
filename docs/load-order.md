@@ -204,7 +204,7 @@ Imports are capped. Past **100 imported files** (`IMPORT_MAX_FILES`) or **8 MiB 
 
 **A known limit: hard links.** A hard link is a second name for the same file, and nothing about it says the file lives elsewhere, so an import of a hard link to a file outside the project is staged as if it were the project's own. Git doesn't keep hard links (a clone has a plain copy), so this arises only in a working folder made on the machine running the eval. The loader doesn't refuse a file with more than one link, since ordinary files can have them. Before 2026-11-12 imported files weren't staged at all, and a `CLAUDE.md` of `@AGENTS.md` reached the run empty.
 
-**Not staged, a known gap:** `.claude/rules/*.md`. Claude Code loads the rules there that have no `paths` field at launch, and the run sent one; the loader names `.claude/rules/` as "rest of .claude/" and stages none of it.
+**Not staged, a known gap:** `.claude/rules/*.md`. Claude Code loads the rules there that have no `paths` field at launch, and the run sent one; the loader names `.claude/rules/` as "rest of .claude/" and stages none of it ([#87](https://github.com/chrischant3/Whitney/issues/87)).
 
 ### Skills and agents
 

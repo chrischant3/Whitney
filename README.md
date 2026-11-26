@@ -106,10 +106,10 @@ The benchmark evals, `ifevalcode` and `bigcodebench_hard_complete`, test the age
 Not supported yet:
 
 - **A new kind of rule.** A rule such as "write the commit message in the imperative" needs Python: a new check under `src/whitney/checks/`, registered with `check(...)`. `whitney run` and `inspect eval` run any eval file through `scenario_eval` (below); the deprecated `scripts/run_evals.py` reads only `evals/agents-md.json` and `evals/configuration/kilo-jsonc.json`.
-- **Claude Code settings other than permissions.** With `--project-path`, the `claude-code` target copies the instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md` ([Claude Code's memory docs](https://code.claude.com/docs/en/memory.md)). It also copies `.claude/skills/` and `.claude/agents/`, and the `allow`, `ask` and `deny` lists of the `permissions` block of `.claude/settings.json`, so the project's `deny` and `ask` rules apply. The rest of `settings.json` isn't copied, so its hooks never run. Claude Code itself ignores a project's `allow` rules in a folder nobody has trusted, as an eval's temporary project is, so those rules aren't tested: what the agent may do comes from the eval file's `harness_permissions` ([results](docs/results/2026-11-12-claude-code-permissions.md)). `CLAUDE.local.md` is personal, so it isn't copied. The rest of `.claude/`, such as commands, isn't copied either, and the report lists what was left out and why.
-- **Which instruction wins** when two files disagree.
+- **Claude Code settings other than permissions.** With `--project-path`, the `claude-code` target copies the instruction files Claude Code reads, under their own names: the root `CLAUDE.md` and `.claude/CLAUDE.md`, or, when neither exists, `AGENTS.md` and `.claude/AGENTS.md` ([Claude Code's memory docs](https://code.claude.com/docs/en/memory.md)). It also copies `.claude/skills/` and `.claude/agents/`, and the `allow`, `ask` and `deny` lists of the `permissions` block of `.claude/settings.json`, so the project's `deny` and `ask` rules apply. The rest of `settings.json` isn't copied, so its hooks never run. Claude Code itself ignores a project's `allow` rules in a folder nobody has trusted, as an eval's temporary project is, so those rules aren't tested: what the agent may do comes from the eval file's `harness_permissions` ([results](docs/results/2026-11-12-claude-code-permissions.md)). `CLAUDE.local.md` is personal, so it isn't copied. The rest of `.claude/`, such as commands, isn't copied either, and the report lists what was left out and why. That includes `.claude/rules/`, which Claude Code reads as instructions: a rule kept there isn't in the run, and the report names it only as "rest of .claude/" ([#87](https://github.com/chrischant3/Whitney/issues/87)). Hooks ([#85](https://github.com/chrischant3/Whitney/issues/85)) and plugins enabled in the settings ([#86](https://github.com/chrischant3/Whitney/issues/86)) don't run either, so a rule they enforce is tested without them.
+- **Which instruction wins** when two files disagree ([#88](https://github.com/chrischant3/Whitney/issues/88)).
 
-On Claude Code, `permission_held` reads only a `Bash` rule with a pattern, such as `Bash(git push:*)`, the one form whose refusal has been captured. Gaps found in what is tested: [docs/findings/](docs/findings/).
+On Claude Code, `permission_held` reads only a `Bash` rule with a pattern. The only refusal captured so far is for `Bash(git push:*)`. `whitney validate` accepts any pattern, but how Claude Code matches a wildcard in the middle of one, such as `Bash(git push * main*)`, hasn't been recorded ([#84](https://github.com/chrischant3/Whitney/issues/84)). Gaps found in what is tested: [docs/findings/](docs/findings/).
 
 ## Watching a live session
 
@@ -388,6 +388,8 @@ whitney run --target kilo --model anthropic/claude-haiku-4-5 --api-key-env ANTHR
     --project-path . --evals-path evals --epochs 3
 ```
 
+`v0.2.0` lacks what [CHANGELOG.md](CHANGELOG.md) lists under "Unreleased", such as the `claude-code` skills, agents and permission rules, `--junit` and the newer checks; no later release is tagged yet ([#91](https://github.com/chrischant3/Whitney/issues/91)).
+
 A CI runner has no Kilo login, so this names a provider and its key, as in [With a provider API key you name](#with-a-provider-api-key-you-name). `--api-key-env` names the environment variable that holds the key. Set that variable from your CI system's secret store, never in a file in the repository. The harness's CLI must be installed on the runner too.
 
 | Exit code | Meaning | What to do |
@@ -506,7 +508,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 - [docs/watch.md](docs/watch.md): `whitney watch`, alerts in a live Claude Code session when a rule isn't followed
 - [docs/adding-tests.md](docs/adding-tests.md): writing your own evals: a walkthrough, the eval file format, the checks, and what each result means
 - [examples/consumer/](examples/consumer/): a project with its own rules and the evals that test them
-- [docs/load-order.md](docs/load-order.md): where Kilo loads instructions from
+- [docs/load-order.md](docs/load-order.md): where Kilo and Claude Code load instructions from, and what each target stages
 - [docs/vscode-manual-check.md](docs/vscode-manual-check.md): checking the results carry over to the VS Code extension
 - [docs/findings/](docs/findings/): gaps found so far
 - [docs/release-checklist.md](docs/release-checklist.md): what to check before tagging a release
@@ -515,7 +517,7 @@ Both datasets are read from local files after the one-time setup, so runs make n
 
 ## Limits
 
-This tests the Kilo CLI and the Claude Code CLI with the model you name. Kilo's VS Code extension is covered by a parity check and a manual checklist, not by the automated evals; Claude Code's IDE integrations aren't covered. Results come from small samples (6 scenarios × 3 repeats), which is enough to show large effects but not small ones.
+This tests the Kilo CLI and the Claude Code CLI with the model you name. Kilo's VS Code extension isn't covered by the automated evals. A parity check compares the runtime version and the resolved `permission` and `instructions` of the CLI and the extension; it doesn't fail when `AGENTS.md` changes ([#94](https://github.com/chrischant3/Whitney/issues/94)). A manual checklist covers `AGENTS.md` and `external_directory` in the extension, but no person has recorded a run of it yet ([docs/vscode-manual-check.md](docs/vscode-manual-check.md), [#93](https://github.com/chrischant3/Whitney/issues/93)). Claude Code's IDE integrations aren't covered. Results come from small samples (6 scenarios × 3 repeats), which is enough to show large effects but not small ones.
 
 ## Reporting a vulnerability
 

@@ -316,6 +316,8 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 
 **Done 2026-11-13:** Kilo 7.8.27 doesn't read `REVIEW.md` in `kilo run`, at the root or in `.kilo/`, in an ordinary run or in `/review`; it is a setting of Kilo's cloud review, read at the root of the base branch. Six Haiku runs, $0.105, compared in [spike-findings.md](../docs/spike-findings.md#later-task-49-kilos-code-review-and-reviewmd-2026-11-13). No follow-on task, since it doesn't work headlessly.
 
+**Decided by Christopher, 2026-11-14:** no eval of `kilo run --command review` for now. The guidance it follows would be prompt text, not an instruction file, so it isn't what Whitney tests. Tasks 45 and 46 are the route for a check at the end of each run.
+
 ### Task 67: A variant that keeps one instruction file and leaves out the others, on `kilo`
 
 **Description:** Each instruction file has its own eval file, and its default baseline leaves out that file only. The Δ therefore shows what the file adds given every other file, and a rule repeated in another file hides it. `examples/consumer/CLAUDE.md` repeats `AGENTS.md`'s rule word for word; the example's `agents-md.json` avoids the trap with a baseline that removes `["AGENTS.md", "CLAUDE.md"]` by hand, a list that goes stale when someone adds a rules file. A user can't simply ask how a file does on its own. A `keep` field, the opposite of `remove`, closes the gap: `{"role": "baseline", "keep": ["AGENTS.md"]}` stages the named paths and the config, and leaves out every other staged file. Decided 2026-11-16: the gate stays on `template`; the `keep` variant is reported beside it and doesn't gate, as every non-template variant already is (`report.py`, the gate).
@@ -410,7 +412,7 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 **Description:** Every check today watches for what mustn't happen. Turned round, "no test file in a separate folder" also passes a run that writes no test at all. A `file_added` check fails when no new file matches a pattern, so a rule such as "colocate tests next to the source" can be tested the right way round.
 
 **Scope:**
-- In: a check with a path pattern and an optional `near` pattern. The `near` pattern requires the new file to sit beside a changed file (for colocation). It is decided from git, so it works on both targets. *(2026-11-13: decided from the fixture's before-and-after snapshots instead, which `no_file_edits` reads and both targets take: the git state Whitney collects holds only committed paths, and an agent asked for a test seldom commits it.)*
+- In: a check with a path pattern and an optional `near` pattern. The `near` pattern requires the new file to sit beside a changed file (for colocation). It is decided from the fixture's before-and-after snapshots, not git: that counts files the agent added but didn't commit, needs no `.git`, works on both targets and matches `no_file_edits`. *(Decided by Christopher, 2026-11-14. The plan said "decided from git" until then. 2026-11-13: built from the snapshots, which `no_file_edits` reads and both targets take: the git state Whitney collects holds only committed paths, and an agent asked for a test seldom commits it.)*
 - Out: checking the new file's content; `no_string_added` already covers some of that.
 
 **Acceptance criteria:**
@@ -477,7 +479,7 @@ One item in the Later list needs no task: **Claude Code skills and agents**, str
 
 **Verification:**
 - [x] `whitney report --junit` on a saved log (see "Saved logs") that holds a pass, a fail and an inconclusive result, with the XML validated against the schema. *(2026-11-13: the log was made deterministically by `whitney run` with a fake `kilo` (`tests/data/junit/example`), not by a model; [docs/results/2026-11-13-junit-output.md](../docs/results/2026-11-13-junit-output.md).)*
-- [ ] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link. *(2026-11-13: the step is in `.github/workflows/checks.yml` and its script ran locally; it can only be shown on GitHub once the branch is pushed and a pull request opened, so the link is still missing.)*
+- [x] The file shown in a CI run: Whitney's own workflow writes a summary from it to the GitHub job summary, in a pull request, with a link. *(2026-11-13: the step is in `.github/workflows/checks.yml` and its script ran locally; it can only be shown on GitHub once the branch is pushed and a pull request opened, so the link is still missing.)*
 
 **Dependencies:** none. **Size:** S. **Cost:** none.
 
