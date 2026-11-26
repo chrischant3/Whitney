@@ -952,8 +952,10 @@ def test_a_submodule_isnt_introduced_as_a_file(project):
 
 def test_a_file_name_that_isnt_utf_8_comes_back_escaped(project):
     name = os.fsdecode(b"bad\xffname.txt")
-    (project / name).write_text("x\n")
-    git(project, "add", "-A", "--", name)
+    # Put the name straight into git's index: macOS won't create such a file, but a commit made elsewhere can hold one
+    (project / "content").write_text("x\n")
+    sha = git(project, "hash-object", "-w", "content").strip()
+    git(project, "update-index", "--add", "--cacheinfo", f"100644,{sha},{name}")
     git(project, "commit", "-q", "-m", "odd bytes")
     head = git(project, "rev-parse", "HEAD").strip()
     assert [path for path, _ in watch.Repo(project).introduced(head)] == [name]
@@ -1168,10 +1170,11 @@ def test_an_oversized_request_is_cut_off_and_answered_with_nothing(watcher, proj
         server.server_close()
 
 
-def test_a_socket_error_names_the_reason_without_its_number(watcher, tmp_path):
+def test_a_socket_error_names_the_reason_without_its_number(watcher, short_dir):
+    path = short_dir / "missing" / "watch.sock"
     with pytest.raises(WatchError) as error:
-        watch.start_server(watcher, str(tmp_path / "missing" / "watch.sock"))
-    assert str(error.value) == f"can't listen on {tmp_path / 'missing' / 'watch.sock'}: No such file or directory"
+        watch.start_server(watcher, str(path))
+    assert str(error.value) == f"can't listen on {path}: No such file or directory"
 
 
 def test_the_server_thread_is_a_daemon(watcher, project, short_dir, monkeypatch):
