@@ -2,13 +2,17 @@
 
 Run by .github/workflows/update-prs.yml after each push to main. GitHub merges
 main into the pull request's branch (never a rebase, so signed commits stay as
-they are). The token is a person's, not the workflow's own: GitHub starts no
-workflow runs for a push made with the workflow's token, so an update made with
-it would leave the pull request's checks waiting forever.
+they are). The token is a person's, not the workflow's own: GitHub doesn't start
+the checks for a push made with the workflow's token (it holds them for
+approval), so an update made with it would leave the pull request waiting.
 
-Exit codes: 0 each pull request was updated, already up to date, or couldn't be
-merged (a conflict, which a person resolves); 1 the token was refused for a
-pull request; 2 couldn't run (no token, or the pull requests couldn't be listed).
+Each line is printed as soon as it's known, as a Markdown list item for the
+run's summary, so a run that stops part way still shows what it did.
+
+Exit codes: 0 each pull request was updated, already up to date, skipped, or
+couldn't be updated for a reason a person resolves (such as a conflict); 1 the
+token was refused, for the list or for a pull request; 2 couldn't run (no
+token, or the pull requests couldn't be listed for another reason).
 """
 
 import argparse
@@ -20,7 +24,7 @@ import urllib.request
 from typing import Callable
 
 API = "https://api.github.com"
-# 401, 403 and 404 mean the token can't update the branch, which no later push fixes.
+# 401, 403 and 404 mean the token can't do this, which no later push fixes.
 REFUSED = {401, 403, 404}
 
 
@@ -33,37 +37,47 @@ class ApiError(Exception):
         self.message = message
 
 
+# api(method, path, body=None) makes one GitHub REST request and returns its JSON, raising ApiError on an error status.
 Api = Callable[..., object]
 
 
-def update_pull_requests(api: Api, repo: str, base: str) -> tuple[list[str], int]:
+def update_pull_requests(api: Api, repo: str, base: str, report: Callable[[str], None]) -> int:
     """Ask GitHub to update each auto-merge pull request into `base` that is behind it.
 
-    `api(method, path, body=None)` makes one GitHub REST request and returns its JSON,
-    raising ApiError on an error status. Returns a line per pull request and the exit code.
-    Only the first 100 open pull requests are read.
+    Calls `report` with a line per pull request as soon as it's known, and returns the
+    exit code. Only the first 100 open pull requests are read.
     """
-    prs = api("GET", f"/repos/{repo}/pulls?state=open&base={base}&per_page=100")
+    try:
+        prs = api("GET", f"/repos/{repo}/pulls?state=open&base={base}&per_page=100")
+    except ApiError as e:
+        report(f"Couldn't list the pull requests into {base}: {e}")
+        return 1 if e.status in REFUSED else 2
     chosen = [pr for pr in prs if pr["auto_merge"] and not pr["draft"]]
     if not chosen:
-        return [f"No open pull request into {base} has auto-merge on."], 0
-    lines, code = [], 0
+        report(f"No open pull request into {base} has auto-merge on and isn't a draft.")
+        return 0
+    code = 0
     for pr in chosen:
         number, sha = pr["number"], pr["head"]["sha"]
-        behind = api("GET", f"/repos/{repo}/compare/{base}...{sha}")["behind_by"]
-        if not behind:
-            lines.append(f"#{number}: already up to date with {base}")
+        head_repo = (pr["head"]["repo"] or {}).get("full_name")
+        if head_repo != repo and not pr["maintainer_can_modify"]:
+            report(f"- #{number}: skipped: its branch is in a fork that doesn't allow edits by maintainers")
             continue
         try:
+            # per_page=1: only behind_by is read, so don't fetch the commit list.
+            behind = api("GET", f"/repos/{repo}/compare/{base}...{sha}?per_page=1")["behind_by"]
+            if not behind:
+                report(f"- #{number}: already up to date with {base}")
+                continue
             # expected_head_sha: if someone pushed since the list was read, GitHub refuses rather than merge over it.
             api("PUT", f"/repos/{repo}/pulls/{number}/update-branch", {"expected_head_sha": sha})
         except ApiError as e:
-            lines.append(f"#{number}: couldn't be updated: {e}")
+            report(f"- #{number}: couldn't be updated: {e}")
             if e.status in REFUSED:
                 code = 1
             continue
-        lines.append(f"#{number}: updated ({behind} commit(s) behind {base})")
-    return lines, code
+        report(f"- #{number}: update requested ({behind} commit(s) behind {base})")
+    return code
 
 
 def github_api(token: str, base_url: str = API) -> Api:
@@ -82,7 +96,7 @@ def github_api(token: str, base_url: str = API) -> Api:
         except urllib.error.HTTPError as e:
             try:
                 message = json.load(e).get("message", e.reason)
-            except ValueError:
+            except (ValueError, AttributeError):  # not JSON, or JSON that isn't an object
                 message = e.reason
             raise ApiError(e.code, message) from None
 
@@ -90,27 +104,25 @@ def github_api(token: str, base_url: str = API) -> Api:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print a line per pull request and return the exit code (see the module docstring)."""
+    """Print a line per pull request and return the exit code (see the module docstring).
+
+    Messages go to stdout, errors included, so the workflow's run summary shows them.
+    """
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", ""), help="owner/name on GitHub")
     p.add_argument("--base", default="main", help="branch the pull requests merge into")
+    p.add_argument("--api-url", default=API, help="GitHub's REST API (for tests)")
     args = p.parse_args(argv)
     token = os.environ.get("GH_TOKEN")
     if not token or not args.repo:
-        print(
-            "update-prs: needs --repo and a token in GH_TOKEN; the workflow reads it from the PR_UPDATE_TOKEN secret",
-            file=sys.stderr,
-        )
+        print("update-prs: needs --repo and a token in GH_TOKEN; the workflow reads it from the PR_UPDATE_TOKEN secret")
         return 2
-    lines, code = update_pull_requests(github_api(token), args.repo, args.base)
-    for line in lines:
-        print(line)
-    return code
+    return update_pull_requests(github_api(token, args.api_url), args.repo, args.base, lambda line: print(line, flush=True))
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:  # a crash must read as "couldn't run" (2)
-        print(f"update-prs: couldn't run: {e!r}", file=sys.stderr)
+        print(f"update-prs: couldn't run: {e!r}", flush=True)
         sys.exit(2)

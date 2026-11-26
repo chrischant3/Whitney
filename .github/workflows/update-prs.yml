@@ -1,18 +1,20 @@
 # After each push to main, updates every open pull request into main that has
-# auto-merge on and is behind main, as pressing "Update branch" does: GitHub
-# merges main into the pull request's branch (a merge, never a rebase, so
-# signed commits stay as they are), and the pull request's checks run again.
-# With "Require branches to be up to date before merging" on, auto-merge then
-# merges them one at a time, each tested against the latest main.
+# auto-merge on, isn't a draft, and is behind main, as pressing "Update branch"
+# does: GitHub merges main into the pull request's branch (a merge, never a
+# rebase, so signed commits stay as they are), and the pull request's checks run
+# again. With "Require branches to be up to date before merging" on, auto-merge
+# then merges them one at a time, each tested against the latest main.
 #
-# It needs a person's fine-grained token in the PR_UPDATE_TOKEN secret: GitHub
-# starts no workflow runs for a push made with the workflow's own token, so an
-# update made with it would leave the checks waiting. The token needs this
-# repository only, with Contents, Pull requests and Workflows read and write
-# (Workflows because main's workflow changes are merged into the branch).
+# It needs a person's fine-grained token, PR_UPDATE_TOKEN, saved in the
+# pr-update environment: GitHub doesn't start the checks for a push made with
+# the workflow's own token (it holds them for approval), so an update made with
+# it would leave the pull request waiting. docs/update-prs.md has the setup.
 #
-# The secret is only read on a push to main or a run started by hand, never in
-# a pull request's own run, and scripts/update_prs.py is main's copy.
+# Keeping the token to main: it's an environment secret, not a repository
+# secret, and the environment lets only main use it, so a workflow pushed on
+# another branch can't read it. The job also runs only on main, so a run started
+# by hand from another branch does nothing, and the script it runs is main's.
+# Without the secret (a fork, say), the run says so and passes.
 name: Update pull requests
 
 on:
@@ -30,15 +32,29 @@ concurrency:
 jobs:
   update:
     name: Update pull requests set to auto-merge
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: pr-update
+    env:
+      HAS_TOKEN: ${{ secrets.PR_UPDATE_TOKEN != '' }}
     steps:
+      - name: Say why nothing was updated
+        if: env.HAS_TOKEN != 'true'
+        run: |
+          echo "PR_UPDATE_TOKEN isn't set in the pr-update environment, so no pull request was updated; see docs/update-prs.md." \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.HAS_TOKEN == 'true'
         with:
           persist-credentials: false
+          sparse-checkout: scripts/update_prs.py
+          sparse-checkout-cone-mode: false
 
       - name: Update each one that's behind main
+        if: env.HAS_TOKEN == 'true'
         env:
           GH_TOKEN: ${{ secrets.PR_UPDATE_TOKEN }}
         shell: bash # -eo pipefail, so the script's exit code isn't lost in the pipe to tee
-        run: python3 -I scripts/update_prs.py --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 -I scripts/update_prs.py --repo "$GITHUB_REPOSITORY" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
