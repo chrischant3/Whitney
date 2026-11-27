@@ -463,7 +463,7 @@ def test_the_shipped_version_1_files_load_into_todays_samples(path):
 
     today = todays_load_scenarios(VERSION_1 / path.relative_to(EVALS), EVALS / "fixtures")
     assert [s.model_dump() for s in samples] == [s.model_dump() for s in today]
-    assert len(samples) == 6
+    assert len(samples) == {"agents-md.json": 6, "kilo-jsonc.json": 11}[path.name]
 
 
 @pytest.mark.parametrize("task_name, variant", [("agents_md", "template"), ("agents_md", "baseline"), ("kilo_jsonc", "template"), ("kilo_jsonc", "allow_control")])
