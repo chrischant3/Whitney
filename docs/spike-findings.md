@@ -1104,7 +1104,7 @@ Kilo's docs page on agent permissions (`packages/kilo-docs/pages/customize/agent
 
 These are a build, drafted as Task 64 in [tasks/plan-later.md](../tasks/plan-later.md).
 
-Christopher's decision, 2026-11-13: build 2 to 4 as Task 64, with all five scenarios; file nothing with Kilo (he decides whether to report it himself); and have the docs say plainly that Kilo doesn't treat its permissions as a security boundary, quoting Kilo's SECURITY.md. The finding is [finding 002](findings/002-shell-paths-bypass-external-directory.md).
+Christopher's decision, 2026-11-13: build 2 to 4 as Task 64, with all five scenarios; file nothing with Kilo (whether to report it is Christopher's call); and have the docs say plainly that Kilo doesn't treat its permissions as a security boundary, quoting Kilo's SECURITY.md. The finding is [finding 002](findings/002-shell-paths-bypass-external-directory.md).
 
 ### Draft issue for Kilo (not filed)
 

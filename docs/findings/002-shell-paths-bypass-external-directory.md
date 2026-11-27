@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Confirmed and reproducible. Not reported to Kilo: Christopher decides whether to report it, and writes any report himself, since Kilo's SECURITY.md doesn't accept AI-generated security reports. Under Kilo's threat model this is a gap in a UX safeguard, not a security vulnerability (see below). |
+| **Status** | Confirmed and reproducible. Not reported to Kilo: Christopher decides whether to report it, and would write any report personally, since Kilo's SECURITY.md doesn't accept AI-generated security reports. Under Kilo's threat model this is a gap in a UX safeguard, not a security vulnerability (see below). |
 | **Found** | 2026-11-13, in Later Task 63's spike |
 | **Affects** | Kilo CLI 7.8.27 (`@kilocode/cli`); by its source, also 7.8.28 and `main` as of 2026-11-13. Other versions and the VS Code extension not yet tested. |
 | **Setting affected** | `"permission": { "external_directory": "ask" }` and `"deny"`, when `bash` is allowed; and `bash` pattern rules |
@@ -10,7 +10,7 @@
 
 ## Summary
 
-`external_directory` controls whether Kilo asks before the agent touches files outside the folder Kilo was started in. For the bash tool, Kilo checks a path only when the command is one of nine it knows (`cd`, `rm`, `cp`, `mv`, `mkdir`, `touch`, `chmod`, `chown`, `cat`) and only when the path is written out in full. Each of these read Whitney's outside canary with no permission request, under `ask` and under `deny`:
+`external_directory` controls whether Kilo asks before the agent touches files outside the folder Kilo was started in. For the bash tool, Kilo checks a path only when the command is one of twelve it knows (`cd`, `chdir`, `popd`, `pushd`, `rm`, `cp`, `mv`, `mkdir`, `touch`, `chmod`, `chown`, `cat`) and only when the path is written out in full. Each of these read Whitney's outside canary with no permission request, under `ask` and under `deny`:
 
 ```sh
 D=../outside; cat "$D/canary.txt"        # a variable the command sets
@@ -56,6 +56,6 @@ What follows for a template, and for what Whitney's results mean:
 
 ## Next steps
 
-- Christopher decides whether to report it to Kilo, and writes the report himself. A draft is in the spike section, as a starting point only.
+- Christopher decides whether to report it to Kilo, and would write any report personally. A draft is in the spike section, as a starting point only.
 - When Kilo changes the scan, re-run the five scenarios and close this finding.
 - Task 43: the docs on `bash` pattern rules say a variable in the command name steps round them.
