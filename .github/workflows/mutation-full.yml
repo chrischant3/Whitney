@@ -62,6 +62,18 @@ jobs:
           chmod +x "$RUNNER_TEMP/bin/osv-scanner"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      # check.py full's installed-package step runs `uv pip compile` to check what a plain
+      # install of pyproject.toml resolves (tests/test_packaging.py); without uv that test fails (#112).
+      - name: Install uv
+        env:
+          UV_VERSION: 0.11.20
+          UV_SHA256: 5de211d9278af365497d387e25316907b3b4a9f25b4476dd6dbf238d6f85cff3
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/uv.tar.gz" \
+            "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${UV_SHA256}  $RUNNER_TEMP/uv.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/uv.tar.gz" -C "$RUNNER_TEMP/bin" --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+
       # tests/test_junit.py validates Whitney's JUnit XML against tests/data/junit/JUnit.xsd with xmllint;
       # without it mutmut's clean test run fails and no mutant is checked (run 43581120436).
       - name: Install xmllint
